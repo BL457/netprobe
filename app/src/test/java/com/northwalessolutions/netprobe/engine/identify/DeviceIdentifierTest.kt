@@ -16,7 +16,7 @@ class DeviceIdentifierTest {
 
     @Test fun `rules file loads with unique ids and valid fields`() {
         assertTrue(rules.size >= 45); assertEquals(rules.size, rules.map { it.id }.toSet().size)
-        val fields = setOf("mdnsType", "mdnsTxt", "upnpDeviceType", "snmpSysDescr", "httpTitle", "httpRealm", "httpServer", "hostname", "netbiosName", "sshBanner", "ports", "anyPort", "gateway", "oui")
+        val fields = setOf("mdnsType", "mdnsTxt", "upnpManufacturer", "upnpDeviceType", "snmpSysDescr", "httpTitle", "httpRealm", "httpServer", "hostname", "netbiosName", "sshBanner", "ports", "anyPort", "gateway", "oui")
         rules.forEach { assertTrue("bad field in ${it.id}", it.field in fields); assertTrue(it.weight in 1..100) }
     }
     @Test fun `every rule is well formed`() {
@@ -74,6 +74,11 @@ class DeviceIdentifierTest {
         val r = id.identify(ev(services = mapOf(22 to ServiceInfo("SSH", "OpenSSH", "9.6p1", "Ubuntu-3ubuntu13", Confidence.CONFIRMED))))
         assertEquals("Linux (Ubuntu)", r.os)
     }
+    @Test fun `upnp manufacturer Synology is a NAS`() {
+        val r = id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "Synology Inc", upnpModel = "DS220+")))
+        assertEquals(DeviceType.NAS, r.type); assertEquals("DS220+", r.model)
+    }
+    @Test fun `upnp manufacturer QNAP is a NAS`() { assertEquals(DeviceType.NAS, id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "QNAP Systems, Inc."))).type) }
     @Test fun `camera by rtsp`() { assertEquals(DeviceType.CAMERA, id.identify(ev(ports = setOf(554, 80))).type) }
     @Test fun `gateway flag`() { assertEquals(DeviceType.ROUTER, id.identify(ev(DiscoveredHost(ip, isGateway = true))).type) }
     @Test fun `oui vendor alone is a weak vendor`() {

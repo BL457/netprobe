@@ -17,6 +17,7 @@ object SyntheticEvidence {
                 val type = sample.substringBefore(':'); val kv = sample.substringAfter(':')
                 ev(h.copy(mdnsServiceTypes = setOf(type), mdnsTxt = mapOf(type to mapOf(kv.substringBefore('=') to kv.substringAfter('=')))))
             }
+            "upnpManufacturer" -> ev(h.copy(upnpManufacturer = sample))
             "upnpDeviceType" -> ev(h.copy(upnpDeviceType = sample))
             "snmpSysDescr" -> ev(h.copy(snmpSysDescr = sample))
             "httpTitle" -> ev(h.copy(httpTitle = sample))

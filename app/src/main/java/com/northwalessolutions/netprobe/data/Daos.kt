@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao interface NetworkDao {
     @Query("SELECT * FROM networks WHERE signature = :sig LIMIT 1") suspend fun bySignature(sig: String): NetworkEntity?
+    @Query("SELECT * FROM networks WHERE ssid IS NULL AND prefixLength = :prefix AND ((:gw IS NULL AND gatewayIp IS NULL) OR gatewayIp = :gw)")
+    suspend fun idlessByGateway(gw: String?, prefix: Int): List<NetworkEntity>
+    @Query("UPDATE networks SET signature = :sig, ssid = :ssid, displayName = :name, lastSeen = :now WHERE id = :id") suspend fun adopt(id: Long, sig: String, ssid: String?, name: String, now: Long)
     @Insert suspend fun insert(n: NetworkEntity): Long
     @Query("UPDATE networks SET lastSeen = :now, ssid = COALESCE(:ssid, ssid) WHERE id = :id") suspend fun touch(id: Long, now: Long, ssid: String?)
 }

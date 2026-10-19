@@ -36,6 +36,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
             when (r.field) {
                 "mdnsType" -> matchAny(h.mdnsServiceTypes.toList())?.let { (c, g) -> apply(r, c, g, null) }
                 "mdnsTxt" -> txtStrings.firstNotNullOfOrNull { (s, _, v) -> re?.find(s)?.let { m -> Triple(s, group1Of(m), v) } }?.let { (s, g, v) -> apply(r, s, g, v) }
+                "upnpManufacturer" -> matchAny(listOfNotNull(h.upnpManufacturer))?.let { (c, g) -> apply(r, c, g, null) }
                 "upnpDeviceType" -> matchAny(listOfNotNull(h.upnpDeviceType))?.let { (c, g) -> apply(r, c, g, null) }
                 "snmpSysDescr" -> matchAny(listOfNotNull(h.snmpSysDescr))?.let { (c, g) -> apply(r, c, g, null) }
                 "httpTitle" -> matchAny(listOfNotNull(h.httpTitle))?.let { (c, g) -> apply(r, c, g, null) }

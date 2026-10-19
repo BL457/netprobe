@@ -13,7 +13,10 @@ import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.serviceid.Evidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
+import com.northwalessolutions.netprobe.engine.identify.DeviceIdentity
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
+import com.northwalessolutions.netprobe.netenv.Subnet
+import com.northwalessolutions.netprobe.netenv.SubnetMath
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
@@ -22,7 +25,8 @@ import java.net.Inet4Address
 import java.net.InetAddress
 
 enum class StatusFilter(val label: String) { ALL("All"), INTERESTING("Interesting"), INVESTIGATED("Investigated"), IGNORED("Ignored"), UNMARKED("Unmarked") }
-data class HostRow(val id: Long, val ip: String, val displayName: String, val identityLine: String, val type: DeviceType, val openPorts: Int, val status: HostStatus, val isGateway: Boolean, val stale: Boolean, val mac: String?)
+data class HostRow(val id: Long, val ip: String, val displayName: String, val identityLine: String, val type: DeviceType, val openPorts: Int, val status: HostStatus, val isGateway: Boolean, val stale: Boolean, val mac: String?,
+                   val otherSubnet: String? = null) { val offSubnet: Boolean get() = otherSubnet != null }
 data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = false, val status: DiscoveryStatus? = null, val rows: List<HostRow> = emptyList(),
                        val filter: StatusFilter = StatusFilter.ALL, val query: String = "", val message: String? = null, val networkName: String? = null, val quickScanning: Boolean = false)
 
@@ -39,6 +43,30 @@ object IdentityLine {
     /** Same rule from a stored host; "only mDNS" means no NetBIOS, UPnP or MAC evidence alongside the mDNS name. */
     fun of(h: HostEntity): String = of(h.identVendor, h.identModel, h.identOs, h.deviceType,
         onlyMdns = h.mdnsName != null && h.netbiosName == null && h.upnpName == null && h.mac == null)
+}
+
+/** Pure row rules: off-subnet labelling and the phone's own-address identity. */
+object RowRules {
+    const val THIS_PHONE = "This phone"
+    private const val OWN_CONFIDENCE = 100
+    private const val OWN_LINE = "Android device"
+    private const val OTHER_SUBNET_PREFIX = 24
+
+    /** The /24 of [ip] (for example "10.0.4.0/24") when it lies outside the scanned [scanned] subnet, else null. */
+    fun otherSubnet(ip: String, scanned: Subnet): String? {
+        val a = runCatching { InetAddress.getByName(ip) as Inet4Address }.getOrNull() ?: return null
+        return if (scanned.contains(a)) null else SubnetMath.of(a, OTHER_SUBNET_PREFIX).toString()
+    }
+
+    fun ownIdentity(): DeviceIdentity = DeviceIdentity(THIS_PHONE, null, null, DeviceType.PHONE, OWN_CONFIDENCE, listOf("own address"))
+    fun isOwn(ip: String, env: NetworkEnv?): Boolean = env != null && ip == env.interfaceIp.hostAddress
+
+    fun row(h: HostEntity, env: NetworkEnv?, maxPrefix: Int, openPorts: Int, stale: Boolean): HostRow {
+        val own = isOwn(h.ip, env)
+        val name = if (own && h.customName.isNullOrBlank()) THIS_PHONE else DisplayName.of(h)
+        val other = env?.let { otherSubnet(h.ip, SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, maxPrefix).subnet) }
+        return HostRow(h.id, h.ip, name, if (own) OWN_LINE else IdentityLine.of(h), h.deviceType, openPorts, h.status, h.isGateway, stale, h.mac, other)
+    }
 }
 
 object HomeFilter {
@@ -71,8 +99,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val pc = arr[9] as Map<Long, Int>
         val e = arr[0] as NetworkEnv?; val cs = arr[1] as ScanController.State; val st = arr[2] as DiscoveryStatus
         val f = arr[4] as StatusFilter; val q = arr[5] as String; val run = arr[6] as Long; val qs = arr[7] as Boolean; val msg = arr[8] as String?
-        val rows = hs.map { h -> HostRow(h.id, h.ip, DisplayName.of(h), IdentityLine.of(h), h.deviceType, pc[h.id] ?: 0, h.status, h.isGateway,
-            stale = run > 0 && h.lastDiscoveryRun < run, mac = h.mac) }
+        val maxPrefix = c.settings.state.value.maxPrefix
+        val rows = hs.map { h -> RowRules.row(h, e, maxPrefix, pc[h.id] ?: 0, stale = run > 0 && h.lastDiscoveryRun < run) }
         HomeUiState(e, cs.scanning, if (cs.scanning) st else null, HomeFilter.apply(rows, f, q), f, q, cs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
 
@@ -102,7 +130,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 val id = c.hosts.upsertDiscovered(net.id, h, runId)
                 val merged = c.hosts.byIdOnce(id) ?: return@collect
                 val ports = openPorts.getOrPut(h.ip.hostAddress) { HashSet() }.also { it += h.probedOpenPorts }.toSet()
-                c.hosts.setIdentity(id, c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(merged), ports, emptyMap(), merged.mac?.let(c.ouiLookup))))
+                val identity = if (RowRules.isOwn(merged.ip, e)) RowRules.ownIdentity()
+                    else c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(merged), ports, emptyMap(), merged.mac?.let(c.ouiLookup)))
+                c.hosts.setIdentity(id, identity)
             }
         } finally { c.locks.release() }
         val st = c.discoveryEngine.status.value

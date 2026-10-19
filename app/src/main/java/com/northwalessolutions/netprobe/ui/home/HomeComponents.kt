@@ -44,7 +44,8 @@ fun NetworkPanel(env: NetworkEnv?, networkName: String?) {
         val transport = if (env.transport == Transport.WIFI) "Wi-Fi" else "Ethernet"
         // networkName is the SSID when Android reveals it (location permission), else the gateway; only the SSID is a name.
         val name = networkName?.takeIf { it == env.ssid } ?: transport
-        Text(if (name == transport) name else "$name · $transport", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        val needsLocation = env.ssid == null && env.transport == Transport.WIFI
+        Text(if (needsLocation) "Wi-Fi (name needs location, see Settings)" else if (name == transport) name else "$name · $transport", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text("${env.interfaceIp.hostAddress}/${env.prefixLength}  gateway ${env.gateway?.hostAddress ?: "none"}",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -57,13 +58,18 @@ fun FilterRow(selected: StatusFilter, onSelect: (StatusFilter) -> Unit) {
     }
 }
 
+fun rowSecondaryLine(r: HostRow): String {
+    val base = if (r.displayName == r.ip) r.identityLine else "${r.ip}  ·  ${r.identityLine}"
+    return if (r.otherSubnet != null) "$base, other subnet ${r.otherSubnet}" else base
+}
+
 @Composable
 fun HostRowItem(r: HostRow, onClick: () -> Unit) {
     ListItem(
         modifier = Modifier.clickable(onClick = onClick).alpha(if (r.stale) STALE_ALPHA else 1f),
         leadingContent = { Icon(r.type.icon(), contentDescription = null) },
         headlineContent = { Text(r.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text(if (r.displayName == r.ip) r.identityLine else "${r.ip}  ·  ${r.identityLine}", maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { Text(rowSecondaryLine(r), maxLines = 2, overflow = TextOverflow.Ellipsis) },
         trailingContent = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (r.isGateway) Text("Gateway", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)

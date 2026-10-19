@@ -130,4 +130,16 @@ class DaoTest {
         }
         assertEquals(1, count("networks"))
     }
+    @Test fun ensureAdoptsIdlessNetworkWhenLocationIsGranted() = runBlocking {
+        val repo = NetworkRepository(db); val hosts = HostRepository(db)
+        val bare = NetworkEnv(ip("192.168.8.5"), 24, ip("192.168.8.1"), emptyList(), null, null, Transport.WIFI)
+        val named = bare.copy(ssid = "Home", bssid = "aa:bb:cc:dd:ee:ff")
+        val before = repo.ensure(bare)
+        val hid = hosts.upsertDiscovered(before.id, DiscoveredHost(ip("192.168.8.20")), 1L)
+        db.hosts().setNote(hid, "keep me")
+        val after = repo.ensure(named)
+        assertEquals(before.id, after.id); assertEquals("Home", after.ssid); assertEquals(1, count("networks"))
+        assertEquals("keep me", hosts.byIdOnce(hid)!!.note)
+        assertEquals(after.id, repo.ensure(named).id)
+    }
 }

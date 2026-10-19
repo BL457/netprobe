@@ -16,6 +16,8 @@
  {"id":"upnp-media","field":"upnpDeviceType","pattern":"Media(Renderer|Server)","type":"MEDIA","weight":70,"sample":"urn:schemas-upnp-org:device:MediaRenderer:1"},
  {"id":"upnp-printer","field":"upnpDeviceType","pattern":"Printer","type":"PRINTER","weight":90,"sample":"urn:schemas-upnp-org:device:Printer:1"},
  {"id":"snmp-routeros","field":"snmpSysDescr","pattern":"^RouterOS\\s*(\\S+)?","vendor":"MikroTik","os":"RouterOS","model":"$1","type":"ROUTER","weight":100,"sample":"RouterOS RB750Gr3"},
+ {"id":"upnp-synology","field":"upnpManufacturer","pattern":"Synology","vendor":"Synology","type":"NAS","weight":95,"sample":"Synology Inc"},
+ {"id":"upnp-qnap","field":"upnpManufacturer","pattern":"QNAP","vendor":"QNAP","type":"NAS","weight":95,"sample":"QNAP Systems, Inc."},
  {"id":"snmp-synology","field":"snmpSysDescr","pattern":"DiskStation|Synology","vendor":"Synology","type":"NAS","weight":100,"sample":"Linux DiskStation 4.4.302+"},
  {"id":"snmp-qnap","field":"snmpSysDescr","pattern":"QNAP","vendor":"QNAP","type":"NAS","weight":100,"sample":"Linux TS-453 QNAP"},
  {"id":"snmp-printers","field":"snmpSysDescr","pattern":"^(HP|Hewlett-Packard|Brother|EPSON|Canon|Lexmark|Kyocera|Xerox)\\b.*(LaserJet|OfficeJet|DeskJet|Color|Printer|MFC|DCP|HL-|ET-|WF-|XP-|PIXMA|imageCLASS|ECOSYS|WorkCentre|VersaLink|Phaser)","vendor":"$1","type":"PRINTER","weight":100,"sample":"HP ETHERNET MULTI-ENVIRONMENT,ROM none,JETDIRECT,JD153,EEPROM V.45.x LaserJet Pro M404"},

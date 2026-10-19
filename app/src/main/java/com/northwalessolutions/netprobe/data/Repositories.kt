@@ -29,6 +29,15 @@ class NetworkRepository(private val db: NetProbeDb) {
         val sig = NetworkSignature.of(env); val now = System.currentTimeMillis()
         val found = db.networks().bySignature(sig)
         if (found != null) { db.networks().touch(found.id, now, env.ssid); return@withTransaction found.copy(lastSeen = now) }
+        // Location was granted after hosts were recorded: the same gateway+prefix network now has ssid/bssid, so adopt the id-less row instead of orphaning it.
+        if (env.ssid != null || env.bssid != null) {
+            val adoptable = db.networks().idlessByGateway(env.gateway?.hostAddress, env.prefixLength)
+            if (adoptable.size == 1) {
+                val a = adoptable.first(); val name = env.ssid ?: a.displayName
+                db.networks().adopt(a.id, sig, env.ssid, name, now)
+                return@withTransaction a.copy(signature = sig, ssid = env.ssid, displayName = name, lastSeen = now)
+            }
+        }
         val n = NetworkEntity(signature = sig, displayName = env.ssid ?: env.gateway?.hostAddress ?: "Network", gatewayIp = env.gateway?.hostAddress, prefixLength = env.prefixLength, ssid = env.ssid, lastSeen = now)
         try {
             n.copy(id = db.networks().insert(n))
