@@ -55,13 +55,14 @@ Success for the MVP: on the Director's home network the app finds the devices th
 | Host liveness | TCP connect probes to a short port list; connect or refused both mean alive | `InetAddress.isReachable()` depends on ICMP, which Android often blocks, and its fallback is unreliable. |
 | mDNS | Android `NsdManager` with a known service-type list | A hand-rolled mDNS enumerator is more complete but is more work; roadmap. |
 | Port scan engine | Blocking sockets on `Dispatchers.IO.limitedParallelism(n)` with a semaphore | NIO selector scales further but adds complexity the MVP does not need; roadmap. |
+| targetSdkVersion | 30 (Android 11); compileSdk and minSdk unaffected | Targeting 31 or higher loses the netlink neighbour dump on Android 13 and later, and with it most MAC addresses. Cost: sideload only (Play requires a current target), and Android 11 era runtime behaviours. Acceptable for a personal and professional tool. |
 | Dependency injection | Manual `AppContainer` | Hilt adds annotation processing and boilerplate for a single-module app. |
 | Project layout | Single Gradle module `app`, packages per layer | Multi-module is premature. |
 
 ## 4. Platform constraints (non-root Android)
 
 - No raw sockets. All probing is ordinary TCP connect and UDP datagrams.
-- The ARP/neighbour table is not readable on Android 10 and later. The app attempts `/proc/net/arp` once and ignores failure. MAC addresses come only from NetBIOS node-status replies (Windows and Samba hosts) and UPnP descriptions where present. Most hosts will show no MAC in the MVP; identification relies on names, service types and port fingerprints.
+- `/proc/net/arp` is unreadable from Android 10. The kernel neighbour table is still readable through a netlink `RTM_GETNEIGH` dump (what `ip neigh show` does), but from Android 13 the AOSP SELinux policy allows that only for apps whose `targetSdkVersion` is 30 or lower, and `bind()` on netlink route sockets is denied to every third-party app. NetProbe therefore sets `targetSdkVersion = 30` (compileSdk stays current) and performs the dump itself over an unbound netlink socket in a small JNI helper, after the liveness sweep has populated the table. This is the primary MAC source; NetBIOS node-status replies and UPnP descriptions are secondary. Phones using per-network randomised MACs show their randomised address, never the hardware one. A feasibility spike on the Pixel 7 Pro is plan step 0 (section 11); if the dump is denied there, the app keeps the secondary sources and identification relies on names, service types and port fingerprints.
 - Hosts that drop every TCP probe (iPhones, hardened devices) are found only through mDNS or SSDP. This is documented in the UI as "found via mDNS" and is the same limitation Fing has.
 - Multicast reception requires a `WifiManager.MulticastLock` for the duration of discovery.
 - Wi-Fi SSID and BSSID require the runtime permission `ACCESS_FINE_LOCATION` with location services enabled, on every Android version the app supports (`NEARBY_WIFI_DEVICES` does not unlock them). The app requests this lazily and works without it.
@@ -132,7 +133,7 @@ Strategies:
 3. **SSDP/UPnP.** Send `M-SEARCH * HTTP/1.1` with `ST: ssdp:all`, `MX: 2` to 239.255.255.250:1900 three times over 3 seconds; listen for 4 seconds. Parse `LOCATION`, `SERVER`, `ST`, `USN`. Fetch each distinct `LOCATION` XML (GET, 2 s timeout, 64 KB cap) and read `friendlyName`, `manufacturer`, `modelName`.
 4. **NetBIOS node status.** For each alive host, send one NBSTAT request to UDP 137 (1 s timeout). Parse the name table (first unique group-0x00 name is the computer name, group names give workgroup) and the unit ID field, which is the MAC address.
 5. **Reverse DNS.** For each alive host, `InetAddress.getByAddress(...).hostName` on the IO dispatcher with a 1 s timeout; keep it only when it differs from the IP string.
-6. **ARP best-effort.** Read `/proc/net/arp` once after the sweep; on failure do nothing. Where it works (older Android or permissive OEM builds) it supplies MACs.
+6. **Neighbour table.** After the sweep, dump the IPv4 neighbour table once via netlink `RTM_GETNEIGH` with `NLM_F_DUMP` (JNI, `AF_NETLINK` + `NETLINK_ROUTE`, no `bind()`), keeping entries in REACHABLE, STALE, DELAY or PROBE state. Each entry supplies a MAC for a swept host. On Android 12 and lower, read `/proc/net/arp` if netlink fails. On `EACCES` do nothing and record that the source is unavailable so the UI can say so.
 
 The gateway from `NetworkEnv` is always included and flagged `isGateway` even if it drops all probes.
 
@@ -328,6 +329,7 @@ Definition of done: all unit and instrumented tests pass, every step in the on-d
 2. Final app name, icon and `applicationId`. The icon needs Director approval before it goes on the app.
 3. Toolchain check at plan step 0: JDK 17, Android SDK platform 35, Gradle wrapper, Compose BOM, `adb` location (not on PATH; Procrastinkitting notes hold the full path).
 4. Verify on the Pixel 7 Pro that SSID and BSSID are returned once `ACCESS_FINE_LOCATION` is granted and location services are on. If the build redacts them anyway, the network signature falls back to gateway and prefix only.
+5. Spike, plan step 0: a throwaway `targetSdkVersion = 30` app that sweeps the subnet then performs the netlink neighbour dump on the Pixel 7 Pro. Pass means MACs come back for hosts just swept with no SELinux denial in logcat. Fail means the netlink source is dropped from the MVP and the spec's MAC wording reverts to secondary sources only.
 
 ## Appendix A: Quick profile ports (115)
 
