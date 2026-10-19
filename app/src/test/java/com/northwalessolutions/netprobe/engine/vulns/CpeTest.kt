@@ -1,0 +1,22 @@
+package com.northwalessolutions.netprobe.engine.vulns
+
+import com.northwalessolutions.netprobe.engine.serviceid.Confidence
+import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
+import org.junit.Assert.*
+import org.junit.Test
+
+class CpeTest {
+    private val map = Cpe.load(javaClass.getResource("/cpe_map.json")!!.readText())
+    @Test fun `map loads required products`() {
+        for (p in listOf("OpenSSH", "nginx", "Apache", "lighttpd", "dropbear", "ProFTPD", "vsFTPd", "Samba", "MiniUPnPd", "BusyBox", "Exim", "Postfix", "Dovecot", "Pure-FTPd", "Microsoft-IIS"))
+            assertTrue("missing $p", map.keys.any { it.equals(p, ignoreCase = true) })
+        map.values.forEach { assertTrue(it.startsWith("cpe:2.3:a:") && it.contains("{v}")) }
+    }
+    @Test fun `service to cpe`() {
+        assertEquals("cpe:2.3:a:openbsd:openssh:9.6:p1:*:*:*:*:*:*", Cpe.forService(map, ServiceInfo("SSH", "OpenSSH", "9.6p1", null, Confidence.CONFIRMED)))
+        assertEquals("cpe:2.3:a:dropbear_ssh_project:dropbear_ssh:2022.83:*:*:*:*:*:*:*", Cpe.forService(map, ServiceInfo("SSH", "dropbear", "2022.83", null, Confidence.CONFIRMED)))
+        assertEquals("cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*", Cpe.forService(map, ServiceInfo("HTTP", "nginx", "1.18.0", null, Confidence.CONFIRMED)))
+        assertNull(Cpe.forService(map, ServiceInfo("HTTP", "nginx", null, null, Confidence.CONFIRMED)))
+        assertNull(Cpe.forService(map, ServiceInfo("HTTP", "GoAhead-Webs", "1.0", null, Confidence.CONFIRMED)))
+    }
+}

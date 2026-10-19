@@ -1,0 +1,7 @@
+{"resultsPerPage":2,"startIndex":0,"totalResults":2,"format":"NVD_CVE","version":"2.0","timestamp":"2026-10-19T10:00:00.000",
+ "vulnerabilities":[
+  {"cve":{"id":"CVE-2023-38408","published":"2023-07-20T03:15:00.000","descriptions":[{"lang":"es","value":"..."},{"lang":"en","value":"The PKCS#11 feature in ssh-agent in OpenSSH before 9.3p2 has an insufficiently trustworthy search path."}],
+   "metrics":{"cvssMetricV31":[{"cvssData":{"baseScore":9.8,"baseSeverity":"CRITICAL"}}]}}},
+  {"cve":{"id":"CVE-2021-41617","published":"2021-09-26T19:15:00.000","descriptions":[{"lang":"en","value":"sshd in OpenSSH 6.2 through 8.7 before 8.8 ... AuthorizedKeysCommand"}],
+   "metrics":{"cvssMetricV2":[{"cvssData":{"baseScore":4.4},"baseSeverity":"MEDIUM"}]}}}
+ ]}

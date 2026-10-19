@@ -1,0 +1,17 @@
+[
+ {"product":"OpenSSH","cpe":"cpe:2.3:a:openbsd:openssh:{v}:*:*:*:*:*:*:*"},
+ {"product":"nginx","cpe":"cpe:2.3:a:f5:nginx:{v}:*:*:*:*:*:*:*"},
+ {"product":"Apache","cpe":"cpe:2.3:a:apache:http_server:{v}:*:*:*:*:*:*:*"},
+ {"product":"lighttpd","cpe":"cpe:2.3:a:lighttpd:lighttpd:{v}:*:*:*:*:*:*:*"},
+ {"product":"dropbear","cpe":"cpe:2.3:a:dropbear_ssh_project:dropbear_ssh:{v}:*:*:*:*:*:*:*"},
+ {"product":"ProFTPD","cpe":"cpe:2.3:a:proftpd:proftpd:{v}:*:*:*:*:*:*:*"},
+ {"product":"vsFTPd","cpe":"cpe:2.3:a:vsftpd_project:vsftpd:{v}:*:*:*:*:*:*:*"},
+ {"product":"Samba","cpe":"cpe:2.3:a:samba:samba:{v}:*:*:*:*:*:*:*"},
+ {"product":"MiniUPnPd","cpe":"cpe:2.3:a:miniupnp_project:miniupnpd:{v}:*:*:*:*:*:*:*"},
+ {"product":"BusyBox","cpe":"cpe:2.3:a:busybox:busybox:{v}:*:*:*:*:*:*:*"},
+ {"product":"Exim","cpe":"cpe:2.3:a:exim:exim:{v}:*:*:*:*:*:*:*"},
+ {"product":"Postfix","cpe":"cpe:2.3:a:postfix:postfix:{v}:*:*:*:*:*:*:*"},
+ {"product":"Dovecot","cpe":"cpe:2.3:a:dovecot:dovecot:{v}:*:*:*:*:*:*:*"},
+ {"product":"Pure-FTPd","cpe":"cpe:2.3:a:pureftpd:pure-ftpd:{v}:*:*:*:*:*:*:*"},
+ {"product":"Microsoft-IIS","cpe":"cpe:2.3:a:microsoft:internet_information_services:{v}:*:*:*:*:*:*:*"}
+]
