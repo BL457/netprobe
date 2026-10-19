@@ -26,6 +26,7 @@ class BannerReader(val timeoutMs: Int = 1000, val maxBytes: Int = 1024) {
                 } catch (_: java.net.SocketTimeoutException) { }
                 if (n == 0) null else buf.copyOf(n)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e
         } catch (e: InterruptedException) { throw kotlinx.coroutines.CancellationException()
         } catch (_: Exception) { null
         } finally { runCatching { socket.close() } }

@@ -17,15 +17,14 @@ open class TlsPeek {
                 override fun checkServerTrusted(c: Array<X509Certificate>, a: String) {}
                 override fun getAcceptedIssuers() = arrayOf<X509Certificate>()
             }), null)
-            val s = ctx.socketFactory.createSocket() as SSLSocket
-            s.connect(InetSocketAddress(ip, port), timeoutMs); s.soTimeout = timeoutMs
-            s.use {
-                it.startHandshake()
-                val cert = it.session.peerCertificates.firstOrNull() as? X509Certificate ?: return@runInterruptible emptyList()
+            (ctx.socketFactory.createSocket() as SSLSocket).use { s ->
+                s.connect(InetSocketAddress(ip, port), timeoutMs); s.soTimeout = timeoutMs
+                s.startHandshake()
+                val cert = s.session.peerCertificates.firstOrNull() as? X509Certificate ?: return@runInterruptible emptyList()
                 val cn = Regex("CN=([^,]+)").find(cert.subjectX500Principal.name)?.groupValues?.get(1)
                 val sans = runCatching { cert.subjectAlternativeNames?.mapNotNull { e -> e.getOrNull(1)?.toString() } }.getOrNull().orEmpty()
                 (listOfNotNull(cn) + sans).distinct()
             }
         }
-    } catch (e: InterruptedException) { throw kotlinx.coroutines.CancellationException() } catch (_: Exception) { null }
+    } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: InterruptedException) { throw kotlinx.coroutines.CancellationException() } catch (_: Exception) { null }
 }

@@ -11,7 +11,7 @@ import kotlin.concurrent.thread
 
 class ServiceIdentifierTest {
     private val servers = mutableListOf<ServerSocket>()
-    private val table = PortTable.fromJson("""[{"port":22,"name":"SSH"},{"port":80,"name":"HTTP"},{"port":5900,"name":"VNC"},{"port":21,"name":"FTP"}]""")
+    private val table = PortTable.fromJson("""[{"port":22,"name":"SSH"},{"port":80,"name":"HTTP"},{"port":5900,"name":"VNC"},{"port":21,"name":"FTP"},{"port":8006,"name":"Proxmox"},{"port":443,"name":"HTTPS"}]""")
     private val lo = InetAddress.getLoopbackAddress()
     @After fun tearDown() { servers.forEach { runCatching { it.close() } } }
 
@@ -57,5 +57,18 @@ class ServiceIdentifierTest {
     @Test fun `ftp greeting parsed`() {
         val s = ident(serve(greeting = "220 (vsFTPd 3.0.5)\r\n"), asPort = 21)
         assertEquals("vsFTPd", s.product); assertEquals("3.0.5", s.version)
+    }
+
+    private fun tlsIdent(port: Int, names: List<String>?) = runBlocking {
+        val peek = object : TlsPeek() { override suspend fun certNames(ip: InetAddress, port: Int, timeoutMs: Int) = names }
+        ServiceIdentifier(table, BannerReader(timeoutMs = 800), peek).identify(lo, port)
+    }
+    @Test fun `tls failure keeps port table name`() {
+        val s = tlsIdent(8006, null)
+        assertEquals("Proxmox", s.name); assertEquals(Confidence.PORT_TABLE, s.confidence)
+    }
+    @Test fun `tls cert names confirm https`() {
+        val s = tlsIdent(443, listOf("router.lan"))
+        assertEquals("HTTPS", s.name); assertEquals(Confidence.CONFIRMED, s.confidence); assertTrue(s.detail!!.contains("router.lan"))
     }
 }
