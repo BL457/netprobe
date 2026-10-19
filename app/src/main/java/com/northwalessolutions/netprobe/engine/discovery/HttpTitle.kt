@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.URL
@@ -17,7 +18,8 @@ object HttpTitleParser {
     private val titleRe = Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val whitespaceRe = Regex("[ \t\r\n\u000B\u000C]+")
     private val realmRe = Regex("realm=\"?([^\",]+)\"?", RegexOption.IGNORE_CASE)
-    private val entities = mapOf("&amp;" to "&", "&lt;" to "<", "&gt;" to ">", "&quot;" to "\"", "&#39;" to "'", "&apos;" to "'", "&nbsp;" to " ")
+    // Order matters: &amp; must be decoded LAST so "&amp;lt;" becomes "&lt;" and not "<".
+    private val entities = linkedMapOf("&lt;" to "<", "&gt;" to ">", "&quot;" to "\"", "&#39;" to "'", "&apos;" to "'", "&nbsp;" to " ", "&amp;" to "&")
 
     fun title(html: String): String? {
         var t = titleRe.find(html)?.groupValues?.get(1) ?: return null
@@ -67,19 +69,24 @@ class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBytes: 
                     val next = runCatching { URL(url, loc) }.getOrNull()
                     if (next != null && next.host == url.host) { url = next; hops++; continue }
                 }
-                val stream = (if (status >= HTTP_ERROR_MIN) c.errorStream else c.inputStream) ?: c.errorStream
                 val bytes = ByteArrayOutputStream()
                 // Overall deadline stops a device dripping bytes just inside the per-read timeout.
                 val deadline = System.currentTimeMillis() + timeoutMs
-                stream?.use { ins ->
-                    val buf = ByteArray(READ_BUFFER_BYTES)
-                    while (bytes.size() < maxBytes && System.currentTimeMillis() <= deadline) {
-                        val n = ins.read(buf)
-                        if (n <= 0) break
-                        bytes.write(buf, 0, minOf(n, maxBytes - bytes.size()))
+                // A body-read failure (e.g. timeout) must not discard the status/headers already received.
+                try {
+                    val stream = (if (status >= HTTP_ERROR_MIN) c.errorStream else c.inputStream) ?: c.errorStream
+                    stream?.use { ins ->
+                        val buf = ByteArray(READ_BUFFER_BYTES)
+                        while (bytes.size() < maxBytes && System.currentTimeMillis() <= deadline) {
+                            val n = ins.read(buf)
+                            if (n <= 0) break
+                            bytes.write(buf, 0, minOf(n, maxBytes - bytes.size()))
+                        }
                     }
+                } catch (_: IOException) {
+                    // keep whatever bytes arrived
                 }
-                val html = String(bytes.toByteArray(), Charsets.ISO_8859_1)
+                val html = String(bytes.toByteArray(), Charsets.UTF_8)
                 return HttpPeek(HttpTitleParser.title(html), c.getHeaderField("Server"), HttpTitleParser.realm(c.getHeaderField("WWW-Authenticate")), status)
             } finally {
                 c.disconnect()
