@@ -1,0 +1,65 @@
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: FATAL EXCEPTION: main
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: Process: lysesoft.andsmb, PID: 18008
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{lysesoft.andsmb/lysesoft.andsmb.PickSMBFileChooserActivity}
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4596)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4798)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:224)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:103)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:3046)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.os.Handler.dispatchMessageImpl(Handler.java:142)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:126)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:295)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:398)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:9569)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:575)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:918)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: Caused by: java.lang.NullPointerException: Attempt to invoke virtual method 'void android.view.View.setVisibility(int)' on a null object reference
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at lysesoft.andsmb.PickSMBFileChooserActivity.onCreate(r8-map-id-2c43c84bde34cbdab1d52dd26b923e1a0b8d2fc7e528154587a468fd66cd6a52:239)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:9327)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:9305)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1541)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4580)
+10-19 21:13:59.313 18008 18008 E AndroidRuntime: 	... 14 more
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: FATAL EXCEPTION: main
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: Process: lysesoft.andsmb, PID: 18051
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: java.lang.RuntimeException: Unable to start activity ComponentInfo{lysesoft.andsmb/lysesoft.andsmb.PickSMBFileChooserActivity}
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4596)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.ActivityThread.handleLaunchActivity(ActivityThread.java:4798)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.servertransaction.LaunchActivityItem.execute(LaunchActivityItem.java:224)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:103)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:3046)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.os.Handler.dispatchMessageImpl(Handler.java:142)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:126)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:295)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:398)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:9569)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:575)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:918)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: Caused by: java.lang.NullPointerException: Attempt to invoke virtual method 'void android.view.View.setVisibility(int)' on a null object reference
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at lysesoft.andsmb.PickSMBFileChooserActivity.onCreate(r8-map-id-2c43c84bde34cbdab1d52dd26b923e1a0b8d2fc7e528154587a468fd66cd6a52:239)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:9327)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.Activity.performCreate(Activity.java:9305)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.Instrumentation.callActivityOnCreate(Instrumentation.java:1541)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	at android.app.ActivityThread.performLaunchActivity(ActivityThread.java:4580)
+10-19 21:14:10.167 18051 18051 E AndroidRuntime: 	... 14 more
+10-19 21:23:52.451 27557 27557 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-19 21:23:52.456 27557 27557 I AndroidRuntime: Using default boot image
+10-19 21:23:52.456 27557 27557 I AndroidRuntime: Leaving lock profiling enabled
+10-19 21:23:52.558 27557 27557 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-19 21:23:53.708 27557 27557 D AndroidRuntime: Shutting down VM
+10-19 21:24:00.516 27630 27630 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-19 21:24:00.521 27630 27630 I AndroidRuntime: Using default boot image
+10-19 21:24:00.521 27630 27630 I AndroidRuntime: Leaving lock profiling enabled
+10-19 21:24:00.614 27630 27630 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-19 21:24:01.719 27630 27630 D AndroidRuntime: Shutting down VM
+10-19 21:24:17.437 27955 27955 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-19 21:24:17.442 27955 27955 I AndroidRuntime: Using default boot image
+10-19 21:24:17.442 27955 27955 I AndroidRuntime: Leaving lock profiling enabled
+10-19 21:24:17.536 27955 27955 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-19 21:24:18.694 27955 27955 D AndroidRuntime: Shutting down VM
