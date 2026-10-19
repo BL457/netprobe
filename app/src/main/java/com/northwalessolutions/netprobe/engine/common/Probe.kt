@@ -31,17 +31,21 @@ object Probe {
         val closer = launch(Dispatchers.Unconfined, start = CoroutineStart.UNDISPATCHED) {
             try { awaitCancellation() } finally { if (!finished.get()) runCatching { socket.close() } }
         }
-        try {
+        val outcome = try {
             runInterruptible {
                 val t0 = System.nanoTime()
                 socket.connect(InetSocketAddress(ip, port), timeoutMs)
                 val rtt = ((System.nanoTime() - t0) / 1_000_000).toInt()
                 if (keepOpen) Outcome.Connected(rtt, socket) else { socket.close(); Outcome.Connected(rtt, null) }
             }
+        } catch (e: CancellationException) { socket.close(); throw e
         } catch (e: SocketTimeoutException) { socket.close(); Outcome.Timeout
         } catch (e: NoRouteToHostException) { socket.close(); Outcome.Unreachable
         } catch (e: ConnectException) { socket.close(); classifyConnect(e) }
         catch (e: Exception) { socket.close(); Outcome.Timeout }
         finally { finished.set(true); closer.cancel() }
+        // Cancellation can land after the watcher is disabled but before the caller gets a kept-open socket.
+        if (!currentCoroutineContext().isActive) { socket.close(); currentCoroutineContext().ensureActive() }
+        outcome
     }
 }
