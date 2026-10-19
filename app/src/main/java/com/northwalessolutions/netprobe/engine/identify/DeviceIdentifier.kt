@@ -2,6 +2,14 @@ package com.northwalessolutions.netprobe.engine.identify
 
 class DeviceIdentifier(private val rules: List<Rule>) {
     private class Slot(var value: String? = null, var weight: Int = -1)
+    private companion object {
+        const val MAX_VALUE_LEN = 80
+        val CANONICAL_VENDORS = mapOf(
+            "hp" to "HP", "hewlett-packard" to "HP", "epson" to "Epson", "canon" to "Canon", "brother" to "Brother",
+            "lexmark" to "Lexmark", "kyocera" to "Kyocera", "xerox" to "Xerox",
+        )
+    }
+    private fun canonicalVendor(v: String?): String? = v?.let { CANONICAL_VENDORS[it.lowercase()] ?: it }
     private fun group1Of(m: MatchResult): String? = if (m.groups.size > 1) m.groups[1]?.value else null
 
     fun identify(e: HostEvidence): DeviceIdentity {
@@ -9,14 +17,16 @@ class DeviceIdentifier(private val rules: List<Rule>) {
         val reasons = ArrayList<String>(); var confidence = 0
         fun set(slot: Slot, v: String?, w: Int) { if (v != null && w > slot.weight) { slot.value = v; slot.weight = w } }
         fun apply(r: Rule, matched: String, group1: String?, txtValue: String?) {
-            fun sub(s: String?) = s?.replace("\$1", group1 ?: "")?.replace("\$txt", txtValue ?: "")?.trim()?.takeIf { it.isNotEmpty() }
-            set(vendor, sub(r.vendor), r.weight); set(model, sub(r.model), r.weight); set(os, sub(r.os), r.weight); set(type, r.type, r.weight)
+            fun sub(s: String?) = s?.replace("\$1", group1 ?: "")?.replace("\$txt", txtValue ?: "")?.trim()?.take(MAX_VALUE_LEN)?.takeIf { it.isNotEmpty() }
+            set(vendor, canonicalVendor(sub(r.vendor)), r.weight); set(model, sub(r.model), r.weight); set(os, sub(r.os), r.weight); set(type, r.type, r.weight)
             reasons += "${r.field}: ${matched.take(80)}"; confidence = maxOf(confidence, r.weight)
         }
         val h = e.host
         // Direct extraction, weight 100.
-        if (h.upnpManufacturer != null || h.upnpModel != null) {
-            set(vendor, h.upnpManufacturer, 100); set(model, h.upnpModel, 100); reasons += "upnp: ${listOfNotNull(h.upnpManufacturer, h.upnpModel).joinToString(" ")}"; confidence = 100
+        val upnpMaker = h.upnpManufacturer?.trim()?.take(MAX_VALUE_LEN)?.takeIf { it.isNotEmpty() }
+        val upnpModel = h.upnpModel?.trim()?.take(MAX_VALUE_LEN)?.takeIf { it.isNotEmpty() }
+        if (upnpMaker != null || upnpModel != null) {
+            set(vendor, upnpMaker, 100); set(model, upnpModel, 100); reasons += "upnp: ${listOfNotNull(upnpMaker, upnpModel).joinToString(" ")}"; confidence = 100
         }
         val names = listOfNotNull(h.mdnsName, h.netbiosName, h.upnpFriendlyName, h.reverseDnsName) + h.mdnsInstanceNames
         val txtStrings = h.mdnsTxt.flatMap { (t, kv) -> kv.map { (k, v) -> Triple("$t:$k=$v", k, v) } }

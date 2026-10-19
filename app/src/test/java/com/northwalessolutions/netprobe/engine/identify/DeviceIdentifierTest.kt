@@ -38,8 +38,9 @@ class DeviceIdentifierTest {
         assertEquals("Google", r.vendor); assertEquals("Chromecast Ultra", r.model); assertEquals(DeviceType.MEDIA, r.type)
     }
     @Test fun `upnp direct extraction wins over port hints`() {
-        val r = id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "TP-Link", upnpModel = "Archer AX55", upnpDeviceType = "urn:schemas-upnp-org:device:InternetGatewayDevice:1"), ports = setOf(80, 445)))
+        val r = id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "TP-Link", upnpModel = "Archer AX55", upnpDeviceType = "urn:schemas-upnp-org:device:InternetGatewayDevice:1", snmpSysDescr = "RouterOS RB750Gr3"), ports = setOf(135, 445)))
         assertEquals("TP-Link", r.vendor); assertEquals("Archer AX55", r.model); assertEquals(DeviceType.ROUTER, r.type); assertEquals(100, r.confidence)
+        assertTrue(r.reasons.any { it.startsWith("ports:") } && r.reasons.any { it.startsWith("snmpSysDescr:") })   // competing rules really fired
     }
     @Test fun `snmp routeros`() {
         val r = id.identify(ev(DiscoveredHost(ip, snmpSysDescr = "RouterOS RB750Gr3")))
@@ -52,6 +53,7 @@ class DeviceIdentifierTest {
     @Test fun `windows by ports and netbios`() {
         val r = id.identify(ev(DiscoveredHost(ip, netbiosName = "DESKTOP-ABC"), ports = setOf(135, 445)))
         assertEquals("Windows", r.os); assertEquals(DeviceType.COMPUTER, r.type)
+        assertTrue(r.reasons.any { it.startsWith("ports:") })
     }
     @Test fun `iphone by lockdown port and hostname`() {
         assertEquals(DeviceType.PHONE, id.identify(ev(ports = setOf(62078))).type)
@@ -84,5 +86,38 @@ class DeviceIdentifierTest {
             val e = SyntheticEvidence.forRule(r, ip)
             assertNotEquals("rule ${r.id} contributed nothing", DeviceIdentifier(rules - r).identify(e), DeviceIdentifier(rules).identify(e))
         }
+    }
+
+    // ---- false positives are avoided ----
+    private val netbiosOnly = { ports: Set<Int> -> id.identify(ev(DiscoveredHost(ip, netbiosName = "NAS01"), ports = ports)) }
+    @Test fun `false positives are avoided - pixelbook and galaxy book are not android`() {
+        assertNotEquals("Android", id.identify(ev(DiscoveredHost(ip, reverseDnsName = "Pixelbook.lan"))).os)
+        assertNotEquals("Android", id.identify(ev(DiscoveredHost(ip, reverseDnsName = "Galaxy-Book.lan"))).os)
+        assertEquals("Android", id.identify(ev(DiscoveredHost(ip, reverseDnsName = "Galaxy-S24.lan"))).os)
+    }
+    @Test fun `false positives are avoided - netbios plus synology ports is a NAS`() {
+        val r = netbiosOnly(setOf(5000, 5001)); assertEquals(DeviceType.NAS, r.type); assertEquals("Synology", r.vendor)
+    }
+    @Test fun `false positives are avoided - gateway sharing a printer stays a router`() {
+        assertEquals(DeviceType.ROUTER, id.identify(ev(DiscoveredHost(ip, isGateway = true, mdnsServiceTypes = setOf("_ipp._tcp")))).type)
+    }
+    @Test fun `false positives are avoided - plex and asustor`() {
+        assertNotEquals("Plex Media Server", id.identify(ev(DiscoveredHost(ip, httpTitle = "Complex Systems Login"))).model)
+        assertNotEquals(DeviceType.ROUTER, id.identify(ev(DiscoveredHost(ip, httpAuthRealm = "ASUSTOR"))).type)
+    }
+    @Test fun `false positives are avoided - hp host that is not a printer`() {
+        assertNotEquals(DeviceType.PRINTER, id.identify(ev(DiscoveredHost(ip, snmpSysDescr = "Linux hp-pavilion 6.1.0"))).type)
+        assertNotEquals(DeviceType.PRINTER, id.identify(ev(DiscoveredHost(ip, snmpSysDescr = "HP J9773A 2530-24G-PoEP Switch"))).type)
+        val p = id.identify(ev(DiscoveredHost(ip, snmpSysDescr = "HP ETHERNET MULTI-ENVIRONMENT,ROM none,JETDIRECT,JD153,EEPROM V.45.x LaserJet Pro M404")))
+        assertEquals("HP", p.vendor); assertEquals(DeviceType.PRINTER, p.type)
+        assertEquals("Epson", id.identify(ev(DiscoveredHost(ip, snmpSysDescr = "EPSON Built-in 10/100 Print Server WF-2860"))).vendor)
+    }
+    @Test fun `blank upnp fields are ignored`() {
+        val r = id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "", upnpModel = "  ")))
+        assertEquals(DeviceIdentity.UNKNOWN, r)
+    }
+    @Test fun `extracted values are capped at 80 characters`() {
+        val r = id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "A".repeat(200), mdnsServiceTypes = setOf("_googlecast._tcp"), mdnsTxt = mapOf("_googlecast._tcp" to mapOf("md" to "M".repeat(200))))))
+        assertEquals(80, r.vendor!!.length); assertEquals(80, r.model!!.length)
     }
 }
