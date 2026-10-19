@@ -28,14 +28,23 @@ class UpnpDescriptionTest {
     }
 
     @Test fun `external entities are never resolved`() {
-        val xml = "<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY x SYSTEM \"file:///etc/hostname\">]>" +
-            "<root><device><friendlyName>&x;</friendlyName></device></root>"
-        val d = UpnpDescriptionParser.parse(xml)
-        assertTrue(d == null || d.friendlyName.isNullOrEmpty())
+        val connected = AtomicBoolean(false)
+        val ss = serve(connected) { it.write(okXml("SECRET")) }
+        try {
+            val xml = "<?xml version=\"1.0\"?><!DOCTYPE root [<!ENTITY x SYSTEM \"http://127.0.0.1:${ss.localPort}/x\">]>" +
+                "<root><device><friendlyName>&x;</friendlyName></device></root>"
+            // Doctype refusal off, so only resolveEntity stands between the parser and the network.
+            val d = UpnpDescriptionParser.parse(xml, allowDoctype = true)
+            Thread.sleep(300)
+            assertFalse(connected.get())
+            assertTrue(d == null || d.friendlyName.isNullOrEmpty())
+            assertNull(UpnpDescriptionParser.parse(xml))   // production path refuses the DOCTYPE outright
+        } finally { ss.close() }
     }
 
     private val loop = InetAddress.getByName("127.0.0.1") as Inet4Address
     private val crlf = "\r\n"
+    private val other = InetAddress.getByName("127.0.0.2") as Inet4Address
 
     /** One-shot loopback HTTP server. [respond] writes the reply after the request line is read. */
     private fun serve(connected: AtomicBoolean, respond: (java.io.OutputStream) -> Unit): ServerSocket {
@@ -54,34 +63,43 @@ class UpnpDescriptionTest {
 
     @Test fun `fetch refuses a location on another host`() = runBlocking {
         val connected = AtomicBoolean(false)
-        val ss = serve(connected) { }
+        val ss = serve(connected) { it.write(okXml("<root><device><friendlyName>X</friendlyName></device></root>")) }
         try {
-            assertNull(UpnpFetcher().fetch("http://127.0.0.2:${ss.localPort}/d.xml", loop))
+            assertNull(UpnpFetcher().fetch("http://127.0.0.1:${ss.localPort}/d.xml", other))
             Thread.sleep(200)
             assertFalse(connected.get())
         } finally { ss.close() }
     }
 
+    private fun okXml(body: String) = ("HTTP/1.1 200 OK" + crlf + "Connection: close" + crlf + crlf + body).toByteArray()
+
     @Test fun `fetch caps the body at maxBytes`() = runBlocking {
-        val ss = serve(AtomicBoolean(false)) { o ->
-            o.write(("HTTP/1.1 200 OK" + crlf + "Connection: close" + crlf + crlf +
-                "<root><device><friendlyName>Big</friendlyName><!--").toByteArray())
-            runCatching { repeat(200) { o.write(ByteArray(1024) { 'a'.code.toByte() }) }; o.flush() }
+        fun big() = serve(AtomicBoolean(false)) { o ->
+            o.write(okXml("<root><device><friendlyName>Big</friendlyName><manufacturer>"))
+            runCatching {
+                repeat(200) { o.write(ByteArray(1024) { 'a'.code.toByte() }) }
+                o.write("</manufacturer></device></root>".toByteArray()); o.flush()
+            }
         }
+        val capped = big()
+        try { assertNull(UpnpFetcher(maxBytes = 4096).fetch("http://127.0.0.1:${capped.localPort}/d.xml", loop)) } finally { capped.close() }
+        val open = big()
         try {
-            val t0 = System.currentTimeMillis()
-            UpnpFetcher(maxBytes = 4096).fetch("http://127.0.0.1:${ss.localPort}/d.xml", loop)
-            assertTrue(System.currentTimeMillis() - t0 < 3000)
-        } finally { ss.close() }
+            assertEquals("Big", UpnpFetcher(maxBytes = 300_000).fetch("http://127.0.0.1:${open.localPort}/d.xml", loop)?.friendlyName)
+        } finally { open.close() }
     }
 
     @Test fun `fetch does not follow redirects`() = runBlocking {
+        val targetHit = AtomicBoolean(false)
+        val target = serve(targetHit) { it.write(okXml("<root><device><friendlyName>Evil</friendlyName></device></root>")) }
         val ss = serve(AtomicBoolean(false)) { o ->
-            o.write(("HTTP/1.1 302 Found" + crlf + "Location: http://127.0.0.2/x.xml" + crlf + "Connection: close" + crlf + crlf).toByteArray())
+            o.write(("HTTP/1.1 302 Found" + crlf + "Location: http://127.0.0.1:${target.localPort}/x.xml" + crlf + "Connection: close" + crlf + crlf).toByteArray())
             o.flush()
         }
         try {
             assertNull(UpnpFetcher().fetch("http://127.0.0.1:${ss.localPort}/d.xml", loop))
-        } finally { ss.close() }
+            Thread.sleep(200)
+            assertFalse(targetHit.get())
+        } finally { ss.close(); target.close() }
     }
 }

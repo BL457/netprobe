@@ -54,12 +54,15 @@ object UpnpDescriptionParser {
         }
     }
 
-    fun parse(xml: String): UpnpDevice? = try {
+    fun parse(xml: String): UpnpDevice? = parse(xml, allowDoctype = false)
+
+    /** [allowDoctype] exists only so tests can prove resolveEntity blocks external entities on its own. */
+    internal fun parse(xml: String, allowDoctype: Boolean): UpnpDevice? = try {
         val factory = SAXParserFactory.newInstance().apply {
             isNamespaceAware = false
             runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
             runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
-            runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+            runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", !allowDoctype) }
         }
         val h = Handler()
         factory.newSAXParser().parse(InputSource(StringReader(xml)), h)   // any SAXException (truncated or binary input) lands in the catch
