@@ -19,7 +19,7 @@ class NeighbourSpikeTest {
         assertTrue("dump denied: ${before.exceptionOrNull()}", before.isSuccess)
 
         // Touch 254 hosts of the common home /24s so the kernel ARPs for them.
-        val prefixes = listOf("192.168.1.", "192.168.0.", "10.0.0.")
+        val prefixes = listOf("10.0.3.", "192.168.1.", "192.168.0.", "10.0.0.")
         withContext(Dispatchers.IO.limitedParallelism(128)) {
             prefixes.flatMap { p -> (1..254).map { "$p$it" } }.map { ip ->
                 async { runCatching { Socket().use { it.connect(InetSocketAddress(ip, 80), 300) } } }
