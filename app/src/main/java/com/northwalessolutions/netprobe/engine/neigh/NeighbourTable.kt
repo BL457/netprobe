@@ -9,7 +9,9 @@ object NeighbourTable {
     private val loaded: Boolean = try { System.loadLibrary("neigh"); true } catch (_: Throwable) { false }
     private external fun dumpRaw(): Array<String>
 
-    /** Never throws. Failure carries NeighbourUnavailable with the errno text. Falls back to /proc/net/arp on Android 9 and lower. */
+    /** Never throws. Failure carries NeighbourUnavailable with the errno text. Falls back to /proc/net/arp on Android 9 and lower.
+     *  Calls are serialised because the native side uses a static buffer. */
+    @Synchronized
     fun dump(): Result<List<NeighbourEntry>> {
         val netlink = dumpNetlink()
         if (netlink.isSuccess || Build.VERSION.SDK_INT > LAST_SDK_WITH_READABLE_ARP_FILE) return netlink

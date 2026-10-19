@@ -82,6 +82,10 @@ Java_com_northwalessolutions_netprobe_engine_neigh_NeighbourTable_dumpRaw(JNIEnv
     }
     close(fd);
     jobjectArray arr = (*env)->NewObjectArray(env, n, (*env)->FindClass(env, "java/lang/String"), NULL);
-    for (int i = 0; i < n; i++) (*env)->SetObjectArrayElement(env, arr, i, (*env)->NewStringUTF(env, lines[i]));
+    for (int i = 0; i < n; i++) {
+        jstring str = (*env)->NewStringUTF(env, lines[i]);
+        (*env)->SetObjectArrayElement(env, arr, i, str);
+        (*env)->DeleteLocalRef(env, str);
+    }
     return arr;
 }
