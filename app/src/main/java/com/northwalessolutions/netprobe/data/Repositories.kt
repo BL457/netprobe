@@ -105,7 +105,7 @@ class HostRepository(private val db: NetProbeDb) {
 class PortRepository(private val db: NetProbeDb) {
     fun portsForHost(hostId: Long): Flow<List<PortEntity>> = db.ports().forHost(hostId)
     fun counts(): Flow<Map<Long, Int>> = db.ports().counts().map { rows -> rows.associate { it.hostId to it.n } }
-    suspend fun upsertOpen(hostId: Long, port: Int, info: ServiceInfo) = db.withTransaction {
+    suspend fun upsertOpen(hostId: Long, port: Int, info: ServiceInfo): Unit = db.withTransaction {
         val now = System.currentTimeMillis()
         val e = db.ports().find(hostId, port)
         val fresh = PortEntity(hostId = hostId, port = port, serviceName = info.name, product = info.product, version = info.version, detail = info.detail, confidence = info.confidence, lastSeen = now)

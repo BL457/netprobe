@@ -27,6 +27,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.util.concurrent.ConcurrentLinkedQueue
 
 @RunWith(AndroidJUnit4::class)
 class DaoTest {
@@ -91,19 +92,35 @@ class DaoTest {
     @Test fun annotationsSurviveConcurrentUpserts() = runBlocking {
         val hosts = HostRepository(db); val ip = ip("192.168.1.40")
         val id = hosts.upsertDiscovered(1, DiscoveredHost(ip), runId = 0)
+        val steps = 150
+        val written = ConcurrentLinkedQueue<String>()   // every note, recorded just before it is written
+        var lastSeen = 0; var samples = 0
         coroutineScope {
             val writer = launch(Dispatchers.Default) {
-                repeat(100) { i -> hosts.setStatus(id, if (i % 2 == 0) HostStatus.IGNORED else HostStatus.INTERESTING); hosts.setNote(id, "n$i") }
-                hosts.setStatus(id, HostStatus.INTERESTING); hosts.setNote(id, "final"); hosts.setCustomName(id, "Mine")
+                for (i in 1..steps) {
+                    written.add("n$i"); hosts.setNote(id, "n$i")
+                    hosts.setStatus(id, if (i % 2 == 0) HostStatus.IGNORED else HostStatus.INTERESTING)
+                    hosts.setCustomName(id, "c$i")
+                }
             }
-            val scanner = launch(Dispatchers.Default) {
-                repeat(50) { i -> hosts.upsertDiscovered(1, DiscoveredHost(ip, mdnsName = "m$i"), runId = i + 1L) }
-                hosts.setIdentity(id, DeviceIdentity.UNKNOWN)
+            // The scanner overlaps every writer step; a stale whole-row write would re-apply an older note.
+            launch(Dispatchers.Default) {
+                var run = 1L
+                while (writer.isActive) {
+                    hosts.upsertDiscovered(1, DiscoveredHost(ip, mdnsName = "m$run"), runId = run++)
+                    val note = hosts.byIdOnce(id)!!.note
+                    if (note.isNotEmpty()) {
+                        assertTrue("note $note was never written", note in written)
+                        val n = note.removePrefix("n").toInt()
+                        assertTrue("stale note $note re-applied after n$lastSeen", n >= lastSeen)
+                        lastSeen = n; samples++
+                    }
+                }
             }
-            writer.join(); scanner.join()
         }
         val h = hosts.host(id).first()!!
-        assertEquals(HostStatus.INTERESTING, h.status); assertEquals("final", h.note); assertEquals("Mine", h.customName); assertEquals("m49", h.mdnsName)
+        assertTrue("scanner never overlapped the writer", samples > 0)
+        assertEquals("n$steps", h.note); assertEquals(HostStatus.IGNORED, h.status); assertEquals("c$steps", h.customName)
     }
     @Test fun ensureIsRaceSafe() = runBlocking {
         val repo = NetworkRepository(db)
