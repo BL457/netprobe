@@ -9,6 +9,7 @@ import org.xml.sax.helpers.DefaultHandler
 import java.io.StringReader
 import java.net.HttpURLConnection
 import java.net.Inet4Address
+import java.net.Proxy
 import java.net.URL
 import javax.xml.parsers.SAXParserFactory
 
@@ -21,6 +22,7 @@ data class UpnpDevice(val friendlyName: String?, val manufacturer: String?, val 
  */
 object UpnpDescriptionParser {
     private const val MAX_TEXT_CHARS = 512
+    private const val DOCTYPE = "<!DOCTYPE"
     private val WANTED = setOf("friendlyName", "manufacturer", "modelName", "modelNumber", "deviceType", "UDN")
 
     /** Records the text of direct children of the first <device>; everything deeper (deviceList, serviceList) is ignored. */
@@ -58,6 +60,8 @@ object UpnpDescriptionParser {
 
     /** [allowDoctype] exists only so tests can prove resolveEntity blocks external entities on its own. */
     internal fun parse(xml: String, allowDoctype: Boolean): UpnpDevice? = try {
+        // Refuse before parsing: Android's Expat ignores disallow-doctype-decl, and an entity-expansion document could exhaust memory.
+        if (!allowDoctype && xml.contains(DOCTYPE, ignoreCase = true)) throw IllegalArgumentException("DOCTYPE refused")
         val factory = SAXParserFactory.newInstance().apply {
             isNamespaceAware = false
             runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
@@ -77,7 +81,8 @@ class UpnpFetcher(private val timeoutMs: Int = 2000, private val maxBytes: Int =
             val url = URL(location)
             if (url.host != allowedHost.hostAddress) return null
             runInterruptible(Dispatchers.IO) {
-                val c = url.openConnection() as HttpURLConnection
+                // NO_PROXY: a LAN fetch must never be handed to a Wi-Fi proxy or PAC outside the network.
+                val c = url.openConnection(Proxy.NO_PROXY) as HttpURLConnection
                 c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false
                 c.inputStream.use { ins ->
                     // Bounded manual read: InputStream.readNBytes needs API 33 and minSdk is 26.

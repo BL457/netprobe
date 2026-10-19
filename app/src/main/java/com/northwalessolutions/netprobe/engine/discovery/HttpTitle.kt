@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.Inet4Address
+import java.net.Proxy
 import java.net.URL
 import java.security.cert.X509Certificate
 import javax.net.ssl.*
@@ -58,7 +59,8 @@ class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBytes: 
         var url = URL(if (tls) "https" else "http", ip.hostAddress, port, "/")
         var hops = 0
         while (true) {
-            val c = url.openConnection() as HttpURLConnection
+            // NO_PROXY: a LAN fetch must never be handed to a Wi-Fi proxy or PAC outside the network.
+            val c = url.openConnection(Proxy.NO_PROXY) as HttpURLConnection
             try {
                 if (c is HttpsURLConnection) { c.sslSocketFactory = trustAll; c.hostnameVerifier = HostnameVerifier { _, _ -> true } }
                 c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false
