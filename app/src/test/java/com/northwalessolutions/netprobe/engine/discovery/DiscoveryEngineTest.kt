@@ -3,10 +3,11 @@ package com.northwalessolutions.netprobe.engine.discovery
 import com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.Transport
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetAddress
 
@@ -91,5 +92,91 @@ class DiscoveryEngineTest {
             deviceInfo = { _, _ -> null })
         e.discover(env, DiscoveryOptions(snmp = false)).toList()
         assertEquals(0, snmpCalls)
+    }
+
+    // ---- fix round 1: error isolation, progress flush, cancellation, disabled strategies ----
+
+    private fun sweepOf(vararg found: Pair<String, Set<Int>>) = object : Sweep(HostProber(), 8) {
+        override fun run(hosts: Sequence<Inet4Address>): Flow<Liveness> = found.map { (a, p) -> Liveness(ip(a), true, p, 1) }.asFlow()
+    }
+    private fun fake(
+        sweep: Sweep = sweepOf(), mdns: (List<String>, Long) -> Flow<MdnsRecord> = { _, _ -> emptyFlow() }, ssdp: () -> Flow<SsdpResponse> = { emptyFlow() },
+        upnpFetch: suspend (String, Inet4Address) -> UpnpDevice? = { _, _ -> null }, netbios: suspend (Inet4Address) -> NetBiosInfo? = { null },
+        snmp: suspend (Inet4Address) -> SnmpInfo? = { null }, httpTitle: suspend (Inet4Address, Int, Boolean) -> HttpPeek? = { _, _, _ -> null },
+        reverseDns: suspend (Inet4Address) -> String? = { null }, neighbours: () -> Result<List<NeighbourEntry>> = { Result.success(emptyList()) },
+        deviceInfo: suspend (String, Inet4Address) -> Map<String, String>? = { _, _ -> null },
+    ) = DiscoveryEngine({ _, _ -> sweep }, mdns, ssdp, upnpFetch, netbios, snmp, httpTitle, reverseDns, neighbours, listOf("_http._tcp"), deviceInfo)
+
+    private fun merged(e: DiscoveryEngine) = runBlocking {
+        e.discover(env, DiscoveryOptions()).toList().groupBy { it.ip.hostAddress }.mapValues { (_, v) -> v.reduce { a, b -> a.merge(b) } }
+    }
+
+    @Test fun `final sweep progress is flushed into status`() {
+        val prog = MutableStateFlow(0 to 0)
+        val sweep = object : Sweep(HostProber(), 8) {
+            override val progress: StateFlow<Pair<Int, Int>> get() = prog
+            override fun run(hosts: Sequence<Inet4Address>): Flow<Liveness> = flow { prog.value = 254 to 254 }
+        }
+        val e = fake(sweep = sweep)
+        runBlocking { e.discover(env, DiscoveryOptions()).toList() }
+        assertEquals(254, e.status.value.probed); assertEquals(e.status.value.total, e.status.value.probed)
+    }
+    @Test fun `a throwing mdns flow does not stop the sweep`() {
+        val m = merged(fake(sweep = sweepOf("192.168.1.20" to setOf(445)), mdns = { _, _ -> flow { throw IOException("mdns dead") } },
+            neighbours = { Result.success(listOf(NeighbourEntry("192.168.1.20", "de:ad:be:ef:00:03", "REACHABLE"))) }))
+        assertEquals(setOf(445), m["192.168.1.20"]!!.probedOpenPorts); assertEquals("de:ad:be:ef:00:03", m["192.168.1.20"]!!.mac)
+    }
+    @Test fun `a throwing ssdp flow does not stop the sweep`() {
+        val m = merged(fake(sweep = sweepOf("192.168.1.20" to setOf(445)), ssdp = { flow { throw IOException("ssdp dead") } }))
+        assertEquals(setOf(445), m["192.168.1.20"]!!.probedOpenPorts)
+    }
+    @Test fun `a throwing netbios leaves other hosts and lookups intact`() {
+        val m = merged(fake(sweep = sweepOf("192.168.1.20" to emptySet(), "192.168.1.21" to emptySet()),
+            netbios = { if (it.hostAddress == "192.168.1.20") throw IOException("boom") else NetBiosInfo("OTHER", null, null) }, reverseDns = { "h-" + it.hostAddress }))
+        assertNull(m["192.168.1.20"]!!.netbiosName); assertEquals("h-192.168.1.20", m["192.168.1.20"]!!.reverseDnsName); assertEquals("OTHER", m["192.168.1.21"]!!.netbiosName)
+    }
+    @Test fun `a throwing snmp leaves other hosts and lookups intact`() {
+        val m = merged(fake(sweep = sweepOf("192.168.1.20" to emptySet(), "192.168.1.21" to emptySet()),
+            snmp = { if (it.hostAddress == "192.168.1.20") throw IOException("boom") else SnmpInfo("Linux", null, null) }, reverseDns = { "h-" + it.hostAddress }))
+        assertNull(m["192.168.1.20"]!!.snmpSysDescr); assertEquals("h-192.168.1.20", m["192.168.1.20"]!!.reverseDnsName); assertEquals("Linux", m["192.168.1.21"]!!.snmpSysDescr)
+    }
+    @Test fun `a throwing deviceInfo keeps the mdns record`() {
+        val mdns = listOf(MdnsRecord(ip("192.168.1.42"), "A", "_smb._tcp", 445, emptyMap(), emptyList()), MdnsRecord(ip("192.168.1.43"), "B", "_smb._tcp", 445, emptyMap(), emptyList()))
+        val m = merged(fake(mdns = { _, _ -> mdns.asFlow() }, deviceInfo = { n, _ -> if (n == "A") throw IOException("boom") else mapOf("model" to "Mac1,1") }))
+        assertEquals("A", m["192.168.1.42"]!!.mdnsName); assertNull(m["192.168.1.42"]!!.mdnsTxt["_device-info._tcp"]); assertEquals("Mac1,1", m["192.168.1.43"]!!.mdnsTxt["_device-info._tcp"]!!["model"])
+    }
+    @Test fun `a throwing upnpFetch keeps the ssdp response`() {
+        val ssdp = listOf(SsdpResponse(ip("192.168.1.1"), "http://192.168.1.1/igd.xml", "Srv/1", "urn:x", null), SsdpResponse(ip("192.168.1.7"), "http://192.168.1.7/d.xml", "Srv/2", "urn:x", null))
+        val m = merged(fake(ssdp = { ssdp.asFlow() }, upnpFetch = { loc, _ -> if (loc.contains("192.168.1.1/")) throw IOException("boom") else UpnpDevice("Dev", "Acme", null, null, null, null) }))
+        assertEquals("Srv/1", m["192.168.1.1"]!!.upnpServer); assertNull(m["192.168.1.1"]!!.upnpManufacturer); assertEquals("Acme", m["192.168.1.7"]!!.upnpManufacturer)
+    }
+    @Test fun `a throwing neighbours call is recorded as unavailable`() {
+        val e = fake(neighbours = { throw IOException("jni") })
+        runBlocking { e.discover(env, DiscoveryOptions()).toList() }
+        assertEquals(false, e.status.value.neighbourAvailable)
+    }
+    @Test fun `cancelling the collector mid-discovery does not hang`() = runBlocking {
+        val hang = object : Sweep(HostProber(), 8) { override fun run(hosts: Sequence<Inet4Address>): Flow<Liveness> = flow { awaitCancellation() } }
+        val job = async(Dispatchers.Default) { fake(sweep = hang).discover(env, DiscoveryOptions()).toList() }
+        delay(200); job.cancel()
+        withTimeout(1000) { job.join() }
+        assertTrue(job.isCancelled)
+        try { job.await(); fail("expected cancellation") } catch (_: CancellationException) { }
+    }
+    @Test fun `every disabled strategy is never called`() {
+        val calls = java.util.concurrent.ConcurrentHashMap<String, Int>()
+        fun hit(k: String) { calls.merge(k, 1, Int::plus) }
+        val mdns = listOf(MdnsRecord(ip("192.168.1.9"), "x", "_http._tcp", 80, emptyMap(), emptyList()))
+        fun build() = fake(sweep = sweepOf("192.168.1.9" to setOf(80)), mdns = { _, _ -> hit("mdns"); mdns.asFlow() }, ssdp = { hit("ssdp"); emptyFlow() },
+            netbios = { hit("netbios"); null }, reverseDns = { hit("rdns"); null }, snmp = { hit("snmp"); null }, httpTitle = { _, _, _ -> hit("http"); null })
+        runBlocking { build().discover(env, DiscoveryOptions(mdns = false, ssdp = false, netbios = false, reverseDns = false, snmp = false, httpTitle = false)).toList() }
+        assertTrue("calls with all disabled: $calls", calls.isEmpty())
+        runBlocking { build().discover(env, DiscoveryOptions()).toList() }
+        assertEquals(setOf("mdns", "ssdp", "netbios", "rdns", "snmp", "http"), calls.keys)   // control: all fire when enabled
+    }
+    @Test fun `http title port choice is deterministic`() {
+        var port = -1
+        merged(fake(sweep = sweepOf("192.168.1.9" to setOf(8443, 443, 8080, 80)), httpTitle = { _, p, _ -> port = p; null }))
+        assertEquals(80, port)
     }
 }

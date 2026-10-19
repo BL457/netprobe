@@ -11,7 +11,7 @@ open class Sweep(
     private val dispatcherFactory: (Int) -> CoroutineDispatcher = { Dispatchers.IO.limitedParallelism(it) },
 ) {
     private val _progress = MutableStateFlow(0 to 0)
-    val progress: StateFlow<Pair<Int, Int>> = _progress
+    open val progress: StateFlow<Pair<Int, Int>> get() = _progress
 
     open fun run(hosts: Sequence<Inet4Address>): Flow<Liveness> = channelFlow {
         val list = hosts.toList()

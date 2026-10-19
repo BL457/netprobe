@@ -20,6 +20,17 @@ private suspend fun <T> softly(block: suspend () -> T?): T? = try {
     null
 }
 
+/** Runs one whole strategy; any failure ends that strategy only, so the others (and the neighbour dump) still run. Cancellation propagates. */
+private suspend fun isolated(block: suspend () -> Unit) {
+    try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        // strategy died; the rest of discovery carries on
+    }
+}
+
 class DiscoveryEngine(
     val sweepFactory: (HostProber, Int) -> Sweep,
     val mdns: (List<String>, Long) -> Flow<MdnsRecord>,
@@ -49,7 +60,7 @@ class DiscoveryEngine(
         val statusJob = launch { sweep.progress.collect { (p, t) -> _status.update { it.copy(probed = p, total = maxOf(t, it.total)) } } }
 
         coroutineScope {
-            if (options.mdns) launch {
+            if (options.mdns) launch { isolated {
                 val infoQueried = HashSet<String>()
                 mdns(mdnsTypes, options.mdnsDurationMs).collect { r ->
                     emit(DiscoveredHost(r.ip, mdnsName = r.instanceName, mdnsServiceTypes = setOf(r.type), mdnsTxt = mapOf(r.type to r.txt),
@@ -63,8 +74,8 @@ class DiscoveryEngine(
                         }
                     } }
                 }
-            }
-            if (options.ssdp) launch {
+            } }
+            if (options.ssdp) launch { isolated {
                 val fetched = HashSet<String>()
                 ssdp().collect { r ->
                     val usnMac = r.usn?.let { MacExtract.fromText(it) }
@@ -79,9 +90,9 @@ class DiscoveryEngine(
                     }
                     emit(h)
                 }
-            }
+            } }
             launch {
-                sweep.run(range.subnet.hosts()).collect { l ->
+                isolated { sweep.run(range.subnet.hosts()).collect { l ->
                     emit(DiscoveredHost(l.ip, probedOpenPorts = l.openPorts, sources = setOf(Source.SWEEP), isGateway = l.ip == env.gateway))
                     launch { enrich.withPermit {
                         var h = DiscoveredHost(l.ip)
@@ -89,12 +100,12 @@ class DiscoveryEngine(
                         if (options.reverseDns) softly { reverseDns(l.ip) }?.let { h = h.copy(reverseDnsName = it) }
                         if (options.snmp) softly { snmp(l.ip) }?.let { h = h.copy(snmpSysDescr = it.sysDescr, snmpSysName = it.sysName, snmpSysObjectId = it.sysObjectId, sources = h.sources + Source.SNMP) }
                         if (options.httpTitle) {
-                            val web = l.openPorts.firstOrNull { it in WEB_PORTS }
+                            val web = WEB_PORTS.firstOrNull { it in l.openPorts }
                             if (web != null) softly { httpTitle(l.ip, web, web in TLS_PORTS) }?.let { h = h.copy(httpTitle = it.title, httpServer = it.server, httpAuthRealm = it.authRealm, sources = h.sources + Source.HTTP) }
                         }
                         if (h != DiscoveredHost(l.ip)) emit(h)
                     } }
-                }
+                } }
                 // Sweep done: read the neighbour table once.
                 val neigh = withContext(Dispatchers.IO) {   // blocking JNI netlink round trip; discover may be collected on Main
                     try { neighbours() } catch (e: CancellationException) { throw e } catch (e: Exception) { Result.failure(e) }
@@ -106,6 +117,9 @@ class DiscoveryEngine(
                 }
             }
         }
+        // The collector sees a conflated StateFlow and may miss the last update, so flush it before cancelling.
+        val (probed, total) = sweep.progress.value
+        _status.update { it.copy(probed = probed, total = maxOf(total, it.total)) }
         statusJob.cancel()
     }
 
@@ -123,7 +137,7 @@ class DiscoveryEngine(
         }
         private const val MAX_DEVICE_INFO_QUERIES_PER_HOST = 3
         private const val ENRICHMENT_CONCURRENCY = 32
-        private val WEB_PORTS = setOf(80, 8080, 443, 8443)
+        private val WEB_PORTS = listOf(80, 8080, 443, 8443)
         private val TLS_PORTS = setOf(443, 8443)
     }
 }
