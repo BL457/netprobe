@@ -1,0 +1,6 @@
+{"totalResults":4,"vulnerabilities":[
+ {"cve":{"id":"CVE-V30","published":"2020-01-01T00:00:00.000","descriptions":[{"lang":"en","value":"v30 only"}],"metrics":{"cvssMetricV30":[{"cvssData":{"baseScore":7.5,"baseSeverity":"HIGH"}}]}}},
+ {"cve":{"id":"CVE-NONE","published":"2020-01-01T00:00:00.000","descriptions":[{"lang":"en","value":"no metrics"}]}},
+ {"cve":{"id":"CVE-EMPTY31","published":"2020-01-01T00:00:00.000","descriptions":[{"lang":"en","value":"empty v31"}],"metrics":{"cvssMetricV31":[],"cvssMetricV30":[{"cvssData":{"baseScore":5.5,"baseSeverity":"MEDIUM"}}]}}},
+ {"cve":{"id":"CVE-MIX","published":"2020-01-01T00:00:00.000","descriptions":[{"lang":"en","value":"mix"}],"metrics":{"cvssMetricV31":[{"cvssData":{"baseScore":8.1}}],"cvssMetricV2":[{"cvssData":{"baseScore":2.0},"baseSeverity":"LOW"}]}}}
+]}

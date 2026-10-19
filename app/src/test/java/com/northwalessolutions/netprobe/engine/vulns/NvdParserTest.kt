@@ -13,4 +13,13 @@ class NvdParserTest {
     }
     @Test fun `malformed yields null`() { assertNull(NvdParser.parse("{")); assertNull(NvdParser.parse("")); assertNull(NvdParser.parse("""{"vulnerabilities": "nope"}""")) }
     @Test fun `empty result list is ok`() { assertEquals(0 to 0, NvdParser.parse("""{"totalResults":0,"vulnerabilities":[]}""")!!.let { it.first.size to it.second }) }
+    @Test fun `metric fallbacks and score paired with severity`() {
+        val (v, _) = NvdParser.parse(javaClass.getResource("/fixtures/nvd_fallbacks.json")!!.readText())!!
+        val by = v.associateBy { it.cveId }
+        assertEquals(7.5, by["CVE-V30"]!!.cvss!!, 0.01); assertEquals("HIGH", by["CVE-V30"]!!.severity)
+        assertNull(by["CVE-NONE"]!!.cvss); assertEquals("UNKNOWN", by["CVE-NONE"]!!.severity)
+        assertEquals(5.5, by["CVE-EMPTY31"]!!.cvss!!, 0.01); assertEquals("MEDIUM", by["CVE-EMPTY31"]!!.severity)
+        // V31 has a score but no severity, V2 says LOW: severity must not be borrowed from V2 (policy: UNKNOWN)
+        assertEquals(8.1, by["CVE-MIX"]!!.cvss!!, 0.01); assertEquals("UNKNOWN", by["CVE-MIX"]!!.severity)
+    }
 }

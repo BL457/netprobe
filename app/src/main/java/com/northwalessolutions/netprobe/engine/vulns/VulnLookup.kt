@@ -53,7 +53,7 @@ class VulnLookup(
     }
 
     private suspend fun runOnce(q: VulnQuery): VulnResult {
-        val key = "${q::class.simpleName}:${q.text}"
+        val key = (if (q is VulnQuery.ByCpe) "cpe:" else "kw:") + q.text
         cache.get(key, ttlMs)?.let { (json, at) -> NvdParser.parse(json)?.let { (v, t) -> return VulnResult.Ok(v, t, fromCache = true, fetchedAt = at, queryText = q.text) } }
         val stale = cache.getAny(key)?.let { (json, at) -> NvdParser.parse(json)?.let { (v, t) -> VulnResult.Ok(v, t, true, at, q.text) } }
         val param = when (q) { is VulnQuery.ByCpe -> "cpeName="; is VulnQuery.ByKeyword -> "keywordSearch=" } + URLEncoder.encode(q.text, "UTF-8")

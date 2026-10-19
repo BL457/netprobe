@@ -19,9 +19,11 @@ object NvdParser {
             val id = cve["id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val metrics = cve["metrics"]?.jsonObject
             fun first(key: String) = metrics?.get(key)?.jsonArray?.firstOrNull()?.jsonObject
-            val m31 = first("cvssMetricV31") ?: first("cvssMetricV30"); val m2 = first("cvssMetricV2")
-            val score = (m31 ?: m2)?.get("cvssData")?.jsonObject?.get("baseScore")?.jsonPrimitive?.doubleOrNull
-            val severity = m31?.get("cvssData")?.jsonObject?.get("baseSeverity")?.jsonPrimitive?.contentOrNull ?: m2?.get("baseSeverity")?.jsonPrimitive?.contentOrNull ?: "UNKNOWN"
+            // Pick one metric (V31, else V30, else V2) and read score and severity from it, so they never mix across versions.
+            val v3 = first("cvssMetricV31") ?: first("cvssMetricV30"); val m = v3 ?: first("cvssMetricV2")
+            val data = m?.get("cvssData")?.jsonObject
+            val score = data?.get("baseScore")?.jsonPrimitive?.doubleOrNull
+            val severity = (if (v3 != null) data?.get("baseSeverity") else m?.get("baseSeverity"))?.jsonPrimitive?.contentOrNull ?: "UNKNOWN"
             val summary = cve["descriptions"]?.jsonArray?.firstOrNull { it.jsonObject["lang"]?.jsonPrimitive?.content == "en" }?.jsonObject?.get("value")?.jsonPrimitive?.content ?: ""
             Vuln(id, score, severity, cve["published"]?.jsonPrimitive?.contentOrNull ?: "", summary, "https://nvd.nist.gov/vuln/detail/$id")
         }.sortedByDescending { it.cvss ?: -1.0 }
@@ -33,6 +35,7 @@ class UrlHttpGet(private val timeoutMs: Int = 15_000) : HttpGet {
     override suspend fun get(url: String, headers: Map<String, String>): Pair<Int, String> = runInterruptible(Dispatchers.IO) {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
+            c.instanceFollowRedirects = false   // never let the apiKey header follow a redirect
             c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
             c.setRequestProperty("User-Agent", "NetProbe/0.1")
             val code = c.responseCode

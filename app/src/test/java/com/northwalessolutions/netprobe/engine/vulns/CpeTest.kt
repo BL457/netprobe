@@ -19,4 +19,8 @@ class CpeTest {
         assertNull(Cpe.forService(map, ServiceInfo("HTTP", "nginx", null, null, Confidence.CONFIRMED)))
         assertNull(Cpe.forService(map, ServiceInfo("HTTP", "GoAhead-Webs", "1.0", null, Confidence.CONFIRMED)))
     }
+    @Test fun `version with unsafe characters yields no cpe`() {
+        assertNull(Cpe.forService(map, ServiceInfo("HTTP", "nginx", "1.2 beta", null, Confidence.CONFIRMED)))
+        assertNull(Cpe.forService(map, ServiceInfo("HTTP", "nginx", "1.2:*", null, Confidence.CONFIRMED)))
+    }
 }

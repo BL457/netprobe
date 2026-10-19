@@ -53,7 +53,7 @@ class VulnLookupTest {
         l.run(VulnQuery.ByKeyword("TP-Link Archer AX55")); assertTrue(seenUrl.contains("keywordSearch=TP-Link+Archer+AX55") || seenUrl.contains("keywordSearch=TP-Link%20Archer%20AX55"))
     }
     @Test fun `offline with cache serves cache and says so`() = runBlocking {
-        val cache = FakeCache(); cache.store["ByKeyword:kw"] = json to (System.currentTimeMillis() - 48 * 3600_000)   // stale
+        val cache = FakeCache(); cache.store["kw:kw"] = json to (System.currentTimeMillis() - 48 * 3600_000)   // stale
         val l = VulnLookup({ _, _ -> throw IOException("no network") }, cache, { null }, cpeMap)
         val r = l.run(VulnQuery.ByKeyword("kw")) as VulnResult.Failed
         assertEquals("Offline", r.reason); assertEquals(2, r.cached!!.vulns.size); assertTrue(r.cached!!.fromCache)
@@ -67,5 +67,37 @@ class VulnLookupTest {
     @Test fun `cancellation propagates instead of becoming Offline`() {
         val l = VulnLookup({ _, _ -> throw kotlinx.coroutines.CancellationException("c") }, FakeCache(), { null }, cpeMap)
         try { runBlocking { l.run(VulnQuery.ByKeyword("x")) }; fail("expected cancellation") } catch (_: kotlinx.coroutines.CancellationException) {}
+    }
+
+    private fun staleCache(key: String) = FakeCache().also { it.store[key] = json to (System.currentTimeMillis() - 48 * 3600_000) }
+
+    @Test fun `no key sends no headers and only the nvd host`() = runBlocking {
+        for (k in listOf<String?>(null, "", "   ")) {
+            var url = ""; var hdrs: Map<String, String>? = null
+            VulnLookup({ u, h -> url = u; hdrs = h; 200 to json }, FakeCache(), { k }, cpeMap).run(VulnQuery.ByKeyword("x"))
+            assertTrue(hdrs!!.isEmpty()); assertTrue(url.startsWith("https://services.nvd.nist.gov/")); assertTrue(url.contains("resultsPerPage=50"))
+        }
+    }
+    @Test fun `key is sent only as the apiKey header and never in the url`() = runBlocking {
+        var url = ""; var hdrs: Map<String, String>? = null
+        VulnLookup({ u, h -> url = u; hdrs = h; 200 to json }, FakeCache(), { "SECRETKEY" }, cpeMap).run(VulnQuery.ByKeyword("x"))
+        assertEquals(mapOf("apiKey" to "SECRETKEY"), hdrs); assertFalse(url.contains("SECRETKEY"))
+    }
+    @Test fun `http 500 fails with status and stale cache is attached for 429, 500 and malformed`() = runBlocking {
+        val r500 = VulnLookup({ _, _ -> 500 to "" }, FakeCache(), { null }, cpeMap).run(VulnQuery.ByKeyword("kw")) as VulnResult.Failed
+        assertEquals("NVD returned HTTP 500", r500.reason); assertNull(r500.cached)
+        for (resp in listOf(429 to "", 500 to "", 200 to "<html>")) {
+            val r = VulnLookup({ _, _ -> resp }, staleCache("kw:kw"), { null }, cpeMap).run(VulnQuery.ByKeyword("kw")) as VulnResult.Failed
+            assertNotNull("stale for $resp", r.cached); assertEquals(2, r.cached!!.vulns.size)
+        }
+    }
+    @Test fun `cache older than ttl hits network and younger is served without it`() = runBlocking {
+        var calls = 0
+        val old = staleCache("kw:kw")
+        val r1 = VulnLookup({ _, _ -> calls++; 200 to json }, old, { null }, cpeMap).run(VulnQuery.ByKeyword("kw")) as VulnResult.Ok
+        assertFalse(r1.fromCache); assertEquals(1, calls)
+        val fresh = FakeCache().also { it.store["kw:kw"] = json to (System.currentTimeMillis() - 23 * 3600_000) }
+        val r2 = VulnLookup({ _, _ -> calls++; 200 to json }, fresh, { null }, cpeMap).run(VulnQuery.ByKeyword("kw")) as VulnResult.Ok
+        assertTrue(r2.fromCache); assertEquals(1, calls)
     }
 }
