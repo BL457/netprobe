@@ -18,7 +18,9 @@ class HomeScreenTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     @Test fun scanButtonAndFiltersArePresentAndPinned() {
         rule.onNodeWithTag("scanButton").assertIsDisplayed()
-        rule.onNodeWithText("All").assertIsDisplayed(); rule.onNodeWithText("Interesting").assertIsDisplayed()
+        // Scoped to the filter row: rows on a real LAN can carry "Interesting" status chips too.
+        val chips = rule.onNodeWithTag("filterRow").onChildren()
+        chips.filterToOne(hasText("All")).assertIsDisplayed(); chips.filterToOne(hasText("Interesting")).assertIsDisplayed()
         rule.onNodeWithTag("search").assertIsDisplayed()
     }
     private fun onLan(): Boolean {

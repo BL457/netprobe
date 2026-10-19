@@ -12,7 +12,7 @@ coroutines = "1.10.2"
 serialization = "1.8.1"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
-espresso = "3.6.1"
+espresso = "3.7.0"
 turbine = "1.2.0"
 
 [libraries]

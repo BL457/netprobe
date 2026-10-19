@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.northwalessolutions.netprobe.data.HostStatus
@@ -51,7 +52,7 @@ fun NetworkPanel(env: NetworkEnv?, networkName: String?) {
 
 @Composable
 fun FilterRow(selected: StatusFilter, onSelect: (StatusFilter) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.fillMaxWidth().testTag("filterRow").horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         StatusFilter.entries.forEach { f -> FilterChip(selected = f == selected, onClick = { onSelect(f) }, label = { Text(f.label) }) }
     }
 }
