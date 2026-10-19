@@ -25,7 +25,8 @@ object SyntheticEvidence {
             "httpServer" -> ev(h.copy(httpServer = sample))
             "hostname" -> ev(h.copy(reverseDnsName = sample))
             "netbiosName" -> ev(h.copy(netbiosName = sample))
-            "sshBanner" -> ev(h, services = mapOf(22 to ServiceInfo("SSH", "OpenSSH", null, sample, Confidence.CONFIRMED)))
+            // The rule reads product and detail; the parser puts the software token (for example OpenSSH_for_Windows) in product.
+            "sshBanner" -> ev(h, services = mapOf(22 to ServiceInfo("SSH", sample, null, sample, Confidence.CONFIRMED)))
             "ports", "anyPort" -> ev(h, ports = (r.ports ?: r.anyPort).orEmpty().toSet())
             "gateway" -> ev(h.copy(isGateway = true))
             else -> error("no synthetic evidence for field ${r.field} (rule ${r.id})")

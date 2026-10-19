@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.engine.serviceid
 
 object BannerParsers {
+    const val OPENSSH_WINDOWS = "OpenSSH_for_Windows"
     private val versionRe = Regex("(\\d+(?:\\.\\d+)+[A-Za-z0-9]*)")
 
     fun ssh(line: String): ServiceInfo? {
@@ -10,8 +11,10 @@ object BannerParsers {
         if (rest.isEmpty()) return ServiceInfo("SSH", confidence = Confidence.CONFIRMED)
         val soft = rest.substringBefore(' ')
         val comment = rest.substringAfter(' ', "").ifBlank { null }
-        val product = soft.substringBefore('_').ifBlank { null }
-        val version = soft.substringAfter('_', "").ifBlank { null }
+        // Microsoft's port announces itself as "OpenSSH_for_Windows_8.1"; split on the last underscore of that prefix, not the first.
+        val windows = soft.startsWith(OPENSSH_WINDOWS + "_")
+        val product = if (windows) OPENSSH_WINDOWS else soft.substringBefore('_').ifBlank { null }
+        val version = (if (windows) soft.removePrefix(OPENSSH_WINDOWS + "_") else soft.substringAfter('_', "")).ifBlank { null }
         return ServiceInfo("SSH", product, version, comment, Confidence.CONFIRMED)
     }
 

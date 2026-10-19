@@ -33,8 +33,17 @@ fun HostStatus.label(): String = when (this) {
     HostStatus.UNMARKED -> "Unmarked"; HostStatus.INTERESTING -> "Interesting"; HostStatus.INVESTIGATED -> "Investigated"; HostStatus.IGNORED -> "Ignored"
 }
 
+private const val DNS_SHOWN = 2
+
+/** Second panel line: address, gateway and the first two DNS servers (spec 2.1 item 7). */
+fun networkDetailLine(env: NetworkEnv): String {
+    val dns = env.dnsServers.take(DNS_SHOWN).mapNotNull { it.hostAddress }.joinToString(", ")
+    val base = "${env.interfaceIp.hostAddress}/${env.prefixLength}  gateway ${env.gateway?.hostAddress ?: "none"}"
+    return if (dns.isEmpty()) base else "$base  dns $dns"
+}
+
 @Composable
-fun NetworkPanel(env: NetworkEnv?, networkName: String?) {
+fun NetworkPanel(env: NetworkEnv?, networkName: String?, onRequestLocation: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
         if (env == null) {
             Text("No network", style = MaterialTheme.typography.titleMedium)
@@ -45,9 +54,13 @@ fun NetworkPanel(env: NetworkEnv?, networkName: String?) {
         // networkName is the SSID when Android reveals it (location permission), else the gateway; only the SSID is a name.
         val name = networkName?.takeIf { it == env.ssid } ?: transport
         val needsLocation = env.ssid == null && env.transport == Transport.WIFI
-        Text(if (needsLocation) "Wi-Fi (name needs location, see Settings)" else if (name == transport) name else "$name · $transport", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("${env.interfaceIp.hostAddress}/${env.prefixLength}  gateway ${env.gateway?.hostAddress ?: "none"}",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (needsLocation) {
+            Text("Wi-Fi (tap to show the name, needs location)", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable(onClick = onRequestLocation).testTag("wifiNameHint"))
+        } else {
+            Text(if (name == transport) name else "$name · $transport", style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(networkDetailLine(env), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

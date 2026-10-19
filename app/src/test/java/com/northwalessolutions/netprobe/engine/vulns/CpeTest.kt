@@ -19,6 +19,11 @@ class CpeTest {
         assertNull(Cpe.forService(map, ServiceInfo("HTTP", "nginx", null, null, Confidence.CONFIRMED)))
         assertNull(Cpe.forService(map, ServiceInfo("HTTP", "GoAhead-Webs", "1.0", null, Confidence.CONFIRMED)))
     }
+    @Test fun `openssh for windows maps to the openssh cpe`() {
+        assertEquals("cpe:2.3:a:openbsd:openssh:8.1:*:*:*:*:*:*:*", Cpe.forService(map, ServiceInfo("SSH", "OpenSSH_for_Windows", "8.1", null, Confidence.CONFIRMED)))
+        val parsed = com.northwalessolutions.netprobe.engine.serviceid.BannerParsers.ssh("SSH-2.0-OpenSSH_for_Windows_9.5")!!
+        assertEquals("cpe:2.3:a:openbsd:openssh:9.5:*:*:*:*:*:*:*", Cpe.forService(map, parsed))
+    }
     @Test fun `version with unsafe characters yields no cpe`() {
         assertNull(Cpe.forService(map, ServiceInfo("HTTP", "nginx", "1.2 beta", null, Confidence.CONFIRMED)))
         assertNull(Cpe.forService(map, ServiceInfo("HTTP", "nginx", "1.2:*", null, Confidence.CONFIRMED)))

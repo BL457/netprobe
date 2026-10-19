@@ -70,6 +70,11 @@ class DeviceIdentifierTest {
         assertEquals("Home Assistant", id.identify(ev(ports = setOf(8123))).model)
         assertEquals("Proxmox VE", id.identify(ev(DiscoveredHost(ip, httpTitle = "pve - Proxmox Virtual Environment"))).model)
     }
+    @Test fun `ssh-windows fires on a parsed windows banner`() {
+        val svc = com.northwalessolutions.netprobe.engine.serviceid.BannerParsers.ssh("SSH-2.0-OpenSSH_for_Windows_8.1")!!
+        val r = id.identify(ev(services = mapOf(22 to svc)))
+        assertEquals("Windows", r.os); assertTrue(r.reasons.any { it.contains("OpenSSH_for_Windows") })
+    }
     @Test fun `ssh banner os`() {
         val r = id.identify(ev(services = mapOf(22 to ServiceInfo("SSH", "OpenSSH", "9.6p1", "Ubuntu-3ubuntu13", Confidence.CONFIRMED))))
         assertEquals("Linux (Ubuntu)", r.os)

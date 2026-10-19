@@ -11,6 +11,13 @@ class BannerParsersTest {
         assertEquals("dropbear", BannerParsers.ssh("SSH-2.0-dropbear_2022.83")!!.product)
         assertNull(BannerParsers.ssh("220 hello"))
     }
+    @Test fun `openssh for windows banner splits product and version`() {
+        val w = BannerParsers.ssh("SSH-2.0-OpenSSH_for_Windows_8.1")!!
+        assertEquals("OpenSSH_for_Windows", w.product); assertEquals("8.1", w.version); assertNull(w.detail)
+        val p = BannerParsers.ssh("SSH-2.0-OpenSSH_9.6p1")!!
+        assertEquals("OpenSSH", p.product); assertEquals("9.6p1", p.version)
+        assertNull(BannerParsers.ssh("SSH-2.0-OpenSSH_for_Windows_")!!.version)
+    }
     @Test fun `ftp and smtp greetings`() {
         val f = BannerParsers.greeting("220 ProFTPD 1.3.8 Server (Debian) [::ffff:10.0.0.5]", "FTP")!!
         assertEquals("FTP", f.name); assertEquals("ProFTPD", f.product); assertEquals("1.3.8", f.version)
