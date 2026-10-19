@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+ <specVersion><major>1</major><minor>0</minor></specVersion>
+ <device>
+  <deviceType>urn:schemas-upnp-org:device:InternetGatewayDevice:1</deviceType>
+  <friendlyName>Archer AX55</friendlyName>
+  <manufacturer>TP-Link</manufacturer>
+  <modelName>Archer AX55</modelName>
+  <modelNumber>1.0</modelNumber>
+  <UDN>uuid:12345678-1234-1234-1234-aabbccddeeff</UDN>
+  <deviceList><device><deviceType>urn:schemas-upnp-org:device:WANDevice:1</deviceType><friendlyName>WANDevice</friendlyName></device></deviceList>
+ </device>
+</root>

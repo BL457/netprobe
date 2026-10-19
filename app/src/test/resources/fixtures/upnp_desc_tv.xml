@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+ <specVersion><major>1</major><minor>0</minor></specVersion>
+ <device>
+  <deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
+  <friendlyName>[TV] Samsung Q80</friendlyName>
+  <manufacturer>Samsung Electronics</manufacturer>
+  <modelName>QE55Q80</modelName>
+  <modelNumber>1.0</modelNumber>
+  <UDN>uuid:87654321-1234-1234-1234-112233445566</UDN>
+  <deviceList><device><deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType><friendlyName>Embedded</friendlyName></device></deviceList>
+ </device>
+</root>
