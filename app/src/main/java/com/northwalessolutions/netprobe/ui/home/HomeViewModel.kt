@@ -30,7 +30,9 @@ object IdentityLine {
     val DeviceType.label: String get() = when (this) { DeviceType.ROUTER -> "Router"; DeviceType.PHONE -> "Phone"; DeviceType.COMPUTER -> "Computer"; DeviceType.PRINTER -> "Printer"
         DeviceType.MEDIA -> "Media"; DeviceType.IOT -> "IoT"; DeviceType.NAS -> "NAS"; DeviceType.CAMERA -> "Camera"; DeviceType.SERVER -> "Server"; DeviceType.UNKNOWN -> "" }
     fun of(vendor: String?, model: String?, os: String?, type: DeviceType, onlyMdns: Boolean): String {
-        val vm = listOfNotNull(vendor, model).joinToString(" ").trim(); if (vm.isNotEmpty()) return vm
+        // Models such as "Google Nest Hub" already start with the vendor; do not print it twice.
+        val v = vendor?.takeUnless { model != null && model.startsWith(it, ignoreCase = true) }
+        val vm = listOfNotNull(v, model).joinToString(" ").trim(); if (vm.isNotEmpty()) return vm
         val ot = listOfNotNull(os, type.label.takeIf { it.isNotEmpty() }).joinToString(" ").trim(); if (ot.isNotEmpty()) return ot
         return if (onlyMdns) "Unknown device, found via mDNS" else "Unknown device"
     }

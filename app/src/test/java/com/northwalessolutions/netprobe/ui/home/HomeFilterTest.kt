@@ -30,4 +30,9 @@ class HomeFilterTest {
         assertEquals("Unknown device, found via mDNS", IdentityLine.of(null, null, null, DeviceType.UNKNOWN, onlyMdns = true))
         assertEquals("Unknown device", IdentityLine.of(null, null, null, DeviceType.UNKNOWN, onlyMdns = false))
     }
+    // Fix round 1: the googlecast md= model already carries the vendor ("Google Nest Hub"); do not show "Google Google Nest Hub".
+    @Test fun `vendor is not repeated when the model starts with it`() {
+        assertEquals("Google Nest Hub", IdentityLine.of("Google", "Google Nest Hub", null, DeviceType.MEDIA, onlyMdns = false))
+        assertEquals("Google Chromecast", IdentityLine.of("Google", "Chromecast", null, DeviceType.MEDIA, onlyMdns = false))
+    }
 }

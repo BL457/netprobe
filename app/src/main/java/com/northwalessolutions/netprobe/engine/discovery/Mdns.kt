@@ -9,6 +9,9 @@ import java.net.Inet4Address
 data class MdnsRecord(val ip: Inet4Address, val instanceName: String, val type: String, val port: Int,
                       val txt: Map<String, String>, val ipv6: List<String>)
 
+/** Android NSD reports types as "._googlecast._tcp" (and sometimes with a trailing dot); rules and evidence use "_googlecast._tcp". */
+object MdnsType { fun normalise(type: String): String = type.trim('.') }
+
 /** A discovered-but-unresolved service. [handle] carries the platform object (the NsdServiceInfo from onServiceFound). */
 data class NsdFound(val name: String, val type: String, val handle: Any? = null)
 
@@ -32,7 +35,7 @@ class MdnsResolveQueue(private val source: NsdSource, private val perResolveTime
                 val rec = withTimeoutOrNull(perResolveTimeoutMs) {
                     try { source.resolve(found) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
                 }
-                if (rec != null) send(rec)
+                if (rec != null) send(rec.copy(type = MdnsType.normalise(rec.type)))
             }
         }
         try {

@@ -4,6 +4,7 @@ import android.database.sqlite.SQLiteConstraintException
 import androidx.room.withTransaction
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
 import com.northwalessolutions.netprobe.engine.discovery.MacSource
+import com.northwalessolutions.netprobe.engine.discovery.MdnsType
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentity
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
@@ -16,6 +17,7 @@ import java.net.InetAddress
 
 private fun parseTxt(json: String?): Map<String, Map<String, String>> =
     json?.let { runCatching { Json.decodeFromString<Map<String, Map<String, String>>>(it) }.getOrNull() }.orEmpty()
+        .mapKeys { (k, _) -> MdnsType.normalise(k) }   // rows written before the NSD leading-dot fix stored "._type._tcp"
 
 /** Rank 1 is shared by NAME and EUI64; they merge identically, so NAME stands in for both. */
 private fun macSourceOf(rank: Int): MacSource? = when (rank) {

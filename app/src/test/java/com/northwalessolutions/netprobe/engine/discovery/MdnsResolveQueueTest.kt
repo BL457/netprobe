@@ -53,4 +53,15 @@ class MdnsResolveQueueTest {
         val out = MdnsResolveQueue(src, perResolveTimeoutMs = 500).run(listOf("_ssh._tcp"), durationMs = 100).toList()
         assertEquals(listOf("ok"), out.map { it.instanceName })
     }
+    // Fix round 1: Android NSD reports "._googlecast._tcp" (leading dot); identify rules and port evidence key on "_googlecast._tcp".
+    @Test fun `android style dotted service types are normalised`() = runBlocking {
+        val src = object : NsdSource {
+            override fun discover(type: String, onFound: (NsdFound) -> Unit, onLost: (String) -> Unit): AutoCloseable { onFound(NsdFound("Google-Nest-Hub-1", type)); return AutoCloseable { } }
+            override suspend fun resolve(found: NsdFound): MdnsRecord? =
+                MdnsRecord(InetAddress.getByName("10.0.3.196") as Inet4Address, found.name, "._googlecast._tcp.", 8009, mapOf("md" to "Google Nest Hub"), emptyList())
+        }
+        val out = MdnsResolveQueue(src).run(listOf("_googlecast._tcp"), durationMs = 50).toList()
+        assertEquals(listOf("_googlecast._tcp"), out.map { it.type })
+        assertEquals("_googlecast._tcp", MdnsType.normalise("._googlecast._tcp"))
+    }
 }

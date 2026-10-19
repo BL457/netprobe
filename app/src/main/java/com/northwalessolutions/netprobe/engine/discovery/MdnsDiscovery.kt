@@ -19,7 +19,7 @@ class AndroidNsdSource(context: Context) : NsdSource {
             override fun onDiscoveryStopped(t: String) {}
             override fun onStartDiscoveryFailed(t: String, code: Int) {}
             override fun onStopDiscoveryFailed(t: String, code: Int) {}
-            override fun onServiceFound(info: NsdServiceInfo) { onFound(NsdFound(info.serviceName, info.serviceType.trimEnd('.'), info)) }
+            override fun onServiceFound(info: NsdServiceInfo) { onFound(NsdFound(info.serviceName, MdnsType.normalise(info.serviceType), info)) }
             override fun onServiceLost(info: NsdServiceInfo) { onLost(info.serviceName) }
         }
         runCatching { nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener) }
@@ -38,7 +38,7 @@ class AndroidNsdSource(context: Context) : NsdSource {
                 val v4 = addrs.filterIsInstance<Inet4Address>().firstOrNull()
                 val v6 = addrs.filterIsInstance<Inet6Address>().map { it.hostAddress.substringBefore('%') }
                 val txt = i.attributes.mapValues { (_, v) -> v?.let { String(it, Charsets.UTF_8) } ?: "" }
-                if (cont.isActive) cont.resume(v4?.let { MdnsRecord(it, i.serviceName, i.serviceType.trimEnd('.'), i.port, txt, v6) })
+                if (cont.isActive) cont.resume(v4?.let { MdnsRecord(it, i.serviceName, MdnsType.normalise(i.serviceType), i.port, txt, v6) })
             }
         })
     }

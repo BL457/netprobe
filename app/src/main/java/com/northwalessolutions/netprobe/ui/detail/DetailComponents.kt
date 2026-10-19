@@ -1,6 +1,8 @@
 package com.northwalessolutions.netprobe.ui.detail
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
@@ -13,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.HostStatus
@@ -79,7 +82,9 @@ fun StatusSelector(current: HostStatus, onSelect: (HostStatus) -> Unit) {
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         options.forEachIndexed { i, st ->
             SegmentedButton(selected = st == current, onClick = { onSelect(st) }, shape = SegmentedButtonDefaults.itemShape(i, options.size), icon = {}) {
-                Text(st.label(), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Shrinks to fit instead of ellipsizing ("Investigated" clipped at the Pixel's 1.15 font scale).
+                BasicText(st.label(), style = MaterialTheme.typography.labelMedium.copy(color = LocalContentColor.current), maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = MaterialTheme.typography.labelMedium.fontSize))
             }
         }
     }
