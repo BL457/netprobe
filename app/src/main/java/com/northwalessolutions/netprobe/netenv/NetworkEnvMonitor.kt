@@ -29,6 +29,7 @@ class NetworkEnvMonitor(private val context: Context) {
         awaitClose { cm.unregisterNetworkCallback(cb) }
     }.distinctUntilChanged()
 
+    @Suppress("DEPRECATION")
     fun current(): NetworkEnv? {
         // Prefer a Wi-Fi or Ethernet network even when a VPN is the active default.
         val candidates = cm.allNetworks.mapNotNull { n ->

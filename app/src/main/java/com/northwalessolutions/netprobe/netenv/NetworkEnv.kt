@@ -22,8 +22,9 @@ object NetworkEnvMapper {
         val transport = when { s.isWifi -> Transport.WIFI; s.isEthernet -> Transport.ETHERNET; else -> return null }
         val (ip, prefix) = s.addresses.firstOrNull { it.first is Inet4Address && !it.first.isLoopbackAddress } ?: return null
         val gw = s.routes.firstOrNull { it.second && it.first is Inet4Address }?.first as Inet4Address?
-        val ssid = s.ssid?.trim('"')?.takeUnless { it.isBlank() || it == "<unknown ssid>" }
-        val bssid = s.bssid?.takeUnless { it == "02:00:00:00:00:00" || it.isBlank() }
+        val isWifi = transport == Transport.WIFI
+        val ssid = s.ssid?.takeIf { isWifi }?.trim('"')?.takeUnless { it.isBlank() || it == "<unknown ssid>" }
+        val bssid = s.bssid?.takeIf { isWifi }?.takeUnless { it == "02:00:00:00:00:00" || it.isBlank() }
         return NetworkEnv(ip as Inet4Address, prefix, gw, s.dns, ssid, bssid, transport)
     }
 }

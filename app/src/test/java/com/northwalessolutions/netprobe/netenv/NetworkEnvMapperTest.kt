@@ -28,6 +28,10 @@ class NetworkEnvMapperTest {
         val env = NetworkEnvMapper.map(wifi.copy(isWifi = false, isEthernet = true, ssid = null, bssid = null))!!
         assertEquals(Transport.ETHERNET, env.transport)
     }
+    @Test fun `ethernet never carries wifi ids`() {
+        val env = NetworkEnvMapper.map(wifi.copy(isWifi = false, isEthernet = true))!!
+        assertNull(env.ssid); assertNull(env.bssid)
+    }
     @Test fun `no ipv4 address yields null`() {
         assertNull(NetworkEnvMapper.map(wifi.copy(addresses = listOf(a("fe80::1") to 64))))
     }
