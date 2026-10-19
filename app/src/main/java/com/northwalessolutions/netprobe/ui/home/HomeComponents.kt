@@ -62,7 +62,7 @@ fun HostRowItem(r: HostRow, onClick: () -> Unit) {
         modifier = Modifier.clickable(onClick = onClick).alpha(if (r.stale) STALE_ALPHA else 1f),
         leadingContent = { Icon(r.type.icon(), contentDescription = null) },
         headlineContent = { Text(r.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text("${r.ip}  ·  ${r.identityLine}", maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        supportingContent = { Text(if (r.displayName == r.ip) r.identityLine else "${r.ip}  ·  ${r.identityLine}", maxLines = 2, overflow = TextOverflow.Ellipsis) },
         trailingContent = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (r.isGateway) Text("Gateway", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)

@@ -53,4 +53,23 @@ class HomeViewModelTest {
         env.value = TestEnvs.office; runCurrent()
         assertFalse(c.state.value.scanning); assertEquals("Network changed, scan stopped", c.state.value.message)
     }
+    // Fix round 1: a cancelled run may still be releasing locks; the next run must not start its work until that cleanup has finished.
+    @Test fun `a new scan waits for the previous run's cleanup before starting`() = runTest {
+        val env = MutableStateFlow<NetworkEnv?>(TestEnvs.home)
+        val events = mutableListOf<String>()
+        var run = 0
+        val c = ScanController(scope = backgroundScope, env = env, runDiscovery = {
+            val n = ++run
+            events += "acquire$n"
+            try { kotlinx.coroutines.awaitCancellation() } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { kotlinx.coroutines.delay(100) }   // slow IO teardown
+                events += "release$n"
+            }
+        })
+        c.start(); runCurrent(); c.stop(); c.start(); runCurrent()
+        assertEquals(listOf("acquire1"), events)   // run 2 is parked until run 1 has finished its finally
+        advanceTimeBy(200); runCurrent()
+        assertEquals(listOf("acquire1", "release1", "acquire2"), events)
+        assertTrue(c.state.value.scanning)
+    }
 }

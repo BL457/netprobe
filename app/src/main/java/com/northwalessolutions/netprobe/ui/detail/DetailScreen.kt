@@ -15,7 +15,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.northwalessolutions.netprobe.AppContainer
-import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.ui.EmptyState
 import com.northwalessolutions.netprobe.ui.vulns.VulnSheet
 
@@ -49,5 +48,5 @@ fun DetailScreen(container: AppContainer, hostId: Long, onBack: () -> Unit) {
             items(s.ports, key = { it.port }) { p -> PortRowItem(p, onAction = vm::runAction, onVulns = { vm.lookupVulnsForService(p.port) }); HorizontalDivider() }
         }
     }
-    s.vuln?.let { VulnSheet(it, onClose = vm::closeVulns, onRerun = vm::rerunVulnQuery, onOpen = { url -> vm.runAction(DeviceAction.OpenUri("Open", url, true)) }) }
+    s.vuln?.let { VulnSheet(it, onClose = vm::closeVulns, onRerun = vm::rerunVulnQuery, onOpen = vm::openLink) }
 }

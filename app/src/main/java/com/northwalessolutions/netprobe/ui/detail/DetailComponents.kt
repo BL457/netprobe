@@ -40,7 +40,13 @@ fun EditableName(name: String, customName: String?, onRename: (String?) -> Unit)
             onDismissRequest = { editing = false },
             title = { Text("Rename device") },
             text = { OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Name") }) },
-            confirmButton = { TextButton({ onRename(text); editing = false }) { Text("Save") } },
+            confirmButton = {
+                TextButton({
+                    // Blank, or the discovered name left unchanged, is not a custom name: store null so "Reset" only appears for real renames.
+                    val t = text.trim()
+                    onRename(if (t.isEmpty() || (customName == null && t == name)) null else t); editing = false
+                }) { Text("Save") }
+            },
             dismissButton = {
                 Row {
                     if (customName != null) TextButton({ onRename(null); editing = false }) { Text("Reset") }

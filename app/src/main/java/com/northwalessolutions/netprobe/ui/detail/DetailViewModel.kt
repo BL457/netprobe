@@ -86,12 +86,18 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
 
     fun stopScan() { scanJob?.cancel(); scanJob = null; scanning.value = false }
     fun setStatus(s: HostStatus) { viewModelScope.launch { c.hosts.setStatus(hostId, s) } }
-    fun setNote(n: String) { viewModelScope.launch { c.hosts.setNote(hostId, n) } }
+    /** NonCancellable job: the last save fires as the screen leaves, when viewModelScope is about to be (or already is) cancelled. */
+    fun setNote(n: String) { viewModelScope.launch(NonCancellable) { c.hosts.setNote(hostId, n) } }
     fun setCustomName(n: String?) { viewModelScope.launch { c.hosts.setCustomName(hostId, n) } }
     fun runAction(a: DeviceAction) {
         if (c.actionRunner.run(a)) return
         c.actionRunner.run(DeviceAction.Copy("Copy IP", state.value.host?.ip ?: ""))
         message.value = "No app installed for that link. IP copied instead."
+    }
+    fun openLink(url: String) {
+        if (c.actionRunner.run(DeviceAction.OpenUri("Open", url, true))) return
+        c.actionRunner.run(DeviceAction.Copy("Copy link", url))
+        message.value = "No browser found. Link copied."
     }
     fun dismissMessage() { message.value = null }
 

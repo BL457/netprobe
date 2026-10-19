@@ -21,11 +21,13 @@ class ScanController(private val scope: CoroutineScope, private val env: StateFl
         val e = env.value ?: run { _state.value = State(false, NO_NETWORK); return }
         if (job?.isActive == true) return
         val gen = ++generation
+        val prev = job   // may still be cancelling: its finally (lock release, status writes) must finish before this run starts
         val sig = NetworkSignature.of(e)
         _state.value = State(scanning = true)
         // LAZY so both handles exist before the body can run (viewModelScope dispatches immediately).
         val j = scope.launch(start = CoroutineStart.LAZY) {
             try {
+                prev?.join()
                 runDiscovery(e)
             } catch (ce: CancellationException) {
                 throw ce
