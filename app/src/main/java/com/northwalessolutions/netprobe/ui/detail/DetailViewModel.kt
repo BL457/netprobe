@@ -6,13 +6,16 @@ import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentity
-import com.northwalessolutions.netprobe.engine.identify.HostEvidence
+import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
 import com.northwalessolutions.netprobe.engine.portscan.*
 import com.northwalessolutions.netprobe.engine.serviceid.Evidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
+import com.northwalessolutions.netprobe.netenv.NetworkEnv
+import com.northwalessolutions.netprobe.ui.home.RowRules
+import com.northwalessolutions.netprobe.ui.home.ScanController
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
@@ -27,42 +30,31 @@ data class DetailUiState(val host: HostEntity? = null, val displayName: String =
 
 class DetailViewModel(private val c: AppContainer, private val hostId: Long) : ViewModel() {
     private val profile = MutableStateFlow<ScanProfile>(ScanProfile.Quick); private val customText = MutableStateFlow(""); private val customError = MutableStateFlow<String?>(null)
-    private val scanning = MutableStateFlow(false); private val message = MutableStateFlow<String?>(null); private val vuln = MutableStateFlow<VulnSheetState?>(null)
-    private var scanJob: Job? = null
+    private val message = MutableStateFlow<String?>(null); private val vuln = MutableStateFlow<VulnSheetState?>(null)
+    private val env: StateFlow<NetworkEnv?> = c.networkEnvMonitor.env.stateIn(viewModelScope, SharingStarted.Eagerly, c.networkEnvMonitor.current())
+    /** Port scans are network-bound: losing or switching Wi-Fi cancels them, so they never probe the same IP on another network. */
+    private val scan = ScanController(viewModelScope, env) { }
     private var vulnJob: Job? = null
 
-    val state: StateFlow<DetailUiState> = combine(c.hosts.host(hostId), c.ports.portsForHost(hostId), scanning, c.portScanEngine.progress, profile, customText, customError, message, vuln) { arr ->
+    val state: StateFlow<DetailUiState> = combine(c.hosts.host(hostId), c.ports.portsForHost(hostId), scan.state, c.portScanEngine.progress, profile, customText, customError, message, vuln, env) { arr ->
         @Suppress("UNCHECKED_CAST")
         val ps = arr[1] as List<PortEntity>
-        val h = arr[0] as HostEntity?; val sc = arr[2] as Boolean; val pr = arr[3] as ScanProgress?
+        val h = arr[0] as HostEntity?; val sc = arr[2] as ScanController.State; val pr = arr[3] as ScanProgress?; val e = arr[9] as NetworkEnv?
         val rows = ps.map { p -> val info = ServiceInfo(p.serviceName, p.product, p.version, p.detail, p.confidence)
             PortRow(p.port, info, h?.let { c.actions.primary(it.ip, p.port, info) }, h?.let { c.actions.actionsFor(it.ip, p.port, info) } ?: emptyList()) }
-        DetailUiState(h, h?.let { DisplayName.of(it) } ?: "", rows, sc, if (sc) pr else null, arr[4] as ScanProfile, arr[5] as String, arr[6] as String?, arr[7] as String?, arr[8] as VulnSheetState?)
+        val name = h?.let { if (RowRules.isOwn(it.ip, e) && it.customName.isNullOrBlank()) RowRules.THIS_PHONE else DisplayName.of(it) } ?: ""
+        DetailUiState(h, name, rows, sc.scanning, if (sc.scanning) pr else null, arr[4] as ScanProfile, arr[5] as String, arr[6] as String?, sc.message ?: arr[7] as String?, arr[8] as VulnSheetState?)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailUiState())
 
     fun setProfile(p: ScanProfile) { profile.value = p; customError.value = null }
     fun setCustomPorts(t: String) { customText.value = t; customError.value = null }
 
     fun startScan() {
-        if (scanJob?.isActive == true) return
+        if (scan.isRunning) return
         val h = state.value.host ?: return
         val prof = profile.value
         val resolved = if (prof is ScanProfile.Custom) ProfileParser.parse(customText.value).getOrElse { customError.value = it.message; return } else prof
-        scanning.value = true
-        // LAZY so scanJob is assigned before the body runs (viewModelScope dispatches immediately); the finally only clears its own scan.
-        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            try {
-                scanHost(h, resolved)
-            } catch (ce: CancellationException) {
-                throw ce
-            } catch (e: Exception) {
-                message.value = "Scan failed: ${e.message ?: e.javaClass.simpleName}"
-            } finally {
-                if (scanJob === coroutineContext[Job]) scanning.value = false
-            }
-        }
-        scanJob = job
-        job.start()
+        scan.start { scanHost(h, resolved) }
     }
 
     private suspend fun scanHost(h: HostEntity, profile: ScanProfile) {
@@ -81,10 +73,14 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             }
         }
         c.ports.markScanned(hostId)
-        c.hosts.byIdOnce(hostId)?.let { e -> c.hosts.setIdentity(hostId, c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(e), found.keys.toSet(), found, e.mac?.let(c.ouiLookup)))) }
+        // Stored ports are part of the evidence: a narrow Custom scan must not forget what a Full scan found.
+        c.hosts.byIdOnce(hostId)?.let { e ->
+            val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(e), c.ports.servicesFor(hostId), found.keys.toSet(), found, e.mac?.let(c.ouiLookup))
+            c.hosts.setIdentity(hostId, c.deviceIdentifier.identify(ev))
+        }
     }
 
-    fun stopScan() { scanJob?.cancel(); scanJob = null; scanning.value = false }
+    fun stopScan() = scan.stop()
     fun setStatus(s: HostStatus) { viewModelScope.launch { c.hosts.setStatus(hostId, s) } }
     /** NonCancellable job: the last save fires as the screen leaves, when viewModelScope is about to be (or already is) cancelled. */
     fun setNote(n: String) { viewModelScope.launch(NonCancellable) { c.hosts.setNote(hostId, n) } }
@@ -99,7 +95,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         c.actionRunner.run(DeviceAction.Copy("Copy link", url))
         message.value = "No browser found. Link copied."
     }
-    fun dismissMessage() { message.value = null }
+    fun dismissMessage() { message.value = null; scan.dismissMessage() }
 
     fun lookupVulnsForService(port: Int) {
         val row = state.value.ports.firstOrNull { it.port == port } ?: return
@@ -108,6 +104,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     }
     fun lookupVulnsForDevice() {
         val h = state.value.host ?: return
+        if (RowRules.isOwn(h.ip, env.value)) { message.value = OWN_PHONE; return }
         val q = c.vulnLookup.queryForDevice(DeviceIdentity(h.identVendor, h.identModel, h.identOs, h.deviceType, h.identConfidence, h.identReasons))
             ?: run { message.value = "Device not identified well enough to search"; return }
         runVuln(q)
@@ -127,5 +124,8 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         }
     }
 
-    private companion object { const val STOP_TIMEOUT_MS = 5_000L }
+    private companion object {
+        const val STOP_TIMEOUT_MS = 5_000L
+        const val OWN_PHONE = "This is your phone; nothing to look up"
+    }
 }

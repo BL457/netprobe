@@ -7,16 +7,17 @@ import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryOptions
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
-import com.northwalessolutions.netprobe.engine.identify.HostEvidence
+import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
+import com.northwalessolutions.netprobe.engine.neigh.GatewayMac
 import com.northwalessolutions.netprobe.engine.portscan.PortState
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.serviceid.Evidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
-import com.northwalessolutions.netprobe.engine.identify.DeviceIdentity
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.SubnetMath
+import com.northwalessolutions.netprobe.netenv.Transport
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
@@ -45,27 +46,35 @@ object IdentityLine {
         onlyMdns = h.mdnsName != null && h.netbiosName == null && h.upnpName == null && h.mac == null)
 }
 
-/** Pure row rules: off-subnet labelling and the phone's own-address identity. */
+/** Pure row rules: off-subnet labelling and the phone's own-address label (computed here, never stored as an identity). */
 object RowRules {
     const val THIS_PHONE = "This phone"
-    private const val OWN_CONFIDENCE = 100
     private const val OWN_LINE = "Android device"
     private const val OTHER_SUBNET_PREFIX = 24
+    private const val OCTETS = 4
+    private const val OCTET_MAX = 255
+
+    /** Dotted-quad literal to an address without any name lookup; null for anything else. */
+    fun parseIpv4(ip: String): Inet4Address? {
+        val p = ip.split('.')
+        if (p.size != OCTETS || p.any { it.isEmpty() || it.length > 3 || !it.all(Char::isDigit) }) return null
+        val n = p.map { it.toInt() }.takeIf { o -> o.all { it <= OCTET_MAX } } ?: return null
+        return InetAddress.getByAddress(ByteArray(OCTETS) { n[it].toByte() }) as Inet4Address
+    }
 
     /** The /24 of [ip] (for example "10.0.4.0/24") when it lies outside the scanned [scanned] subnet, else null. */
     fun otherSubnet(ip: String, scanned: Subnet): String? {
-        val a = runCatching { InetAddress.getByName(ip) as Inet4Address }.getOrNull() ?: return null
+        val a = parseIpv4(ip) ?: return null
         return if (scanned.contains(a)) null else SubnetMath.of(a, OTHER_SUBNET_PREFIX).toString()
     }
 
-    fun ownIdentity(): DeviceIdentity = DeviceIdentity(THIS_PHONE, null, null, DeviceType.PHONE, OWN_CONFIDENCE, listOf("own address"))
     fun isOwn(ip: String, env: NetworkEnv?): Boolean = env != null && ip == env.interfaceIp.hostAddress
 
     fun row(h: HostEntity, env: NetworkEnv?, maxPrefix: Int, openPorts: Int, stale: Boolean): HostRow {
         val own = isOwn(h.ip, env)
         val name = if (own && h.customName.isNullOrBlank()) THIS_PHONE else DisplayName.of(h)
         val other = env?.let { otherSubnet(h.ip, SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, maxPrefix).subnet) }
-        return HostRow(h.id, h.ip, name, if (own) OWN_LINE else IdentityLine.of(h), h.deviceType, openPorts, h.status, h.isGateway, stale, h.mac, other)
+        return HostRow(h.id, h.ip, name, if (own) OWN_LINE else IdentityLine.of(h), if (own) DeviceType.PHONE else h.deviceType, openPorts, h.status, h.isGateway, stale, h.mac, other)
     }
 }
 
@@ -83,43 +92,53 @@ object HomeFilter {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(private val c: AppContainer) : ViewModel() {
-    private val env = c.networkEnvMonitor.env.stateIn(viewModelScope, SharingStarted.Eagerly, c.networkEnvMonitor.current())
+    /** Fed by the monitor; [refreshEnv] re-reads it directly (the SSID appears after a permission grant without a link change). */
+    private val env = MutableStateFlow(c.networkEnvMonitor.current())
     private val filter = MutableStateFlow(StatusFilter.ALL); private val query = MutableStateFlow("")
     private val networkId = MutableStateFlow<Long?>(null); private val latestRun = MutableStateFlow(0L)
-    private val quickScanning = MutableStateFlow(false); private val extraMessage = MutableStateFlow<String?>(null)
+    private val extraMessage = MutableStateFlow<String?>(null)
     private val controller = ScanController(viewModelScope, env) { e -> discover(e) }
+    /** Quick scan all is network-bound like discovery: a Wi-Fi switch or loss cancels it, and Stop cancels it. */
+    private val quick = ScanController(viewModelScope, env) { quickScanAllOn() }
     private val portCounts: Flow<Map<Long, Int>> = c.ports.counts()
 
     private val hosts: Flow<List<HostEntity>> = networkId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
 
-    val state: StateFlow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quickScanning, extraMessage, portCounts) { arr ->
+    val state: StateFlow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts) { arr ->
         @Suppress("UNCHECKED_CAST")
         val hs = arr[3] as List<HostEntity>
         @Suppress("UNCHECKED_CAST")
         val pc = arr[9] as Map<Long, Int>
         val e = arr[0] as NetworkEnv?; val cs = arr[1] as ScanController.State; val st = arr[2] as DiscoveryStatus
-        val f = arr[4] as StatusFilter; val q = arr[5] as String; val run = arr[6] as Long; val qs = arr[7] as Boolean; val msg = arr[8] as String?
+        val f = arr[4] as StatusFilter; val q = arr[5] as String; val run = arr[6] as Long; val qs = arr[7] as ScanController.State; val msg = arr[8] as String?
         val maxPrefix = c.settings.state.value.maxPrefix
         val rows = hs.map { h -> RowRules.row(h, e, maxPrefix, pc[h.id] ?: 0, stale = run > 0 && h.lastDiscoveryRun < run) }
-        HomeUiState(e, cs.scanning, if (cs.scanning) st else null, HomeFilter.apply(rows, f, q), f, q, cs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs)
+        HomeUiState(e, cs.scanning, if (cs.scanning) st else null, HomeFilter.apply(rows, f, q), f, q, cs.message ?: qs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs.scanning)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
 
     init {
+        viewModelScope.launch { c.networkEnvMonitor.env.collect { env.value = it } }
         viewModelScope.launch {
-            env.collect { e ->
-                networkId.value = try { e?.let { c.networks.ensure(it).id } } catch (ce: CancellationException) { throw ce } catch (_: Exception) { null }
+            env.collectLatest { e ->
+                networkId.value = try { e?.let { c.networks.ensure(it, GatewayMac.lookup(it.gateway)).id } } catch (ce: CancellationException) { throw ce } catch (_: Exception) { null }
             }
         }
     }
 
     fun startScan() = controller.start()
     fun stopScan() = controller.stop()
+    fun refreshEnv(locationGranted: Boolean) {
+        val e = c.networkEnvMonitor.current(); env.value = e
+        // Granted but still no name: system Location is off, which the permission dialog cannot fix.
+        if (locationGranted && e != null && e.transport == Transport.WIFI && e.ssid == null) extraMessage.value = LOCATION_OFF
+        else if (!locationGranted) extraMessage.value = LOCATION_DENIED
+    }
     fun setFilter(f: StatusFilter) { filter.value = f }
     fun setQuery(q: String) { query.value = q }
-    fun dismissMessage() { controller.dismissMessage(); extraMessage.value = null }
+    fun dismissMessage() { controller.dismissMessage(); quick.dismissMessage(); extraMessage.value = null }
 
     private suspend fun discover(e: NetworkEnv) {
-        val net = c.networks.ensure(e); networkId.value = net.id
+        val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)); networkId.value = net.id
         val runId = System.currentTimeMillis(); latestRun.value = runId
         val s = c.settings.state.value
         val opts = DiscoveryOptions(s.mdns, s.ssdp, s.netbios, s.reverseDns, s.snmp, s.httpTitle, s.sweepConcurrency, s.connectTimeoutMs, s.maxPrefix)
@@ -130,30 +149,28 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 val id = c.hosts.upsertDiscovered(net.id, h, runId)
                 val merged = c.hosts.byIdOnce(id) ?: return@collect
                 val ports = openPorts.getOrPut(h.ip.hostAddress) { HashSet() }.also { it += h.probedOpenPorts }.toSet()
-                val identity = if (RowRules.isOwn(merged.ip, e)) RowRules.ownIdentity()
-                    else c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(merged), ports, emptyMap(), merged.mac?.let(c.ouiLookup)))
-                c.hosts.setIdentity(id, identity)
+                // Stored port findings are part of the evidence, so a rediscovery never downgrades an identity a port scan established.
+                val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(merged), c.ports.servicesFor(id), ports, emptyMap(), merged.mac?.let(c.ouiLookup))
+                c.hosts.setIdentity(id, c.deviceIdentifier.identify(ev))
             }
         } finally { c.locks.release() }
         val st = c.discoveryEngine.status.value
         if (st.clampedFrom != null) extraMessage.value = "Large network (/${st.clampedFrom}). Scanned your /24 only. Widen in Settings."
     }
 
-    fun quickScanAll() {
-        if (quickScanning.value) return
-        viewModelScope.launch {
-            quickScanning.value = true
-            var failed = 0
-            try {
-                val net = networkId.value ?: return@launch
-                for (h in c.hosts.hostsForNetwork(net).first()) {
-                    // One unreachable or odd host must not end the sweep for the rest.
-                    try { quickScanHost(h) } catch (ce: CancellationException) { throw ce } catch (_: Exception) { failed++ }
-                }
-            } finally {
-                quickScanning.value = false
-                if (failed > 0) extraMessage.value = "Quick scan finished, $failed device(s) could not be scanned"
+    fun quickScanAll() { if (!quick.isRunning) quick.start() }
+    fun stopQuickScan() = quick.stop()
+
+    private suspend fun quickScanAllOn() {
+        var failed = 0
+        try {
+            val net = networkId.value ?: return
+            for (h in c.hosts.hostsForNetwork(net).first()) {
+                // One unreachable or odd host must not end the sweep for the rest.
+                try { quickScanHost(h) } catch (ce: CancellationException) { throw ce } catch (_: Exception) { failed++ }
             }
+        } finally {
+            if (failed > 0) extraMessage.value = "Quick scan finished, $failed device(s) could not be scanned"
         }
     }
 
@@ -173,8 +190,15 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             }
         }
         c.ports.markScanned(h.id)
-        c.hosts.byIdOnce(h.id)?.let { e -> c.hosts.setIdentity(h.id, c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(e), found.keys.toSet(), found, e.mac?.let(c.ouiLookup)))) }
+        c.hosts.byIdOnce(h.id)?.let { e ->
+            val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(e), c.ports.servicesFor(h.id), found.keys.toSet(), found, e.mac?.let(c.ouiLookup))
+            c.hosts.setIdentity(h.id, c.deviceIdentifier.identify(ev))
+        }
     }
 
-    private companion object { const val STOP_TIMEOUT_MS = 5_000L }
+    private companion object {
+        const val STOP_TIMEOUT_MS = 5_000L
+        const val LOCATION_OFF = "Turn on Location to show the Wi-Fi name"
+        const val LOCATION_DENIED = "Wi-Fi name stays hidden without location permission"
+    }
 }

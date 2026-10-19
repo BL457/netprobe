@@ -1,5 +1,8 @@
 package com.northwalessolutions.netprobe.ui.home
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,12 +28,14 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettin
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(container) } })
     val s by vm.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    // Re-read the environment after the answer: the SSID becomes visible without waiting for a link change.
+    val locationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> vm.refreshEnv(granted) }
     LaunchedEffect(s.message) { s.message?.let { snackbar.showSnackbar(it); vm.dismissMessage() } }
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {   // PINNED: never inside the list
-                NetworkPanel(s.env, s.networkName)
+                NetworkPanel(s.env, s.networkName, onRequestLocation = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(onClick = { if (s.scanning) vm.stopScan() else vm.startScan() }, enabled = s.env != null || s.scanning, modifier = Modifier.testTag("scanButton")) {
                         Text(if (s.scanning) "Stop" else "Scan")
@@ -47,8 +52,8 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettin
                         var menu by remember { mutableStateOf(false) }
                         IconButton(onClick = { menu = true }, modifier = Modifier.testTag("homeMenu")) { Icon(Icons.Default.MoreVert, "Menu") }
                         DropdownMenu(menu, { menu = false }) {
-                            DropdownMenuItem(text = { Text(if (s.quickScanning) "Quick scanning all..." else "Quick scan all") }, enabled = !s.quickScanning && s.rows.isNotEmpty(),
-                                onClick = { menu = false; vm.quickScanAll() })
+                            DropdownMenuItem(text = { Text(if (s.quickScanning) "Stop quick scan" else "Quick scan all") }, enabled = s.quickScanning || (s.rows.isNotEmpty() && s.env != null),
+                                onClick = { menu = false; if (s.quickScanning) vm.stopQuickScan() else vm.quickScanAll() })
                             DropdownMenuItem(text = { Text("Settings") }, onClick = { menu = false; onOpenSettings() })
                         }
                     }
