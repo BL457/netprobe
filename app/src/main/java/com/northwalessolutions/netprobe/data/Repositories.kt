@@ -25,20 +25,28 @@ private fun macSourceOf(rank: Int): MacSource? = when (rank) {
 }
 
 class NetworkRepository(private val db: NetProbeDb) {
-    suspend fun ensure(env: NetworkEnv): NetworkEntity = db.withTransaction {
-        val sig = NetworkSignature.of(env); val now = System.currentTimeMillis()
+    /**
+     * Finds or creates the row for [env]. Identity is gateway MAC + gateway IP + prefix ([NetworkSignature]).
+     * On a signature miss, a single row with the same gateway IP and prefix is adopted (rows keyed by the old BSSID rule,
+     * rows recorded while the MAC was unreadable, and the location-granted case), unless its stored gateway host has a
+     * different MAC: that is another site on the same addressing, and its inventory must not be merged.
+     */
+    suspend fun ensure(env: NetworkEnv, gatewayMac: String?): NetworkEntity = db.withTransaction {
+        val sig = NetworkSignature.of(env, gatewayMac); val now = System.currentTimeMillis()
+        val gw = env.gateway?.hostAddress
         val found = db.networks().bySignature(sig)
-        if (found != null) { db.networks().touch(found.id, now, env.ssid); return@withTransaction found.copy(lastSeen = now) }
-        // Location was granted after hosts were recorded: the same gateway+prefix network now has ssid/bssid, so adopt the id-less row instead of orphaning it.
-        if (env.ssid != null || env.bssid != null) {
-            val adoptable = db.networks().idlessByGateway(env.gateway?.hostAddress, env.prefixLength)
-            if (adoptable.size == 1) {
-                val a = adoptable.first(); val name = env.ssid ?: a.displayName
-                db.networks().adopt(a.id, sig, env.ssid, name, now)
-                return@withTransaction a.copy(signature = sig, ssid = env.ssid, displayName = name, lastSeen = now)
-            }
+        if (found != null) { db.networks().touch(found.id, now, env.ssid); return@withTransaction found.copy(lastSeen = now, ssid = env.ssid ?: found.ssid) }
+        val mac = gatewayMac?.lowercase()
+        val adoptable = db.networks().byGateway(gw, env.prefixLength).filter { row ->
+            val stored = if (mac != null && gw != null) db.networks().gatewayHostMac(row.id, gw)?.lowercase() else null
+            stored == null || stored == mac
         }
-        val n = NetworkEntity(signature = sig, displayName = env.ssid ?: env.gateway?.hostAddress ?: "Network", gatewayIp = env.gateway?.hostAddress, prefixLength = env.prefixLength, ssid = env.ssid, lastSeen = now)
+        if (adoptable.size == 1) {
+            val a = adoptable.first(); val ssid = env.ssid ?: a.ssid; val name = env.ssid ?: a.displayName
+            db.networks().adopt(a.id, sig, ssid, name, now)
+            return@withTransaction a.copy(signature = sig, ssid = ssid, displayName = name, lastSeen = now)
+        }
+        val n = NetworkEntity(signature = sig, displayName = env.ssid ?: gw ?: "Network", gatewayIp = gw, prefixLength = env.prefixLength, ssid = env.ssid, lastSeen = now)
         try {
             n.copy(id = db.networks().insert(n))
         } catch (e: SQLiteConstraintException) {
@@ -129,6 +137,9 @@ class PortRepository(private val db: NetProbeDb) {
     }
     private fun mergePort(e: PortEntity, info: ServiceInfo, now: Long) =
         e.copy(serviceName = info.name, product = info.product ?: e.product, version = info.version ?: e.version, detail = info.detail ?: e.detail, confidence = info.confidence, lastSeen = now)
+    /** Stored open ports of a host as identification input, so a rediscovery or narrow rescan never forgets earlier findings. */
+    suspend fun servicesFor(hostId: Long): Map<Int, ServiceInfo> =
+        db.ports().forHostOnce(hostId).associate { it.port to ServiceInfo(it.serviceName, it.product, it.version, it.detail, it.confidence) }
     suspend fun markScanned(hostId: Long) = db.hosts().markScanned(hostId, System.currentTimeMillis())
 }
 class VulnCacheRepository(private val db: NetProbeDb) {

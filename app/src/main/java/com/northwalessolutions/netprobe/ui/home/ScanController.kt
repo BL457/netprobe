@@ -6,8 +6,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
 /**
- * Owns the discovery job for the Home screen. Cancels it when the network goes away or changes signature,
- * and turns a thrown discovery error into a message instead of a crash.
+ * Owns one network-bound scan job (Home discovery, Quick scan all, a Detail port scan). Cancels it when the network goes
+ * away or its identity (gateway IP + prefix) changes, and turns a thrown error into a message instead of a crash.
+ * A BSSID change (roaming between access points) is the same network and does not stop the scan.
  */
 class ScanController(private val scope: CoroutineScope, private val env: StateFlow<NetworkEnv?>, private val runDiscovery: suspend (NetworkEnv) -> Unit) {
     data class State(val scanning: Boolean = false, val message: String? = null)
@@ -17,18 +18,19 @@ class ScanController(private val scope: CoroutineScope, private val env: StateFl
     /** Bumped on every start and stop, so a cancelled job's cleanup can never touch a newer scan's state. */
     private var generation = 0L
 
-    fun start() {
+    /** Starts [work] (default: the constructor's runDiscovery) unless a job is already running. */
+    fun start(work: suspend (NetworkEnv) -> Unit = runDiscovery) {
         val e = env.value ?: run { _state.value = State(false, NO_NETWORK); return }
         if (job?.isActive == true) return
         val gen = ++generation
         val prev = job   // may still be cancelling: its finally (lock release, status writes) must finish before this run starts
-        val sig = NetworkSignature.of(e)
+        val key = NetworkSignature.identityKey(e)
         _state.value = State(scanning = true)
         // LAZY so both handles exist before the body can run (viewModelScope dispatches immediately).
         val j = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 prev?.join()
-                runDiscovery(e)
+                work(e)
             } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Exception) {
@@ -39,13 +41,14 @@ class ScanController(private val scope: CoroutineScope, private val env: StateFl
         }
         val w = scope.launch(start = CoroutineStart.LAZY) {
             // No drop(1): if the env changed between start() and this collector starting, the current value already differs.
-            env.first { it == null || NetworkSignature.of(it) != sig }
+            env.first { it == null || NetworkSignature.identityKey(it) != key }
             if (gen == generation) { j.cancel(); _state.value = State(false, NETWORK_CHANGED) }
         }
         j.invokeOnCompletion { w.cancel() }
         job = j; watcher = w
         w.start(); j.start()
     }
+    val isRunning: Boolean get() = job?.isActive == true
     fun stop() { generation++; job?.cancel(); watcher?.cancel(); _state.value = State(false, null) }
     fun dismissMessage() = _state.update { it.copy(message = null) }
 

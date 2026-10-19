@@ -6,8 +6,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao interface NetworkDao {
     @Query("SELECT * FROM networks WHERE signature = :sig LIMIT 1") suspend fun bySignature(sig: String): NetworkEntity?
-    @Query("SELECT * FROM networks WHERE ssid IS NULL AND prefixLength = :prefix AND ((:gw IS NULL AND gatewayIp IS NULL) OR gatewayIp = :gw)")
-    suspend fun idlessByGateway(gw: String?, prefix: Int): List<NetworkEntity>
+    @Query("SELECT * FROM networks WHERE prefixLength = :prefix AND ((:gw IS NULL AND gatewayIp IS NULL) OR gatewayIp = :gw)")
+    suspend fun byGateway(gw: String?, prefix: Int): List<NetworkEntity>
+    /** The MAC recorded for the network's own gateway host, if a scan has stored one. */
+    @Query("SELECT mac FROM hosts WHERE networkId = :networkId AND ip = :gw LIMIT 1") suspend fun gatewayHostMac(networkId: Long, gw: String): String?
     @Query("UPDATE networks SET signature = :sig, ssid = :ssid, displayName = :name, lastSeen = :now WHERE id = :id") suspend fun adopt(id: Long, sig: String, ssid: String?, name: String, now: Long)
     @Insert suspend fun insert(n: NetworkEntity): Long
     @Query("UPDATE networks SET lastSeen = :now, ssid = COALESCE(:ssid, ssid) WHERE id = :id") suspend fun touch(id: Long, now: Long, ssid: String?)
@@ -36,6 +38,7 @@ data class PortCount(val hostId: Long, val n: Int)
 
 @Dao interface PortDao {
     @Query("SELECT * FROM ports WHERE hostId = :hostId ORDER BY port") fun forHost(hostId: Long): Flow<List<PortEntity>>
+    @Query("SELECT * FROM ports WHERE hostId = :hostId ORDER BY port") suspend fun forHostOnce(hostId: Long): List<PortEntity>
     @Query("SELECT hostId, COUNT(*) AS n FROM ports GROUP BY hostId") fun counts(): Flow<List<PortCount>>
     @Query("SELECT * FROM ports WHERE hostId = :hostId AND port = :port LIMIT 1") suspend fun find(hostId: Long, port: Int): PortEntity?
     @Insert suspend fun insert(p: PortEntity): Long

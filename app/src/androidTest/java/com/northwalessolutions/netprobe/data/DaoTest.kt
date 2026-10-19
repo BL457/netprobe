@@ -126,20 +126,59 @@ class DaoTest {
         val repo = NetworkRepository(db)
         val env = NetworkEnv(ip("192.168.7.5"), 24, ip("192.168.7.1"), emptyList(), "Home", null, Transport.WIFI)
         coroutineScope {
-            listOf(async(Dispatchers.Default) { repeat(20) { repo.ensure(env) } }, async(Dispatchers.Default) { repeat(20) { repo.ensure(env) } }).awaitAll()
+            listOf(async(Dispatchers.Default) { repeat(20) { repo.ensure(env, GW_MAC) } }, async(Dispatchers.Default) { repeat(20) { repo.ensure(env, GW_MAC) } }).awaitAll()
         }
         assertEquals(1, count("networks"))
     }
-    @Test fun ensureAdoptsIdlessNetworkWhenLocationIsGranted() = runBlocking {
+    @Test fun locationGrantKeepsTheSameNetwork() = runBlocking {
         val repo = NetworkRepository(db); val hosts = HostRepository(db)
         val bare = NetworkEnv(ip("192.168.8.5"), 24, ip("192.168.8.1"), emptyList(), null, null, Transport.WIFI)
         val named = bare.copy(ssid = "Home", bssid = "aa:bb:cc:dd:ee:ff")
-        val before = repo.ensure(bare)
+        val before = repo.ensure(bare, GW_MAC)
         val hid = hosts.upsertDiscovered(before.id, DiscoveredHost(ip("192.168.8.20")), 1L)
         db.hosts().setNote(hid, "keep me")
-        val after = repo.ensure(named)
+        val after = repo.ensure(named, GW_MAC)
         assertEquals(before.id, after.id); assertEquals("Home", after.ssid); assertEquals(1, count("networks"))
         assertEquals("keep me", hosts.byIdOnce(hid)!!.note)
-        assertEquals(after.id, repo.ensure(named).id)
+        // Roaming to another access point (new BSSID) and turning Location off again keep the same row.
+        assertEquals(after.id, repo.ensure(named.copy(bssid = "aa:bb:cc:dd:ee:01"), GW_MAC).id)
+        assertEquals(after.id, repo.ensure(bare, GW_MAC).id)
+        assertEquals(1, count("networks"))
     }
+    @Test fun ensureAdoptsARowKeyedByTheOldRule() = runBlocking {
+        val repo = NetworkRepository(db); val hosts = HostRepository(db)
+        // A row written by the BSSID-based signature: its hash matches nothing the new rule produces.
+        val oldId = db.networks().insert(NetworkEntity(signature = "old-bssid-signature", displayName = "Home", gatewayIp = "10.0.3.1", prefixLength = 24, ssid = "Home", lastSeen = 0))
+        val hid = hosts.upsertDiscovered(oldId, DiscoveredHost(ip("10.0.3.50")), 1L)
+        hosts.setStatus(hid, HostStatus.INTERESTING); hosts.setNote(hid, "QA note NAS")
+        val env = NetworkEnv(ip("10.0.3.242"), 24, ip("10.0.3.1"), emptyList(), null, null, Transport.WIFI)
+        val n = repo.ensure(env, GW_MAC)
+        assertEquals(oldId, n.id); assertEquals(NetworkSignature.of(env, GW_MAC), n.signature); assertEquals("Home", n.ssid); assertEquals("Home", n.displayName)
+        assertEquals(NetworkSignature.of(env, GW_MAC), db.networks().bySignature(NetworkSignature.of(env, GW_MAC))!!.signature)
+        val h = hosts.byIdOnce(hid)!!
+        assertEquals(HostStatus.INTERESTING, h.status); assertEquals("QA note NAS", h.note); assertEquals(1, count("networks"))
+        // An unreadable MAC later still lands on the same row.
+        assertEquals(oldId, repo.ensure(env, null).id); assertEquals(oldId, repo.ensure(env, GW_MAC).id); assertEquals(1, count("networks"))
+    }
+    @Test fun anotherSiteWithTheSameAddressingIsNotMerged() = runBlocking {
+        val repo = NetworkRepository(db); val hosts = HostRepository(db)
+        val env = NetworkEnv(ip("192.168.1.5"), 24, ip("192.168.1.1"), emptyList(), null, null, Transport.WIFI)
+        val siteA = repo.ensure(env, GW_MAC)
+        hosts.upsertDiscovered(siteA.id, DiscoveredHost(ip("192.168.1.1"), mac = GW_MAC, macSource = MacSource.NEIGH, isGateway = true), 1L)
+        val siteB = repo.ensure(env, "00:11:22:33:44:55")
+        assertNotEquals(siteA.id, siteB.id); assertEquals(2, count("networks"))
+        assertEquals(siteA.id, repo.ensure(env, GW_MAC).id)
+    }
+    @Test fun servicesForReturnsStoredPorts() = runBlocking {
+        val ports = PortRepository(db)
+        ports.upsertOpen(9, 22, ServiceInfo("SSH", "OpenSSH", "9.6p1", "Ubuntu-3ubuntu13", Confidence.CONFIRMED))
+        ports.upsertOpen(9, 445, ServiceInfo("SMB", confidence = Confidence.PORT_TABLE))
+        ports.upsertOpen(10, 80, ServiceInfo("HTTP", confidence = Confidence.PORT_TABLE))
+        val s = ports.servicesFor(9)
+        assertEquals(setOf(22, 445), s.keys)
+        assertEquals(ServiceInfo("SSH", "OpenSSH", "9.6p1", "Ubuntu-3ubuntu13", Confidence.CONFIRMED), s[22])
+        assertEquals(emptyMap<Int, ServiceInfo>(), ports.servicesFor(11))
+    }
+
+    private companion object { const val GW_MAC = "e0:63:da:26:f1:37" }
 }

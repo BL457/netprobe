@@ -109,7 +109,7 @@ private fun LocationPermissionRow() {
     val ctx = LocalContext.current
     var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
-    Text("Android only reveals the Wi-Fi name and BSSID with location permission. It also lets NetProbe tell two networks apart that share 192.168.1.1/24.",
+    Text("Android only reveals the Wi-Fi name with location permission. It is shown for display only: NetProbe tells networks apart by their gateway.",
         style = MaterialTheme.typography.bodySmall)
     if (granted) Text("Location permission granted", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     else Button(onClick = { launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }) { Text("Allow location for Wi-Fi name") }
