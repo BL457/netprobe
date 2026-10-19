@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.engine.discovery
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import org.xml.sax.Attributes
@@ -38,6 +39,8 @@ object UpnpDescriptionParser {
             if (name == "device" && deviceDepth == -1) { deviceDepth = depth; return }
             if (deviceDepth != -1 && depth == deviceDepth + 1 && name in WANTED) { current = name; text.setLength(0) }
         }
+        /** Never resolve an external entity or DTD, whatever the parser's feature support. */
+        override fun resolveEntity(publicId: String?, systemId: String?): InputSource = InputSource(StringReader(""))
         override fun characters(ch: CharArray, start: Int, length: Int) {
             if (current != null && text.length < MAX_TEXT_CHARS) text.append(ch, start, length)
         }
@@ -67,23 +70,29 @@ object UpnpDescriptionParser {
 
 class UpnpFetcher(private val timeoutMs: Int = 2000, private val maxBytes: Int = 65536) {
     suspend fun fetch(location: String, allowedHost: Inet4Address): UpnpDevice? {
-      return try {
-        val url = URL(location)
-        if (url.host != allowedHost.hostAddress) return null
-        runInterruptible(Dispatchers.IO) {
-            val c = url.openConnection() as HttpURLConnection
-            c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false
-            c.inputStream.use { ins ->
-                // Bounded manual read: InputStream.readNBytes needs API 33 and minSdk is 26.
-                val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(8192)
-                while (out.size() < maxBytes) {
-                    val r = ins.read(buf, 0, minOf(buf.size, maxBytes - out.size()))
-                    if (r < 0) break
-                    out.write(buf, 0, r)
+        return try {
+            val url = URL(location)
+            if (url.host != allowedHost.hostAddress) return null
+            runInterruptible(Dispatchers.IO) {
+                val c = url.openConnection() as HttpURLConnection
+                c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false
+                c.inputStream.use { ins ->
+                    // Bounded manual read: InputStream.readNBytes needs API 33 and minSdk is 26.
+                    // Overall deadline stops a device dripping bytes just inside the per-read timeout.
+                    val deadline = System.currentTimeMillis() + timeoutMs
+                    val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(8192)
+                    while (out.size() < maxBytes && System.currentTimeMillis() <= deadline) {
+                        val r = ins.read(buf, 0, minOf(buf.size, maxBytes - out.size()))
+                        if (r < 0) break
+                        out.write(buf, 0, r)
+                    }
+                    UpnpDescriptionParser.parse(String(out.toByteArray(), Charsets.UTF_8))
                 }
-                UpnpDescriptionParser.parse(String(out.toByteArray(), Charsets.UTF_8))
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
         }
-    } catch (e: InterruptedException) { throw kotlinx.coroutines.CancellationException() } catch (_: Exception) { null }
     }
 }
