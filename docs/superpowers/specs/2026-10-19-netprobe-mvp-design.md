@@ -40,7 +40,7 @@ Success for the MVP: on the Director's home network the app finds the devices th
 - Additional vulnerability sources alongside the NVD (VulDB, Vulners, CIRCL vulnerability-lookup).
 - Apple model identifier table (`MacBookPro18,3` to its marketing name); the MVP shows the raw code.
 - Identification rule updates shipped as a downloadable rules file instead of an app update.
-- NIO selector scan engine and adaptive timeouts.
+- NIO selector scan engine, adaptive timeouts, and automatic concurrency halving on resource errors.
 - Own mDNS enumerator querying `_services._dns-sd._udp.local`.
 - Public IP/ISP panel (opt-in, the only internet call the app would ever make).
 - Suggesting an app to install when no handler exists for a service.
@@ -343,7 +343,7 @@ Runtime, optional: `ACCESS_FINE_LOCATION`, requested only from Settings or when 
 
 - No usable network: scanning disabled with the empty-state message. Cellular-only is treated as no usable network.
 - Network change mid-scan: cancel, keep partial results, show "Network changed, scan stopped".
-- Per-probe exceptions are caught inside the engine task, counted, and never propagate. The progress text shows "errors: n" when non-zero. If more than 25 percent of connects in a window throw `EMFILE` or similar resource errors, the engine halves its concurrency for the rest of the run and logs it.
+- Per-probe exceptions are caught inside the engine task, counted, and never propagate. The progress text shows "errors: n" when non-zero. Resource errors (`EMFILE` and similar) are counted there; automatic concurrency halving is deferred to the roadmap unless on-device QA shows resource errors at the default concurrency.
 - `NsdManager` failure codes are logged and mDNS is skipped for that run without failing discovery.
 - Multicast lock or Wi-Fi lock acquisition failure: log and continue (SSDP and mDNS may miss results).
 - Room write errors are surfaced as a snackbar; scans continue.

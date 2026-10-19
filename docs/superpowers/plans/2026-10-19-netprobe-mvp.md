@@ -12,12 +12,13 @@
 
 ## Global Constraints
 
-- `minSdk = 26`, `targetSdk = 30`, `compileSdk = 35`. targetSdk 30 is deliberate (spec section 3 and 4): it keeps the netlink neighbour dump on Android 13+. Never raise it.
+- `minSdk = 26`, `targetSdk = 30`, `compileSdk = 35`. targetSdk 30 is deliberate (spec section 3 and 4): the netlink neighbour dump is allowed on Android 13+ only for apps in the `untrusted_app_30` SELinux domain, which is targetSdkVersion <= 31 (30 is kept; 31 would also work if the Director ever wants Android 12 behaviour). Never raise it above 31.
 - Package and `applicationId`: `com.northwalessolutions.netprobe`.
 - Toolchain is already installed: SDK at `C:\Users\blastdav\AppData\Local\Android\Sdk`, `JAVA_HOME=C:\Program Files\Java\jdk-17.0.2`, Gradle 8.14 cached under `~/.gradle/wrapper/dists/gradle-8.14-all`, adb at `C:/Users/blastdav/AppData/Local/Android/Sdk/platform-tools/adb.exe`, device serial `28221FDH300AP9`.
 - **No downloads or installs of anything** other than Gradle resolving the Maven dependencies declared in `gradle/libs.versions.toml` from `google()` and `mavenCentral()`. In particular: no OUI CSV, no fonts, no SDK components, no extra repositories. If a declared version does not resolve, change it to the nearest version that does; do not add repositories.
 - No em-dashes anywhere: code comments, UI strings, docs, commit messages. Use hyphens, commas or colons.
 - Commit messages are plain text with no `Co-Authored-By` or other attribution lines.
+- Never add `kotlin { jvmToolchain(...) }` or the foojay toolchain resolver: toolchain auto-provisioning downloads a JDK. If Gradle prints `Installing Android SDK ...` or `Checking the license for package`, stop: a component is missing and must not be fetched without the Director.
 - Scan / Stop and the detail-screen scan bar are pinned outside any scrolling container (spec 5.7).
 - Scanning traffic is LAN only. The only internet call is the NVD query, and only when the user taps "Look up vulnerabilities".
 - All shell commands below are Git Bash syntax, run from `K:/claude/netprobe` unless stated. Use `./gradlew` (the wrapper), never a global `gradle`.
@@ -26,7 +27,7 @@
 ## Review Focus
 
 1. **Large subnets.** A /16 or /8 Wi-Fi network must scan only the /24 around the phone and show the notice, never iterate 65k hosts. Test pinned in Task 3.
-2. **Network change mid-scan.** Wi-Fi drops or switches while scanning: scan cancels within a second, partial results stay, the UI says why, no crash. Tests pinned in Task 6 (cancel closes sockets) and Task 20 (ViewModel reacts to `null` env).
+2. **Network change mid-scan.** Wi-Fi drops or switches while scanning: scan cancels within a second, partial results stay, the UI says why, no crash. Tests pinned in Task 6 (cancel closes sockets) and Task 21 (ViewModel reacts to `null` env).
 3. **Garbage from the LAN.** Truncated, oversized or random bytes in SSDP, UPnP XML, NetBIOS, SNMP, HTTP and banners must never throw out of a parser. Tests pinned in Tasks 8, 10, 11, 12, 13.
 4. **No app for a scheme.** Tapping an action with no handler installed shows the fallback and the copy actions instead of crashing with `ActivityNotFoundException`. Test pinned in Task 18.
 5. **NVD unavailable.** Offline, rate-limited (HTTP 403/429) or malformed NVD responses must produce a clear state and serve cache when present. Tests pinned in Task 19.
@@ -47,7 +48,7 @@ app/src/main/java/com/northwalessolutions/netprobe/
     neigh/    NeighbourTable.kt (JNI wrapper), NeighbourParser.kt
     portscan/ ScanProfile.kt, PortScanEngine.kt, PortTable.kt
     serviceid/ Banner.kt, BannerParsers.kt, ServiceIdentifier.kt, TlsPeek.kt
-    discovery/ DiscoveredHost.kt, HostProber.kt, Sweep.kt, MdnsDiscovery.kt, Ssdp.kt, UpnpDescription.kt,
+    discovery/ DiscoveredHost.kt, HostProber.kt, Sweep.kt, Mdns.kt, MdnsDiscovery.kt, DeviceInfoTxt.kt, Ssdp.kt, UpnpDescription.kt,
                NetBios.kt, Snmp.kt, HttpTitle.kt, ReverseDns.kt, MacExtract.kt, DiscoveryEngine.kt
     identify/ DeviceIdentity.kt, IdentifyRules.kt, DeviceIdentifier.kt
     vulns/    Cpe.kt, NvdClient.kt, RateLimiter.kt, VulnLookup.kt
@@ -55,7 +56,7 @@ app/src/main/java/com/northwalessolutions/netprobe/
   actions/  DeviceAction.kt, ActionProvider.kt
   ui/       theme/Theme.kt, home/HomeScreen.kt, home/HomeViewModel.kt, detail/DetailScreen.kt,
             detail/DetailViewModel.kt, settings/SettingsScreen.kt, vulns/VulnSheet.kt, Nav.kt
-app/src/test/java/...            JVM tests mirror the packages above
+app/src/test/java/...            JVM tests mirror the packages above (plus test-only helpers SnmpTestSupport.kt, SyntheticEvidence.kt)
 app/src/test/resources/fixtures/ recorded packets and responses
 app/src/androidTest/java/...      Room DAO, Compose, and the Task 2 device spike
 docs/qa/                          on-device QA records
@@ -189,7 +190,7 @@ android {
     defaultConfig {
         applicationId = "com.northwalessolutions.netprobe"
         minSdk = 26
-        targetSdk = 30   // deliberate: keeps netlink RTM_GETNEIGH on Android 13+, see spec section 4
+        targetSdk = 30   // deliberate: untrusted_app_30 domain (targetSdk <= 31) keeps netlink RTM_GETNEIGH on Android 13+, see spec section 4
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -202,7 +203,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     lint {
         // targetSdk 30 is a documented decision; these checks exist for Play Store policy only.
@@ -215,6 +215,8 @@ android {
     }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
+
+kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
@@ -400,7 +402,8 @@ git commit -m "Scaffold Android project: Kotlin, Compose, Room, targetSdk 30"
 - Test: `app/src/androidTest/java/com/northwalessolutions/netprobe/NeighbourSpikeTest.kt`
 
 **Interfaces:**
-- Produces: `data class NeighbourEntry(val ip: String, val mac: String, val state: String)`; `object NeighbourTable { fun dump(): Result<List<NeighbourEntry>> }` (safe: never throws, `Result.failure(NeighbourUnavailable(reason))` when denied); `class NeighbourUnavailable(reason: String) : Exception(reason)`.
+- Produces: `data class NeighbourEntry(val ip: String, val mac: String, val state: String)`; `object NeighbourTable { fun dump(): Result<List<NeighbourEntry>> }` (safe: never throws, `Result.failure(NeighbourUnavailable(reason))` when denied); `class NeighbourUnavailable(reason: String) : Exception(reason)`; `NeighbourParser.parseProcArp(text: String): List<NeighbourEntry>`.
+- Spec 5.2 item 6 fallback: when the netlink dump fails and `Build.VERSION.SDK_INT <= 28` (Android 9 and lower, the last releases where `/proc/net/arp` is readable by apps), `dump()` returns the parsed `/proc/net/arp` instead; on newer releases the netlink failure is returned as is.
 - The raw JNI contract: `external fun dumpRaw(): Array<String>`, each element `"<ipv4>|<mac lower, colon separated>|<STATE>"`, or a single element `"ERR|<errno>|<strerror>"`.
 
 - [ ] **Step 1: Write the failing parser test**
@@ -432,6 +435,17 @@ class NeighbourParserTest {
     @Test fun `malformed lines are skipped not thrown`() {
         val list = NeighbourParser.parse(arrayOf("garbage", "", "1.2.3.4|zz|REACHABLE", "1.2.3.5|00:11:22:33:44:55|REACHABLE")).getOrThrow()
         assertEquals(1, list.size)
+    }
+    @Test fun `proc net arp lines parse and incomplete entries are dropped`() {
+        val text = "IP address       HW type     Flags       HW address            Mask     Device\n" +
+            "192.168.1.1      0x1         0x2         AA:BB:CC:DD:EE:FF     *        wlan0\n" +
+            "192.168.1.7      0x1         0x0         00:00:00:00:00:00     *        wlan0\n" +
+            "192.168.1.8      0x1         0x2         00:11:22:33:44:66     *        wlan0\n" +
+            "garbage line\n"
+        val list = NeighbourParser.parseProcArp(text)
+        assertEquals(listOf("192.168.1.1", "192.168.1.8"), list.map { it.ip })
+        assertEquals("aa:bb:cc:dd:ee:ff", list[0].mac)
+        assertTrue(NeighbourParser.parseProcArp("").isEmpty())
     }
 }
 ```
@@ -473,18 +487,38 @@ object NeighbourParser {
         }
         return Result.success(out)
     }
+
+    /** /proc/net/arp fallback for Android 9 and lower. Columns: ip, hw type, flags, hw address, mask, device. Flags 0x2 = complete. */
+    fun parseProcArp(text: String): List<NeighbourEntry> = text.lineSequence().drop(1).mapNotNull { line ->
+        val p = line.trim().split(Regex("\\s+"))
+        if (p.size < 6) return@mapNotNull null
+        val ip = p[0]; val mac = p[3].lowercase()
+        if (!ipv4Re.matches(ip) || !macRe.matches(mac) || mac == "00:00:00:00:00:00" || p[2] != "0x2") null
+        else NeighbourEntry(ip, mac, "REACHABLE")
+    }.toList()
 }
 ```
 `NeighbourTable.kt`:
 ```kotlin
 package com.northwalessolutions.netprobe.engine.neigh
 
+import android.os.Build
+import java.io.File
+
 object NeighbourTable {
+    private const val LAST_SDK_WITH_READABLE_ARP_FILE = 28
+    private const val ARP_FILE = "/proc/net/arp"
     private val loaded: Boolean = try { System.loadLibrary("neigh"); true } catch (_: Throwable) { false }
     private external fun dumpRaw(): Array<String>
 
-    /** Never throws. Failure carries NeighbourUnavailable with the errno text. */
+    /** Never throws. Failure carries NeighbourUnavailable with the errno text. Falls back to /proc/net/arp on Android 9 and lower. */
     fun dump(): Result<List<NeighbourEntry>> {
+        val netlink = dumpNetlink()
+        if (netlink.isSuccess || Build.VERSION.SDK_INT > LAST_SDK_WITH_READABLE_ARP_FILE) return netlink
+        return runCatching { NeighbourParser.parseProcArp(File(ARP_FILE).readText()) }.fold(onSuccess = { Result.success(it) }, onFailure = { netlink })
+    }
+
+    private fun dumpNetlink(): Result<List<NeighbourEntry>> {
         if (!loaded) return Result.failure(NeighbourUnavailable("libneigh not loaded"))
         return try { NeighbourParser.parse(dumpRaw()) } catch (t: Throwable) { Result.failure(NeighbourUnavailable(t.toString())) }
     }
@@ -523,7 +557,7 @@ target_link_libraries(neigh log)
 
 /* Dumps the IPv4 neighbour table over an UNBOUND netlink route socket.
  * bind() is denied to all third-party apps; RTM_GETNEIGH is allowed only to
- * apps with targetSdkVersion <= 30 on Android 13 and later (spec section 4). */
+ * apps in the untrusted_app_30 domain (targetSdkVersion <= 31) on Android 13 and later (spec section 4). */
 
 static const char *state_name(unsigned s) {
     if (s & NUD_REACHABLE) return "REACHABLE";
@@ -658,9 +692,9 @@ class NeighbourSpikeTest {
 ADB="/c/Users/blastdav/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 "$ADB" devices
 ./gradlew :app:connectedDebugAndroidTest --console=plain -Pandroid.testInstrumentationRunnerArguments.class=com.northwalessolutions.netprobe.NeighbourSpikeTest 2>&1 | tail -20
-"$ADB" -s 28221FDH300AP9 logcat -d | grep -E "NeighbourSpike|avc:.*netlink" | tail -40
+"$ADB" -s 28221FDH300AP9 logcat -d | grep -E "NeighbourSpike|avc: denied.*netlink" | tail -40
 ```
-Expected (PASS): test passes, logcat shows `entries with mac: N` with N >= 1 and no `avc: denied ... netlink_route_socket` lines. Record N and the Android version in `docs/qa/2026-10-19-neighbour-spike.md`.
+Expected (PASS): test passes, logcat shows `entries with mac: N` with N >= 1 and no `avc: denied ... netlink_route_socket` lines. `avc: granted { nlmsg_getneigh }` lines are expected (the policy uses `auditallow`) and are not a failure. Record N and the Android version in `docs/qa/2026-10-19-neighbour-spike.md`.
 
 **Gate:** If the test fails with `errno 13` (EACCES) or an `avc: denied` line, STOP and report to the Director: the netlink source is dropped per spec section 11 item 6, and Task 15 keeps only the secondary MAC sources. Do not try to work around SELinux.
 
@@ -978,7 +1012,7 @@ class NetworkEnvMonitor(private val context: Context) {
     }
 }
 ```
-Note: `WifiManager.connectionInfo` returns placeholders without location permission; the mapper turns those into null. Task 21 wires the monitor into `AppContainer`.
+Note: `WifiManager.connectionInfo` returns placeholders without location permission; the mapper turns those into null. Task 20 wires the monitor into `AppContainer`.
 
 - [ ] **Step 4: Run, expect pass; build**
 
@@ -1013,7 +1047,7 @@ object QuickPorts { val list: List<Int> }
 class PortTable(entries: Map<Int, String>) { fun nameFor(port: Int): String  /* "Unknown" when absent */
     companion object { fun fromJson(json: String): PortTable } }
 ```
-- The JSON shape: `[{"port":22,"proto":"tcp","name":"SSH"}, ...]`. The implementer authors every entry listed in spec Appendix C and a name for every port in Appendix A. Loading from `R.raw.ports` happens in Task 21; tests pass the JSON string.
+- The JSON shape: `[{"port":22,"proto":"tcp","name":"SSH"}, ...]`. The implementer authors every entry listed in spec Appendix C and a name for every port in Appendix A. Loading from `R.raw.ports` happens in Task 20; tests pass the JSON string.
 
 - [ ] **Step 1: Failing tests**
 
@@ -1170,11 +1204,12 @@ data class ScanProgress(val done: Int, val total: Int, val open: Int, val errors
 class PortScanEngine(private val dispatcherFactory: (Int) -> CoroutineDispatcher = { Dispatchers.IO.limitedParallelism(it) }) {
     fun scan(ip: InetAddress, profile: ScanProfile, options: ScanOptions = ScanOptions()): Flow<PortResult>  // emits OPEN, CLOSED and FILTERED; callers filter
     val progress: StateFlow<ScanProgress?> }
-object Probe { sealed class Outcome { data class Connected(val rttMs: Int, val socket: Socket) : Outcome(); object Refused : Outcome(); object Timeout : Outcome(); object Unreachable : Outcome() }
+object Probe { sealed class Outcome { data class Connected(val rttMs: Int, val socket: Socket?) : Outcome(); object Refused : Outcome(); object Timeout : Outcome(); object Unreachable : Outcome() }
     suspend fun connect(ip: InetAddress, port: Int, timeoutMs: Int, keepOpen: Boolean = false): Outcome }
 ```
 - `Probe.connect` is the single place sockets are opened for TCP probing; the sweep (Task 7) and banner reader (Task 8) reuse it. Classification: success = Connected; `ConnectException` whose message contains `ECONNREFUSED` or `refused` = Refused; `SocketTimeoutException` = Timeout; `NoRouteToHostException` or messages containing `EHOSTUNREACH`/`ENETUNREACH` = Unreachable; anything else = Timeout (treated as FILTERED).
-- Cancellation: `suspendCancellableCoroutine` is not needed; wrap the blocking connect in `runInterruptible` and close the socket in `invokeOnCancellation`-equivalent `finally`.
+- Cancellation closes the socket from a watcher coroutine; the interrupt alone does not unblock `connect()` (java.net.Socket I/O is not interruptible, spec 5.3).
+- Threading: `Probe.connect` must be called from a background dispatcher (the engines call it from their `limitedParallelism` view). It deliberately does not switch to `Dispatchers.IO` itself, because that would funnel the 128-wide scan onto the 64-thread IO pool.
 
 - [ ] **Step 1: Failing tests (loopback servers)**
 
@@ -1244,7 +1279,7 @@ class PortScanEngineTest {
 ```kotlin
 package com.northwalessolutions.netprobe.engine.common
 
-import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.*
 import java.net.*
 
 object Probe {
@@ -1253,10 +1288,29 @@ object Probe {
         object Refused : Outcome(); object Timeout : Outcome(); object Unreachable : Outcome()
     }
 
-    /** Blocking connect made cancellable: cancellation closes the socket, which unblocks connect(). */
-    suspend fun connect(ip: InetAddress, port: Int, timeoutMs: Int, keepOpen: Boolean = false): Outcome {
+    private fun classifyConnect(e: ConnectException): Outcome {
+        val m = e.message.orEmpty()
+        return when {
+            m.contains("ECONNREFUSED", true) || m.contains("refused", true) -> Outcome.Refused
+            m.contains("EHOSTUNREACH", true) || m.contains("ENETUNREACH", true) -> Outcome.Unreachable
+            else -> Outcome.Timeout
+        }
+    }
+
+    /**
+     * Blocking connect made cancellable: a watcher coroutine closes the socket when the caller is cancelled,
+     * which unblocks connect() (the interrupt alone does not).
+     * Must be called from a background dispatcher; the engines call it from their limitedParallelism view.
+     * Do not put Dispatchers.IO inside this function: that would funnel the 128-wide scan onto the 64-thread IO pool.
+     */
+    suspend fun connect(ip: InetAddress, port: Int, timeoutMs: Int, keepOpen: Boolean = false): Outcome = coroutineScope {
         val socket = Socket()
-        return try {
+        val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+        // A blocking connect is not interruptible; close() from another coroutine unblocks it (spec 5.3).
+        val closer = launch(start = CoroutineStart.UNDISPATCHED) {
+            try { awaitCancellation() } finally { if (!finished.get()) runCatching { socket.close() } }
+        }
+        try {
             runInterruptible {
                 val t0 = System.nanoTime()
                 socket.connect(InetSocketAddress(ip, port), timeoutMs)
@@ -1265,16 +1319,9 @@ object Probe {
             }
         } catch (e: SocketTimeoutException) { socket.close(); Outcome.Timeout
         } catch (e: NoRouteToHostException) { socket.close(); Outcome.Unreachable
-        } catch (e: ConnectException) {
-            socket.close()
-            val m = e.message.orEmpty()
-            when {
-                m.contains("ECONNREFUSED", true) || m.contains("refused", true) -> Outcome.Refused
-                m.contains("EHOSTUNREACH", true) || m.contains("ENETUNREACH", true) -> Outcome.Unreachable
-                else -> Outcome.Timeout
-            }
-        } catch (e: InterruptedException) { socket.close(); throw kotlinx.coroutines.CancellationException("probe cancelled")
-        } catch (e: Exception) { socket.close(); Outcome.Timeout }
+        } catch (e: ConnectException) { socket.close(); classifyConnect(e) }
+        catch (e: Exception) { socket.close(); Outcome.Timeout }
+        finally { finished.set(true); closer.cancel() }
     }
 }
 ```
@@ -1359,9 +1406,9 @@ data class Liveness(val ip: Inet4Address, val alive: Boolean, val openPorts: Set
 class HostProber(val ports: List<Int> = DEFAULT_PORTS, val timeoutMs: Int = 600) {
     suspend fun probe(ip: Inet4Address): Liveness
     companion object { val DEFAULT_PORTS = listOf(80, 443, 22, 445, 139, 135, 3389, 8080, 62078, 7, 53, 548) } }
-class Sweep(private val prober: HostProber, private val concurrency: Int = 128,
+open class Sweep(private val prober: HostProber, private val concurrency: Int = 128,
             private val dispatcherFactory: (Int) -> CoroutineDispatcher = { Dispatchers.IO.limitedParallelism(it) }) {
-    fun run(hosts: Sequence<Inet4Address>): Flow<Liveness>   // emits only alive hosts
+    open fun run(hosts: Sequence<Inet4Address>): Flow<Liveness>   // emits only alive hosts (open so Task 15's tests can fake it)
     val progress: StateFlow<Pair<Int, Int>>                   // probed, total }
 ```
 - Rule (spec 5.2 item 1): probe ports in order and stop at the first `Connected` or `Refused` (both alive). All `Timeout`/`Unreachable` = not alive. A `Connected` port is recorded in `openPorts`; after one `Connected`, keep probing the remaining ports only if `collectAllOpen` is false (it is: stop early; the port scan does the rest).
@@ -1462,7 +1509,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
 import java.net.Inet4Address
 
-class Sweep(
+open class Sweep(
     private val prober: HostProber,
     private val concurrency: Int = 128,
     private val dispatcherFactory: (Int) -> CoroutineDispatcher = { Dispatchers.IO.limitedParallelism(it) },
@@ -1470,7 +1517,7 @@ class Sweep(
     private val _progress = MutableStateFlow(0 to 0)
     val progress: StateFlow<Pair<Int, Int>> = _progress
 
-    fun run(hosts: Sequence<Inet4Address>): Flow<Liveness> = channelFlow {
+    open fun run(hosts: Sequence<Inet4Address>): Flow<Liveness> = channelFlow {
         val list = hosts.toList()
         var probed = 0
         _progress.value = 0 to list.size
@@ -1531,10 +1578,12 @@ object BannerParsers {
     fun classifyUnknown(bytes: ByteArray, portName: String): ServiceInfo }
 class BannerReader(val timeoutMs: Int = 1000, val maxBytes: Int = 1024) {
     suspend fun read(ip: InetAddress, port: Int, sendFirst: ByteArray? = null): ByteArray? }
-class ServiceIdentifier(private val table: PortTable, private val reader: BannerReader = BannerReader(), private val tls: TlsPeek = TlsPeek()) {
-    suspend fun identify(ip: InetAddress, port: Int, evidence: Evidence = Evidence()): ServiceInfo }
-object TlsPeek { suspend fun certNames(ip: InetAddress, port: Int, timeoutMs: Int = 1500): List<String>? }
+class ServiceIdentifier(private val table: PortTable, private val reader: BannerReader = BannerReader(), private val tls: TlsPeek = TlsPeek(),
+                        private val portOverride: Map<Int, Int> = emptyMap() /* test hook: logical port -> real port */) {
+    suspend fun identify(ip: InetAddress, port: Int, evidence: Evidence = Evidence()): ServiceInfo }  // runs on Dispatchers.IO internally
+open class TlsPeek { open suspend fun certNames(ip: InetAddress, port: Int, timeoutMs: Int = 1500): List<String>? }  // runInterruptible(Dispatchers.IO)
 ```
+- `ServiceIdentifier.MAX_PARALLEL_IDENTIFIES = 8` (companion const) bounds how many `identify` calls the ViewModels run at once.
 - Port sets (spec 5.4): server-speaks-first `{21, 22, 25, 110, 143, 587, 2222}`; HTTP `{80, 81, 3000, 5000, 8000, 8008, 8080, 8081, 8888, 9000, 9090, 8123, 8096, 32400}`; TLS `{443, 8443, 7443, 8006, 5001}`.
 - mDNS confirmation: `_rfb._tcp` confirms VNC on 5900 to 5910, `_ipp._tcp` confirms IPP on 631, `_ssh._tcp` confirms SSH, `_http._tcp` confirms HTTP, `_smb._tcp` confirms SMB on 445.
 
@@ -1782,6 +1831,7 @@ class BannerReader(val timeoutMs: Int = 1000, val maxBytes: Int = 1024) {
 ```kotlin
 package com.northwalessolutions.netprobe.engine.serviceid
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -1791,7 +1841,7 @@ import javax.net.ssl.*
 /** Reads certificate names for identification only. Trust-all is never used for the browser launch. */
 open class TlsPeek {
     open suspend fun certNames(ip: InetAddress, port: Int, timeoutMs: Int = 1500): List<String>? = try {
-        runInterruptible {
+        runInterruptible(Dispatchers.IO) {
             val ctx = SSLContext.getInstance("TLS")
             ctx.init(null, arrayOf<TrustManager>(object : X509TrustManager {
                 override fun checkClientTrusted(c: Array<X509Certificate>, a: String) {}
@@ -1817,6 +1867,8 @@ open class TlsPeek {
 package com.northwalessolutions.netprobe.engine.serviceid
 
 import com.northwalessolutions.netprobe.engine.portscan.PortTable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.InetAddress
 
 class ServiceIdentifier(
@@ -1830,11 +1882,14 @@ class ServiceIdentifier(
         val SPEAKS_FIRST = setOf(21, 22, 25, 110, 143, 587, 2222)
         val HTTP = setOf(80, 81, 3000, 5000, 8000, 8008, 8080, 8081, 8888, 9000, 9090, 8123, 8096, 32400)
         val TLS = setOf(443, 8443, 7443, 8006, 5001)
+        /** Upper bound on concurrent identify() calls made by the scan consumers (Task 21). */
+        const val MAX_PARALLEL_IDENTIFIES = 8
         private val mdnsConfirms = mapOf("_rfb._tcp" to (5900..5910 to "VNC"), "_ipp._tcp" to (631..631 to "IPP"),
             "_ssh._tcp" to (22..22 to "SSH"), "_http._tcp" to (80..80 to "HTTP"), "_smb._tcp" to (445..445 to "SMB"))
     }
 
-    suspend fun identify(ip: InetAddress, port: Int, evidence: Evidence = Evidence()): ServiceInfo {
+    /** Runs on Dispatchers.IO so ViewModels on Main can call it; banner and TLS sockets throw NetworkOnMainThreadException otherwise. */
+    suspend fun identify(ip: InetAddress, port: Int, evidence: Evidence = Evidence()): ServiceInfo = withContext(Dispatchers.IO) {
         val real = portOverride[port] ?: port
         val baseName = table.nameFor(port)
         val base = ServiceInfo(baseName, confidence = Confidence.PORT_TABLE)
@@ -1846,14 +1901,13 @@ class ServiceIdentifier(
                 ?.let { BannerParsers.httpHead(String(it, Charsets.ISO_8859_1)) }
             port in TLS -> {
                 val names = tls.certNames(ip, real)
-                val http = reader.read(ip, real, null) // plain read yields nothing on TLS; keep for symmetry, ignored
                 ServiceInfo("HTTPS", detail = names?.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "cert $it" },
-                    confidence = if (names != null) Confidence.CONFIRMED else Confidence.PORT_TABLE).also { http?.size }
+                    confidence = if (names != null) Confidence.CONFIRMED else Confidence.PORT_TABLE)
             }
             else -> reader.read(ip, real)?.let { BannerParsers.classifyUnknown(it, baseName) }
         }
         val mdns = mdnsConfirms.entries.firstOrNull { (t, r) -> t in evidence.mdnsTypes && port in r.first }
-        return when {
+        when {
             fromBanner != null && fromBanner.confidence == Confidence.CONFIRMED -> fromBanner
             mdns != null -> ServiceInfo(mdns.value.second, detail = "mDNS ${mdns.key}", confidence = Confidence.CONFIRMED)
             fromBanner != null -> fromBanner
@@ -1863,7 +1917,7 @@ class ServiceIdentifier(
     }
 }
 ```
-Simplify the TLS branch while implementing: drop the unused plain `reader.read` call; the test suite does not cover TLS (no loopback TLS server), so keep the code path minimal and defensive.
+The test suite does not cover the TLS branch (no loopback TLS server), so it is kept minimal and defensive.
 
 - [ ] **Step 7: Run, expect pass**
 
@@ -1882,24 +1936,34 @@ git add -A && git commit -m "Add banner parsers and service identification"
 ### Task 9: mDNS discovery via NsdManager with a resolve queue
 
 **Files:**
-- Create: `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/Mdns.kt`, `MdnsDiscovery.kt`
+- Create: `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/Mdns.kt`, `MdnsDiscovery.kt`, `DeviceInfoTxt.kt`
 - Create: `app/src/main/res/raw/mdns_types.txt` (one service type per line, from spec Appendix B)
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/MdnsResolveQueueTest.kt`
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/MdnsResolveQueueTest.kt`, `DeviceInfoTxtTest.kt`
 
 **Interfaces:**
 - Produces:
 ```kotlin
 data class MdnsRecord(val ip: Inet4Address, val instanceName: String, val type: String, val port: Int, val txt: Map<String, String>, val ipv6: List<String>)
+/** A discovered-but-unresolved service. [handle] carries the platform object (the NsdServiceInfo from onServiceFound) so it is passed straight to resolveService. */
+data class NsdFound(val name: String, val type: String, val handle: Any? = null)
 /** Abstracts NsdManager so the queue is unit-testable. */
 interface NsdSource {
-    fun discover(type: String, onFound: (serviceName: String, type: String) -> Unit, onLost: (String) -> Unit): AutoCloseable
-    suspend fun resolve(serviceName: String, type: String): MdnsRecord?   // one at a time
+    fun discover(type: String, onFound: (NsdFound) -> Unit, onLost: (String) -> Unit): AutoCloseable
+    suspend fun resolve(found: NsdFound): MdnsRecord?   // one at a time
 }
 class MdnsResolveQueue(private val source: NsdSource, private val perResolveTimeoutMs: Long = 3000) {
     fun run(types: List<String>, durationMs: Long): Flow<MdnsRecord> }
 class AndroidNsdSource(context: Context) : NsdSource
+/** `_device-info._tcp` is not browsable (Apple publishes the TXT record but no PTR for the type), so the TXT is fetched by a direct query for "<instance>._device-info._tcp.local". */
+object DeviceInfoTxt {
+    const val SERVICE = "_device-info._tcp"
+    fun buildQuery(instance: String): ByteArray?                         // null when the instance label exceeds 63 bytes
+    fun parseTxtResponse(resp: ByteArray): Map<String, String>?          // lower-cased keys; null on garbage, never throws
+    suspend fun query(instance: String, host: Inet4Address, timeoutMs: Int = 1000): Map<String, String>?
+}
 ```
-- Behaviour: start `discover` for every type; each found (name, type) pair is enqueued once; resolves run strictly one at a time with a timeout each; `run` stops discovery after `durationMs` and completes once the queue drains or 2 s later, whichever first.
+- Behaviour: start `discover` for every type; each found (name, type) pair is enqueued once; resolves run strictly one at a time with a timeout each; `run` stops discovery after `durationMs` and completes once the queue drains or 2 s later, whichever first. The queue stores the `NsdFound` (with the platform `NsdServiceInfo` as `handle`) rather than reconstructing a service from strings. A resolve exception other than cancellation yields no record; cancellation is always rethrown.
+- `DeviceInfoTxt.query` (Gruff finding 12, option A): for each distinct mDNS instance name resolved for a host, the discovery engine (Task 15) sends one DNS TXT question (QU bit set) for `<instance>._device-info._tcp.local` to 224.0.0.251:5353 and unicast to the host on 5353, waits up to 1 s for a reply from that host and parses the TXT RDATA into `mdnsTxt["_device-info._tcp"]`. The source port is ephemeral, so the responder treats us as a legacy unicast resolver and answers directly.
 
 - [ ] **Step 1: Failing queue test with a fake source**
 
@@ -1916,17 +1980,17 @@ import java.net.InetAddress
 class MdnsResolveQueueTest {
     private class FakeSource(private val services: Map<String, List<String>>, private val resolveDelayMs: Long = 20) : NsdSource {
         var concurrentResolves = 0; var maxConcurrent = 0; val resolved = mutableListOf<String>()
-        override fun discover(type: String, onFound: (String, String) -> Unit, onLost: (String) -> Unit): AutoCloseable {
-            services[type].orEmpty().forEach { onFound(it, type) }
-            services[type].orEmpty().firstOrNull()?.let { onFound(it, type) } // duplicate announce
+        override fun discover(type: String, onFound: (NsdFound) -> Unit, onLost: (String) -> Unit): AutoCloseable {
+            services[type].orEmpty().forEach { onFound(NsdFound(it, type)) }
+            services[type].orEmpty().firstOrNull()?.let { onFound(NsdFound(it, type)) } // duplicate announce
             return AutoCloseable { }
         }
-        override suspend fun resolve(serviceName: String, type: String): MdnsRecord? {
+        override suspend fun resolve(found: NsdFound): MdnsRecord? {
             synchronized(this) { concurrentResolves++; maxConcurrent = maxOf(maxConcurrent, concurrentResolves) }
             delay(resolveDelayMs)
-            synchronized(this) { concurrentResolves--; resolved += serviceName }
-            if (serviceName == "broken") return null
-            return MdnsRecord(InetAddress.getByName("192.168.1.10") as Inet4Address, serviceName, type, 80, mapOf("model" to "X"), emptyList())
+            synchronized(this) { concurrentResolves--; resolved += found.name }
+            if (found.name == "broken") return null
+            return MdnsRecord(InetAddress.getByName("192.168.1.10") as Inet4Address, found.name, found.type, 80, mapOf("model" to "X"), emptyList())
         }
     }
 
@@ -1939,13 +2003,24 @@ class MdnsResolveQueueTest {
     }
     @Test fun `a hanging resolve is timed out and the queue continues`() = runBlocking {
         val src = object : NsdSource {
-            override fun discover(type: String, onFound: (String, String) -> Unit, onLost: (String) -> Unit): AutoCloseable { onFound("hang", type); onFound("ok", type); return AutoCloseable { } }
-            override suspend fun resolve(serviceName: String, type: String): MdnsRecord? {
-                if (serviceName == "hang") { delay(60_000); return null }
-                return MdnsRecord(InetAddress.getByName("192.168.1.11") as Inet4Address, serviceName, type, 22, emptyMap(), emptyList())
+            override fun discover(type: String, onFound: (NsdFound) -> Unit, onLost: (String) -> Unit): AutoCloseable { onFound(NsdFound("hang", type)); onFound(NsdFound("ok", type)); return AutoCloseable { } }
+            override suspend fun resolve(found: NsdFound): MdnsRecord? {
+                if (found.name == "hang") { delay(60_000); return null }
+                return MdnsRecord(InetAddress.getByName("192.168.1.11") as Inet4Address, found.name, found.type, 22, emptyMap(), emptyList())
             }
         }
         val out = MdnsResolveQueue(src, perResolveTimeoutMs = 100).run(listOf("_ssh._tcp"), durationMs = 100).toList()
+        assertEquals(listOf("ok"), out.map { it.instanceName })
+    }
+    @Test fun `a throwing resolve is skipped and the queue continues`() = runBlocking {
+        val src = object : NsdSource {
+            override fun discover(type: String, onFound: (NsdFound) -> Unit, onLost: (String) -> Unit): AutoCloseable { onFound(NsdFound("boom", type)); onFound(NsdFound("ok", type)); return AutoCloseable { } }
+            override suspend fun resolve(found: NsdFound): MdnsRecord? {
+                if (found.name == "boom") throw IllegalStateException("nsd failed")
+                return MdnsRecord(InetAddress.getByName("192.168.1.12") as Inet4Address, found.name, found.type, 22, emptyMap(), emptyList())
+            }
+        }
+        val out = MdnsResolveQueue(src, perResolveTimeoutMs = 500).run(listOf("_ssh._tcp"), durationMs = 100).toList()
         assertEquals(listOf("ok"), out.map { it.instanceName })
     }
 }
@@ -1972,21 +2047,27 @@ import java.net.Inet4Address
 data class MdnsRecord(val ip: Inet4Address, val instanceName: String, val type: String, val port: Int,
                       val txt: Map<String, String>, val ipv6: List<String>)
 
+/** A discovered-but-unresolved service. [handle] carries the platform object (the NsdServiceInfo from onServiceFound). */
+data class NsdFound(val name: String, val type: String, val handle: Any? = null)
+
 interface NsdSource {
-    fun discover(type: String, onFound: (serviceName: String, type: String) -> Unit, onLost: (String) -> Unit): AutoCloseable
-    suspend fun resolve(serviceName: String, type: String): MdnsRecord?
+    fun discover(type: String, onFound: (NsdFound) -> Unit, onLost: (String) -> Unit): AutoCloseable
+    suspend fun resolve(found: NsdFound): MdnsRecord?
 }
 
 class MdnsResolveQueue(private val source: NsdSource, private val perResolveTimeoutMs: Long = 3000) {
     fun run(types: List<String>, durationMs: Long): Flow<MdnsRecord> = channelFlow {
-        val queue = Channel<Pair<String, String>>(Channel.UNLIMITED)
+        val queue = Channel<NsdFound>(Channel.UNLIMITED)
         val seen = HashSet<Pair<String, String>>()
         val handles = types.map { t ->
-            source.discover(t, onFound = { name, type -> val k = name to type; if (synchronized(seen) { seen.add(k) }) queue.trySend(k) }, onLost = { })
+            source.discover(t, onFound = { f -> if (synchronized(seen) { seen.add(f.name to f.type) }) queue.trySend(f) }, onLost = { })
         }
         val resolver = launch {
-            for ((name, type) in queue) {
-                val rec = withTimeoutOrNull(perResolveTimeoutMs) { runCatching { source.resolve(name, type) }.getOrNull() }
+            for (found in queue) {
+                // runCatching would swallow CancellationException (including the timeout's), so catch explicitly.
+                val rec = withTimeoutOrNull(perResolveTimeoutMs) {
+                    try { source.resolve(found) } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+                }
                 if (rec != null) send(rec)
             }
         }
@@ -2005,43 +2086,48 @@ package com.northwalessolutions.netprobe.engine.discovery
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.net.Inet4Address
 import java.net.Inet6Address
+import java.net.InetAddress
 import kotlin.coroutines.resume
 
 class AndroidNsdSource(context: Context) : NsdSource {
     private val nsd = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
-    override fun discover(type: String, onFound: (String, String) -> Unit, onLost: (String) -> Unit): AutoCloseable {
+    override fun discover(type: String, onFound: (NsdFound) -> Unit, onLost: (String) -> Unit): AutoCloseable {
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(t: String) {}
             override fun onDiscoveryStopped(t: String) {}
             override fun onStartDiscoveryFailed(t: String, code: Int) {}
             override fun onStopDiscoveryFailed(t: String, code: Int) {}
-            override fun onServiceFound(info: NsdServiceInfo) { onFound(info.serviceName, info.serviceType.trimEnd('.')) }
+            override fun onServiceFound(info: NsdServiceInfo) { onFound(NsdFound(info.serviceName, info.serviceType.trimEnd('.'), info)) }
             override fun onServiceLost(info: NsdServiceInfo) { onLost(info.serviceName) }
         }
         runCatching { nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener) }
         return AutoCloseable { runCatching { nsd.stopServiceDiscovery(listener) } }
     }
 
-    override suspend fun resolve(serviceName: String, type: String): MdnsRecord? = suspendCancellableCoroutine { cont ->
-        val info = NsdServiceInfo().apply { this.serviceName = serviceName; this.serviceType = type }
+    override suspend fun resolve(found: NsdFound): MdnsRecord? = suspendCancellableCoroutine { cont ->
+        // Pass the NsdServiceInfo from onServiceFound straight through (the documented pattern); rebuild only if the handle is missing.
+        val info = found.handle as? NsdServiceInfo
+            ?: NsdServiceInfo().apply { this.serviceName = found.name; this.serviceType = found.type }
         @Suppress("DEPRECATION")
         nsd.resolveService(info, object : NsdManager.ResolveListener {
             override fun onResolveFailed(i: NsdServiceInfo, code: Int) { if (cont.isActive) cont.resume(null) }
             override fun onServiceResolved(i: NsdServiceInfo) {
-                val v4 = i.host as? Inet4Address
+                val addrs: List<InetAddress> = if (Build.VERSION.SDK_INT >= 34) i.hostAddresses else listOfNotNull(i.host)
+                val v4 = addrs.filterIsInstance<Inet4Address>().firstOrNull()
+                val v6 = addrs.filterIsInstance<Inet6Address>().map { it.hostAddress.substringBefore('%') }
                 val txt = i.attributes.mapValues { (_, v) -> v?.let { String(it, Charsets.UTF_8) } ?: "" }
-                val v6 = listOfNotNull((i.host as? Inet6Address)?.hostAddress)
                 if (cont.isActive) cont.resume(v4?.let { MdnsRecord(it, i.serviceName, i.serviceType.trimEnd('.'), i.port, txt, v6) })
             }
         })
     }
 }
 ```
-`mdns_types.txt`: the 30 types from spec Appendix B, one per line. Task 21 loads it.
+`mdns_types.txt`: the 30 types from spec Appendix B, one per line. The wiring task (Task 20) loads it. (`_device-info._tcp` stays in the list for completeness, but browsing it finds nothing; its TXT comes from `DeviceInfoTxt`.)
 
 - [ ] **Step 4: Run, expect pass**
 
@@ -2049,10 +2135,224 @@ class AndroidNsdSource(context: Context) : NsdSource {
 ./gradlew :app:testDebugUnitTest --tests '*MdnsResolveQueueTest*' :app:assembleDebug --console=plain 2>&1 | tail -15
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Failing tests for the direct `_device-info` TXT query**
+
+`DeviceInfoTxtTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.engine.discovery
+
+import org.junit.Assert.*
+import org.junit.Test
+import java.io.ByteArrayOutputStream
+
+class DeviceInfoTxtTest {
+    private fun u16(v: Int) = byteArrayOf((v shr 8).toByte(), v.toByte())
+    private fun name(vararg labels: String): ByteArray {
+        val o = ByteArrayOutputStream()
+        for (l in labels) { val b = l.toByteArray(); o.write(b.size); o.write(b) }
+        o.write(0); return o.toByteArray()
+    }
+    private fun txt(kv: List<String>): ByteArray {
+        val o = ByteArrayOutputStream()
+        for (s in kv) { val b = s.toByteArray(); o.write(b.size); o.write(b) }
+        return o.toByteArray()
+    }
+    /** A legacy-unicast style reply: header, echoed question, one TXT answer (owner name plain or a pointer to the question). */
+    private fun response(kv: List<String>, owner: Array<String> = arrayOf("Davids-MacBook", "_device-info", "_tcp", "local"),
+                         compressed: Boolean = false, type: Int = 16): ByteArray {
+        val o = ByteArrayOutputStream()
+        o.write(u16(0)); o.write(u16(0x8400)); o.write(u16(1)); o.write(u16(1)); o.write(u16(0)); o.write(u16(0))
+        val q = name(*owner)
+        o.write(q); o.write(u16(16)); o.write(u16(0x8001))
+        if (compressed) o.write(byteArrayOf(0xC0.toByte(), 12)) else o.write(q)
+        o.write(u16(type)); o.write(u16(0x8001)); o.write(byteArrayOf(0, 0, 0x11, 0x94.toByte()))
+        val rdata = txt(kv); o.write(u16(rdata.size)); o.write(rdata)
+        return o.toByteArray()
+    }
+
+    @Test fun `query packet is a TXT question with the QU bit`() {
+        val q = DeviceInfoTxt.buildQuery("Davids-MacBook")!!
+        assertEquals(14 + 42, q.size)
+        assertEquals(1, q[5].toInt())                               // QDCOUNT 1
+        assertEquals(14, q[12].toInt())                             // first label length
+        assertEquals("Davids-MacBook", String(q, 13, 14))
+        assertEquals(12, q[27].toInt()); assertEquals("_device-info", String(q, 28, 12))
+        assertEquals(0x00, q[q.size - 4].toInt()); assertEquals(16, q[q.size - 3].toInt())   // QTYPE TXT
+        assertEquals(0x80, q[q.size - 2].toInt() and 0xff); assertEquals(1, q[q.size - 1].toInt())  // QCLASS IN + QU
+    }
+    @Test fun `query refuses an empty or over-long instance label`() {
+        assertNull(DeviceInfoTxt.buildQuery("")); assertNull(DeviceInfoTxt.buildQuery("x".repeat(64)))
+    }
+    @Test fun `parses model and osxvers from a plain answer`() {
+        val m = DeviceInfoTxt.parseTxtResponse(response(listOf("model=MacBookPro18,3", "osxvers=23")))!!
+        assertEquals("MacBookPro18,3", m["model"]); assertEquals("23", m["osxvers"])
+    }
+    @Test fun `parses an answer whose owner name is a compression pointer`() {
+        assertEquals("iMac21,1", DeviceInfoTxt.parseTxtResponse(response(listOf("model=iMac21,1"), compressed = true))!!["model"])
+    }
+    @Test fun `ignores other owner names and other record types`() {
+        assertNull(DeviceInfoTxt.parseTxtResponse(response(listOf("model=X"), owner = arrayOf("Mac", "_airplay", "_tcp", "local"))))
+        assertNull(DeviceInfoTxt.parseTxtResponse(response(listOf("model=X"), type = 1)))
+    }
+    @Test fun `truncated garbage and pointer loops return null`() {
+        val ok = response(listOf("model=MacBookPro18,3"))
+        assertNull(DeviceInfoTxt.parseTxtResponse(ok.copyOf(30)))
+        assertNull(DeviceInfoTxt.parseTxtResponse(ByteArray(0)))
+        assertNull(DeviceInfoTxt.parseTxtResponse(ByteArray(100) { 0x7f }))
+        val loop = ByteArrayOutputStream().apply {
+            write(u16(0)); write(u16(0x8400)); write(u16(0)); write(u16(1)); write(u16(0)); write(u16(0))
+            write(byteArrayOf(0xC0.toByte(), 12)); write(ByteArray(10))
+        }.toByteArray()
+        assertNull(DeviceInfoTxt.parseTxtResponse(loop))
+    }
+}
+```
+
+- [ ] **Step 6: Run, expect failure**
 
 ```bash
-git add -A && git commit -m "Add mDNS discovery with serial resolve queue"
+./gradlew :app:testDebugUnitTest --tests '*DeviceInfoTxtTest*' --console=plain 2>&1 | tail -15
+```
+Expected: FAIL, unresolved reference `DeviceInfoTxt`.
+
+- [ ] **Step 7: Implement `DeviceInfoTxt.kt`**
+
+```kotlin
+package com.northwalessolutions.netprobe.engine.discovery
+
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runInterruptible
+import java.io.ByteArrayOutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.SocketTimeoutException
+
+/**
+ * Apple devices publish "<Name>._device-info._tcp.local TXT model=..." but no PTR record for the type,
+ * so NsdManager (PTR browse) never returns it. We ask for the TXT record of a known instance name directly.
+ */
+object DeviceInfoTxt {
+    const val SERVICE = "_device-info._tcp"
+    private const val MDNS_GROUP = "224.0.0.251"
+    private const val MDNS_PORT = 5353
+    private const val MAX_LABEL_BYTES = 63
+    private const val TYPE_TXT = 16
+    private const val POINTER_MASK = 0xC0
+    private const val MAX_POINTER_JUMPS = 8
+    private const val POLL_MS = 250
+    private const val RECV_BUFFER = 1500
+
+    /** One question, QTYPE TXT, QCLASS IN with the QU bit (0x8001). Null when the instance label cannot be encoded. */
+    fun buildQuery(instance: String): ByteArray? {
+        val label = instance.toByteArray(Charsets.UTF_8)
+        if (label.isEmpty() || label.size > MAX_LABEL_BYTES) return null
+        val out = ByteArrayOutputStream()
+        out.write(byteArrayOf(0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0))   // id 0, flags 0, QDCOUNT 1
+        for (l in listOf(label, "_device-info".toByteArray(), "_tcp".toByteArray(), "local".toByteArray())) { out.write(l.size); out.write(l) }
+        out.write(0)
+        out.write(byteArrayOf(0, TYPE_TXT.toByte(), 0x80.toByte(), 0x01))
+        return out.toByteArray()
+    }
+
+    fun parseTxtResponse(resp: ByteArray): Map<String, String>? {
+        try {
+            if (resp.size < 12) return null
+            if ((u16(resp, 2) and 0x8000) == 0) return null                 // not a response
+            val questions = u16(resp, 4)
+            val records = u16(resp, 6) + u16(resp, 8) + u16(resp, 10)
+            var pos = 12
+            for (i in 0 until questions) { val r = readName(resp, pos) ?: return null; pos = r.second + 4 }
+            for (i in 0 until records) {
+                val (owner, nameEnd) = readName(resp, pos) ?: return null
+                if (nameEnd + 10 > resp.size) return null
+                val type = u16(resp, nameEnd)
+                val rdLen = u16(resp, nameEnd + 8)
+                val rdStart = nameEnd + 10
+                if (rdStart + rdLen > resp.size) return null
+                if (type == TYPE_TXT && owner.endsWith("$SERVICE.local", ignoreCase = true)) {
+                    return parseTxtRdata(resp, rdStart, rdStart + rdLen).takeIf { it.isNotEmpty() }
+                }
+                pos = rdStart + rdLen
+            }
+            return null
+        } catch (_: Exception) { return null }
+    }
+
+    private fun u16(b: ByteArray, at: Int) = ((b[at].toInt() and 0xff) shl 8) or (b[at + 1].toInt() and 0xff)
+
+    /** Reads a possibly compressed name. Returns the dotted name and the position after it in the original stream. */
+    private fun readName(b: ByteArray, start: Int): Pair<String, Int>? {
+        val parts = ArrayList<String>(); var pos = start; var end = -1; var jumps = 0
+        while (true) {
+            if (pos >= b.size) return null
+            val len = b[pos].toInt() and 0xff
+            when {
+                len == 0 -> { if (end < 0) end = pos + 1; return parts.joinToString(".") to end }
+                (len and POINTER_MASK) == POINTER_MASK -> {
+                    if (pos + 1 >= b.size || ++jumps > MAX_POINTER_JUMPS) return null
+                    if (end < 0) end = pos + 2
+                    pos = ((len and 0x3F) shl 8) or (b[pos + 1].toInt() and 0xff)
+                }
+                (len and POINTER_MASK) != 0 -> return null
+                else -> {
+                    if (pos + 1 + len > b.size) return null
+                    parts += String(b, pos + 1, len, Charsets.UTF_8); pos += 1 + len
+                }
+            }
+        }
+    }
+
+    private fun parseTxtRdata(b: ByteArray, start: Int, end: Int): Map<String, String> {
+        val out = LinkedHashMap<String, String>(); var p = start
+        while (p < end) {
+            val l = b[p].toInt() and 0xff
+            if (l == 0 || p + 1 + l > end) break
+            val s = String(b, p + 1, l, Charsets.UTF_8)
+            val eq = s.indexOf('=')
+            if (eq > 0) out.putIfAbsent(s.substring(0, eq).lowercase(), s.substring(eq + 1))
+            p += 1 + l
+        }
+        return out
+    }
+
+    /** Sends the question to the mDNS group and unicast to [host]; returns the TXT map from the first reply sent by [host]. */
+    suspend fun query(instance: String, host: Inet4Address, timeoutMs: Int = 1000): Map<String, String>? {
+        val q = buildQuery(instance) ?: return null
+        return try {
+            runInterruptible(Dispatchers.IO) {
+                DatagramSocket().use { s ->
+                    s.soTimeout = POLL_MS
+                    s.send(DatagramPacket(q, q.size, host, MDNS_PORT))
+                    runCatching { s.send(DatagramPacket(q, q.size, InetAddress.getByName(MDNS_GROUP), MDNS_PORT)) }
+                    val deadline = System.currentTimeMillis() + timeoutMs
+                    val buf = ByteArray(RECV_BUFFER)
+                    var found: Map<String, String>? = null
+                    while (found == null && System.currentTimeMillis() < deadline) {
+                        val p = DatagramPacket(buf, buf.size)
+                        try { s.receive(p) } catch (_: SocketTimeoutException) { continue }
+                        if (p.address == host) found = parseTxtResponse(buf.copyOf(p.length))
+                    }
+                    found
+                }
+            }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+    }
+}
+```
+
+- [ ] **Step 8: Run, expect pass**
+
+```bash
+./gradlew :app:testDebugUnitTest --tests '*MdnsResolveQueueTest*' --tests '*DeviceInfoTxtTest*' :app:assembleDebug --console=plain 2>&1 | tail -15
+```
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add -A && git commit -m "Add mDNS discovery with serial resolve queue and direct _device-info TXT query"
 ```
 
 ---
@@ -2073,7 +2373,7 @@ class SsdpSearch(private val sendRepeats: Int = 3, private val listenMs: Long = 
 data class UpnpDevice(val friendlyName: String?, val manufacturer: String?, val modelName: String?, val modelNumber: String?, val deviceType: String?, val udn: String?)
 object UpnpDescriptionParser { fun parse(xml: String): UpnpDevice? }   // null on garbage, never throws
 class UpnpFetcher(private val timeoutMs: Int = 2000, private val maxBytes: Int = 65536) { suspend fun fetch(location: String, allowedHost: Inet4Address): UpnpDevice? }
-object MacExtract { fun fromText(s: String): String? }   // first aa:bb:cc:dd:ee:ff or aabbccddeeff pattern as lower colon form
+object MacExtract { fun fromText(s: String): String? }   // first aa:bb:cc:dd:ee:ff, then a version-1 UUID node, then a bare aabbccddeeff, as lower colon form
 ```
 - `UpnpFetcher` refuses a `LOCATION` whose host is not `allowedHost` (the responding IP): a device must not redirect us elsewhere.
 
@@ -2137,6 +2437,7 @@ class SsdpTest {
         assertEquals("aa:bb:cc:dd:ee:ff", MacExtract.fromText("uuid:12345678-1234-1234-1234-aabbccddeeff"))
         assertEquals("00:11:22:33:44:55", MacExtract.fromText("raspberrypi [00:11:22:33:44:55]"))
         assertNull(MacExtract.fromText("Living Room TV")); assertNull(MacExtract.fromText("1234567890ab12")) // 14 hex: not a MAC
+        assertNull(MacExtract.fromText("uuid:12345678-1234-4234-1234-aabbccddeeff"))   // version 4 UUID: random node, not a MAC
     }
 }
 
@@ -2189,10 +2490,13 @@ object SsdpParser {
 }
 
 object MacExtract {
-    private val colon = Regex("(?<![0-9a-fA-F:])([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})(?![0-9a-fA-F:])")
+    private val colon = Regex("(?<![0-9a-fA-F])(?<![0-9a-fA-F]{2}:)([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})(?![0-9a-fA-F])(?!:[0-9a-fA-F]{2})")
+    // Only a version-1 (time-based) UUID carries a real MAC in its node field; version 4 UDNs are random.
+    private val uuid = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-([0-9a-fA-F])[0-9a-fA-F]{3}-[0-9a-fA-F]{4}-([0-9a-fA-F]{12})")
     private val bare = Regex("(?<![0-9a-fA-F])([0-9a-fA-F]{12})(?![0-9a-fA-F])")
     fun fromText(s: String): String? {
         colon.find(s)?.let { return it.groupValues[1].lowercase() }
+        uuid.find(s)?.let { m -> return if (m.groupValues[1] == "1") m.groupValues[2].lowercase().chunked(2).joinToString(":") else null }
         bare.find(s)?.let { m -> return m.groupValues[1].lowercase().chunked(2).joinToString(":") }
         return null
     }
@@ -2229,32 +2533,65 @@ package com.northwalessolutions.netprobe.engine.discovery
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
-import org.xmlpull.v1.XmlPullParser
-import org.xmlpull.v1.XmlPullParserFactory
+import org.xml.sax.Attributes
+import org.xml.sax.InputSource
+import org.xml.sax.helpers.DefaultHandler
 import java.io.StringReader
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.URL
+import javax.xml.parsers.SAXParserFactory
 
 data class UpnpDevice(val friendlyName: String?, val manufacturer: String?, val modelName: String?,
                       val modelNumber: String?, val deviceType: String?, val udn: String?)
 
+/**
+ * SAX, not XmlPull: org.xmlpull.v1.XmlPullParserFactory is an android.jar stub on the JVM unit-test classpath.
+ * The bytes come from an arbitrary LAN device, so DOCTYPE and external entities are refused.
+ */
 object UpnpDescriptionParser {
-    fun parse(xml: String): UpnpDevice? = try {
-        val p = XmlPullParserFactory.newInstance().newPullParser().apply { setInput(StringReader(xml)) }
-        val f = HashMap<String, String>(); var depth = 0; var deviceDepth = -1; var inRootDevice = false; var done = false
-        var ev = p.eventType
-        while (ev != XmlPullParser.END_DOCUMENT && !done) {
-            when (ev) {
-                XmlPullParser.START_TAG -> { depth++
-                    if (p.name == "device" && deviceDepth == -1) { deviceDepth = depth; inRootDevice = true }
-                    else if (p.name == "deviceList" && inRootDevice) { inRootDevice = false }
-                    else if (inRootDevice && depth == deviceDepth + 1) { val n = p.name; val t = runCatching { p.nextText() }.getOrNull(); depth--; if (t != null) f.putIfAbsent(n, t.trim()) }
-                }
-                XmlPullParser.END_TAG -> { if (p.name == "device" && depth == deviceDepth) done = true; depth-- }
-            }
-            ev = p.next()
+    private const val MAX_TEXT_CHARS = 512
+    private val WANTED = setOf("friendlyName", "manufacturer", "modelName", "modelNumber", "deviceType", "UDN")
+
+    /** Records the text of direct children of the first <device>; everything deeper (deviceList, serviceList) is ignored. */
+    private class Handler : DefaultHandler() {
+        val fields = HashMap<String, String>()
+        private var depth = 0
+        private var deviceDepth = -1
+        private var done = false
+        private var current: String? = null
+        private val text = StringBuilder()
+
+        override fun startElement(uri: String?, localName: String?, qName: String, attrs: Attributes?) {
+            depth++
+            if (done) return
+            val name = qName.substringAfter(':')
+            if (name == "device" && deviceDepth == -1) { deviceDepth = depth; return }
+            if (deviceDepth != -1 && depth == deviceDepth + 1 && name in WANTED) { current = name; text.setLength(0) }
         }
+        override fun characters(ch: CharArray, start: Int, length: Int) {
+            if (current != null && text.length < MAX_TEXT_CHARS) text.append(ch, start, length)
+        }
+        override fun endElement(uri: String?, localName: String?, qName: String) {
+            if (!done) {
+                val c = current
+                if (c != null && depth == deviceDepth + 1) { fields.putIfAbsent(c, text.toString().trim()); current = null }
+                else if (deviceDepth != -1 && depth == deviceDepth) done = true
+            }
+            depth--
+        }
+    }
+
+    fun parse(xml: String): UpnpDevice? = try {
+        val factory = SAXParserFactory.newInstance().apply {
+            isNamespaceAware = false
+            runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
+            runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+            runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+        }
+        val h = Handler()
+        factory.newSAXParser().parse(InputSource(StringReader(xml)), h)   // any SAXException (truncated or binary input) lands in the catch
+        val f = h.fields
         if (f.isEmpty()) null else UpnpDevice(f["friendlyName"], f["manufacturer"], f["modelName"], f["modelNumber"], f["deviceType"], f["UDN"])
     } catch (_: Exception) { null }
 }
@@ -2267,14 +2604,20 @@ class UpnpFetcher(private val timeoutMs: Int = 2000, private val maxBytes: Int =
             val c = url.openConnection() as HttpURLConnection
             c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false
             c.inputStream.use { ins ->
-                val bytes = ins.readNBytes(maxBytes)
-                UpnpDescriptionParser.parse(String(bytes, Charsets.UTF_8))
+                // Bounded manual read: InputStream.readNBytes needs API 33 and minSdk is 26.
+                val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(8192)
+                while (out.size() < maxBytes) {
+                    val r = ins.read(buf, 0, minOf(buf.size, maxBytes - out.size()))
+                    if (r < 0) break
+                    out.write(buf, 0, r)
+                }
+                UpnpDescriptionParser.parse(String(out.toByteArray(), Charsets.UTF_8))
             }
         }
     } catch (e: InterruptedException) { throw kotlinx.coroutines.CancellationException() } catch (_: Exception) { null }
 }
 ```
-`readNBytes` needs API 33 on Android; on the JVM tests it exists. Replace with a manual bounded read loop (`ByteArrayOutputStream`, 8 KB buffer, stop at `maxBytes`) so it works on minSdk 26.
+Do not add kxml2 or Robolectric to get XmlPull working; SAX is real on both runtimes.
 
 - [ ] **Step 5: Run, expect pass**
 
@@ -2326,7 +2669,7 @@ class NetBiosTest {
         "1234 8400 0000 0001 0000 0000" +
         "20" + "43 4b" + "41".repeat(30) + "00" +   // name: CK + 30 A's
         "0021 0001 00000000" +
-        "0053" +                                      // RDLENGTH: 1 + 3*18 + 46 = 101 -> but we only need the first bytes parsed
+        "0065" +                                      // RDLENGTH: 1 + 3*18 + 46 = 101 = 0x65
         "03" +
         name16("DESKTOP-ABC", 0x00) + "0400" +        // unique, active
         name16("WORKGROUP", 0x00) + "8400" +          // group
@@ -2446,7 +2789,7 @@ git add -A && git commit -m "Add NetBIOS node status query and parser"
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/Snmp.kt`
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/SnmpTest.kt`
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/SnmpTest.kt`, `SnmpTestSupport.kt` (the response encoder lives in the test source set only)
 
 **Interfaces:**
 - Produces:
@@ -2457,7 +2800,7 @@ object Snmp {
     fun parseResponse(bytes: ByteArray): SnmpInfo?                                    // null on garbage or SNMP error
     suspend fun query(ip: Inet4Address, timeoutMs: Int = 1000): SnmpInfo? }
 ```
-- BER needed: SEQUENCE 0x30, INTEGER 0x02, OCTET STRING 0x04, NULL 0x05, OID 0x06, GetRequest 0xa0, GetResponse 0xa2; lengths in short and long form (0x81, 0x82). Write a tiny `Ber` encoder/decoder inside the file.
+- BER needed: SEQUENCE 0x30, INTEGER 0x02, OCTET STRING 0x04, NULL 0x05, OID 0x06, GetRequest 0xa0, GetResponse 0xa2; lengths in short and long form (0x81, 0x82). Write a tiny `internal object Ber` encoder/decoder inside the file (`internal`, not `private`, so the test can check `Ber.oid` against independent bytes).
 
 - [ ] **Step 1: Failing tests**
 
@@ -2481,36 +2824,64 @@ class SnmpTest {
         assertTrue(r.toList().windowed(10).any { it.map { b -> b.toInt() and 0xff } == listOf(6, 8, 0x2b, 6, 1, 2, 1, 1, 2, 0) })
     }
 
-    // A real-shaped GetResponse: sysDescr "RouterOS RB750Gr3", sysName "gw", sysObjectID 1.3.6.1.4.1.14988.1
+    // A hand-written (independent of the encoder) GetResponse: sysDescr "RouterOS RB750Gr3", sysName "gw",
+    // sysObjectID 1.3.6.1.4.1.14988.1, request-id 0x5a5a. Lengths: varbinds 0x1d, 0x0e, 0x14; list 0x45; PDU 0x51; message 0x5e.
+    // 14988 = 117 * 128 + 12, so its base-128 encoding is f5 0c.
     private val response = hex(
-        "30 5d 02 01 01 04 06 70 75 62 6c 69 63 a2 50 02 02 5a 5a 02 01 00 02 01 00 30 44" +
-        "30 15 06 08 2b 06 01 02 01 01 01 00 04 09 52 6f 75 74 65 72 4f 53 20" +      // (truncated descr for brevity)
+        "30 5e 02 01 01 04 06 70 75 62 6c 69 63 a2 51 02 02 5a 5a 02 01 00 02 01 00 30 45" +
+        "30 1d 06 08 2b 06 01 02 01 01 01 00 04 11 52 6f 75 74 65 72 4f 53 20 52 42 37 35 30 47 72 33" +
         "30 0e 06 08 2b 06 01 02 01 01 05 00 04 02 67 77" +
-        "30 1b 06 08 2b 06 01 02 01 01 02 00 06 0f 2b 06 01 04 01 81 f5 1c 01" )
+        "30 14 06 08 2b 06 01 02 01 01 02 00 06 08 2b 06 01 04 01 f5 0c 01")
+
+    @Test fun `parses a hand-written get response`() {
+        val i = Snmp.parseResponse(response)!!
+        assertEquals("RouterOS RB750Gr3", i.sysDescr); assertEquals("gw", i.sysName); assertEquals("1.3.6.1.4.1.14988.1", i.sysObjectId)
+    }
+    @Test fun `oid encodes multi-byte subidentifiers`() {
+        assertArrayEquals(hex("06 08 2b 06 01 04 01 f5 0c 01"), Ber.oid(intArrayOf(1, 3, 6, 1, 4, 1, 14988, 1)))
+    }
 
     @Test fun `parses a get response`() {
-        val built = Snmp.encodeResponseForTest(requestId = 0x5a5a, descr = "RouterOS RB750Gr3", name = "gw", oid = intArrayOf(1,3,6,1,4,1,14988,1))
+        val built = SnmpTestSupport.encodeResponse(requestId = 0x5a5a, descr = "RouterOS RB750Gr3", name = "gw", oid = intArrayOf(1,3,6,1,4,1,14988,1))
         val i = Snmp.parseResponse(built)!!
         assertEquals("RouterOS RB750Gr3", i.sysDescr); assertEquals("gw", i.sysName); assertEquals("1.3.6.1.4.1.14988.1", i.sysObjectId)
     }
     @Test fun `long form lengths are handled`() {
         val long = "x".repeat(300)
-        val i = Snmp.parseResponse(Snmp.encodeResponseForTest(1, long, "n", intArrayOf(1,3,6,1)))!!
+        val i = Snmp.parseResponse(SnmpTestSupport.encodeResponse(1, long, "n", intArrayOf(1,3,6,1)))!!
         assertEquals(300, i.sysDescr!!.length)
     }
     @Test fun `error status yields null`() {
-        val b = Snmp.encodeResponseForTest(1, "d", "n", intArrayOf(1,3,6,1), errorStatus = 2)
+        val b = SnmpTestSupport.encodeResponse(1, "d", "n", intArrayOf(1,3,6,1), errorStatus = 2)
         assertNull(Snmp.parseResponse(b))
     }
     @Test fun `garbage and truncation yield null`() {
-        val good = Snmp.encodeResponseForTest(1, "RouterOS", "gw", intArrayOf(1,3,6,1))
+        val good = SnmpTestSupport.encodeResponse(1, "RouterOS", "gw", intArrayOf(1,3,6,1))
         assertNull(Snmp.parseResponse(good.copyOf(good.size / 2)))
         assertNull(Snmp.parseResponse(ByteArray(0))); assertNull(Snmp.parseResponse(ByteArray(64) { -1 }))
         assertNull(Snmp.parseResponse(response.copyOf(20)))
     }
 }
 ```
-`encodeResponseForTest` is a real encoder in the main source (it reuses the same `Ber` writer as `buildGet`), which is why the tests trust it: the request encoder and the test response encoder share one code path that the OID window assertions check byte-for-byte.
+The encoder round-trip tests only prove encoder and decoder agree, so the independent evidence is the hand-written `response` hex and the `Ber.oid` multi-byte assertion above. The round-trip encoder lives in the test source set, not the APK:
+
+`app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/SnmpTestSupport.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.engine.discovery
+
+object SnmpTestSupport {
+    private val OID_DESCR = intArrayOf(1, 3, 6, 1, 2, 1, 1, 1, 0)
+    private val OID_OBJID = intArrayOf(1, 3, 6, 1, 2, 1, 1, 2, 0)
+    private val OID_NAME = intArrayOf(1, 3, 6, 1, 2, 1, 1, 5, 0)
+
+    /** Produces a v2c GetResponse using the production Ber writer. */
+    fun encodeResponse(requestId: Int, descr: String, name: String, oid: IntArray, errorStatus: Int = 0): ByteArray {
+        val varbinds = Ber.seq(Ber.seq(Ber.oid(OID_DESCR), Ber.str(descr)), Ber.seq(Ber.oid(OID_NAME), Ber.str(name)), Ber.seq(Ber.oid(OID_OBJID), Ber.oid(oid)))
+        val pdu = Ber.tlv(0xa2, Ber.int(requestId) + Ber.int(errorStatus) + Ber.int(0) + varbinds)
+        return Ber.seq(Ber.int(1), Ber.str("public"), pdu)
+    }
+}
+```
 
 - [ ] **Step 2: Run, expect failure**
 
@@ -2532,7 +2903,7 @@ import java.net.Inet4Address
 
 data class SnmpInfo(val sysDescr: String?, val sysName: String?, val sysObjectId: String?)
 
-private object Ber {
+internal object Ber {
     fun len(n: Int): ByteArray = when {
         n < 0x80 -> byteArrayOf(n.toByte())
         n < 0x100 -> byteArrayOf(0x81.toByte(), n.toByte())
@@ -2575,13 +2946,6 @@ object Snmp {
         val varbinds = Ber.seq(Ber.seq(Ber.oid(OID_DESCR), Ber.nul()), Ber.seq(Ber.oid(OID_NAME), Ber.nul()), Ber.seq(Ber.oid(OID_OBJID), Ber.nul()))
         val pdu = Ber.tlv(0xa0, Ber.int(requestId) + Ber.int(0) + Ber.int(0) + varbinds)
         return Ber.seq(Ber.int(1), Ber.str(community), pdu)
-    }
-
-    /** Test helper that shares the encoder; produces a v2c GetResponse. */
-    fun encodeResponseForTest(requestId: Int, descr: String, name: String, oid: IntArray, errorStatus: Int = 0): ByteArray {
-        val varbinds = Ber.seq(Ber.seq(Ber.oid(OID_DESCR), Ber.str(descr)), Ber.seq(Ber.oid(OID_NAME), Ber.str(name)), Ber.seq(Ber.oid(OID_OBJID), Ber.oid(oid)))
-        val pdu = Ber.tlv(0xa2, Ber.int(requestId) + Ber.int(errorStatus) + Ber.int(0) + varbinds)
-        return Ber.seq(Ber.int(1), Ber.str("public"), pdu)
     }
 
     fun parseResponse(bytes: ByteArray): SnmpInfo? = try {
@@ -2664,7 +3028,7 @@ import kotlin.concurrent.thread
 
 class HttpTitleTest {
     @Test fun `title parsing`() {
-        assertEquals("Archer AX55 Login", HttpTitleParser.title("<html><head><TITLE>\n  Archer   AX55 &amp; Login </TITLE></head>"))
+        assertEquals("Archer AX55 & Login", HttpTitleParser.title("<html><head><TITLE>\n  Archer   AX55 &amp; Login </TITLE></head>"))
         assertNull(HttpTitleParser.title("<html><head></head><body>no title</body>"))
         assertNull(HttpTitleParser.title("<title>   </title>"))
         assertEquals(120, HttpTitleParser.title("<title>" + "x".repeat(500) + "</title>")!!.length)
@@ -2684,7 +3048,7 @@ class HttpTitleTest {
         return s.localPort
     }
     @Test fun `fetches title server and realm`() = runBlocking {
-        val p = serve { "HTTP/1.1 401 Unauthorized\r\nServer: Boa/0.94\r\nWWW-Authenticate: Basic realm=\"NETGEAR R7000\"\r\nContent-Length: 40\r\n\r\n<html><title>Netgear Router</title></html>" }
+        val p = serve { "HTTP/1.1 401 Unauthorized\r\nServer: Boa/0.94\r\nWWW-Authenticate: Basic realm=\"NETGEAR R7000\"\r\nContent-Length: 42\r\n\r\n<html><title>Netgear Router</title></html>" }
         val r = HttpTitleFetcher().fetch(lo, p, tls = false)!!
         assertEquals("Netgear Router", r.title); assertEquals("Boa/0.94", r.server); assertEquals("NETGEAR R7000", r.authRealm); assertEquals(401, r.status)
     }
@@ -2854,8 +3218,13 @@ import java.net.Inet6Address
 import java.net.InetAddress
 
 object Eui64 {
+    private const val LITERAL_CHARS = "0123456789abcdefABCDEF:."
+
     fun macFromLinkLocal(ipv6: String): String? = try {
-        val a = InetAddress.getByName(ipv6.substringBefore('%')) as? Inet6Address ?: return null
+        val lit = ipv6.substringBefore('%')
+        // getByName does a DNS lookup for non-literals (slow, network-dependent), so only hand it a plausible literal.
+        if (!lit.contains(':') || lit.any { it !in LITERAL_CHARS }) return null
+        val a = InetAddress.getByName(lit) as? Inet6Address ?: return null
         if (!a.isLinkLocalAddress) return null
         val b = a.address
         if ((b[11].toInt() and 0xff) != 0xff || (b[12].toInt() and 0xff) != 0xfe) return null
@@ -2901,19 +3270,21 @@ git add -A && git commit -m "Add reverse DNS lookup and EUI-64 MAC derivation"
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/DiscoveryEngineTest.kt`
 
 **Interfaces:**
-- Consumes: `Sweep`, `HostProber` (Task 7), `MdnsResolveQueue`/`NsdSource` (Task 9), `SsdpSearch`, `UpnpFetcher`, `MacExtract` (Task 10), `NetBios` (11), `Snmp` (12), `HttpTitleFetcher` (13), `ReverseDns`, `Eui64` (14), `NeighbourTable` (2), `SubnetMath.sweepRange` (3), `NetworkEnv` (4).
+- Consumes: `Sweep`, `HostProber` (Task 7), `MdnsResolveQueue`/`NsdSource` (Task 9), `SsdpSearch`, `UpnpFetcher`, `MacExtract` (Task 10), `NetBios` (11), `Snmp` (12), `HttpTitleFetcher` (13), `ReverseDns`, `Eui64` (14), `NeighbourTable` (2), `SubnetMath.sweepRange` (3), `NetworkEnv` (4), `DeviceInfoTxt` (9).
 - Produces:
 ```kotlin
-enum class Source { SWEEP, MDNS, SSDP, NETBIOS, NEIGH, SNMP, HTTP, GATEWAY }
+enum class Source { SWEEP, MDNS, SSDP, NETBIOS, NEIGH, SNMP, HTTP, GATEWAY }   // GATEWAY is an addition to spec 5.2's list
+/** MAC provenance. Higher rank wins on merge: netlink neighbour table is primary, NetBIOS and UPnP secondary, names and EUI-64 tertiary. */
+enum class MacSource(val rank: Int) { EUI64(1), NAME(1), UPNP_UDN(2), NETBIOS(3), NEIGH(4) }
 data class DiscoveredHost(
-    val ip: Inet4Address, val mac: String? = null, val reverseDnsName: String? = null, val mdnsName: String? = null,
+    val ip: Inet4Address, val mac: String? = null, val macSource: MacSource? = null, val reverseDnsName: String? = null, val mdnsName: String? = null,
     val netbiosName: String? = null, val netbiosWorkgroup: String? = null,
     val upnpFriendlyName: String? = null, val upnpManufacturer: String? = null, val upnpModel: String? = null, val upnpDeviceType: String? = null, val upnpServer: String? = null,
     val mdnsServiceTypes: Set<String> = emptySet(), val mdnsTxt: Map<String, Map<String, String>> = emptyMap(), val mdnsInstanceNames: Set<String> = emptySet(),
     val ipv6LinkLocal: Set<String> = emptySet(), val snmpSysDescr: String? = null, val snmpSysName: String? = null, val snmpSysObjectId: String? = null,
     val httpTitle: String? = null, val httpServer: String? = null, val httpAuthRealm: String? = null,
     val probedOpenPorts: Set<Int> = emptySet(), val sources: Set<Source> = emptySet(), val isGateway: Boolean = false,
-) { fun merge(other: DiscoveredHost): DiscoveredHost }   // field-wise: non-null wins, sets union, maps union, mac: first non-null
+) { fun merge(other: DiscoveredHost): DiscoveredHost }   // field-wise: non-null wins, sets union, maps union, mac: the higher macSource rank wins (ties keep the earlier)
 data class DiscoveryOptions(val mdns: Boolean = true, val ssdp: Boolean = true, val netbios: Boolean = true, val reverseDns: Boolean = true, val snmp: Boolean = true, val httpTitle: Boolean = true,
                             val sweepConcurrency: Int = 128, val connectTimeoutMs: Int = 600, val maxPrefix: Int = 22, val mdnsDurationMs: Long = 6000)
 data class DiscoveryStatus(val probed: Int, val total: Int, val found: Int, val clampedFrom: Int?, val neighbourAvailable: Boolean?)
@@ -2923,13 +3294,15 @@ class DiscoveryEngine(
     val upnpFetch: suspend (String, Inet4Address) -> UpnpDevice?, val netbios: suspend (Inet4Address) -> NetBiosInfo?,
     val snmp: suspend (Inet4Address) -> SnmpInfo?, val httpTitle: suspend (Inet4Address, Int, Boolean) -> HttpPeek?,
     val reverseDns: suspend (Inet4Address) -> String?, val neighbours: () -> Result<List<NeighbourEntry>>, val mdnsTypes: List<String>,
+    val deviceInfo: suspend (String, Inet4Address) -> Map<String, String>?,   // DeviceInfoTxt.query: "<instance>._device-info._tcp.local" TXT
 ) {
     fun discover(env: NetworkEnv, options: DiscoveryOptions): Flow<DiscoveredHost>   // re-emits merged hosts; consumers upsert by ip
     val status: StateFlow<DiscoveryStatus>
-    companion object { fun production(context: Context, mdnsTypes: List<String>): DiscoveryEngine }  // wires real implementations (Task 21 calls it)
+    companion object { fun production(context: Context, mdnsTypes: List<String>): DiscoveryEngine }  // wires real implementations (Task 20 calls it)
 }
 ```
-- Order inside `discover`: emit the gateway immediately with `Source.GATEWAY`; start mDNS and SSDP concurrently with the sweep; for every alive host launch enrichment (NetBIOS, reverse DNS, SNMP, HTTP title when 80/443/8080/8443 probed open) bounded by a `Semaphore(32)`; when the sweep ends, run the neighbour dump once and merge MACs; apply `MacExtract` to UPnP `USN`/UDN and mDNS instance names and `Eui64` to link-local addresses as secondary MAC sources (only when `mac` is still null). Complete when all strategies finish.
+- Order inside `discover`: emit the gateway immediately with `Source.GATEWAY`; start mDNS and SSDP concurrently with the sweep; for every alive host launch enrichment (NetBIOS, reverse DNS, SNMP, HTTP title when 80/443/8080/8443 probed open) bounded by a `Semaphore(32)`; when the sweep ends, run the neighbour dump once (on `Dispatchers.IO`: it is a blocking JNI call and `discover` may be collected on Main) and merge MACs. MAC precedence is by `MacSource.rank`, not by arrival order: NEIGH (4) beats NETBIOS (3) beats UPNP_UDN (2) beats NAME and EUI64 (1); `withDerivedMac` fills NAME/EUI64 only when a single emission has no MAC, and `merge` keeps the higher rank.
+- `_device-info` (Gruff finding 12, option A): for each mDNS record the engine runs `deviceInfo(r.instanceName, r.ip)` once per distinct (ip, instance) pair, at most `MAX_DEVICE_INFO_QUERIES_PER_HOST` (3) per host, inside the `Semaphore(32)` enrichment bound, and emits the returned TXT as `mdnsTxt["_device-info._tcp"]` with `_device-info._tcp` added to `mdnsServiceTypes`. This is what lets Task 16's `apple-device-info` rule fire. Complete when all strategies finish.
 
 - [ ] **Step 1: Failing tests with fakes**
 
@@ -2952,7 +3325,8 @@ class DiscoveryEngineTest {
 
     /** Fake prober: hosts in [alive] answer; everything else is dead. */
     private fun engine(alive: Map<String, Set<Int>>, mdns: List<MdnsRecord> = emptyList(), ssdp: List<SsdpResponse> = emptyList(),
-                       neigh: Result<List<NeighbourEntry>> = Result.success(emptyList()), netbios: Map<String, NetBiosInfo> = emptyMap()) = DiscoveryEngine(
+                       neigh: Result<List<NeighbourEntry>> = Result.success(emptyList()), netbios: Map<String, NetBiosInfo> = emptyMap(),
+                       deviceInfo: Map<String, Map<String, String>> = emptyMap()) = DiscoveryEngine(
         sweepFactory = { _, _ -> object : Sweep(HostProber(), 8) {
             override fun run(hosts: Sequence<Inet4Address>): Flow<Liveness> = hosts.toList().filter { it.hostAddress in alive }
                 .map { Liveness(it, true, alive[it.hostAddress]!!, 3) }.asFlow() } },
@@ -2961,6 +3335,7 @@ class DiscoveryEngineTest {
         netbios = { netbios[it.hostAddress] }, snmp = { if (it.hostAddress == "192.168.1.1") SnmpInfo("RouterOS", "gw", null) else null },
         httpTitle = { ip, port, _ -> if (port == 80 && ip.hostAddress == "192.168.1.1") HttpPeek("Router Login", "Boa", null, 200) else null },
         reverseDns = { if (it.hostAddress == "192.168.1.20") "desktop.lan" else null }, neighbours = { neigh }, mdnsTypes = listOf("_http._tcp"),
+        deviceInfo = { name, _ -> deviceInfo[name] },
     )
 
     @Test fun `gateway is emitted first even if it drops probes`() = runBlocking {
@@ -2968,7 +3343,7 @@ class DiscoveryEngineTest {
         assertEquals("192.168.1.1", first.ip.hostAddress); assertTrue(first.isGateway); assertTrue(Source.GATEWAY in first.sources)
     }
     @Test fun `hosts from different sources merge by ip`() = runBlocking {
-        val mdns = listOf(MdnsRecord(ip("192.168.1.20"), "Desktop", "_http._tcp", 80, mapOf("model" to "MacBookPro18,3"), listOf("fe80::211:22ff:fe33:4455")))
+        val mdns = listOf(MdnsRecord(ip("192.168.1.20"), "Desktop", "_http._tcp", 80, mapOf("model" to "MacBookPro18,3"), listOf("fe80::211:22ff:fe33:4499")))   // EUI-64 of 00:11:22:33:44:99: must lose to the NetBIOS MAC
         val ssdp = listOf(SsdpResponse(ip("192.168.1.1"), "http://192.168.1.1:1900/igd.xml", "MiniUPnPd/2.1", "urn:x", "uuid:1-2-3-4-aabbccddeeff::urn:x"))
         val all = engine(alive = mapOf("192.168.1.1" to setOf(80), "192.168.1.20" to setOf(445)), mdns = mdns, ssdp = ssdp,
             netbios = mapOf("192.168.1.20" to NetBiosInfo("DESKTOP-ABC", "WORKGROUP", "00:11:22:33:44:55"))).discover(env, DiscoveryOptions()).toList()
@@ -2978,7 +3353,7 @@ class DiscoveryEngineTest {
         assertEquals("Router Login", gw.httpTitle); assertEquals("aa:bb:cc:dd:ee:ff", gw.mac)              // from UDN
         assertEquals(setOf(Source.GATEWAY, Source.SWEEP, Source.SSDP, Source.SNMP, Source.HTTP), gw.sources)
         assertEquals("Desktop", pc.mdnsName); assertEquals("MacBookPro18,3", pc.mdnsTxt["_http._tcp"]!!["model"])
-        assertEquals("DESKTOP-ABC", pc.netbiosName); assertEquals("00:11:22:33:44:55", pc.mac)             // NetBIOS beats EUI-64
+        assertEquals("DESKTOP-ABC", pc.netbiosName); assertEquals("00:11:22:33:44:55", pc.mac)             // NetBIOS (rank 3) beats the EUI-64 MAC (rank 1), whatever the arrival order
         assertEquals("desktop.lan", pc.reverseDnsName); assertEquals(setOf(445), pc.probedOpenPorts)
         assertEquals(2, byIp.size)
     }
@@ -2987,6 +3362,20 @@ class DiscoveryEngineTest {
         val merged = e.discover(env, DiscoveryOptions()).toList().groupBy { it.ip.hostAddress }.mapValues { (_, v) -> v.reduce { a, b -> a.merge(b) } }
         assertEquals("de:ad:be:ef:00:01", merged["192.168.1.30"]!!.mac); assertTrue(Source.NEIGH in merged["192.168.1.30"]!!.sources)
         assertEquals(true, e.status.value.neighbourAvailable)
+    }
+    @Test fun `neighbour table beats an earlier eui64 mac`() = runBlocking {
+        val mdns = listOf(MdnsRecord(ip("192.168.1.41"), "esp", "_http._tcp", 80, emptyMap(), listOf("fe80::211:22ff:fe33:4455")))
+        val e = engine(alive = emptyMap(), mdns = mdns, neigh = Result.success(listOf(NeighbourEntry("192.168.1.41", "de:ad:be:ef:00:02", "REACHABLE"))))
+        val merged = e.discover(env, DiscoveryOptions()).toList().groupBy { it.ip.hostAddress }.mapValues { (_, v) -> v.reduce { a, b -> a.merge(b) } }
+        assertEquals("de:ad:be:ef:00:02", merged["192.168.1.41"]!!.mac); assertEquals(MacSource.NEIGH, merged["192.168.1.41"]!!.macSource)
+    }
+    @Test fun `device-info txt is queried per instance and merged into mdnsTxt`() = runBlocking {
+        val mdns = listOf(MdnsRecord(ip("192.168.1.42"), "Davids-MacBook", "_smb._tcp", 445, emptyMap(), emptyList()))
+        val merged = engine(alive = emptyMap(), mdns = mdns, deviceInfo = mapOf("Davids-MacBook" to mapOf("model" to "MacBookPro18,3")))
+            .discover(env, DiscoveryOptions()).toList().groupBy { it.ip.hostAddress }.mapValues { (_, v) -> v.reduce { a, b -> a.merge(b) } }
+        val mac = merged["192.168.1.42"]!!
+        assertEquals("MacBookPro18,3", mac.mdnsTxt["_device-info._tcp"]!!["model"]); assertTrue("_device-info._tcp" in mac.mdnsServiceTypes)
+        assertTrue("_smb._tcp" in mac.mdnsServiceTypes)
     }
     @Test fun `neighbour denial is recorded not thrown`() = runBlocking {
         val e = engine(alive = emptyMap(), neigh = Result.failure(Exception("errno 13")))
@@ -3007,13 +3396,14 @@ class DiscoveryEngineTest {
         var snmpCalls = 0
         val e = DiscoveryEngine(sweepFactory = { _, _ -> object : Sweep(HostProber(), 8) { override fun run(hosts: Sequence<Inet4Address>) = flowOf(Liveness(ip("192.168.1.9"), true, emptySet(), 1)) } },
             mdns = { _, _ -> emptyFlow() }, ssdp = { emptyFlow() }, upnpFetch = { _, _ -> null }, netbios = { null }, snmp = { snmpCalls++; null },
-            httpTitle = { _, _, _ -> null }, reverseDns = { null }, neighbours = { Result.success(emptyList()) }, mdnsTypes = emptyList())
+            httpTitle = { _, _, _ -> null }, reverseDns = { null }, neighbours = { Result.success(emptyList()) }, mdnsTypes = emptyList(),
+            deviceInfo = { _, _ -> null })
         e.discover(env, DiscoveryOptions(snmp = false)).toList()
         assertEquals(0, snmpCalls)
     }
 }
 ```
-`Sweep` must be declared `open class Sweep` with `open fun run` for these fakes; adjust Task 7's class accordingly.
+The fakes subclass `Sweep`, which Task 7 already declares as `open class Sweep` with `open fun run`.
 
 - [ ] **Step 2: Run, expect failure**
 
@@ -3031,8 +3421,11 @@ import java.net.Inet4Address
 
 enum class Source { SWEEP, MDNS, SSDP, NETBIOS, NEIGH, SNMP, HTTP, GATEWAY }
 
+/** MAC provenance. Higher rank wins on merge: netlink neighbour table is primary, NetBIOS and UPnP secondary, names and EUI-64 tertiary. */
+enum class MacSource(val rank: Int) { EUI64(1), NAME(1), UPNP_UDN(2), NETBIOS(3), NEIGH(4) }
+
 data class DiscoveredHost(
-    val ip: Inet4Address, val mac: String? = null, val reverseDnsName: String? = null, val mdnsName: String? = null,
+    val ip: Inet4Address, val mac: String? = null, val macSource: MacSource? = null, val reverseDnsName: String? = null, val mdnsName: String? = null,
     val netbiosName: String? = null, val netbiosWorkgroup: String? = null,
     val upnpFriendlyName: String? = null, val upnpManufacturer: String? = null, val upnpModel: String? = null, val upnpDeviceType: String? = null, val upnpServer: String? = null,
     val mdnsServiceTypes: Set<String> = emptySet(), val mdnsTxt: Map<String, Map<String, String>> = emptyMap(), val mdnsInstanceNames: Set<String> = emptySet(),
@@ -3040,8 +3433,13 @@ data class DiscoveredHost(
     val httpTitle: String? = null, val httpServer: String? = null, val httpAuthRealm: String? = null,
     val probedOpenPorts: Set<Int> = emptySet(), val sources: Set<Source> = emptySet(), val isGateway: Boolean = false,
 ) {
-    fun merge(o: DiscoveredHost): DiscoveredHost = DiscoveredHost(
-        ip = ip, mac = mac ?: o.mac, reverseDnsName = reverseDnsName ?: o.reverseDnsName, mdnsName = mdnsName ?: o.mdnsName,
+    fun merge(o: DiscoveredHost): DiscoveredHost {
+        val takeOther = mac == null || (o.mac != null && (o.macSource?.rank ?: 0) > (macSource?.rank ?: 0))
+        val (m, ms) = if (takeOther) o.mac to o.macSource else mac to macSource
+        return mergeFields(o, m, ms)
+    }
+    private fun mergeFields(o: DiscoveredHost, m: String?, ms: MacSource?): DiscoveredHost = DiscoveredHost(
+        ip = ip, mac = m, macSource = ms, reverseDnsName = reverseDnsName ?: o.reverseDnsName, mdnsName = mdnsName ?: o.mdnsName,
         netbiosName = netbiosName ?: o.netbiosName, netbiosWorkgroup = netbiosWorkgroup ?: o.netbiosWorkgroup,
         upnpFriendlyName = upnpFriendlyName ?: o.upnpFriendlyName, upnpManufacturer = upnpManufacturer ?: o.upnpManufacturer, upnpModel = upnpModel ?: o.upnpModel,
         upnpDeviceType = upnpDeviceType ?: o.upnpDeviceType, upnpServer = upnpServer ?: o.upnpServer,
@@ -3050,12 +3448,12 @@ data class DiscoveredHost(
         httpTitle = httpTitle ?: o.httpTitle, httpServer = httpServer ?: o.httpServer, httpAuthRealm = httpAuthRealm ?: o.httpAuthRealm,
         probedOpenPorts = probedOpenPorts + o.probedOpenPorts, sources = sources + o.sources, isGateway = isGateway || o.isGateway,
     )
-    /** Secondary MAC sources, applied only when mac is null. */
+    /** Tertiary MAC sources (names, EUI-64), applied only when this emission has no MAC. `merge` arbitrates by rank across emissions. */
     fun withDerivedMac(): DiscoveredHost {
         if (mac != null) return this
-        val fromNames = (mdnsInstanceNames + listOfNotNull(upnpFriendlyName)).firstNotNullOfOrNull { MacExtract.fromText(it) }
-        val fromV6 = ipv6LinkLocal.firstNotNullOfOrNull { Eui64.macFromLinkLocal(it) }
-        return copy(mac = fromNames ?: fromV6)
+        (mdnsInstanceNames + listOfNotNull(upnpFriendlyName)).firstNotNullOfOrNull { MacExtract.fromText(it) }?.let { return copy(mac = it, macSource = MacSource.NAME) }
+        ipv6LinkLocal.firstNotNullOfOrNull { Eui64.macFromLinkLocal(it) }?.let { return copy(mac = it, macSource = MacSource.EUI64) }
+        return this
     }
 }
 ```
@@ -3098,6 +3496,7 @@ class DiscoveryEngine(
     val reverseDns: suspend (Inet4Address) -> String?,
     val neighbours: () -> Result<List<NeighbourEntry>>,
     val mdnsTypes: List<String>,
+    val deviceInfo: suspend (String, Inet4Address) -> Map<String, String>?,
 ) {
     private val _status = MutableStateFlow(DiscoveryStatus())
     val status: StateFlow<DiscoveryStatus> = _status
@@ -3116,19 +3515,32 @@ class DiscoveryEngine(
 
         coroutineScope {
             if (options.mdns) launch {
+                val infoQueried = HashSet<String>()
                 mdns(mdnsTypes, options.mdnsDurationMs).collect { r ->
                     emit(DiscoveredHost(r.ip, mdnsName = r.instanceName, mdnsServiceTypes = setOf(r.type), mdnsTxt = mapOf(r.type to r.txt),
                         mdnsInstanceNames = setOf(r.instanceName), ipv6LinkLocal = r.ipv6.toSet(), sources = setOf(Source.MDNS)))
+                    // _device-info._tcp is not browsable, so ask for its TXT record by instance name (at most a few names per host).
+                    val prefix = "${r.ip.hostAddress}|"
+                    val ask = synchronized(infoQueried) { infoQueried.count { it.startsWith(prefix) } < MAX_DEVICE_INFO_QUERIES_PER_HOST && infoQueried.add(prefix + r.instanceName) }
+                    if (ask) launch { enrich.withPermit {
+                        deviceInfo(r.instanceName, r.ip)?.let { txt ->
+                            emit(DiscoveredHost(r.ip, mdnsServiceTypes = setOf(DeviceInfoTxt.SERVICE), mdnsTxt = mapOf(DeviceInfoTxt.SERVICE to txt), sources = setOf(Source.MDNS)))
+                        }
+                    } }
                 }
             }
             if (options.ssdp) launch {
                 val fetched = HashSet<String>()
                 ssdp().collect { r ->
-                    var h = DiscoveredHost(r.from, upnpServer = r.server, mac = r.usn?.let { MacExtract.fromText(it) }, sources = setOf(Source.SSDP))
+                    val usnMac = r.usn?.let { MacExtract.fromText(it) }
+                    var h = DiscoveredHost(r.from, upnpServer = r.server, mac = usnMac, macSource = usnMac?.let { MacSource.UPNP_UDN }, sources = setOf(Source.SSDP))
                     val loc = r.location
                     if (loc != null && synchronized(fetched) { fetched.add(loc) }) {
-                        upnpFetch(loc, r.from)?.let { d -> h = h.copy(upnpFriendlyName = d.friendlyName, upnpManufacturer = d.manufacturer, upnpModel = d.modelName,
-                            upnpDeviceType = d.deviceType, mac = h.mac ?: d.udn?.let { MacExtract.fromText(it) }) }
+                        upnpFetch(loc, r.from)?.let { d ->
+                            val udnMac = if (h.mac == null) d.udn?.let { MacExtract.fromText(it) } else null
+                            h = h.copy(upnpFriendlyName = d.friendlyName, upnpManufacturer = d.manufacturer, upnpModel = d.modelName, upnpDeviceType = d.deviceType,
+                                mac = h.mac ?: udnMac, macSource = h.macSource ?: udnMac?.let { MacSource.UPNP_UDN })
+                        }
                     }
                     emit(h)
                 }
@@ -3138,7 +3550,7 @@ class DiscoveryEngine(
                     emit(DiscoveredHost(l.ip, probedOpenPorts = l.openPorts, sources = setOf(Source.SWEEP), isGateway = l.ip == env.gateway))
                     launch { enrich.withPermit {
                         var h = DiscoveredHost(l.ip)
-                        if (options.netbios) netbios(l.ip)?.let { h = h.copy(netbiosName = it.computerName, netbiosWorkgroup = it.workgroup, mac = it.mac, sources = h.sources + Source.NETBIOS) }
+                        if (options.netbios) netbios(l.ip)?.let { h = h.copy(netbiosName = it.computerName, netbiosWorkgroup = it.workgroup, mac = it.mac, macSource = it.mac?.let { MacSource.NETBIOS }, sources = h.sources + Source.NETBIOS) }
                         if (options.reverseDns) reverseDns(l.ip)?.let { h = h.copy(reverseDnsName = it) }
                         if (options.snmp) snmp(l.ip)?.let { h = h.copy(snmpSysDescr = it.sysDescr, snmpSysName = it.sysName, snmpSysObjectId = it.sysObjectId, sources = h.sources + Source.SNMP) }
                         if (options.httpTitle) {
@@ -3149,11 +3561,11 @@ class DiscoveryEngine(
                     } }
                 }
                 // Sweep done: read the neighbour table once.
-                val neigh = neighbours()
+                val neigh = withContext(Dispatchers.IO) { neighbours() }   // blocking JNI netlink round trip; discover may be collected on Main
                 _status.update { it.copy(neighbourAvailable = neigh.isSuccess) }
                 neigh.getOrNull()?.forEach { n ->
                     val ip = runCatching { java.net.InetAddress.getByName(n.ip) as Inet4Address }.getOrNull() ?: return@forEach
-                    if (range.subnet.contains(ip)) emit(DiscoveredHost(ip, mac = n.mac, sources = setOf(Source.NEIGH)))
+                    if (range.subnet.contains(ip)) emit(DiscoveredHost(ip, mac = n.mac, macSource = MacSource.NEIGH, sources = setOf(Source.NEIGH)))
                 }
             }
         }
@@ -3169,8 +3581,10 @@ class DiscoveryEngine(
                 upnpFetch = { loc, host -> upnp.fetch(loc, host) }, netbios = { NetBios.query(it) }, snmp = { Snmp.query(it) },
                 httpTitle = { ip, port, tls -> titles.fetch(ip, port, tls) }, reverseDns = { rdns.lookup(it) },
                 neighbours = { NeighbourTable.dump() }, mdnsTypes = mdnsTypes,
+                deviceInfo = { name, host -> DeviceInfoTxt.query(name, host) },
             )
         }
+        private const val MAX_DEVICE_INFO_QUERIES_PER_HOST = 3
     }
 }
 ```
@@ -3209,7 +3623,7 @@ data class DeviceIdentity(val vendor: String?, val model: String?, val os: Strin
 object IdentifyRules { fun load(json: String): List<Rule> }
 class DeviceIdentifier(private val rules: List<Rule>) { fun identify(e: HostEvidence): DeviceIdentity }
 ```
-- Rule `field` values: `mdnsType` (pattern matched against each service type), `mdnsTxt` (pattern against `type:key=value` strings), `upnpDeviceType`, `snmpSysDescr`, `httpTitle`, `httpRealm`, `httpServer`, `hostname` (matched against mDNS, NetBIOS, UPnP friendly and reverse DNS names), `sshBanner` (against `services[22]?.detail` and product), `ports` (all of `ports` open), `anyPort` (any of them open), `gateway`, `oui`. A `vendor`/`model` value of `$1` takes the first regex group; `$txt` takes the TXT value of the matched key.
+- Rule `field` values: `mdnsType` (pattern matched against each service type), `mdnsTxt` (pattern against `type:key=value` strings), `upnpDeviceType`, `snmpSysDescr`, `httpTitle`, `httpRealm`, `httpServer`, `hostname` (matched against mDNS, NetBIOS, UPnP friendly and reverse DNS names), `netbiosName` (matched against `host.netbiosName` only), `sshBanner` (against `services[22]?.detail` and product), `ports` (all of `ports` open), `anyPort` (any of them open), `gateway`, `oui`. A `vendor`/`model` value of `$1` takes the first regex group; `$txt` takes the TXT value of the matched key.
 - Direct extraction (weight 100): UPnP `manufacturer` to vendor, `modelName` to model; SNMP `sysDescr` through the per-vendor regexes in the rules file (rules with `field: snmpSysDescr` and `model: "$1"`); mDNS `model=`/`md=`/`ty=`/`product=` TXT values to model with vendor from the rule.
 - Per field the highest weight wins; ties keep the earlier rule; `confidence` = highest weight applied (0 when none); each applied rule contributes a reason `"<field>: <matched text>"`.
 
@@ -3234,8 +3648,18 @@ class DeviceIdentifierTest {
 
     @Test fun `rules file loads with unique ids and valid fields`() {
         assertTrue(rules.size >= 45); assertEquals(rules.size, rules.map { it.id }.toSet().size)
-        val fields = setOf("mdnsType", "mdnsTxt", "upnpDeviceType", "snmpSysDescr", "httpTitle", "httpRealm", "httpServer", "hostname", "sshBanner", "ports", "anyPort", "gateway", "oui")
+        val fields = setOf("mdnsType", "mdnsTxt", "upnpDeviceType", "snmpSysDescr", "httpTitle", "httpRealm", "httpServer", "hostname", "netbiosName", "sshBanner", "ports", "anyPort", "gateway", "oui")
         rules.forEach { assertTrue("bad field in ${it.id}", it.field in fields); assertTrue(it.weight in 1..100) }
+    }
+    @Test fun `every rule is well formed`() {
+        for (r in rules) {
+            assertTrue("rule ${r.id} has unknown type ${r.type}", r.type == null || DeviceType.values().any { it.name == r.type })
+            assertTrue("rule ${r.id} has a pattern but no sample", r.pattern == null || r.sample != null)
+            val re = r.pattern?.let { Regex(it, RegexOption.IGNORE_CASE) }   // must compile
+            if (listOf(r.vendor, r.model, r.os).any { it?.contains("\$1") == true }) {
+                assertNotNull("rule ${r.id} uses \$1 but its sample yields no group 1", re!!.find(r.sample!!)?.groups?.get(1))
+            }
+        }
     }
     @Test fun `apple device-info model`() {
         val r = id.identify(ev(DiscoveredHost(ip, mdnsServiceTypes = setOf("_device-info._tcp"), mdnsTxt = mapOf("_device-info._tcp" to mapOf("model" to "MacBookPro18,3")))))
@@ -3286,17 +3710,52 @@ class DeviceIdentifierTest {
         val r = id.identify(ev(oui = "Espressif Inc.")); assertEquals("Espressif Inc.", r.vendor); assertEquals(50, r.confidence)
     }
     @Test fun `no evidence is unknown`() { assertEquals(DeviceIdentity.UNKNOWN, id.identify(ev())) }
-    @Test fun `every rule in the file fires for a synthetic evidence set`() {
-        // Protects against typos: each rule's pattern must match a string built from its own pattern (for regex rules) or its own ports.
-        for (r in rules) {
+    @Test fun `every rule in the file contributes for its own synthetic evidence`() {
+        // Differential check: removing the rule under test must change the outcome, so a typo in a pattern, field or ports list fails here.
+        for (r in rules.filter { it.field != "oui" }) {
             val e = SyntheticEvidence.forRule(r, ip)
-            val out = id.identify(e)
-            assertTrue("rule ${r.id} never fired", out.reasons.any { it.startsWith("${r.field}:") } || r.field == "oui")
+            assertNotEquals("rule ${r.id} contributed nothing", DeviceIdentifier(rules - r).identify(e), DeviceIdentifier(rules).identify(e))
         }
     }
 }
 ```
-`SyntheticEvidence.forRule` lives in the test sources: for `ports`/`anyPort` it opens those ports; for `gateway` sets `isGateway`; for regex fields it uses the rule's own `sample` value. Add an optional `sample: String? = null` to `Rule` and give every regex rule in the JSON a `sample` that it should match. The loader test asserts every regex rule has a sample.
+`SyntheticEvidence` lives in the test sources next to the test (`SyntheticEvidence.kt`). Every regex rule in the JSON carries a `sample` that it must match; `sample` is the optional `Rule.sample` field.
+
+```kotlin
+package com.northwalessolutions.netprobe.engine.identify
+
+import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
+import com.northwalessolutions.netprobe.engine.serviceid.Confidence
+import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
+import java.net.Inet4Address
+
+object SyntheticEvidence {
+    /** Evidence that exercises exactly the rule [r]: its own sample placed in the field the rule reads. */
+    fun forRule(r: Rule, ip: Inet4Address): HostEvidence {
+        val sample = r.sample.orEmpty()
+        val h = DiscoveredHost(ip)
+        fun ev(host: DiscoveredHost, ports: Set<Int> = emptySet(), services: Map<Int, ServiceInfo> = emptyMap()) = HostEvidence(host, ports, services, null)
+        return when (r.field) {
+            "mdnsType" -> ev(h.copy(mdnsServiceTypes = setOf(sample)))
+            "mdnsTxt" -> {
+                val type = sample.substringBefore(':'); val kv = sample.substringAfter(':')
+                ev(h.copy(mdnsServiceTypes = setOf(type), mdnsTxt = mapOf(type to mapOf(kv.substringBefore('=') to kv.substringAfter('=')))))
+            }
+            "upnpDeviceType" -> ev(h.copy(upnpDeviceType = sample))
+            "snmpSysDescr" -> ev(h.copy(snmpSysDescr = sample))
+            "httpTitle" -> ev(h.copy(httpTitle = sample))
+            "httpRealm" -> ev(h.copy(httpAuthRealm = sample))
+            "httpServer" -> ev(h.copy(httpServer = sample))
+            "hostname" -> ev(h.copy(reverseDnsName = sample))
+            "netbiosName" -> ev(h.copy(netbiosName = sample))
+            "sshBanner" -> ev(h, services = mapOf(22 to ServiceInfo("SSH", "OpenSSH", null, sample, Confidence.CONFIRMED)))
+            "ports", "anyPort" -> ev(h, ports = (r.ports ?: r.anyPort).orEmpty().toSet())
+            "gateway" -> ev(h.copy(isGateway = true))
+            else -> error("no synthetic evidence for field ${r.field} (rule ${r.id})")
+        }
+    }
+}
+```
 
 - [ ] **Step 2: Run, expect failure**
 
@@ -3372,6 +3831,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
                 "httpRealm" -> matchAny(listOfNotNull(h.httpAuthRealm))?.let { (c, g) -> apply(r, c, g, null) }
                 "httpServer" -> matchAny(listOfNotNull(h.httpServer))?.let { (c, g) -> apply(r, c, g, null) }
                 "hostname" -> matchAny(names)?.let { (c, g) -> apply(r, c, g, null) }
+                "netbiosName" -> matchAny(listOfNotNull(h.netbiosName))?.let { (c, g) -> apply(r, c, g, null) }
                 "sshBanner" -> matchAny(e.services[22]?.let { listOfNotNull(it.product, it.detail) }.orEmpty())?.let { (c, g) -> apply(r, c, g, null) }
                 "ports" -> if (r.ports != null && e.openPorts.containsAll(r.ports)) apply(r, r.ports.joinToString(","), null, null)
                 "anyPort" -> r.anyPort?.firstOrNull { it in e.openPorts }?.let { apply(r, it.toString(), null, null) }
@@ -3408,7 +3868,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
  {"id":"snmp-routeros","field":"snmpSysDescr","pattern":"^RouterOS\\s*(\\S+)?","vendor":"MikroTik","os":"RouterOS","model":"$1","type":"ROUTER","weight":100,"sample":"RouterOS RB750Gr3"},
  {"id":"snmp-synology","field":"snmpSysDescr","pattern":"DiskStation|Synology","vendor":"Synology","type":"NAS","weight":100,"sample":"Linux DiskStation 4.4.302+"},
  {"id":"snmp-qnap","field":"snmpSysDescr","pattern":"QNAP","vendor":"QNAP","type":"NAS","weight":100,"sample":"Linux TS-453 QNAP"},
- {"id":"snmp-printers","field":"snmpSysDescr","pattern":"(HP|Hewlett-Packard|Brother|EPSON|Canon|Lexmark|Kyocera|Xerox)","vendor":"$1","type":"PRINTER","weight":100,"sample":"HP ETHERNET MULTI-ENVIRONMENT"},
+ {"id":"snmp-printers","field":"snmpSysDescr","pattern":"\\b(HP|Hewlett-Packard|Brother|EPSON|Canon|Lexmark|Kyocera|Xerox)\\b","vendor":"$1","type":"PRINTER","weight":100,"sample":"HP ETHERNET MULTI-ENVIRONMENT"},
  {"id":"snmp-cisco","field":"snmpSysDescr","pattern":"Cisco IOS","vendor":"Cisco","os":"IOS","type":"ROUTER","weight":100,"sample":"Cisco IOS Software"},
  {"id":"title-synology","field":"httpTitle","pattern":"Synology|DiskStation","vendor":"Synology","type":"NAS","weight":70,"sample":"DiskStation - Synology DiskStation"},
  {"id":"title-openwrt","field":"httpTitle","pattern":"OpenWrt|LuCI","os":"OpenWrt","type":"ROUTER","weight":90,"sample":"OpenWrt - LuCI"},
@@ -3429,6 +3889,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
  {"id":"host-mac","field":"hostname","pattern":"MacBook|iMac|Mac-mini|Mac-Studio|Macmini","vendor":"Apple","os":"macOS","type":"COMPUTER","weight":70,"sample":"Davids-MacBook-Pro.local"},
  {"id":"host-windows","field":"hostname","pattern":"^(DESKTOP-|LAPTOP-|WIN-)","os":"Windows","type":"COMPUTER","weight":70,"sample":"DESKTOP-ABC123"},
  {"id":"host-iot","field":"hostname","pattern":"^(ESP_|ESP-|Shelly|Tasmota|wled|Sonoff|esphome)","type":"IOT","weight":70,"sample":"Shelly-ABCDEF"},
+ {"id":"netbios-present","field":"netbiosName","pattern":".+","os":"Windows","type":"COMPUTER","weight":60,"sample":"OFFICE-PC"},
  {"id":"host-rpi","field":"hostname","pattern":"raspberrypi|^rpi","vendor":"Raspberry Pi","os":"Linux","type":"COMPUTER","weight":70,"sample":"raspberrypi.lan"},
  {"id":"port-ios","field":"anyPort","anyPort":[62078],"vendor":"Apple","os":"iOS","type":"PHONE","weight":70},
  {"id":"port-adb","field":"anyPort","anyPort":[5555],"os":"Android","weight":50},
@@ -3472,7 +3933,7 @@ git add -A && git commit -m "Add device identification rules engine and seed rul
 - Test (device): `app/src/androidTest/java/com/northwalessolutions/netprobe/data/DaoTest.kt`
 
 **Interfaces:**
-- Consumes: `NetworkEnv` (4), `DiscoveredHost` (15), `DeviceIdentity`, `DeviceType` (16), `ServiceInfo`, `Confidence` (8).
+- Consumes: `NetworkEnv` (4), `DiscoveredHost`, `MacSource` (15), `DeviceIdentity`, `DeviceType` (16), `ServiceInfo`, `Confidence` (8), `ScanOptions` (6).
 - Produces:
 ```kotlin
 enum class HostStatus { UNMARKED, INTERESTING, INVESTIGATED, IGNORED }
@@ -3481,22 +3942,32 @@ enum class HostStatus { UNMARKED, INTERESTING, INVESTIGATED, IGNORED }
     val reverseDnsName: String?, val mdnsName: String?, val netbiosName: String?, val upnpName: String?, val upnpManufacturer: String?, val upnpModel: String?, val vendor: String?,
     val deviceType: DeviceType, val customName: String?, val identVendor: String?, val identModel: String?, val identOs: String?, val identConfidence: Int, val identReasons: List<String>,
     val snmpSysDescr: String?, val httpTitle: String?, val mdnsTxtJson: String?, val status: HostStatus, val note: String, val isGateway: Boolean,
-    val firstSeen: Long, val lastSeen: Long, val lastPortScan: Long?, val lastDiscoveryRun: Long)
+    val firstSeen: Long, val lastSeen: Long, val lastPortScan: Long?, val lastDiscoveryRun: Long,
+    val macSource: Int = 0 /* MacSource.rank of the stored mac, 0 = none */, val upnpDeviceType: String? = null, val upnpServer: String? = null, val httpServer: String? = null, val httpAuthRealm: String? = null)
 @Entity(tableName = "ports", indices = [Index("hostId", "port", unique = true)]) data class PortEntity(@PrimaryKey(autoGenerate = true) val id: Long = 0, val hostId: Long, val port: Int,
     val serviceName: String, val product: String?, val version: String?, val detail: String?, val confidence: Confidence, val lastSeen: Long)
 @Entity(tableName = "vuln_cache") data class VulnCacheEntity(@PrimaryKey val query: String, val json: String, val fetchedAt: Long)
 object NetworkSignature { fun of(env: NetworkEnv): String }   // sha256 of (bssid ?: ssid ?: "") + gatewayIp + "/" + prefix, hex
 object DisplayName { fun of(h: HostEntity): String }           // customName, mdnsName, netbiosName, upnpName, reverseDnsName, ip
+data class PortCount(val hostId: Long, val n: Int)
 class HostRepository(db: NetProbeDb) {
     fun hostsForNetwork(networkId: Long): Flow<List<HostEntity>>
-    suspend fun upsertDiscovered(networkId: Long, h: DiscoveredHost, runId: Long): Long   // returns host id; never touches customName, status, note
+    // returns host id; never touches customName, status, note. mac is replaced only when the incoming macSource rank >= the stored rank
+    // (ties refresh); mdnsTxt is unioned per service type so later emissions never drop earlier types.
+    suspend fun upsertDiscovered(networkId: Long, h: DiscoveredHost, runId: Long): Long
+    suspend fun byIdOnce(id: Long): HostEntity?
+    suspend fun mdnsTypesFor(id: Long): Set<String>          // keys of the stored mdnsTxt
+    fun toDiscovered(e: HostEntity): DiscoveredHost          // identification input rebuilt from the stored columns
     suspend fun setIdentity(hostId: Long, identity: DeviceIdentity)
     suspend fun setStatus(hostId: Long, status: HostStatus); suspend fun setNote(hostId: Long, note: String); suspend fun setCustomName(hostId: Long, name: String?)
     fun host(hostId: Long): Flow<HostEntity?> }
-class PortRepository(db: NetProbeDb) { fun portsForHost(hostId: Long): Flow<List<PortEntity>>; suspend fun upsertOpen(hostId: Long, port: Int, info: ServiceInfo); suspend fun markScanned(hostId: Long) }
+class PortRepository(db: NetProbeDb) { fun portsForHost(hostId: Long): Flow<List<PortEntity>>; fun counts(): Flow<Map<Long, Int>> /* open ports per host, from PortDao.counts() */
+    suspend fun upsertOpen(hostId: Long, port: Int, info: ServiceInfo); suspend fun markScanned(hostId: Long) }
 class NetworkRepository(db: NetProbeDb) { suspend fun ensure(env: NetworkEnv): NetworkEntity }
 class VulnCacheRepository(db: NetProbeDb) { suspend fun get(query: String, maxAgeMs: Long): VulnCacheEntity?; suspend fun put(query: String, json: String) }
-class AppSettings(context: Context)   // SharedPreferences-backed: discovery toggles, sweepConcurrency, connectTimeoutMs, maxPrefix, scanConcurrency, scanTimeoutMs, nvdApiKey, exposed as StateFlow<SettingsState>
+class AppSettings(context: Context) {   // SharedPreferences-backed: discovery toggles, sweepConcurrency, connectTimeoutMs, maxPrefix, scanConcurrency, scanTimeoutMs, nvdApiKey, exposed as StateFlow<SettingsState>
+    val state: StateFlow<SettingsState>; fun update(f: (SettingsState) -> SettingsState)
+    fun scanOptions(): ScanOptions }   // ScanOptions(state.scanConcurrency, state.scanTimeoutMs), used by both ViewModels
 ```
 - Room: `@Database(entities = [...], version = 1, exportSchema = true)`; `TypeConverters` for `List<String>` (JSON) and enums (name). `room.schemaLocation` is already set in Task 1; commit `app/schemas/`.
 
@@ -3573,6 +4044,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao interface HostDao {
     @Query("SELECT * FROM hosts WHERE networkId = :networkId ORDER BY ip") fun forNetwork(networkId: Long): Flow<List<HostEntity>>
     @Query("SELECT * FROM hosts WHERE id = :id") fun byId(id: Long): Flow<HostEntity?>
+    @Query("SELECT * FROM hosts WHERE id = :id") suspend fun byIdOnce(id: Long): HostEntity?
     @Query("SELECT * FROM hosts WHERE networkId = :networkId AND ip = :ip LIMIT 1") suspend fun find(networkId: Long, ip: String): HostEntity?
     @Insert suspend fun insert(h: HostEntity): Long
     @Update suspend fun update(h: HostEntity)
@@ -3581,8 +4053,11 @@ import kotlinx.coroutines.flow.Flow
     @Query("UPDATE hosts SET customName = :name WHERE id = :id") suspend fun setCustomName(id: Long, name: String?)
     @Query("UPDATE hosts SET lastPortScan = :now WHERE id = :id") suspend fun markScanned(id: Long, now: Long)
 }
+data class PortCount(val hostId: Long, val n: Int)
+
 @Dao interface PortDao {
     @Query("SELECT * FROM ports WHERE hostId = :hostId ORDER BY port") fun forHost(hostId: Long): Flow<List<PortEntity>>
+    @Query("SELECT hostId, COUNT(*) AS n FROM ports GROUP BY hostId") fun counts(): Flow<List<PortCount>>
     @Query("SELECT * FROM ports WHERE hostId = :hostId AND port = :port LIMIT 1") suspend fun find(hostId: Long, port: Int): PortEntity?
     @Insert suspend fun insert(p: PortEntity): Long
     @Update suspend fun update(p: PortEntity)
@@ -3640,7 +4115,13 @@ import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
+import java.net.Inet4Address
+import java.net.InetAddress
+
+private fun parseTxt(json: String?): Map<String, Map<String, String>> =
+    json?.let { runCatching { Json.decodeFromString<Map<String, Map<String, String>>>(it) }.getOrNull() }.orEmpty()
 
 class NetworkRepository(private val db: NetProbeDb) {
     suspend fun ensure(env: NetworkEnv): NetworkEntity {
@@ -3654,27 +4135,49 @@ class NetworkRepository(private val db: NetProbeDb) {
 class HostRepository(private val db: NetProbeDb) {
     fun hostsForNetwork(networkId: Long): Flow<List<HostEntity>> = db.hosts().forNetwork(networkId)
     fun host(hostId: Long): Flow<HostEntity?> = db.hosts().byId(hostId)
+    suspend fun byIdOnce(id: Long): HostEntity? = db.hosts().byIdOnce(id)
+    suspend fun mdnsTypesFor(id: Long): Set<String> = byIdOnce(id)?.let { parseTxt(it.mdnsTxtJson).keys } ?: emptySet()
+
+    /** Identification input rebuilt from the stored columns, so each new emission is judged on the merged picture. */
+    fun toDiscovered(e: HostEntity): DiscoveredHost {
+        val txt = parseTxt(e.mdnsTxtJson)
+        return DiscoveredHost(
+            ip = InetAddress.getByName(e.ip) as Inet4Address, mac = e.mac, reverseDnsName = e.reverseDnsName, mdnsName = e.mdnsName, netbiosName = e.netbiosName,
+            upnpFriendlyName = e.upnpName, upnpManufacturer = e.upnpManufacturer, upnpModel = e.upnpModel, upnpDeviceType = e.upnpDeviceType, upnpServer = e.upnpServer,
+            mdnsServiceTypes = txt.keys, mdnsTxt = txt, mdnsInstanceNames = setOfNotNull(e.mdnsName),
+            snmpSysDescr = e.snmpSysDescr, httpTitle = e.httpTitle, httpServer = e.httpServer, httpAuthRealm = e.httpAuthRealm, isGateway = e.isGateway,
+        )
+    }
 
     suspend fun upsertDiscovered(networkId: Long, h: DiscoveredHost, runId: Long): Long {
         val now = System.currentTimeMillis()
-        val txt = h.mdnsTxt.takeIf { it.isNotEmpty() }?.let { Json.encodeToString(it) }
         val existing = db.hosts().find(networkId, h.ip.hostAddress)
+        val newRank = h.macSource?.rank ?: 0
         if (existing == null) {
+            val txt = h.mdnsTxt.takeIf { it.isNotEmpty() }?.let { Json.encodeToString(it) }
             return db.hosts().insert(HostEntity(networkId = networkId, ip = h.ip.hostAddress, mac = h.mac, reverseDnsName = h.reverseDnsName, mdnsName = h.mdnsName,
                 netbiosName = h.netbiosName, upnpName = h.upnpFriendlyName, upnpManufacturer = h.upnpManufacturer, upnpModel = h.upnpModel, vendor = h.upnpManufacturer,
                 deviceType = DeviceType.UNKNOWN, customName = null, identVendor = null, identModel = null, identOs = null, identConfidence = 0, identReasons = emptyList(),
                 snmpSysDescr = h.snmpSysDescr, httpTitle = h.httpTitle, mdnsTxtJson = txt, status = HostStatus.UNMARKED, note = "", isGateway = h.isGateway,
-                firstSeen = now, lastSeen = now, lastPortScan = null, lastDiscoveryRun = runId))
+                firstSeen = now, lastSeen = now, lastPortScan = null, lastDiscoveryRun = runId,
+                macSource = newRank, upnpDeviceType = h.upnpDeviceType, upnpServer = h.upnpServer, httpServer = h.httpServer, httpAuthRealm = h.httpAuthRealm))
         }
+        // MAC precedence is by source rank (netlink > NetBIOS > UPnP > names/EUI-64), not arrival order; equal rank refreshes.
+        val takeMac = h.mac != null && (existing.mac == null || newRank >= existing.macSource)
+        // mDNS TXT unions per service type: a later emission (for example the _device-info query) must not drop earlier types.
+        val txt = (parseTxt(existing.mdnsTxtJson) + h.mdnsTxt).takeIf { it.isNotEmpty() }?.let { Json.encodeToString(it) }
         // Scan data refreshes; annotations (customName, status, note) are never overwritten.
-        db.hosts().update(existing.copy(mac = h.mac ?: existing.mac, reverseDnsName = h.reverseDnsName ?: existing.reverseDnsName, mdnsName = h.mdnsName ?: existing.mdnsName,
+        db.hosts().update(existing.copy(mac = if (takeMac) h.mac else existing.mac, macSource = if (takeMac) newRank else existing.macSource,
+            reverseDnsName = h.reverseDnsName ?: existing.reverseDnsName, mdnsName = h.mdnsName ?: existing.mdnsName,
             netbiosName = h.netbiosName ?: existing.netbiosName, upnpName = h.upnpFriendlyName ?: existing.upnpName, upnpManufacturer = h.upnpManufacturer ?: existing.upnpManufacturer,
             upnpModel = h.upnpModel ?: existing.upnpModel, vendor = h.upnpManufacturer ?: existing.vendor, snmpSysDescr = h.snmpSysDescr ?: existing.snmpSysDescr,
-            httpTitle = h.httpTitle ?: existing.httpTitle, mdnsTxtJson = txt ?: existing.mdnsTxtJson, isGateway = existing.isGateway || h.isGateway, lastSeen = now, lastDiscoveryRun = runId))
+            httpTitle = h.httpTitle ?: existing.httpTitle, mdnsTxtJson = txt, isGateway = existing.isGateway || h.isGateway, lastSeen = now, lastDiscoveryRun = runId,
+            upnpDeviceType = h.upnpDeviceType ?: existing.upnpDeviceType, upnpServer = h.upnpServer ?: existing.upnpServer,
+            httpServer = h.httpServer ?: existing.httpServer, httpAuthRealm = h.httpAuthRealm ?: existing.httpAuthRealm))
         return existing.id
     }
     suspend fun setIdentity(hostId: Long, identity: DeviceIdentity) {
-        val h = db.hosts().byId(hostId).let { f -> var v: HostEntity? = null; f.collect { v = it; return@collect }; v } ?: return
+        val h = db.hosts().byIdOnce(hostId) ?: return
         db.hosts().update(h.copy(identVendor = identity.vendor, identModel = identity.model, identOs = identity.os, deviceType = identity.type, identConfidence = identity.confidence, identReasons = identity.reasons))
     }
     suspend fun setStatus(hostId: Long, status: HostStatus) = db.hosts().setStatus(hostId, status)
@@ -3682,11 +4185,11 @@ class HostRepository(private val db: NetProbeDb) {
     suspend fun setCustomName(hostId: Long, name: String?) = db.hosts().setCustomName(hostId, name?.trim()?.takeIf { it.isNotEmpty() })
 }
 ```
-Replace the awkward `setIdentity` collect with a `suspend fun byIdOnce(id: Long): HostEntity?` query on `HostDao` (`SELECT * FROM hosts WHERE id = :id`) and use it.
 
 ```kotlin
 class PortRepository(private val db: NetProbeDb) {
     fun portsForHost(hostId: Long): Flow<List<PortEntity>> = db.ports().forHost(hostId)
+    fun counts(): Flow<Map<Long, Int>> = db.ports().counts().map { rows -> rows.associate { it.hostId to it.n } }
     suspend fun upsertOpen(hostId: Long, port: Int, info: ServiceInfo) {
         val now = System.currentTimeMillis()
         val e = db.ports().find(hostId, port)
@@ -3708,6 +4211,7 @@ class VulnCacheRepository(private val db: NetProbeDb) {
 package com.northwalessolutions.netprobe.data
 
 import android.content.Context
+import com.northwalessolutions.netprobe.engine.portscan.ScanOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -3725,6 +4229,8 @@ class AppSettings(context: Context) {
         snmp = prefs.getBoolean("snmp", true), httpTitle = prefs.getBoolean("http", true), sweepConcurrency = prefs.getInt("sweepConc", 128).coerceIn(32, 512),
         connectTimeoutMs = prefs.getInt("connTimeout", 600).coerceIn(200, 2000), maxPrefix = prefs.getInt("maxPrefix", 22).coerceIn(20, 24),
         scanConcurrency = prefs.getInt("scanConc", 128).coerceIn(32, 512), scanTimeoutMs = prefs.getInt("scanTimeout", 600).coerceIn(200, 2000), nvdApiKey = prefs.getString("nvdKey", "") ?: "")
+    /** Port-scan options for the detail screen and "Quick scan all". */
+    fun scanOptions() = ScanOptions(concurrency = state.value.scanConcurrency, connectTimeoutMs = state.value.scanTimeoutMs)
     fun update(f: (SettingsState) -> SettingsState) {
         val s = f(_state.value)
         prefs.edit().putBoolean("mdns", s.mdns).putBoolean("ssdp", s.ssdp).putBoolean("netbios", s.netbios).putBoolean("rdns", s.reverseDns).putBoolean("snmp", s.snmp).putBoolean("http", s.httpTitle)
@@ -3745,6 +4251,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
+import com.northwalessolutions.netprobe.engine.discovery.MacSource
 import com.northwalessolutions.netprobe.engine.discovery.Source
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -3771,6 +4278,21 @@ class DaoTest {
         val h = hosts.host(id).first()!!
         assertEquals(HostStatus.INTERESTING, h.status); assertEquals("check me", h.note); assertEquals("My PC", h.customName)
         assertEquals("00:11:22:33:44:55", h.mac); assertEquals("Desk", h.mdnsName); assertEquals("DESKTOP", h.netbiosName); assertEquals(2L, h.lastDiscoveryRun)
+    }
+    @Test fun macRankDecidesAndMdnsTxtUnionsAcrossEmissions() = runBlocking {
+        val hosts = HostRepository(db); val ip = InetAddress.getByName("192.168.1.30") as Inet4Address
+        val id = hosts.upsertDiscovered(1, DiscoveredHost(ip, mac = "00:11:22:33:44:99", macSource = MacSource.EUI64, mdnsTxt = mapOf("_smb._tcp" to emptyMap())), runId = 1)
+        hosts.upsertDiscovered(1, DiscoveredHost(ip, mac = "de:ad:be:ef:00:01", macSource = MacSource.NEIGH, mdnsTxt = mapOf("_device-info._tcp" to mapOf("model" to "Mac14,2"))), runId = 1)
+        hosts.upsertDiscovered(1, DiscoveredHost(ip, mac = "00:11:22:33:44:77", macSource = MacSource.NAME), runId = 1)   // lower rank must not replace the netlink MAC
+        assertEquals("de:ad:be:ef:00:01", hosts.host(id).first()!!.mac)
+        assertEquals(setOf("_smb._tcp", "_device-info._tcp"), hosts.mdnsTypesFor(id))
+        assertEquals("Mac14,2", hosts.toDiscovered(hosts.byIdOnce(id)!!).mdnsTxt["_device-info._tcp"]!!["model"])
+    }
+    @Test fun portCountsGroupByHost() = runBlocking {
+        val ports = PortRepository(db)
+        ports.upsertOpen(7, 22, com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo("SSH", confidence = com.northwalessolutions.netprobe.engine.serviceid.Confidence.PORT_TABLE))
+        ports.upsertOpen(7, 80, com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo("HTTP", confidence = com.northwalessolutions.netprobe.engine.serviceid.Confidence.PORT_TABLE))
+        assertEquals(mapOf(7L to 2), ports.counts().first())
     }
     @Test fun uniqueIndexPerNetwork() = runBlocking {
         val hosts = HostRepository(db); val ip = InetAddress.getByName("192.168.1.1") as Inet4Address
@@ -3986,22 +4508,24 @@ git add -A && git commit -m "Add connect actions with handler resolution and fal
 - Produces:
 ```kotlin
 @Serializable data class CpeEntry(val product: String, val cpe: String)   // "nginx" -> "cpe:2.3:a:f5:nginx:{v}:*:*:*:*:*:*:*"
-object Cpe { fun load(json: String): Map<String, String>; fun forService(map: Map<String, String>, s: ServiceInfo): String? }  // null when product or version unknown
-sealed class VulnQuery(val text: String) { class ByCpe(cpe: String) : VulnQuery(cpe); class ByKeyword(kw: String) : VulnQuery(kw) }
+object Cpe { fun load(json: String): Map<String, String>; fun forService(map: Map<String, String>, s: ServiceInfo): String? }  // null when product or version unknown; OpenSSH "9.6p1" renders as version 9.6 + update p1
+sealed class VulnQuery(val text: String) { class ByCpe(cpe: String, val fallbackKeyword: String? = null) : VulnQuery(cpe); class ByKeyword(kw: String) : VulnQuery(kw) }
 data class Vuln(val cveId: String, val cvss: Double?, val severity: String, val published: String, val summary: String, val url: String)
-sealed class VulnResult { data class Ok(val vulns: List<Vuln>, val total: Int, val fromCache: Boolean, val fetchedAt: Long) : VulnResult()
+sealed class VulnResult { data class Ok(val vulns: List<Vuln>, val total: Int, val fromCache: Boolean, val fetchedAt: Long, val queryText: String = "") : VulnResult()
     data class Failed(val reason: String, val cached: Ok?) : VulnResult() }
 fun interface HttpGet { suspend fun get(url: String, headers: Map<String, String>): Pair<Int, String> }   // status, body; throws IOException offline
 object NvdParser { fun parse(json: String): Pair<List<Vuln>, Int>? }     // null on malformed
-class RateLimiter(private val permits: Int, private val windowMs: Long, private val clock: () -> Long = System::currentTimeMillis) { suspend fun acquire() }
+class RateLimiter(private val permits: Int, private val windowMs: Long, private val clock: () -> Long = System::currentTimeMillis,
+                  private val sleeper: suspend (Long) -> Unit = { delay(it) }) { suspend fun acquire() }
 interface VulnCache { suspend fun get(query: String, maxAgeMs: Long): Pair<String, Long>?; suspend fun getAny(query: String): Pair<String, Long>?; suspend fun put(query: String, json: String) }
 class VulnLookup(private val http: HttpGet, private val cache: VulnCache, private val apiKey: () -> String?, private val cpeMap: Map<String, String>,
-                 private val limiter: RateLimiter = RateLimiter(5, 30_000), private val ttlMs: Long = 24 * 3600_000) {
-    fun queryForService(s: ServiceInfo): VulnQuery?            // ByCpe when mappable, ByKeyword "product version" when product known, null otherwise
+                 private val limiterNoKey: RateLimiter = RateLimiter(5, 30_000), private val limiterKey: RateLimiter = RateLimiter(50, 30_000), private val ttlMs: Long = 24 * 3600_000) {
+    fun queryForService(s: ServiceInfo): VulnQuery?            // ByCpe (with a "product version" fallback keyword) when mappable, ByKeyword "product version" when product known, null otherwise
     fun queryForDevice(d: DeviceIdentity): VulnQuery?          // ByKeyword "vendor model", null when both missing
-    suspend fun run(q: VulnQuery): VulnResult }
+    suspend fun run(q: VulnQuery): VulnResult }                // a ByCpe query that returns Ok with total 0 is retried once as its fallback keyword; Ok.queryText reports the query actually used
 ```
-- URL: `https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=50&` + (`cpeName=<urlencoded>` or `keywordSearch=<urlencoded>`). Header `apiKey` only when non-blank. Limiter: 5 per 30 s without key, 50 with key (VulnLookup swaps the limiter when a key is present).
+- URL: `https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=50&` + (`cpeName=<urlencoded>` or `keywordSearch=<urlencoded>`). Header `apiKey` only when non-blank. Limiter: 5 per 30 s without key, 50 with key (VulnLookup holds one `RateLimiter` per case and picks by whether a key is present).
+- NVD stores OpenSSH `9.6p1` as version `9.6` with update `p1` (`cpe:2.3:a:openbsd:openssh:9.6:p1:*:*:*:*:*:*`); a non-existent version string yields zero results. `Cpe.forService` therefore splits `^(\d+\.\d+)p(\d+)$` for OpenSSH into version + update, and `VulnLookup.run` falls back to a keyword search when a CPE query finds nothing.
 - Severity: from `metrics.cvssMetricV31[0].cvssData.baseScore`/`baseSeverity`, falling back to `cvssMetricV30`, then `cvssMetricV2`; "UNKNOWN" when none. Summary: first English `descriptions[].value`. URL: `https://nvd.nist.gov/vuln/detail/<id>`.
 
 - [ ] **Step 1: Fixture**
@@ -4039,7 +4563,8 @@ class CpeTest {
         map.values.forEach { assertTrue(it.startsWith("cpe:2.3:a:") && it.contains("{v}")) }
     }
     @Test fun `service to cpe`() {
-        assertEquals("cpe:2.3:a:openbsd:openssh:9.6p1:*:*:*:*:*:*:*", Cpe.forService(map, ServiceInfo("SSH", "OpenSSH", "9.6p1", null, Confidence.CONFIRMED)))
+        assertEquals("cpe:2.3:a:openbsd:openssh:9.6:p1:*:*:*:*:*:*", Cpe.forService(map, ServiceInfo("SSH", "OpenSSH", "9.6p1", null, Confidence.CONFIRMED)))
+        assertEquals("cpe:2.3:a:dropbear_ssh_project:dropbear_ssh:2022.83:*:*:*:*:*:*:*", Cpe.forService(map, ServiceInfo("SSH", "dropbear", "2022.83", null, Confidence.CONFIRMED)))
         assertEquals("cpe:2.3:a:f5:nginx:1.18.0:*:*:*:*:*:*:*", Cpe.forService(map, ServiceInfo("HTTP", "nginx", "1.18.0", null, Confidence.CONFIRMED)))
         assertNull(Cpe.forService(map, ServiceInfo("HTTP", "nginx", null, null, Confidence.CONFIRMED)))
         assertNull(Cpe.forService(map, ServiceInfo("HTTP", "GoAhead-Webs", "1.0", null, Confidence.CONFIRMED)))
@@ -4092,10 +4617,18 @@ class VulnLookupTest {
         val l = VulnLookup({ u, h -> calls++; seenUrl = u; seenHeaders = h; 200 to json }, cache, { "KEY123" }, cpeMap)
         val r = l.run(l.queryForService(ssh)!!) as VulnResult.Ok
         assertEquals(2, r.vulns.size); assertFalse(r.fromCache)
-        assertTrue(seenUrl.startsWith("https://services.nvd.nist.gov/rest/json/cves/2.0?")); assertTrue(seenUrl.contains("cpeName=cpe%3A2.3%3Aa%3Aopenbsd%3Aopenssh%3A9.6p1"))
+        assertTrue(seenUrl.startsWith("https://services.nvd.nist.gov/rest/json/cves/2.0?")); assertTrue(seenUrl.contains("cpeName=cpe%3A2.3%3Aa%3Aopenbsd%3Aopenssh%3A9.6%3Ap1"))
         assertEquals("KEY123", seenHeaders["apiKey"])
         val again = l.run(l.queryForService(ssh)!!) as VulnResult.Ok
         assertTrue(again.fromCache); assertEquals(1, calls)
+    }
+    @Test fun `cpe query with zero results retries once as a keyword search`() = runBlocking {
+        val urls = mutableListOf<String>()
+        val l = VulnLookup({ u, _ -> urls += u; if (u.contains("cpeName=")) 200 to """{"totalResults":0,"vulnerabilities":[]}""" else 200 to json }, FakeCache(), { null }, cpeMap)
+        val r = l.run(l.queryForService(ssh)!!) as VulnResult.Ok
+        assertEquals(2, urls.size)                                    // the CPE call, then the keyword retry
+        assertTrue(urls[1].contains("keywordSearch=OpenSSH+9.6p1") || urls[1].contains("keywordSearch=OpenSSH%209.6p1"))
+        assertEquals(2, r.vulns.size); assertEquals("OpenSSH 9.6p1", r.queryText)
     }
     @Test fun `keyword query is url encoded`() = runBlocking {
         var seenUrl = ""
@@ -4116,8 +4649,6 @@ class VulnLookupTest {
     }
 }
 ```
-`RateLimiter` gets an injectable `sleeper: suspend (Long) -> Unit = { delay(it) }` as the test shows.
-
 - [ ] **Step 3: Run, expect failure**
 
 ```bash
@@ -4161,8 +4692,12 @@ object Cpe {
     fun forService(map: Map<String, String>, s: ServiceInfo): String? {
         val product = s.product ?: return null; val version = s.version ?: return null
         val tpl = map.entries.firstOrNull { it.key.equals(product, ignoreCase = true) }?.value ?: return null
-        return tpl.replace("{v}", version.lowercase())
+        val v = version.lowercase()
+        // NVD records OpenSSH 9.6p1 as version 9.6, update p1. Templates end "{v}:*"; the update takes the place of that first wildcard.
+        val m = if (product.equals("OpenSSH", ignoreCase = true)) OPENSSH_PORTABLE.matchEntire(v) else null
+        return if (m != null) tpl.replace("{v}:*", "${m.groupValues[1]}:p${m.groupValues[2]}") else tpl.replace("{v}", v)
     }
+    private val OPENSSH_PORTABLE = Regex("^(\\d+\\.\\d+)p(\\d+)$")
 }
 ```
 
@@ -4242,9 +4777,14 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import java.io.IOException
 import java.net.URLEncoder
 
-sealed class VulnQuery(val text: String) { class ByCpe(cpe: String) : VulnQuery(cpe); class ByKeyword(kw: String) : VulnQuery(kw) }
+sealed class VulnQuery(val text: String) {
+    /** [fallbackKeyword] is searched instead when NVD has no configuration for the CPE and returns zero results. */
+    class ByCpe(cpe: String, val fallbackKeyword: String? = null) : VulnQuery(cpe)
+    class ByKeyword(kw: String) : VulnQuery(kw)
+}
 sealed class VulnResult {
-    data class Ok(val vulns: List<Vuln>, val total: Int, val fromCache: Boolean, val fetchedAt: Long) : VulnResult()
+    /** [queryText] is the query that actually produced this result (the keyword when the CPE fallback ran). */
+    data class Ok(val vulns: List<Vuln>, val total: Int, val fromCache: Boolean, val fetchedAt: Long, val queryText: String = "") : VulnResult()
     data class Failed(val reason: String, val cached: Ok?) : VulnResult()
 }
 interface VulnCache {
@@ -4260,7 +4800,7 @@ class VulnLookup(
     companion object { const val BASE = "https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=50&" }
 
     fun queryForService(s: ServiceInfo): VulnQuery? {
-        Cpe.forService(cpeMap, s)?.let { return VulnQuery.ByCpe(it) }
+        Cpe.forService(cpeMap, s)?.let { return VulnQuery.ByCpe(it, fallbackKeyword = listOfNotNull(s.product, s.version).joinToString(" ")) }
         val p = s.product ?: return null
         return VulnQuery.ByKeyword(listOfNotNull(p, s.version).joinToString(" "))
     }
@@ -4270,9 +4810,16 @@ class VulnLookup(
     }
 
     suspend fun run(q: VulnQuery): VulnResult {
+        val first = runOnce(q)
+        // A CPE that NVD has no configuration for returns zero results; retry once as a keyword search and report that query text.
+        if (q is VulnQuery.ByCpe && q.fallbackKeyword != null && first is VulnResult.Ok && first.total == 0) return runOnce(VulnQuery.ByKeyword(q.fallbackKeyword))
+        return first
+    }
+
+    private suspend fun runOnce(q: VulnQuery): VulnResult {
         val key = "${q::class.simpleName}:${q.text}"
-        cache.get(key, ttlMs)?.let { (json, at) -> NvdParser.parse(json)?.let { (v, t) -> return VulnResult.Ok(v, t, fromCache = true, fetchedAt = at) } }
-        val stale = cache.getAny(key)?.let { (json, at) -> NvdParser.parse(json)?.let { (v, t) -> VulnResult.Ok(v, t, true, at) } }
+        cache.get(key, ttlMs)?.let { (json, at) -> NvdParser.parse(json)?.let { (v, t) -> return VulnResult.Ok(v, t, fromCache = true, fetchedAt = at, queryText = q.text) } }
+        val stale = cache.getAny(key)?.let { (json, at) -> NvdParser.parse(json)?.let { (v, t) -> VulnResult.Ok(v, t, true, at, q.text) } }
         val param = when (q) { is VulnQuery.ByCpe -> "cpeName=" ; is VulnQuery.ByKeyword -> "keywordSearch=" } + URLEncoder.encode(q.text, "UTF-8")
         val k = apiKey()?.takeIf { it.isNotBlank() }
         (if (k != null) limiterKey else limiterNoKey).acquire()
@@ -4282,7 +4829,7 @@ class VulnLookup(
         return when {
             code == 403 || code == 429 -> VulnResult.Failed("NVD rate limit reached, try again in 30 seconds or add an API key in Settings", stale)
             code != 200 -> VulnResult.Failed("NVD returned HTTP $code", stale)
-            else -> NvdParser.parse(body)?.let { (v, t) -> cache.put(key, body); VulnResult.Ok(v, t, false, System.currentTimeMillis()) }
+            else -> NvdParser.parse(body)?.let { (v, t) -> cache.put(key, body); VulnResult.Ok(v, t, false, System.currentTimeMillis(), q.text) }
                 ?: VulnResult.Failed("NVD returned an unexpected response", stale)
         }
     }
@@ -4304,7 +4851,148 @@ git add -A && git commit -m "Add NVD vulnerability lookup with CPE mapping, rate
 
 ---
 
-### Task 20: ViewModels and Compose screens
+### Task 20: Application wiring
+
+**Files:**
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`
+- Create: `app/src/main/java/com/northwalessolutions/netprobe/engine/common/Locks.kt`, `data/RawResources.kt`
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/RawResourcesTest.kt`
+
+**Interfaces:**
+- Consumes: the engines, repositories and resources of Tasks 2 to 19 only; it compiles on its own before any UI exists (the activity still shows the Task 1 placeholder text).
+- Produces the `AppContainer` properties every ViewModel uses:
+```kotlin
+class AppContainer(val context: Context) {
+    val settings: AppSettings; val db: NetProbeDb; val networks: NetworkRepository; val hosts: HostRepository; val ports: PortRepository; val vulnCache: VulnCacheRepository
+    val networkEnvMonitor: NetworkEnvMonitor; val portTable: PortTable; val mdnsTypes: List<String>; val identifyRules: List<Rule>; val cpeMap: Map<String, String>
+    val discoveryEngine: DiscoveryEngine; val portScanEngine: PortScanEngine; val serviceIdentifier: ServiceIdentifier; val deviceIdentifier: DeviceIdentifier
+    val actionRunner: AndroidActionRunner; val actions: ActionProvider; val vulnLookup: VulnLookup; val ouiLookup: (String) -> String? = { null }   // OUI database is roadmap
+    val locks: Locks }
+class Locks(context: Context) { fun acquire(); fun release() }   // MulticastLock + WifiLock(WIFI_MODE_FULL_HIGH_PERF); release() is safe when not held
+object RawResources { fun lines(text: String): List<String> }   // trims, drops blanks and '#' comments
+```
+- The locks are held for the whole discovery run: `AppContainer.discoveryEngine` is `DiscoveryEngine.production(context, mdnsTypes)` and Task 21's `HomeViewModel.discover` calls `c.locks.acquire()` before collecting and `release()` in `finally`. `Locks` therefore exposes `acquire()`/`release()` rather than a block form, since the collection is a suspend flow (the `withScanLocks` block in the produces list above is not used).
+- `VulnCacheRepository` adapts to the `VulnCache` interface with a small adapter class in `AppContainer`.
+
+- [ ] **Step 1: Failing test**
+
+```kotlin
+package com.northwalessolutions.netprobe
+
+import com.northwalessolutions.netprobe.data.RawResources
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class RawResourcesTest {
+    @Test fun `lines trims drops blanks and comments`() {
+        assertEquals(listOf("_http._tcp", "_ssh._tcp"), RawResources.lines(" _http._tcp \n\n# comment\n_ssh._tcp\n"))
+    }
+    @Test fun `bundled mdns types file has the appendix B list`() {
+        val types = RawResources.lines(javaClass.getResource("/mdns_types.txt")!!.readText())
+        assertEquals(30, types.size); assert(types.contains("_device-info._tcp")); assert(types.all { it.matches(Regex("^_[a-z0-9-]+\\._(tcp|udp)$")) })
+    }
+}
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+```bash
+./gradlew :app:testDebugUnitTest --tests '*RawResourcesTest*' --console=plain 2>&1 | tail -15
+```
+
+- [ ] **Step 3: Implement**
+
+`data/RawResources.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.data
+
+import android.content.Context
+
+object RawResources {
+    fun lines(text: String): List<String> = text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
+    fun read(context: Context, id: Int): String = context.resources.openRawResource(id).bufferedReader().use { it.readText() }
+}
+```
+`engine/common/Locks.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.engine.common
+
+import android.content.Context
+import android.net.wifi.WifiManager
+
+class Locks(context: Context) {
+    private val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+    private val multicast = wifi.createMulticastLock("netprobe-mdns").apply { setReferenceCounted(false) }
+    @Suppress("DEPRECATION") private val perf = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "netprobe-scan").apply { setReferenceCounted(false) }
+    fun acquire() { runCatching { multicast.acquire() }; runCatching { perf.acquire() } }
+    fun release() { runCatching { if (multicast.isHeld) multicast.release() }; runCatching { if (perf.isHeld) perf.release() } }
+}
+```
+`AppContainer.kt`:
+```kotlin
+package com.northwalessolutions.netprobe
+
+import android.content.Context
+import com.northwalessolutions.netprobe.actions.ActionProvider
+import com.northwalessolutions.netprobe.actions.AndroidActionRunner
+import com.northwalessolutions.netprobe.data.*
+import com.northwalessolutions.netprobe.engine.common.Locks
+import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
+import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
+import com.northwalessolutions.netprobe.engine.identify.IdentifyRules
+import com.northwalessolutions.netprobe.engine.portscan.PortScanEngine
+import com.northwalessolutions.netprobe.engine.portscan.PortTable
+import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
+import com.northwalessolutions.netprobe.engine.vulns.*
+import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
+
+class AppContainer(val context: Context) {
+    val settings by lazy { AppSettings(context) }
+    val db by lazy { NetProbeDb.open(context) }
+    val networks by lazy { NetworkRepository(db) }
+    val hosts by lazy { HostRepository(db) }
+    val ports by lazy { PortRepository(db) }
+    val vulnCache by lazy { VulnCacheRepository(db) }
+    val networkEnvMonitor by lazy { NetworkEnvMonitor(context) }
+    val portTable by lazy { PortTable.fromJson(RawResources.read(context, R.raw.ports)) }
+    val mdnsTypes by lazy { RawResources.lines(RawResources.read(context, R.raw.mdns_types)) }
+    val identifyRules by lazy { IdentifyRules.load(RawResources.read(context, R.raw.identify_rules)) }
+    val cpeMap by lazy { Cpe.load(RawResources.read(context, R.raw.cpe_map)) }
+    val discoveryEngine by lazy { DiscoveryEngine.production(context, mdnsTypes) }
+    val portScanEngine by lazy { PortScanEngine() }
+    val serviceIdentifier by lazy { ServiceIdentifier(portTable) }
+    val deviceIdentifier by lazy { DeviceIdentifier(identifyRules) }
+    val actionRunner by lazy { AndroidActionRunner(context) }
+    val actions by lazy { ActionProvider(actionRunner) }
+    val locks by lazy { Locks(context) }
+    val ouiLookup: (String) -> String? = { null }
+    val vulnLookup by lazy {
+        VulnLookup(UrlHttpGet(), object : VulnCache {
+            override suspend fun get(query: String, maxAgeMs: Long) = vulnCache.get(query, maxAgeMs)?.let { it.json to it.fetchedAt }
+            override suspend fun getAny(query: String) = vulnCache.getAny(query)?.let { it.json to it.fetchedAt }
+            override suspend fun put(query: String, json: String) = vulnCache.put(query, json)
+        }, { settings.state.value.nvdApiKey }, cpeMap)
+    }
+}
+```
+Task 21's `HomeViewModel.discover` wraps the collection in `c.locks.acquire(); try { ... } finally { c.locks.release() }`.
+
+- [ ] **Step 4: Full build and full unit suite**
+
+```bash
+./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -20
+```
+Expected: BUILD SUCCESSFUL, all unit tests green. Installing and launching waits for Task 21, because until the UI exists the activity only shows the text "NetProbe".
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A && git commit -m "Wire application container, locks and bundled resources"
+```
+
+---
+
+### Task 21: ViewModels and Compose screens
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/theme/Theme.kt`, `ui/Nav.kt`
@@ -4314,13 +5002,13 @@ git add -A && git commit -m "Add NVD vulnerability lookup with CPE mapping, rate
 - Test (device): `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/HomeScreenTest.kt`
 
 **Interfaces:**
-- Consumes: everything from Tasks 4, 6, 8, 15, 16, 17, 18, 19 through `AppContainer` (Task 21 adds the properties; this task declares what it needs on `AppContainer` and Task 21 provides them: `networkEnvMonitor`, `discoveryEngine`, `portScanEngine`, `serviceIdentifier`, `deviceIdentifier`, `networks`, `hosts`, `ports`, `actions`, `actionRunner`, `vulnLookup`, `settings`, `ouiLookup: (String) -> String?` which returns null in the MVP).
+- Consumes: everything from Tasks 4, 6, 8, 15, 16, 17, 18, 19 through `AppContainer`, whose properties Task 20 already provides: `networkEnvMonitor`, `discoveryEngine`, `portScanEngine`, `serviceIdentifier`, `deviceIdentifier`, `networks`, `hosts`, `ports`, `actions`, `actionRunner`, `vulnLookup`, `settings`, `locks`, `ouiLookup: (String) -> String?` (null in the MVP). Also from Task 17: `HostRepository.byIdOnce`/`mdnsTypesFor`/`toDiscovered`, `PortRepository.counts()`, `AppSettings.scanOptions()`. This task adds nothing to `AppContainer`, so `:app:assembleDebug` succeeds on its own.
 - Produces:
 ```kotlin
 enum class StatusFilter { ALL, INTERESTING, INVESTIGATED, IGNORED, UNMARKED }
 data class HostRow(val id: Long, val ip: String, val displayName: String, val identityLine: String, val type: DeviceType, val openPorts: Int, val status: HostStatus, val isGateway: Boolean, val stale: Boolean, val mac: String?)
 object HomeFilter { fun apply(rows: List<HostRow>, filter: StatusFilter, query: String): List<HostRow> }   // gateway first, then by numeric IP
-data class HomeUiState(val env: NetworkEnv?, val scanning: Boolean, val status: DiscoveryStatus?, val rows: List<HostRow>, val filter: StatusFilter, val query: String, val message: String?, val networkName: String?)
+data class HomeUiState(val env: NetworkEnv?, val scanning: Boolean, val status: DiscoveryStatus?, val rows: List<HostRow>, val filter: StatusFilter, val query: String, val message: String?, val networkName: String?, val quickScanning: Boolean)
 class HomeViewModel(container: AppContainer) : ViewModel() { val state: StateFlow<HomeUiState>; fun startScan(); fun stopScan(); fun quickScanAll(); fun setFilter(f: StatusFilter); fun setQuery(q: String); fun dismissMessage() }
 data class PortRow(val port: Int, val service: ServiceInfo, val primary: DeviceAction?, val actions: List<DeviceAction>)
 data class DetailUiState(val host: HostEntity?, val displayName: String, val ports: List<PortRow>, val scanning: Boolean, val progress: ScanProgress?, val profile: ScanProfile, val customPortsText: String, val customError: String?, val message: String?, val vuln: VulnSheetState?)
@@ -4330,8 +5018,8 @@ class DetailViewModel(container: AppContainer, hostId: Long) : ViewModel() { val
 ```
 - Identity line (spec 5.4.1): `listOfNotNull(identVendor, identModel).joinToString(" ")`, else `listOfNotNull(identOs, type.label).joinToString(" ")`, else `"Unknown device"` plus `", found via mDNS"` when the host has only mDNS evidence. `type.label` is "Router", "Phone", "Computer", "Printer", "Media", "IoT", "NAS", "Camera", "Server", "".
 - Scan lifecycle in `HomeViewModel`: `startScan` creates `runId = now`, ensures the network, collects `discoveryEngine.discover` and upserts each host, then for each upserted host runs `deviceIdentifier.identify` with `HostEvidence(host, probedOpenPorts, emptyMap(), ouiLookup(mac))` and stores it. When `env` becomes null or changes signature during a scan: cancel the scan job, set `message = "Network changed, scan stopped"`. Hosts whose `lastDiscoveryRun` is older than the latest run are `stale = true` (dimmed).
-- `quickScanAll`: sequentially for each row, run `portScanEngine.scan(ip, Quick)`, upsert OPEN ports with `serviceIdentifier.identify`, then re-identify the device with the services map.
-- `DetailViewModel.startScan`: same per-host flow with the selected profile; after the scan, `ports.markScanned`, re-identify.
+- `quickScanAll`: sequentially for each row, run `portScanEngine.scan(ip, Quick)`; each OPEN port is identified in its own coroutine bounded by a `Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)` so slow banner reads never back-pressure the scan; a `coroutineScope` waits for them, then `ports.markScanned` and the device is re-identified with the services map. `mdnsTypesFor(hostId)` is read once per host, not per port. `ServiceIdentifier.identify` switches to `Dispatchers.IO` itself, so calling it from `viewModelScope` (Main) is safe.
+- `DetailViewModel.startScan`: the same per-host flow with the selected profile; after the scan, `ports.markScanned`, re-identify. `Evidence` carries `mdnsTypes` and the stored `upnpServer`.
 - Pinned layout (spec 5.7, Director's standing rule): Home = `Scaffold` with a `topBar` column holding the network panel, Scan/Stop button and progress, then the filter row, then `LazyColumn` for the list. Detail = `Scaffold` whose `topBar` holds the header and the scan bar; only the ports list scrolls. No action button lives inside a `LazyColumn` except the per-row port actions, which belong to their rows.
 
 - [ ] **Step 1: Failing JVM tests**
@@ -4476,9 +5164,13 @@ import com.northwalessolutions.netprobe.engine.identify.HostEvidence
 import com.northwalessolutions.netprobe.engine.portscan.PortState
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.serviceid.Evidence
+import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
+import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.net.Inet4Address
 import java.net.InetAddress
 
@@ -4514,7 +5206,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val networkId = MutableStateFlow<Long?>(null); private val latestRun = MutableStateFlow(0L)
     private val quickScanning = MutableStateFlow(false); private val extraMessage = MutableStateFlow<String?>(null)
     private val controller = ScanController(viewModelScope, env) { e -> discover(e) }
-    private val portCounts = MutableStateFlow<Map<Long, Int>>(emptyMap())
+    private val portCounts: Flow<Map<Long, Int>> = c.ports.counts()   // PortDao.counts(), Task 17
 
     private val hosts: Flow<List<HostEntity>> = networkId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
 
@@ -4540,11 +5232,16 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val runId = System.currentTimeMillis(); latestRun.value = runId
         val s = c.settings.state.value
         val opts = DiscoveryOptions(s.mdns, s.ssdp, s.netbios, s.reverseDns, s.snmp, s.httpTitle, s.sweepConcurrency, s.connectTimeoutMs, s.maxPrefix)
-        c.discoveryEngine.discover(e, opts).collect { h ->
-            val id = c.hosts.upsertDiscovered(net.id, h, runId)
-            val merged = c.hosts.byIdOnce(id) ?: return@collect
-            c.hosts.setIdentity(id, c.deviceIdentifier.identify(HostEvidence(mergedToDiscovered(merged, h), h.probedOpenPorts, emptyMap(), merged.mac?.let(c.ouiLookup))))
-        }
+        val openPorts = HashMap<String, MutableSet<Int>>()   // ports seen open per ip during this run: later emissions for the host carry none
+        c.locks.acquire()
+        try {
+            c.discoveryEngine.discover(e, opts).collect { h ->
+                val id = c.hosts.upsertDiscovered(net.id, h, runId)
+                val merged = c.hosts.byIdOnce(id) ?: return@collect
+                val ports = openPorts.getOrPut(h.ip.hostAddress) { HashSet() }.also { it += h.probedOpenPorts }.toSet()
+                c.hosts.setIdentity(id, c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(merged), ports, emptyMap(), merged.mac?.let(c.ouiLookup))))
+            }
+        } finally { c.locks.release() }
         val st = c.discoveryEngine.status.value
         if (st.clampedFrom != null) extraMessage.value = "Large network (/${st.clampedFrom}). Scanned your /24 only. Widen in Settings."
     }
@@ -4556,18 +5253,28 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 val net = networkId.value ?: return@launch
                 for (h in c.hosts.hostsForNetwork(net).first()) {
                     val ip = InetAddress.getByName(h.ip) as Inet4Address
-                    c.portScanEngine.scan(ip, ScanProfile.Quick, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
-                        c.ports.upsertOpen(h.id, r.port, c.serviceIdentifier.identify(ip, r.port, Evidence()))
-                        portCounts.update { it + (h.id to (it[h.id] ?: 0) + 1) }
+                    val types = c.hosts.mdnsTypesFor(h.id)                 // once per host, not per port
+                    val found = HashMap<Int, ServiceInfo>()
+                    // Identify off the collector so a slow banner never back-pressures the scan; coroutineScope waits for every identify.
+                    coroutineScope {
+                        val sem = Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)
+                        c.portScanEngine.scan(ip, ScanProfile.Quick, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
+                            launch { sem.withPermit {
+                                val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer))
+                                synchronized(found) { found[r.port] = info }
+                                c.ports.upsertOpen(h.id, r.port, info)
+                            } }
+                        }
                     }
                     c.ports.markScanned(h.id)
+                    c.hosts.byIdOnce(h.id)?.let { e -> c.hosts.setIdentity(h.id, c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(e), found.keys.toSet(), found, e.mac?.let(c.ouiLookup)))) }
                 }
             } finally { quickScanning.value = false }
         }
     }
 }
 ```
-`mergedToDiscovered(entity, latest)` builds a `DiscoveredHost` from the stored entity's names and the latest evidence so identification sees the merged picture; implement it in `HomeViewModel.kt` as a private function copying each stored field into the `DiscoveredHost` constructor and parsing `mdnsTxtJson`. `c.settings.scanOptions()` is an extension in `data/Settings.kt`: `fun AppSettings.scanOptions() = ScanOptions(state.value.scanConcurrency, state.value.scanTimeoutMs)`. Port counts for rows come from a `PortDao` query `SELECT hostId, COUNT(*) AS n FROM ports GROUP BY hostId` exposed as `fun counts(): Flow<List<PortCount>>`; replace the `portCounts` state with that flow once the DAO exists (do it in this task).
+Identification always runs on the merged stored picture: `c.hosts.toDiscovered(entity)` (Task 17) rebuilds the `DiscoveredHost` from the stored columns, including `mdnsTxtJson`. Row port counts come from `c.ports.counts()` (Task 17), so they update as ports are written.
 
 `ui/detail/DetailViewModel.kt`:
 ```kotlin
@@ -4581,11 +5288,14 @@ import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.identify.HostEvidence
 import com.northwalessolutions.netprobe.engine.portscan.*
 import com.northwalessolutions.netprobe.engine.serviceid.Evidence
+import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.net.Inet4Address
 import java.net.InetAddress
 
@@ -4612,19 +5322,27 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     fun startScan() {
         if (scanJob?.isActive == true) return
         val h = state.value.host ?: return
-        val prof = if (profile.value is ScanProfile.Custom || (profile.value == ScanProfile.Quick && customText.value.isNotBlank() && false)) profile.value else profile.value
+        val prof = profile.value
         val resolved = if (prof is ScanProfile.Custom) ProfileParser.parse(customText.value).getOrElse { customError.value = it.message; return } else prof
         scanning.value = true
         scanJob = viewModelScope.launch {
             try {
                 val ip = InetAddress.getByName(h.ip) as Inet4Address
+                val types = c.hosts.mdnsTypesFor(hostId)                  // once per scan, not per port
                 val found = HashMap<Int, ServiceInfo>()
-                c.portScanEngine.scan(ip, resolved, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
-                    val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = c.hosts.mdnsTypesFor(hostId)))
-                    found[r.port] = info; c.ports.upsertOpen(hostId, r.port, info)
+                // Identify off the collector so a slow banner never back-pressures the scan; coroutineScope waits for every identify.
+                coroutineScope {
+                    val sem = Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)
+                    c.portScanEngine.scan(ip, resolved, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
+                        launch { sem.withPermit {
+                            val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer))
+                            synchronized(found) { found[r.port] = info }
+                            c.ports.upsertOpen(hostId, r.port, info)
+                        } }
+                    }
                 }
                 c.ports.markScanned(hostId)
-                c.hosts.byIdOnce(hostId)?.let { e -> c.hosts.setIdentity(hostId, c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(e), found.keys, found, e.mac?.let(c.ouiLookup)))) }
+                c.hosts.byIdOnce(hostId)?.let { e -> c.hosts.setIdentity(hostId, c.deviceIdentifier.identify(HostEvidence(c.hosts.toDiscovered(e), found.keys.toSet(), found, e.mac?.let(c.ouiLookup)))) }
             } finally { scanning.value = false }
         }
     }
@@ -4642,10 +5360,16 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             ?: run { message.value = "Device not identified well enough to search"; return }; runVuln(q) }
     fun rerunVulnQuery(text: String) { if (text.isNotBlank()) runVuln(VulnQuery.ByKeyword(text.trim())) }
     fun closeVulns() { vuln.value = null }
-    private fun runVuln(q: VulnQuery) { vuln.value = VulnSheetState.Loading(q.text); viewModelScope.launch { vuln.value = VulnSheetState.Ready(q.text, c.vulnLookup.run(q)) } }
+    private fun runVuln(q: VulnQuery) {
+        vuln.value = VulnSheetState.Loading(q.text)
+        viewModelScope.launch {
+            val r = c.vulnLookup.run(q)
+            // Show the query that actually produced the result (the keyword when a CPE query fell back).
+            vuln.value = VulnSheetState.Ready((r as? VulnResult.Ok)?.queryText?.takeIf { it.isNotBlank() } ?: q.text, r)
+        }
+    }
 }
 ```
-Tidy the `prof`/`resolved` lines while implementing: `resolved` is `ProfileParser.parse(customText)` when the selected profile is Custom, otherwise the selected profile. Add to `HostRepository`: `suspend fun byIdOnce(id: Long): HostEntity?`, `suspend fun mdnsTypesFor(id: Long): Set<String>` (keys of the parsed `mdnsTxtJson`), and `fun toDiscovered(e: HostEntity): DiscoveredHost`.
 
 - [ ] **Step 4: Compose screens**
 
@@ -4764,10 +5488,15 @@ class MainActivity : ComponentActivity() {
 ```kotlin
 package com.northwalessolutions.netprobe.ui
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.MainActivity
+import org.junit.Assume
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -4780,11 +5509,22 @@ class HomeScreenTest {
         rule.onNodeWithText("All").assertIsDisplayed(); rule.onNodeWithText("Interesting").assertIsDisplayed()
         rule.onNodeWithTag("search").assertIsDisplayed()
     }
+    private fun onLan(): Boolean {
+        val cm = ApplicationProvider.getApplicationContext<Context>().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+        return caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true || caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
+    }
+    // Two gated tests, one outcome each: exactly one of them runs, and neither can pass by catching its own failure.
     @Test fun scanTogglesToStopWhenOnWifi() {
-        // Only meaningful on a device connected to Wi-Fi; otherwise the button is disabled and the test verifies that state instead.
-        val btn = rule.onNodeWithTag("scanButton")
-        try { btn.assertIsEnabled(); btn.performClick(); rule.onNodeWithText("Stop").assertIsDisplayed(); rule.onNodeWithText("Stop").performClick(); rule.onNodeWithText("Scan").assertIsDisplayed() }
-        catch (e: AssertionError) { btn.assertIsNotEnabled(); rule.onNodeWithText("Connect to Wi-Fi or Ethernet to scan").assertIsDisplayed() }
+        Assume.assumeTrue("needs Wi-Fi or Ethernet", onLan())
+        rule.onNodeWithTag("scanButton").assertIsEnabled().performClick()
+        rule.onNodeWithText("Stop").assertIsDisplayed().performClick()   // stopped at once; the scan only touches the LAN
+        rule.onNodeWithText("Scan").assertIsDisplayed()
+    }
+    @Test fun scanIsDisabledWithAMessageWhenOffWifi() {
+        Assume.assumeFalse("needs no Wi-Fi or Ethernet", onLan())
+        rule.onNodeWithTag("scanButton").assertIsNotEnabled()
+        rule.onNodeWithText("Connect to Wi-Fi or Ethernet to scan").assertIsDisplayed()
     }
 }
 ```
@@ -4796,143 +5536,9 @@ class HomeScreenTest {
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.northwalessolutions.netprobe.ui.HomeScreenTest --console=plain 2>&1 | tail -15
 ```
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Install on the device and launch**
 
 ```bash
-git add -A && git commit -m "Add Compose UI: home, detail, settings, vulnerability sheet and view models"
-```
-
----
-
-### Task 21: Application wiring
-
-**Files:**
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`
-- Create: `app/src/main/java/com/northwalessolutions/netprobe/engine/common/Locks.kt`, `data/RawResources.kt`
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/RawResourcesTest.kt`
-
-**Interfaces:**
-- Produces the `AppContainer` properties every ViewModel uses:
-```kotlin
-class AppContainer(val context: Context) {
-    val settings: AppSettings; val db: NetProbeDb; val networks: NetworkRepository; val hosts: HostRepository; val ports: PortRepository; val vulnCache: VulnCacheRepository
-    val networkEnvMonitor: NetworkEnvMonitor; val portTable: PortTable; val mdnsTypes: List<String>; val identifyRules: List<Rule>; val cpeMap: Map<String, String>
-    val discoveryEngine: DiscoveryEngine; val portScanEngine: PortScanEngine; val serviceIdentifier: ServiceIdentifier; val deviceIdentifier: DeviceIdentifier
-    val actionRunner: AndroidActionRunner; val actions: ActionProvider; val vulnLookup: VulnLookup; val ouiLookup: (String) -> String? = { null }   // OUI database is roadmap
-    val locks: Locks }
-class Locks(context: Context) { fun <T> withScanLocks(block: () -> T): T }   // acquires MulticastLock + WifiLock(WIFI_MODE_FULL_HIGH_PERF), releases in finally
-object RawResources { fun lines(text: String): List<String> }   // trims, drops blanks and '#' comments
-```
-- `DiscoveryEngine.discover` is wrapped so the locks are held for the whole run: `AppContainer.discoveryEngine` is `DiscoveryEngine.production(context, mdnsTypes)` and `HomeViewModel.discover` calls `c.locks.acquire()` before collecting and `release()` in `finally` (make `Locks` expose `acquire()`/`release()` rather than a block form, since the collection is a suspend flow).
-- `VulnCacheRepository` adapts to the `VulnCache` interface with a small adapter class in `AppContainer`.
-
-- [ ] **Step 1: Failing test**
-
-```kotlin
-package com.northwalessolutions.netprobe
-
-import com.northwalessolutions.netprobe.data.RawResources
-import org.junit.Assert.assertEquals
-import org.junit.Test
-
-class RawResourcesTest {
-    @Test fun `lines trims drops blanks and comments`() {
-        assertEquals(listOf("_http._tcp", "_ssh._tcp"), RawResources.lines(" _http._tcp \n\n# comment\n_ssh._tcp\n"))
-    }
-    @Test fun `bundled mdns types file has the appendix B list`() {
-        val types = RawResources.lines(javaClass.getResource("/mdns_types.txt")!!.readText())
-        assertEquals(30, types.size); assert(types.contains("_device-info._tcp")); assert(types.all { it.matches(Regex("^_[a-z0-9-]+\\._(tcp|udp)$")) })
-    }
-}
-```
-
-- [ ] **Step 2: Run, expect failure**
-
-```bash
-./gradlew :app:testDebugUnitTest --tests '*RawResourcesTest*' --console=plain 2>&1 | tail -15
-```
-
-- [ ] **Step 3: Implement**
-
-`data/RawResources.kt`:
-```kotlin
-package com.northwalessolutions.netprobe.data
-
-import android.content.Context
-
-object RawResources {
-    fun lines(text: String): List<String> = text.lines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }
-    fun read(context: Context, id: Int): String = context.resources.openRawResource(id).bufferedReader().use { it.readText() }
-}
-```
-`engine/common/Locks.kt`:
-```kotlin
-package com.northwalessolutions.netprobe.engine.common
-
-import android.content.Context
-import android.net.wifi.WifiManager
-
-class Locks(context: Context) {
-    private val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-    private val multicast = wifi.createMulticastLock("netprobe-mdns").apply { setReferenceCounted(false) }
-    @Suppress("DEPRECATION") private val perf = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "netprobe-scan").apply { setReferenceCounted(false) }
-    fun acquire() { runCatching { multicast.acquire() }; runCatching { perf.acquire() } }
-    fun release() { runCatching { if (multicast.isHeld) multicast.release() }; runCatching { if (perf.isHeld) perf.release() } }
-}
-```
-`AppContainer.kt`:
-```kotlin
-package com.northwalessolutions.netprobe
-
-import android.content.Context
-import com.northwalessolutions.netprobe.actions.ActionProvider
-import com.northwalessolutions.netprobe.actions.AndroidActionRunner
-import com.northwalessolutions.netprobe.data.*
-import com.northwalessolutions.netprobe.engine.common.Locks
-import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
-import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
-import com.northwalessolutions.netprobe.engine.identify.IdentifyRules
-import com.northwalessolutions.netprobe.engine.portscan.PortScanEngine
-import com.northwalessolutions.netprobe.engine.portscan.PortTable
-import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
-import com.northwalessolutions.netprobe.engine.vulns.*
-import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
-
-class AppContainer(val context: Context) {
-    val settings by lazy { AppSettings(context) }
-    val db by lazy { NetProbeDb.open(context) }
-    val networks by lazy { NetworkRepository(db) }
-    val hosts by lazy { HostRepository(db) }
-    val ports by lazy { PortRepository(db) }
-    val vulnCache by lazy { VulnCacheRepository(db) }
-    val networkEnvMonitor by lazy { NetworkEnvMonitor(context) }
-    val portTable by lazy { PortTable.fromJson(RawResources.read(context, R.raw.ports)) }
-    val mdnsTypes by lazy { RawResources.lines(RawResources.read(context, R.raw.mdns_types)) }
-    val identifyRules by lazy { IdentifyRules.load(RawResources.read(context, R.raw.identify_rules)) }
-    val cpeMap by lazy { Cpe.load(RawResources.read(context, R.raw.cpe_map)) }
-    val discoveryEngine by lazy { DiscoveryEngine.production(context, mdnsTypes) }
-    val portScanEngine by lazy { PortScanEngine() }
-    val serviceIdentifier by lazy { ServiceIdentifier(portTable) }
-    val deviceIdentifier by lazy { DeviceIdentifier(identifyRules) }
-    val actionRunner by lazy { AndroidActionRunner(context) }
-    val actions by lazy { ActionProvider(actionRunner) }
-    val locks by lazy { Locks(context) }
-    val ouiLookup: (String) -> String? = { null }
-    val vulnLookup by lazy {
-        VulnLookup(UrlHttpGet(), object : VulnCache {
-            override suspend fun get(query: String, maxAgeMs: Long) = vulnCache.get(query, maxAgeMs)?.let { it.json to it.fetchedAt }
-            override suspend fun getAny(query: String) = vulnCache.getAny(query)?.let { it.json to it.fetchedAt }
-            override suspend fun put(query: String, json: String) = vulnCache.put(query, json)
-        }, { settings.state.value.nvdApiKey }, cpeMap)
-    }
-}
-```
-Then in `HomeViewModel.discover`, wrap the collection: `c.locks.acquire(); try { ... } finally { c.locks.release() }`.
-
-- [ ] **Step 4: Full build, full unit suite, install on the device, launch**
-
-```bash
-./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -20
 ADB="/c/Users/blastdav/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 "$ADB" -s 28221FDH300AP9 install -r app/build/outputs/apk/debug/app-debug.apk
 "$ADB" -s 28221FDH300AP9 shell am start -n com.northwalessolutions.netprobe/.MainActivity
@@ -4940,10 +5546,10 @@ sleep 3; "$ADB" -s 28221FDH300AP9 logcat -d | grep -E "AndroidRuntime|netprobe" 
 ```
 Expected: app opens to Home with the network panel filled; no `AndroidRuntime` crash lines.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add -A && git commit -m "Wire application container, locks and bundled resources"
+git add -A && git commit -m "Add Compose UI: home, detail, settings, vulnerability sheet and view models"
 ```
 
 ---
@@ -5015,7 +5621,9 @@ git add -A && git commit -m "Record MVP on-device QA results"
 
 ## Plan Self-Review Notes
 
-- **Spec coverage:** 2.1 items 1 to 9 map to Tasks 15/20 (discover), 6/20 (port scan + quick scan all), 8 (service id), 18 (actions), 17/20 (annotation, filter), 17 (persistence per network), 4/20 (network panel), 16/20 (identification), 19/20 (vuln lookup). Section 4 constraints: Task 1 (targetSdk 30, queries, cleartext), Task 2 (netlink), Task 21 (locks). Section 8 error handling: Tasks 6, 7, 10 to 13 (parsers never throw), 20 (network change), 19 (NVD states). Section 10 tests: each task, plus Task 22 on-device. Section 11 open items: OUI stays a null lookup (Task 21); NVD key in Settings (Task 20); spike gate (Task 2); SSID/BSSID (Task 4 mapper plus Task 22 step 1).
-- **Not in this plan, by spec:** OUI database, snapshots/alerts, other-subnet probing, export, WOL, custom tags. The engine's concurrency-halving on `EMFILE` bursts (spec 8) is simplified to counting errors in `ScanProgress`; add the halving if Task 22 ever shows resource errors.
-- **Type consistency:** `Probe.Outcome.Connected(rttMs, socket)` is used by Tasks 6, 7, 8; `DiscoveredHost` fields in Task 15 are the superset used by Tasks 16, 17, 20; `ServiceInfo` from Task 8 is used by 17, 18, 19, 20; `Sweep` is `open` for the Task 15 fakes.
-- **Review Focus mapping:** 1 Task 3 and Task 15 clamp tests; 2 Task 6 cancel test and Task 20 `ScanController` tests; 3 Tasks 8, 10, 11, 12, 13 garbage tests; 4 Task 18 no-handler test and Task 20 `runAction` fallback; 5 Task 19 offline, 403/429 and malformed tests.
+- **Spec coverage:** 2.1 items 1 to 9 map to Tasks 15/21 (discover), 6/21 (port scan + quick scan all), 8 (service id), 18 (actions), 17/21 (annotation, filter), 17 (persistence per network), 4/21 (network panel), 16/21 (identification), 19/21 (vuln lookup). Section 4 constraints: Task 1 (targetSdk 30, queries, cleartext), Task 2 (netlink, `/proc/net/arp` fallback on Android 9 and lower), Task 20 (locks). Section 8 error handling: Tasks 6, 7, 10 to 13 (parsers never throw), 21 (network change), 19 (NVD states). Section 10 tests: each task, plus Task 22 on-device. Section 11 open items: OUI stays a null lookup (Task 20); NVD key in Settings (Task 21); spike gate (Task 2); SSID/BSSID (Task 4 mapper plus Task 22 step 1).
+- **Not in this plan, by spec:** OUI database, snapshots/alerts, other-subnet probing, export, WOL, custom tags. The engine's concurrency-halving on `EMFILE` bursts (spec 8) is simplified to counting errors in `ScanProgress`; add the halving if Task 22 ever shows resource errors. The spec still promises that halving, so its Decisions table should record the deferral (the spec is read-only for this plan edit; flagged to the Director).
+- **Spec deviations and additions:** `Source.GATEWAY` is added to spec 5.2's source list (Task 15). `MacSource` ranks (Task 15) make MAC precedence explicit: netlink, then NetBIOS, then UPnP UDN, then names and EUI-64. `_device-info._tcp` is queried directly by `DeviceInfoTxt` (Task 9, wired in Task 15) because NsdManager browsing cannot return it; Appendix D's Apple rule and Task 16's test stay. Appendix D's "NetBIOS name present" row is the `netbios-present` rule (Task 16). UPnP `SERVER` header reaches service identification through `HostEntity.upnpServer` (Tasks 17 and 21).
+- **Type consistency:** `Probe.Outcome.Connected(rttMs, socket: Socket?)` is used by Tasks 6, 7, 8; `DiscoveredHost` fields in Task 15 are the superset used by Tasks 16, 17, 21; `ServiceInfo` from Task 8 is used by 17, 18, 19, 21; `Sweep` is `open` from Task 7 for the Task 15 fakes; `TlsPeek` is an `open class` (Task 8) so tests can fake it; `HostRepository.byIdOnce/mdnsTypesFor/toDiscovered`, `PortRepository.counts()` and `AppSettings.scanOptions()` are defined in Task 17 and only consumed by Task 21; `RateLimiter(sleeper)` and the two-limiter `VulnLookup` constructor are defined in Task 19.
+- **Review Focus mapping:** 1 Task 3 and Task 15 clamp tests; 2 Task 6 cancel test (the watcher closes the socket) and Task 21 `ScanController` tests; 3 Tasks 8, 10, 11, 12, 13 garbage tests; 4 Task 18 no-handler test and Task 21 `runAction` fallback; 5 Task 19 offline, 403/429, malformed and CPE-fallback tests.
+- **Gruff review (2026-10-19) applied:** findings 1 to 23 are folded into the tasks above. Threading rule: `Probe.connect` runs on the caller's background dispatcher (the engines' `limitedParallelism` views), `ServiceIdentifier.identify`, `TlsPeek.certNames` and the neighbour dump switch to `Dispatchers.IO` themselves. Task 20 (wiring) now precedes Task 21 (UI) so every task builds on its own.
