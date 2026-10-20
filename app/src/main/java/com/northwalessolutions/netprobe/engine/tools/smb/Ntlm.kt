@@ -5,7 +5,10 @@ import java.nio.ByteOrder
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-/** NTLM messages and NTLMv2 responses (MS-NLMP), hand-written with no library (spec 6.3). */
+/**
+ * NTLM messages and NTLMv2 responses (MS-NLMP), hand-written with no library (spec 6.3).
+ * The session base key, HMAC_MD5(NTOWFv2, NTProofStr), is not exposed: 3B sends no signed request. Phase 3C must add it.
+ */
 object Ntlm {
     const val NEGOTIATE_UNICODE = 0x00000001
     const val REQUEST_TARGET = 0x00000004

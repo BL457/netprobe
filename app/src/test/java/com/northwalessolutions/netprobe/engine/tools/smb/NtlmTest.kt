@@ -46,6 +46,11 @@ class NtlmTest {
         assertEquals(72 + 10 + 24 + 30, a.size)
         assertEquals("0a000a0048000000", hex(a.copyOfRange(36, 44)))   // UserNameFields: len 10, offset 72
         assertEquals("guest", String(a.copyOfRange(72, 82), Charsets.UTF_16LE))
+        assertEquals("1800180052000000", hex(a.copyOfRange(12, 20)))   // LmChallengeResponseFields: len 24, offset 82
+        assertEquals("1e001e006a000000", hex(a.copyOfRange(20, 28)))   // NtChallengeResponseFields: len 30, offset 106
+        assertEquals("0000000048000000", hex(a.copyOfRange(28, 36)))   // DomainNameFields: empty, offset 72
+        assertEquals("0000000052000000", hex(a.copyOfRange(44, 52)))   // WorkstationFields: empty, offset 82
+        assertEquals("0000000088000000", hex(a.copyOfRange(52, 60)))   // EncryptedRandomSessionKeyFields: empty, offset 136
     }
     @Test fun `a challenge parses its names, timestamp and os build`() {
         val c = Ntlm.parseChallenge(NtlmFixtures.challenge())!!
@@ -57,4 +62,41 @@ class NtlmTest {
         assertNull(Ntlm.parseChallenge(ByteArray(10))); assertNull(Ntlm.parseChallenge(NtlmFixtures.challenge().copyOf(60)))
         assertNull(Ntlm.parseChallenge(NtlmFixtures.challenge().also { it[8] = 3 }))
     }
+
+    @Test fun `filetime of the unix epoch is the ms-nlmp value`() {
+        assertEquals("00803ed5deb19d01", hex(Ntlm.filetime(0)))
+    }
+
+    private fun withInt(bytes: ByteArray, at: Int, v: Int) = bytes.also { java.nio.ByteBuffer.wrap(it).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(at, v) }
+    private fun withShort(bytes: ByteArray, at: Int, v: Int) = bytes.also { java.nio.ByteBuffer.wrap(it).order(java.nio.ByteOrder.LITTLE_ENDIAN).putShort(at, v.toShort()) }
+
+    @Test fun `hostile challenge fields are null, never a throw`() {
+        val fx = { NtlmFixtures.challenge() }
+        assertNull("negative tiOff", Ntlm.parseChallenge(withInt(fx(), 44, -1)))
+        assertNull("huge tiOff, Long guard", Ntlm.parseChallenge(withShort(withInt(fx(), 44, Int.MAX_VALUE), 40, 0xFFFF)))
+        assertNull("tiOff just under Int.MAX", Ntlm.parseChallenge(withInt(fx(), 44, Int.MAX_VALUE - 10)))
+        assertNull("tiLen 0xFFFF", Ntlm.parseChallenge(withShort(fx(), 40, 0xFFFF)))
+        assertNull("AV pair length overrun", Ntlm.parseChallenge(withShort(fx(), 56 + 2, 0x7FFF)))
+        assertNull("bad signature at a valid length", Ntlm.parseChallenge(fx().also { it[0] = 'X'.code.toByte() }))
+        assertNull("targetInfo pointing back into the header", Ntlm.parseChallenge(withShort(withInt(fx(), 44, 0), 40, 56)))
+        val full = fx()
+        for (n in intArrayOf(0, 1, 7, 8, 12, 20, 32, 47, 55, 56, 57, 70, full.size - 1)) {
+            assertNull("truncated at $n", Ntlm.parseChallenge(full.copyOf(n)))
+        }
+    }
+
+    @Test fun `ten thousand mutated challenges never throw`() {
+        val rnd = java.util.Random(0x5EED14L)
+        val base = NtlmFixtures.challenge()
+        repeat(FUZZ_ROUNDS) { round ->
+            val m = when (round % 3) {
+                0 -> base.copyOf().also { b -> repeat(1 + rnd.nextInt(8)) { b[rnd.nextInt(b.size)] = rnd.nextInt(256).toByte() } }
+                1 -> base.copyOf(rnd.nextInt(base.size + 1))
+                else -> ByteArray(rnd.nextInt(base.size * 2)).also { rnd.nextBytes(it); if (it.size >= 12) base.copyInto(it, 0, 0, 12) }
+            }
+            try { Ntlm.parseChallenge(m) } catch (t: Throwable) { fail("round $round threw $t on ${hex(m)}") }
+        }
+    }
+
+    private companion object { const val FUZZ_ROUNDS = 10_000 }
 }
