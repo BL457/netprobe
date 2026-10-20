@@ -25,8 +25,9 @@
 - Every string lives in `HomeCopy`, `DetailText` / `DetailCopy` or `EditCopy`, and has a template in `CopyTableTest`; regex templates use doubled backslashes (`"\\d+"`).
 - Block bodies (`{ ... }`) for every function in which `return` appears; no `return` inside an expression body.
 - Every instrumented run passes `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`, so NetProbe is never uninstalled and the Director's data survives.
-- THE PHONE IS NOT AVAILABLE during Tasks 1 to 17. Every task is built and tested on the JVM. Compose UI tests and the migration tests are written in full and must compile (`./gradlew :app:compileDebugAndroidTestKotlin`), but are not run. No task may claim device evidence. Task 18 lists every instrumented run, screenshot and recording; it is executed later, when the Director returns.
+- THE PHONE IS NOT AVAILABLE during Tasks 1 to 18. Every task is built and tested on the JVM. Compose UI tests and the migration tests are written in full and must compile (`./gradlew :app:compileDebugAndroidTestKotlin`), but are not run. No task may claim device evidence. Task 19 lists every instrumented run, screenshot and recording; it is executed later, when the Director returns.
 - No instrumented test may open, create or delete a database named `DB_NAME` ("netprobe.db"). Migration tests use `MIGRATION_TEST_DB` ("netprobe-migration-test.db") or the pushed copy "netprobe-migration-copy.db"; DAO tests use in-memory databases.
+- Building `AppContainer` never touches the database (no `init` block, no eager repository use): `NetProbeApp.onCreate` builds it in every process, including every instrumented run, so any database work there would open and migrate the Director's file under the test harness (Gruff plan review G1). The leftover-Forget purge runs inside the first `NetworkRepository.ensure`.
 - All shell commands are Git Bash syntax, run from `K:/claude/netprobe`, using `./gradlew`, never a global `gradle`. Never kill python or java processes wholesale.
 - Standard commands used by every task:
   - JVM, one class or package: `./gradlew :app:testDebugUnitTest --tests "<pattern>" --console=plain 2>&1 | tail -20`
@@ -39,9 +40,9 @@ The five failure modes most likely to bite the Director. Each is pinned to a tes
 
 1. **A raw print port receives an active probe and prints junk.** 9100 to 9107, 515, 2000/2001, 6000 to 6063 and the greet-first mail ports get the passive read only, in every profile; 631 gets one HEAD in Full and Custom and never a ClientHello or a GET. Pinned: Task 5 `ServiceIdentifierLadderTest.passive only ports never receive a byte in either mode`, `ipp gets one head in active mode and nothing more`, and `passive only and head only sets are pinned`.
 2. **The active budget is not honoured, so a Full scan of an "everything open" host runs for hours.** At most 64 ports enter the ladder and no step starts after 60 s of summed probe time; Quick and Quick scan all send nothing beyond today. Pinned: Task 5 `no more than 64 ports ever enter the ladder`, `no step starts once 60 s have been spent and refused ports stay open and unknown`, `eight parallel identifies overshoot by at most eight steps`, `passive mode sends nothing new to a silent unknown port`, `quick scan all is passive`.
-3. **Identity flapping.** A radar re-identification or a timed-out rescan drops what a port scan learned, so the NAS reads Synology, then Unknown, then Synology again. Pinned: Task 3 `ServiceMergeTest.a port table result never replaces a confirmed name`; Task 7 `IdentityStabilityTest` (all three tests); Task 2 `IdentityWriteTest.identity guard replaces on equal or higher confidence only`; instrumented backstop Task 7 `DaoTest.portEvidenceSurvivesRediscoveryAndATimedOutRescan` (run in Task 18).
-4. **Undo re-adds a host mid-scan, or Remove leaves orphan ports.** A running radar scan must skip the removed IP, Quick scan all must treat the cancelled host as skipped and carry on, and every new scan must commit (drop) a pending Undo first. Pinned: Task 13 `UndoStoreTest` (all four); Task 14 `RemovedHostsTest.a removed ip is skipped for the rest of the radar scan`, `QuickScanAllLoopTest.cancelling one host skips it and the loop carries on`, `ScanControllerJoinTest.stop and join waits for the scan's cleanup`; instrumented backstop Task 14 `RemoveDeviceTest` (run in Task 18).
-5. **The migration loses marks and notes.** Schema 1 to 2 must be additive only, keep every v1 column exactly, and never touch the app's own database file during tests. Pinned: Task 1 `MigrationSqlTest` (all three), `SchemaExportTest.version 2 keeps every version 1 column unchanged`, `version 2 adds exactly the twelve nullable columns`; instrumented Task 1 `MigrationTest.marksNotesAndPortsSurviveTheMigration` and `DirectorCopyMigrationTest.theDirectorsCopyMigratesWithEveryMarkAndNote` (run in Task 18, the second against a copy of the Director's database).
+3. **Identity flapping.** A radar re-identification or a timed-out rescan drops what a port scan learned, so the NAS reads Synology, then Unknown, then Synology again. Pinned: Task 3 `ServiceMergeTest.a port table result never replaces a confirmed name`; Task 7 `IdentityStabilityTest` (all three tests); Task 2 `IdentityWriteTest.identity guard replaces on equal or higher confidence only`; instrumented backstop Task 7 `DaoTest.portEvidenceSurvivesRediscoveryAndATimedOutRescan` (run in Task 19).
+4. **Undo re-adds a host mid-scan, Remove leaves orphan ports, or Undo fails and loses the mark and note.** A running radar scan must skip the removed IP, with its check and write serialised against the Remove; Quick scan all must skip a removed host it has not reached and treat a cancelled one as skipped; scan paths write ports only while the host row exists; every new scan must commit (drop) a pending Undo first; and restore must clear anything a late scan wrote, so it cannot fail. Pinned: Task 13 `UndoStoreTest` (five, including `a scan body runs only after the pending undo is committed`); Task 14 `RemovedHostsTest` (three), `QuickScanAllLoopTest.a host removed after the loop started but before it is reached is never scanned`, `cancelling one host skips it and the loop carries on`, `a host's job is registered before its body runs`, `ScanControllerJoinTest.stop and join waits for the scan's cleanup`; instrumented Task 2 `DaoTest.restoreWinsOverAnythingALateScanWrote` and Task 14 `RemoveDeviceTest` (drives the production `RadarCollector`, `QuickScanAllLoop` and `upsertOpenIfHostExists`), run in Task 19.
+5. **The migration loses marks and notes.** Schema 1 to 2 must be additive only, keep every v1 column exactly, and never touch the app's own database file during tests. Pinned: Task 1 `MigrationSqlTest` (all three), `SchemaExportTest.version 2 keeps every version 1 column unchanged`, `version 2 adds exactly the twelve nullable columns`; instrumented Task 1 `MigrationTest.marksNotesAndPortsSurviveTheMigration` and `DirectorCopyMigrationTest.theDirectorsCopyMigratesWithEveryMarkAndNote` (run in Task 19, the second against a copy of the Director's database). Both stamp the app's own file and are only meaningful because building `AppContainer` never opens it (Task 2 rule, G1); instrumented Task 2 `DaoTest.ensurePurgesALeftoverForgetBeforeItsFirstLookup` and JVM `PurgeOnceTest` pin the purge's new home.
 
 ### Review checklist (every UI task)
 
@@ -57,11 +58,12 @@ app/build.gradle.kts                                       androidTest assets fr
 app/schemas/com.northwalessolutions.netprobe.data.NetProbeDb/2.json   generated by KSP and committed (Task 1)
 app/src/main/res/raw/identify_rules.json                   57 new rules, 7 replaced (Task 7)
 app/src/main/java/com/northwalessolutions/netprobe/
-  AppContainer.kt          appScope, undo, hostScanJobs, removedDuringScan, radarScanNetworkId, purge at start (Tasks 13, 14)
-  UndoStore.kt             PendingUndo, UndoStore, AppScopes (Task 13)
+  AppContainer.kt          appScope, undo, forgottenNetworkId, networkEpoch, hostScanJobs, removedDuringScan, removedHostIds, radarScanNetworkId,
+                           hostWriteLock (Tasks 13, 14); building the container never touches the database
+  UndoStore.kt             PendingUndo, UndoStore, committedBefore, AppScopes (Task 13)
   data/        Entities.kt (v2 columns), Migrations.kt (MIGRATION_1_2, DB names), NetProbeDb.kt (v2, open(name)),
                Daos.kt, Repositories.kt (overrides, identity guard, Forget, snapshot), Overrides.kt (DeviceEdits, Effective,
-               EditDraft, Detected, SoftwareColumn, IdentityWrite), PortMapping.kt (Tasks 1, 2, 3, 9)
+               EditDraft, Detected, SoftwareColumn, IdentityWrite), PurgeOnce.kt, PortMapping.kt (Tasks 1, 2, 3, 9)
   engine/common/      CloseOnCancel.kt (Task 4)
   engine/serviceid/   ServiceInfo.kt (six fields), ServiceMerge.kt, BannerParsers.kt (headers, RTSP, RDP), BannerReader.kt,
                       TlsPeek.kt (CertInfo), ActiveProbeBudget.kt (ProbeMode, budget, ProbeModes), ServiceIdentifier.kt (Tasks 3 to 5)
@@ -72,13 +74,13 @@ app/src/main/java/com/northwalessolutions/netprobe/
   ui/theme/    Motion.kt (Phase 3A tokens) (Task 15)
   ui/home/     RadarGeometry.kt (ArmTrail, afterglow, breath, blipAngleDeg), MotionRules.kt (PulseGate, RowStagger), RadarBlock.kt,
                RadarModes.kt (stopped summary), HomeCopy.kt, HomeContent.kt, HomeComponents.kt, HomeViewModel.kt, HomeStats.kt (StaleRun),
-               QuickScanAll.kt (policy, loop), RemovedHosts.kt (Tasks 5, 12 to 17)
+               QuickScanAll.kt (policy, loop), RemovedHosts.kt, RadarCollector.kt (Tasks 5, 12 to 18)
   ui/detail/   DetailCopy.kt, EditCopy.kt, EditDevice.kt, DetailText.kt, DetailContent.kt, DetailComponents.kt, DetailViewModel.kt,
-               DetailScreen.kt (Tasks 3, 5, 8 to 14, 17)
+               DetailScreen.kt (Tasks 3, 5, 8 to 14, 18)
 app/src/test/java/...            JVM tests mirror the packages above
 app/src/androidTest/java/...     MigrationTest, DirectorCopyMigrationTest, DaoTest additions, RemoveDeviceTest, RadarBlockTest,
-                                 HomeContentTest, DetailContentTest, NavTransitionTest, MotionTest (compile only until Task 18)
-docs/qa/phase3a-on-device.md     Task 18 record (written when the Director is back)
+                                 HomeContentTest, DetailContentTest, NavTransitionTest, ControlsMotionTest, ListMotionTest (compile only until Task 19)
+docs/qa/phase3a-on-device.md     Task 19 record (written when the Director is back)
 ```
 
 ---
@@ -337,7 +339,7 @@ git status --short app/schemas
 ```
 Expected: `BUILD SUCCESSFUL`; the listing shows `1.json  2.json`; git shows only `?? app/schemas/com.northwalessolutions.netprobe.data.NetProbeDb/2.json` (1.json unchanged). If 1.json shows as modified, stop: `git checkout app/schemas/com.northwalessolutions.netprobe.data.NetProbeDb/1.json` and report it.
 
-- [ ] **Step 4: Write the instrumented migration tests (compile only, run in Task 18)**
+- [ ] **Step 4: Write the instrumented migration tests (compile only, run in Task 19)**
 
 `app/src/androidTest/java/com/northwalessolutions/netprobe/data/MigrationTest.kt`:
 ```kotlin
@@ -430,7 +432,7 @@ import org.junit.runner.RunWith
 import java.io.File
 
 /**
- * Runs only when Task 18 step 3 has pushed a copy of the Director's database as [MIGRATION_COPY_DB]; skipped otherwise.
+ * Runs only when Task 19 step 2 has put a copy of the Director's database as [MIGRATION_COPY_DB]; skipped otherwise.
  * Never opens, creates or deletes DB_NAME; deletes only the copy.
  */
 @RunWith(AndroidJUnit4::class)
@@ -489,12 +491,12 @@ git add -A && git commit -m "Schema 2: twelve nullable columns, MIGRATION_1_2, e
 
 ---
 
-### Task 2: DAO and repository calls for schema 2: overrides, the identity guard, software, markRun, soft Forget, host snapshot
+### Task 2: DAO and repository calls for schema 2: overrides, the identity guard, software, markRun, soft Forget with purge on first use, host snapshot and a restore that cannot fail
 
 **Files:**
 - Modify: `app/src/main/java/com/northwalessolutions/netprobe/data/Daos.kt` (replace), `data/Repositories.kt`, `engine/identify/DeviceIdentity.kt`, `ui/home/HomeViewModel.kt` (first line of `discover`)
-- Create: `app/src/main/java/com/northwalessolutions/netprobe/data/Overrides.kt`
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/data/IdentityWriteTest.kt`; `app/src/androidTest/java/com/northwalessolutions/netprobe/data/DaoTest.kt` (additions, compile only)
+- Create: `app/src/main/java/com/northwalessolutions/netprobe/data/Overrides.kt`, `data/PurgeOnce.kt`
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/data/IdentityWriteTest.kt`, `data/PurgeOnceTest.kt`; `app/src/androidTest/java/com/northwalessolutions/netprobe/data/DaoTest.kt` (additions, compile only)
 
 **Interfaces:**
 - Consumes: Task 1 entities.
@@ -505,14 +507,18 @@ data class DeviceEdits(val name: String? = null, val type: DeviceType? = null, v
 object SoftwareColumn { fun encode(names: List<String>): String?; fun decode(column: String?): List<String> }
 object IdentityWrite { fun replaces(storedConfidence: Int, newConfidence: Int): Boolean }
 data class HostSnapshot(val host: HostEntity, val ports: List<PortEntity>)
-NetworkRepository.ensure(env, gatewayMac): NetworkEntity?        // null while that network's Forget is pending
+class NetworkRepository(db: NetProbeDb, onPurged: (Long) -> Unit = {})   // onPurged clears a purged network's manual ranges (wired in Task 13)
+NetworkRepository.ensure(env, gatewayMac): NetworkEntity?        // purges leftover Forgets once, first; null while a Forget is pending on that gateway and prefix
+class PurgeOnce { suspend fun run(block: suspend () -> Unit) }    // data; runs block until it succeeds once, never concurrently
 NetworkRepository.byId(id): NetworkEntity?; markRun(networkId, runId); setForgotten(networkId, at: Long?); deleteNetworkCascade(networkId)
 NetworkRepository.purgeForgotten(onDeleted: (Long) -> Unit)
 HostRepository.setIdentity(hostId, identity)                      // also writes identSoftware
 HostRepository.setIdentityIfNotWeaker(hostId, identity): Boolean
 HostRepository.setOverrides(hostId, edits: DeviceEdits)
-HostRepository.snapshot(hostId): HostSnapshot?; delete(s: HostSnapshot); restore(s: HostSnapshot)
+HostRepository.snapshot(hostId): HostSnapshot?; delete(s: HostSnapshot); restore(s: HostSnapshot)   // restore first clears anything a late scan wrote
 ```
+
+Rule for this and every later task (Gruff plan review G1): nothing reads or opens the database while `AppContainer` is built. The purge of a Forget left pending by a killed process runs once, at the top of the first `NetworkRepository.ensure` call, which only happens when Home resolves a network; an instrumented test that never shows Home never opens `netprobe.db`.
 
 - [ ] **Step 1: Write the failing JVM test**
 
@@ -540,12 +546,39 @@ class IdentityWriteTest {
 }
 ```
 
+`app/src/test/java/com/northwalessolutions/netprobe/data/PurgeOnceTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.data
+
+import kotlinx.coroutines.*
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.*
+import org.junit.Test
+
+/** Gruff plan review G1: the leftover-Forget purge runs once, before the first lookup that needs it, and never at process start. */
+class PurgeOnceTest {
+    @Test fun `runs once however many callers arrive together, and every caller waits for it`() = runTest {
+        val once = PurgeOnce(); val log = mutableListOf<String>()
+        val callers = (1..5).map { i -> async { once.run { delay(10); log += "purge" }; log += "lookup $i" } }
+        callers.awaitAll()
+        assertEquals("purge", log.first()); assertEquals(1, log.count { it == "purge" }); assertEquals(6, log.size)
+    }
+    @Test fun `a failed purge is tried again by the next caller`() = runTest {
+        val once = PurgeOnce(); var attempts = 0
+        val failed = runCatching { once.run { attempts++; throw IllegalStateException("disk") } }
+        assertTrue(failed.exceptionOrNull() is IllegalStateException)
+        once.run { attempts++ }; once.run { attempts++ }
+        assertEquals(2, attempts)
+    }
+}
+```
+
 - [ ] **Step 2: Run the test to see it fail**
 
 ```bash
-./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.data.IdentityWriteTest" --console=plain 2>&1 | tail -20
+./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.data.IdentityWriteTest" --tests "com.northwalessolutions.netprobe.data.PurgeOnceTest" --console=plain 2>&1 | tail -20
 ```
-Expected: `BUILD FAILED`, `Unresolved reference 'IdentityWrite'` (and `SoftwareColumn`, `DeviceEdits`).
+Expected: `BUILD FAILED`, `Unresolved reference 'IdentityWrite'` (and `SoftwareColumn`, `DeviceEdits`, `PurgeOnce`).
 
 - [ ] **Step 3: Implement**
 
@@ -578,6 +611,27 @@ object SoftwareColumn {
 /** After a port scan the stored identity is replaced only by one at least as confident (spec 3.3); the DAO query is the atomic form. */
 object IdentityWrite {
     fun replaces(storedConfidence: Int, newConfidence: Int): Boolean = newConfidence >= storedConfidence
+}
+```
+
+`app/src/main/java/com/northwalessolutions/netprobe/data/PurgeOnce.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.data
+
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+/** Runs [run]'s block until it has succeeded once; concurrent callers wait for it; a failure is retried by the next caller. */
+class PurgeOnce {
+    private val mutex = Mutex()
+    private var done = false
+    suspend fun run(block: suspend () -> Unit) {
+        mutex.withLock {
+            if (done) return@withLock
+            block()
+            done = true
+        }
+    }
 }
 ```
 
@@ -665,16 +719,25 @@ data class HostSnapshot(val host: HostEntity, val ports: List<PortEntity>)
 
 Replace `class NetworkRepository` with:
 ```kotlin
-class NetworkRepository(private val db: NetProbeDb) {
+class NetworkRepository(private val db: NetProbeDb, private val onPurged: (Long) -> Unit = {}) {
+    private val purge = PurgeOnce()
+
     /**
      * Finds or creates the row for [env]. Identity is gateway MAC + gateway IP + prefix ([NetworkSignature]).
      * On a signature miss, a single row with the same gateway IP and prefix is adopted (rows keyed by the old BSSID rule,
      * rows recorded while the MAC was unreadable, and the location-granted case), unless its stored gateway host has a
      * different MAC: that is another site on the same addressing, and its inventory must not be merged.
-     * A row with a pending Forget is never matched or adopted; when it is the signature match, null is returned and nothing
-     * is inserted, so the forgotten row and its id stay untouched until Undo or the commit (spec 5.3).
+     * A row with a pending Forget is never matched or adopted: while any row on this gateway and prefix is forgotten, null is
+     * returned and nothing is inserted, so the forgotten row and its id stay untouched and no second row appears for the same
+     * network (spec 5.3, Gruff plan review G14). Before the first lookup of the process, a Forget left pending by a killed process
+     * is purged once (spec 5.3, G1): the purge happens here, never when the container is built.
      */
-    suspend fun ensure(env: NetworkEnv, gatewayMac: String?): NetworkEntity? = db.withTransaction {
+    suspend fun ensure(env: NetworkEnv, gatewayMac: String?): NetworkEntity? {
+        purge.run { purgeForgotten(onPurged) }
+        return resolve(env, gatewayMac)
+    }
+
+    private suspend fun resolve(env: NetworkEnv, gatewayMac: String?): NetworkEntity? = db.withTransaction {
         val sig = NetworkSignature.of(env, gatewayMac); val now = System.currentTimeMillis()
         val gw = env.gateway?.hostAddress
         val found = db.networks().bySignature(sig)
@@ -683,8 +746,10 @@ class NetworkRepository(private val db: NetProbeDb) {
             db.networks().touch(found.id, now, env.ssid)
             return@withTransaction found.copy(lastSeen = now, ssid = env.ssid ?: found.ssid)
         }
+        val sameAddressing = db.networks().byGateway(gw, env.prefixLength)
+        if (sameAddressing.any { it.forgotten != null }) return@withTransaction null
         val mac = gatewayMac?.lowercase()
-        val adoptable = db.networks().byGateway(gw, env.prefixLength).filter { it.forgotten == null }.filter { row ->
+        val adoptable = sameAddressing.filter { row ->
             val stored = if (mac != null && gw != null) db.networks().gatewayHostMac(row.id, gw)?.lowercase() else null
             stored == null || stored == mac
         }
@@ -709,7 +774,7 @@ class NetworkRepository(private val db: NetProbeDb) {
     suspend fun deleteNetworkCascade(networkId: Long) = db.withTransaction {
         db.networks().deletePortsOfNetwork(networkId); db.networks().deleteHostsOfNetwork(networkId); db.networks().deleteNetwork(networkId)
     }
-    /** At start-up: a Forget left pending by a killed process is final (spec 5.3). [onDeleted] clears that network's manual ranges. */
+    /** A Forget left pending by a killed process is final (spec 5.3); ensure() runs this once. [onDeleted] clears that network's manual ranges. */
     suspend fun purgeForgotten(onDeleted: (Long) -> Unit) {
         for (id in db.networks().forgottenIds()) { deleteNetworkCascade(id); onDeleted(id) }
     }
@@ -731,8 +796,17 @@ In `class HostRepository`, replace `setIdentity` and add, after `setNote` (keep 
         db.hosts().byIdOnce(hostId)?.let { HostSnapshot(it, db.ports().forHostOnce(hostId)) }
     }
     suspend fun delete(s: HostSnapshot) = db.withTransaction { db.ports().deletePortsForHost(s.host.id); db.hosts().deleteHost(s.host.id) }
-    /** Undo: the same rows with the same ids; ABORT on any clash, which the appScope handler catches (spec 5.3 step 4). */
-    suspend fun restore(s: HostSnapshot) = db.withTransaction { db.hosts().insertAll(listOf(s.host)); db.ports().insertAll(s.ports) }
+    /**
+     * Undo of Remove device (spec 5.3 step 4, Gruff plan review G2): the same rows with the same ids, and nothing a late scan wrote
+     * can block it. In one transaction: a row a scan re-inserted at the same (networkId, ip) goes with its ports (scan-derived only),
+     * any rows under the snapshot's id go, then the snapshot host and ports are inserted. The Director's mark, note and overrides
+     * come back exactly; ABORT stays only as a backstop.
+     */
+    suspend fun restore(s: HostSnapshot) = db.withTransaction {
+        db.hosts().find(s.host.networkId, s.host.ip)?.let { stray -> db.ports().deletePortsForHost(stray.id); db.hosts().deleteHost(stray.id) }
+        db.ports().deletePortsForHost(s.host.id); db.hosts().deleteHost(s.host.id)
+        db.hosts().insertAll(listOf(s.host)); db.ports().insertAll(s.ports)
+    }
 ```
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt`: in `discover`, replace the first line (`val net = c.networks.ensure(...); networkId.value = net.id; c.currentNetwork.value = net`) with:
@@ -743,7 +817,7 @@ In `class HostRepository`, replace `setIdentity` and add, after `setNote` (keep 
 ```
 The env collector already handles a nullable result (`e?.let { ... }`); it compiles unchanged.
 
-- [ ] **Step 4: DAO tests (instrumented, compile only, run in Task 18)**
+- [ ] **Step 4: DAO tests (instrumented, compile only, run in Task 19)**
 
 In `app/src/androidTest/java/com/northwalessolutions/netprobe/data/DaoTest.kt`, the existing tests `ensureIsRaceSafe`, `locationGrantKeepsTheSameNetwork`, `ensureAdoptsARowKeyedByTheOldRule` and `anotherSiteWithTheSameAddressingIsNotMerged` now receive `NetworkEntity?`: append `!!` to every `repo.ensure(...)` whose result is read (`.id`, `.ssid`, `.signature`, `.displayName`). Then add, before the companion object (spec 9.3 tests 2 and 4 and the repository half of test 5):
 ```kotlin
@@ -790,12 +864,32 @@ In `app/src/androidTest/java/com/northwalessolutions/netprobe/data/DaoTest.kt`, 
         ports.upsertOpen(oid, 80, ServiceInfo("HTTP", confidence = Confidence.PORT_TABLE))
         repo.setForgotten(home.id, 99L)
         assertNull(repo.ensure(env, GW_MAC)); assertEquals(2, count("networks"))       // the signature match is forgotten: null, nothing inserted
-        assertNotEquals(home.id, repo.ensure(env, null)?.id)                           // the byGateway re-signature never adopts it
+        assertNull(repo.ensure(env, null)); assertEquals(2, count("networks"))         // an unreadable MAC neither adopts it nor adds a second row (G14)
         repo.setForgotten(home.id, null)                                               // Undo
         assertEquals(home.id, repo.ensure(env, GW_MAC)!!.id); assertEquals("keep me", hosts.byIdOnce(hid)!!.note)
         repo.setForgotten(home.id, 100L); repo.deleteNetworkCascade(home.id)           // commit
         assertNull(hosts.byIdOnce(hid)); assertEquals(emptyMap<Int, ServiceInfo>(), ports.servicesFor(hid)); assertNull(repo.byId(home.id))
         assertNotNull(hosts.byIdOnce(oid)); assertEquals(setOf(80), ports.servicesFor(oid).keys); assertNotNull(repo.byId(office.id))
+    }
+    @Test fun ensurePurgesALeftoverForgetBeforeItsFirstLookup() = runBlocking {   // G1: a new process, a Forget left pending by the old one
+        val env = NetworkEnv(ip("10.0.6.5"), 24, ip("10.0.6.1"), emptyList(), "Flat", null, Transport.WIFI)
+        val old = NetworkRepository(db).ensure(env, GW_MAC)!!; NetworkRepository(db).setForgotten(old.id, 7L)
+        val cleared = mutableListOf<Long>()
+        val fresh = NetworkRepository(db) { cleared += it }.ensure(env, GW_MAC)
+        assertNotNull("the purge ran first, so the lookup found no forgotten row", fresh); assertNotEquals(old.id, fresh!!.id)
+        assertEquals(listOf(old.id), cleared); assertNull(NetworkRepository(db).byId(old.id))
+    }
+    @Test fun restoreWinsOverAnythingALateScanWrote() = runBlocking {   // G2: Undo never fails silently
+        val hosts = HostRepository(db); val ports = PortRepository(db)
+        val id = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.71"), mdnsName = "NAS"), 1L)
+        hosts.setStatus(id, HostStatus.INTERESTING); hosts.setNote(id, "keep me"); ports.upsertOpen(id, 22, ServiceInfo("SSH", confidence = Confidence.CONFIRMED))
+        val snap = hosts.snapshot(id)!!; hosts.delete(snap)
+        val stray = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.71")), 2L)        // a radar emission re-inserted the IP under a new id
+        ports.upsertOpen(stray, 80, ServiceInfo("HTTP", confidence = Confidence.PORT_TABLE))
+        ports.upsertOpen(id, 22, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)) // a late Quick scan wrote under the old id
+        hosts.restore(snap)
+        assertEquals(snap, hosts.snapshot(id)); assertNull(hosts.byIdOnce(stray)); assertEquals(emptyMap<Int, ServiceInfo>(), ports.servicesFor(stray))
+        assertEquals("keep me", hosts.byIdOnce(id)!!.note); assertEquals(HostStatus.INTERESTING, hosts.byIdOnce(id)!!.status)
     }
     @Test fun purgeForgottenRemovesRowsLeftByAKilledProcess() = runBlocking {
         val repo = NetworkRepository(db); val hosts = HostRepository(db)
@@ -830,7 +924,7 @@ Expected: `BUILD SUCCESSFUL`.
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.data.*" --console=plain 2>&1 | tail -15
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `IdentityWriteTest` (3) passes; `BUILD SUCCESSFUL`.
+Expected: `IdentityWriteTest` (3) and `PurgeOnceTest` (2) pass; `BUILD SUCCESSFUL`.
 
 - [ ] **Step 6: Commit**
 
@@ -1127,14 +1221,21 @@ import com.northwalessolutions.netprobe.engine.discovery.HttpTitleFetcher
 import kotlinx.coroutines.*
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketException
+import java.net.SocketTimeoutException
 import kotlin.concurrent.thread
 
-/** spec 9.1 test 14: Stop must not wait for a socket timeout; a blocking read ignores interrupts, so the socket is closed instead (Gruff m8). */
+/**
+ * spec 9.1 test 14: Stop must not wait for a socket timeout; a blocking read ignores interrupts, so the socket is closed instead
+ * (Gruff m8). The caller returning fast is not enough (suspendCancellableCoroutine resumes at once whatever close does), so each
+ * case also proves the server sees the connection closed within 300 ms: the blocked IO thread was really released (plan review G7).
+ */
 class CancellationTest {
     private val lo = InetAddress.getByName("127.0.0.1") as Inet4Address
     private val servers = mutableListOf<ServerSocket>()
@@ -1150,17 +1251,29 @@ class CancellationTest {
     private fun assertCancelsWithin(limitMs: Long, call: suspend () -> Any?) = runBlocking {
         val job = launch(Dispatchers.IO) { call() }
         delay(BLOCK_MS)                                   // the call is now blocked in a read or a handshake
+        val peer = synchronized(accepted) { accepted.lastOrNull() } ?: return@runBlocking fail("the probe never connected")
         val t0 = System.nanoTime()
         job.cancelAndJoin()
         val ms = (System.nanoTime() - t0) / 1_000_000
         assertTrue("cancel took $ms ms", ms <= limitMs)
+        assertPeerClosedWithin(peer, limitMs)
+    }
+    /** Drains what the probe sent (a ClientHello, a GET) and expects end of stream or a reset before the deadline. */
+    private fun assertPeerClosedWithin(peer: Socket, limitMs: Long) {
+        peer.soTimeout = POLL_MS
+        val input = peer.getInputStream(); val buf = ByteArray(4096)
+        val deadline = System.nanoTime() + limitMs * 1_000_000
+        while (System.nanoTime() < deadline) {
+            try { if (input.read(buf) < 0) return } catch (_: SocketTimeoutException) { continue } catch (_: SocketException) { return }
+        }
+        fail("the probe's socket was still open $limitMs ms after the cancel: the blocked IO thread was not released")
     }
 
     @Test fun `banner read stops within 300 ms`() { val p = silent(); assertCancelsWithin(LIMIT_MS) { BannerReader(timeoutMs = LONG_MS).read(lo, p) } }
     @Test fun `tls peek stops within 300 ms`() { val p = silent(); assertCancelsWithin(LIMIT_MS) { TlsPeek().certInfo(lo, p, timeoutMs = LONG_MS) } }
     @Test fun `http fetch stops within 300 ms`() { val p = silent(); assertCancelsWithin(LIMIT_MS) { HttpTitleFetcher(timeoutMs = LONG_MS).fetch(lo, p, tls = false) } }
 
-    private companion object { const val LIMIT_MS = 300L; const val BLOCK_MS = 300L; const val LONG_MS = 10_000 }
+    private companion object { const val LIMIT_MS = 300L; const val BLOCK_MS = 300L; const val LONG_MS = 10_000; const val POLL_MS = 20 }
 }
 ```
 
@@ -1447,7 +1560,7 @@ open class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBy
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.*" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `CancellationTest` (3), `TlsSubjectTest` (4), `ProbeParsersTest` (4), the new `HttpTitleTest` test and the updated `ServiceIdentifierTest` pass, with every existing engine test; then `BUILD SUCCESSFUL`. If `http fetch stops within 300 ms` fails on the JVM while the other two pass, the JDK's `disconnect()` did not unblock the read: report the measured time and stop; do not raise the limit.
+Expected: `CancellationTest` (3, each also proving the server saw the socket close), `TlsSubjectTest` (4), `ProbeParsersTest` (4), the new `HttpTitleTest` test and the updated `ServiceIdentifierTest` pass, with every existing engine test; then `BUILD SUCCESSFUL`. If `http fetch stops within 300 ms` fails on the JVM while the other two pass, the JDK's `disconnect()` did not unblock the read: report the measured time and stop; do not raise the limit and do not drop the server-side check.
 
 - [ ] **Step 5: Commit**
 
@@ -1741,7 +1854,9 @@ sealed interface ProbeMode {
 /**
  * One per Detail Full or Custom scan, shared by its identifies, never persisted (spec 2.2.4). A port enters once before its first
  * active step; every active step runs through [step], which refuses to start once [maxMs] of summed probe time is spent and
- * otherwise adds the step's own wall time. A started step finishes, so with 8 parallel identifies the overshoot is at most 8 steps.
+ * otherwise adds the step's own wall time. A started step finishes; the overshoot is at most 8 steps. A GET can take a connect
+ * timeout, a read timeout and a 2 s body deadline, twice with its one redirect (about 12 s), so the real worst case is about
+ * 60 s + 8 x 12 s of summed probe time, not the spec's "about 76 s" (plan review G12; recorded in the Task 19 handover).
  */
 class ActiveProbeBudget(val maxPorts: Int = MAX_ACTIVE_PORTS, val maxMs: Long = MAX_ACTIVE_MS, private val clock: () -> Long = SystemClock::elapsedRealtime) {
     private val spent = AtomicLong(0)
@@ -2553,7 +2668,7 @@ Expected: compiles; failures in `rules file loads ...` (61 rules, not 118), `sof
  {"id":"title-unifi","field":"httpTitle","pattern":"UniFi","software":"UniFi Network","weight":40,"sample":"UniFi Network"},
  {"id":"port-rdp","field":"anyPort","anyPort":[3389],"os":"Windows","type":"COMPUTER","weight":60},
 ```
-Then insert these 57 lines directly after the `ssh-dropbear` line and before the `gateway` line (one leading space, each ending with a comma, as the file's other lines):
+Then insert these 57 lines directly after the `ssh-dropbear` line and before the `gateway` line (one leading space, each ending with a comma, as the file's other lines). One entry differs from spec 3.5 on purpose (Gruff plan review G9, flagged for the Director): `p-proxmox-cert` matches the certificate organisation `^Proxmox Virtual Environment$`, because a real Proxmox VE node certificate carries "PVE Cluster Node" in OU, which NetProbe does not read, and "Proxmox Virtual Environment" in O; the spec's "PVE Cluster" on O would never fire. Reverting is this one line.
 ```json
  {"id":"p-dsm-title","field":"httpTitle","onPorts":[5000,5001],"pattern":"Synology|DiskStation","vendor":"Synology","type":"NAS","weight":90,"sample":"DiskStation - Synology DiskStation"},
  {"id":"p-dsm-cert","field":"certOrg","pattern":"^Synology","vendor":"Synology","type":"NAS","weight":80,"sample":"Synology Inc."},
@@ -2566,7 +2681,7 @@ Then insert these 57 lines directly after the `ssh-dropbear` line and before the
  {"id":"p-plex-http","field":"service","onPorts":[32400],"pattern":"^HTTPS?$","software":"Plex Media Server","type":"SERVER","weight":40,"sample":"HTTP"},
  {"id":"p-jellyfin","field":"httpTitle","pattern":"Jellyfin","software":"Jellyfin","type":"SERVER","weight":40,"sample":"Jellyfin"},
  {"id":"p-emby","field":"httpTitle","pattern":"\\bEmby\\b","software":"Emby Server","type":"SERVER","weight":40,"sample":"Emby"},
- {"id":"p-proxmox-cert","field":"certOrg","pattern":"PVE Cluster","model":"Proxmox VE","type":"SERVER","weight":90,"sample":"PVE Cluster Node"},
+ {"id":"p-proxmox-cert","field":"certOrg","pattern":"^Proxmox Virtual Environment$","model":"Proxmox VE","type":"SERVER","weight":90,"sample":"Proxmox Virtual Environment"},
  {"id":"p-cups-server","field":"httpServer","pattern":"^CUPS","software":"CUPS","type":"PRINTER","weight":40,"sample":"CUPS/2.4 IPP/2.1"},
  {"id":"p-printer-title","field":"httpTitle","pattern":"^(HP|Brother|EPSON|Canon|Lexmark|Kyocera|Xerox)\\b.*(LaserJet|OfficeJet|DeskJet|ENVY|MFC|DCP|HL-|ET-|WF-|XP-|PIXMA|imageCLASS|ECOSYS|WorkCentre|VersaLink)","vendor":"$1","type":"PRINTER","weight":90,"sample":"HP OfficeJet Pro 9010 series"},
  {"id":"p-hp-server","field":"httpServer","pattern":"HP HTTP Server","vendor":"HP","type":"PRINTER","weight":80,"sample":"HP HTTP Server; HP OfficeJet Pro 9010 series"},
@@ -3361,7 +3476,7 @@ fun BackToHome(onBack: () -> Unit, trailing: @Composable () -> Unit = {}) {
 ./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `BUILD SUCCESSFUL` for both (the Compose and DAO tests run in Task 18).
+Expected: `BUILD SUCCESSFUL` for both (the Compose and DAO tests run in Task 19).
 
 - [ ] **Step 4: Commit**
 
@@ -3930,7 +4045,7 @@ git add -A && git commit -m "Follow-ups: Detail bind wording, Stopped after N s,
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/UndoStore.kt`
-- Modify: `AppContainer.kt` (`appScope`, `undo`, start-up purge), `ui/home/HomeViewModel.kt` (Forget, Undo, commit at scan start, `networkId` and `undoText` in state), `ui/home/HomeCopy.kt`, `ui/home/HomeComponents.kt` (`HomeMenu` Forget item, `NoticeLine` Undo), `ui/home/HomeContent.kt`, `ui/home/HomeScreen.kt`, `ui/detail/DetailViewModel.kt` (commit at scan start)
+- Modify: `AppContainer.kt` (`appScope`, `undo`, `forgottenNetworkId`, `networkEpoch`, the purge callback; no database work at construction), `ui/home/HomeViewModel.kt` (Forget, Undo, commit at scan start, `networkId` and `undoText` in state), `ui/home/HomeCopy.kt`, `ui/home/HomeComponents.kt` (`HomeMenu` Forget item, `NoticeLine` Undo), `ui/home/HomeContent.kt`, `ui/home/HomeScreen.kt`, `ui/detail/DetailViewModel.kt` (commit at scan start)
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/UndoStoreTest.kt`, `AppScopesTest.kt`, `ui/home/CopyTableTest.kt`; androidTest `ui/home/HomeContentTest.kt` (four tests, compile only)
 
 **Interfaces:**
@@ -3938,9 +4053,16 @@ git add -A && git commit -m "Follow-ups: Detail bind wording, Stopped after N s,
 - Produces:
 ```kotlin
 class PendingUndo(val text: String, val restore: suspend () -> Unit, val commit: suspend () -> Unit)
-class UndoStore { val pending: StateFlow<PendingUndo?>; suspend fun post(next: PendingUndo); suspend fun undo(); suspend fun commit() }
+class UndoStore { val pending: StateFlow<PendingUndo?>; suspend fun post(next: PendingUndo); suspend fun undo(); suspend fun commit()
+                  suspend fun <T> committedBefore(body: suspend () -> T): T }   // every scan body runs inside this
 object AppScopes { const val LOG_TAG = "NetProbe"; fun handler(log: (Throwable) -> Unit): CoroutineExceptionHandler; fun create(handler: CoroutineExceptionHandler): CoroutineScope }
 AppContainer.appScope: CoroutineScope; AppContainer.undo: UndoStore
+AppContainer.forgottenNetworkId: MutableStateFlow<Long?>; AppContainer.networkEpoch: MutableStateFlow<Int>   // process-wide, so any HomeViewModel sees an Undo (G4)
+```
+
+Rule (Gruff plan review G1): constructing `AppContainer` must not touch `db`, `networks`, `hosts` or `ports`; there is no `init` block that launches database work. The leftover-Forget purge runs inside the first `NetworkRepository.ensure` (Task 2). Reviewer: grep `AppContainer.kt` for `init` and for any non-lazy use of a repository.
+
+```kotlin
 HomeViewModel.forgetNetwork(); undo(); dismissUndo()
 HomeUiState(..., val networkId: Long? = null, val undoText: String? = null)
 HomeActions(..., val onForget: () -> Unit = {}, val onUndo: () -> Unit = {}, val onDismissUndo: () -> Unit = {})
@@ -3979,6 +4101,13 @@ class UndoStoreTest {
     @Test fun `dismissing commits and a later undo restores nothing`() = runTest {
         val s = UndoStore(); s.post(undoable("A")); s.commit(); s.undo()
         assertEquals(listOf("commit A"), log)
+    }
+    @Test fun `a scan body runs only after the pending undo is committed`() = runTest {   // Review Focus 4, plan review G8
+        val s = UndoStore(); s.post(undoable("A"))
+        val result = s.committedBefore { log += "scan starts, pending = ${s.pending.value?.text}"; 7 }
+        assertEquals(listOf("commit A", "scan starts, pending = null"), log); assertEquals(7, result)
+        s.committedBefore { log += "second scan" }
+        assertEquals("nothing pending: nothing committed twice", 1, log.count { it.startsWith("commit") })
     }
 }
 ```
@@ -4059,7 +4188,7 @@ The settle case (Forget disabled while the radar settles) is added in Task 16, w
 ```bash
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.UndoStoreTest" --tests "com.northwalessolutions.netprobe.AppScopesTest" --tests "com.northwalessolutions.netprobe.ui.home.CopyTableTest" --console=plain 2>&1 | tail -20
 ```
-Expected: `BUILD FAILED`, `Unresolved reference 'UndoStore'` (and `PendingUndo`, `AppScopes`, `FORGET_NETWORK`, `forgot`, `removed`).
+Expected: `BUILD FAILED`, `Unresolved reference 'UndoStore'` (and `PendingUndo`, `committedBefore`, `AppScopes`, `FORGET_NETWORK`, `forgot`, `removed`).
 
 - [ ] **Step 3: Implement**
 
@@ -4109,6 +4238,11 @@ class UndoStore {
             p.commit()
         }
     }
+    /** Every scan body (radar, Quick scan all, Detail) runs inside this, so a pending Undo is final before the scan's first lookup. */
+    suspend fun <T> committedBefore(body: suspend () -> T): T {
+        commit()
+        return body()
+    }
 }
 
 object AppScopes {
@@ -4119,19 +4253,17 @@ object AppScopes {
 }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`: add (imports `android.util.Log`, `kotlinx.coroutines.CoroutineScope`, `kotlinx.coroutines.launch`):
+`app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`: add (imports `android.util.Log`, `kotlinx.coroutines.CoroutineScope`):
 ```kotlin
     /** Deletes and restores run here, so leaving a screen never cancels them; failures are logged, never thrown (spec 5.3). */
     val appScope: CoroutineScope = AppScopes.create(AppScopes.handler { Log.e(AppScopes.LOG_TAG, "background task failed", it) })
     val undo = UndoStore()
+    /** The network whose Forget is pending; Home shows it empty until Undo or the commit (spec 5.3). Process-wide, not per ViewModel (G4). */
+    val forgottenNetworkId = MutableStateFlow<Long?>(null)
+    /** Bumped after Forget, Undo or the commit so Home resolves the network row again, whichever HomeViewModel is alive (G4). */
+    val networkEpoch = MutableStateFlow(0)
 ```
-and, as the LAST member of the class body (after every `by lazy` property, so the delegates exist before the coroutine can touch them):
-```kotlin
-    init {
-        // A Forget left pending by a killed process is final: purge it once at start-up (spec 5.3).
-        appScope.launch { networks.purgeForgotten { settings.manual.set(it, emptyList()) } }
-    }
-```
+and change the repository line to `val networks by lazy { NetworkRepository(db) { settings.manual.set(it, emptyList()) } }`, so a network purged by the first `ensure` also loses its manual ranges. Nothing else: no `init` block, no launch at construction (G1).
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeCopy.kt`: add:
 ```kotlin
@@ -4143,21 +4275,19 @@ and, as the LAST member of the class body (after every `by lazy` property, so th
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt`:
 - `HomeUiState`: append `val networkId: Long? = null, val undoText: String? = null`.
-- Add fields (import `com.northwalessolutions.netprobe.PendingUndo`):
-```kotlin
-    /** The network whose Forget is pending: Home shows it empty until Undo or the commit (spec 5.3). */
-    private val forgottenId = MutableStateFlow<Long?>(null)
-    /** Bumped to make the env collector resolve the network row again (after Forget, Undo or the commit). */
-    private val envEpoch = MutableStateFlow(0)
-```
+- Import `com.northwalessolutions.netprobe.PendingUndo`. The forgotten id and the epoch live in `AppContainer` (G4), so a HomeViewModel created after the Forget (the activity recreated) still reacts to its Undo or commit.
 - Replace the `hosts` flow with:
 ```kotlin
-    private val hosts: Flow<List<HostEntity>> = combine(networkId, forgottenId) { id, gone -> id?.takeIf { it != gone } }
+    private val hosts: Flow<List<HostEntity>> = combine(networkId, c.forgottenNetworkId) { id, gone -> id?.takeIf { it != gone } }
         .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
 ```
 - In the `state` combine, add `networkId` (16th) and `c.undo.pending` (17th) after `lastRunCompleted`, and pass `networkId = arr[15] as Long?, undoText = (arr[16] as PendingUndo?)?.text` to `HomeUiState(...)`.
-- Replace `env.collectLatest { e -> ... }` in `init` with `combine(env, envEpoch) { e, _ -> e }.collectLatest { e -> ... }` (body unchanged; `ensure` returns null for the forgotten row, so `networkId` and `c.currentNetwork` become null and the run memory is cleared by `RunMemory.afterNetworkChange`).
-- First line of `discover`, before `ensure`: `c.undo.commit()   // a pending Undo is final before the scan's first lookup (spec 5.3)`. First line of `quickScanAllOn`: the same.
+- Replace `env.collectLatest { e -> ... }` in `init` with `combine(env, c.networkEpoch) { e, _ -> e }.collectLatest { e -> ... }` (body unchanged; `ensure` returns null for the forgotten row, so `networkId` and `c.currentNetwork` become null and the run memory is cleared by `RunMemory.afterNetworkChange`).
+- Rename `discover` to `discoverOn` and `quickScanAllOn` to `quickScanAllBody` (bodies unchanged), and add the two wrappers the controllers call, so a pending Undo is final before either scan's first lookup (spec 5.3, Review Focus 4):
+```kotlin
+    private suspend fun discover(e: NetworkEnv) { c.undo.committedBefore { discoverOn(e) } }
+    private suspend fun quickScanAllOn(e: NetworkEnv) { c.undo.committedBefore { quickScanAllBody(e) } }
+```
 - Add:
 ```kotlin
     /** Home overflow "Forget this network": a soft delete until the Undo ends; the UI disables it while a scan or the settle runs (spec 5.3). */
@@ -4166,13 +4296,14 @@ and, as the LAST member of the class body (after every `by lazy` property, so th
         val net = c.currentNetwork.value ?: return
         c.appScope.launch {
             c.networks.setForgotten(net.id, System.currentTimeMillis())
-            forgottenId.value = net.id
-            envEpoch.update { it + 1 }                      // ensure() now returns null for this network: Home shows it empty
+            c.forgottenNetworkId.value = net.id
+            c.networkEpoch.update { it + 1 }                // ensure() now returns null for this network: Home shows it empty
+            // The lambdas touch only process-wide state, so an Undo still works after the activity is recreated (G4).
             c.undo.post(PendingUndo(HomeCopy.forgot(net.displayName),
-                restore = { c.networks.setForgotten(net.id, null); forgottenId.value = null; envEpoch.update { it + 1 } },
+                restore = { c.networks.setForgotten(net.id, null); c.forgottenNetworkId.value = null; c.networkEpoch.update { it + 1 } },
                 commit = {
                     c.networks.deleteNetworkCascade(net.id); c.settings.manual.set(net.id, emptyList())
-                    forgottenId.value = null; envEpoch.update { it + 1 }   // the env collector then inserts a fresh row for the current env
+                    c.forgottenNetworkId.value = null; c.networkEpoch.update { it + 1 }   // Home then inserts a fresh row for the current env
                 }))
         }
     }
@@ -4181,7 +4312,7 @@ and, as the LAST member of the class body (after every `by lazy` property, so th
     fun dismissUndo() { c.appScope.launch { c.undo.commit() } }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt`: in `startScan`, change the scan body to `scan.start { e -> c.undo.commit(); try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = DetailCopy.SCAN_BIND_FAILED } }`.
+`app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt`: in `startScan`, change the scan body to `scan.start { e -> c.undo.committedBefore { try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = DetailCopy.SCAN_BIND_FAILED } } }`.
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt`:
 - Replace `HomeMenu` with:
@@ -4240,7 +4371,7 @@ fun NoticeLine(text: String, onDismiss: () -> Unit, onUndo: (() -> Unit)? = null
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.*" --console=plain 2>&1 | tail -15
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `UndoStoreTest` (4), `AppScopesTest` (1) and the new `CopyTableTest` test pass; `BUILD SUCCESSFUL`.
+Expected: `UndoStoreTest` (5), `AppScopesTest` (1) and the new `CopyTableTest` test pass; `BUILD SUCCESSFUL`. Reviewer: `AppContainer` has no `init` block and touches no repository at construction (G1).
 
 - [ ] **Step 5: Commit**
 
@@ -4250,25 +4381,36 @@ git add -A && git commit -m "Undo store and app scope; Forget this network as a 
 
 ---
 
-### Task 14: Remove device: stop that host's scans, skip it for the rest of a radar scan, delete with Undo
+### Task 14: Remove device: stop that host's scans, keep it out of every running scan, delete with an Undo that cannot fail
 
 **Files:**
-- Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/RemovedHosts.kt`
-- Modify: `AppContainer.kt` (`hostScanJobs`, `removedDuringScan`, `radarScanNetworkId`), `ui/home/QuickScanAll.kt` (`QuickScanAllLoop`), `ui/home/ScanController.kt` (`stopAndJoin`), `ui/home/HomeViewModel.kt` (`discover` skip, `quickScanAllOn` loop), `ui/detail/DetailViewModel.kt` (`removeDevice`), `ui/detail/DetailContent.kt` (`onRemove`, overflow item), `ui/detail/DetailScreen.kt`
+- Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/RemovedHosts.kt`, `ui/home/RadarCollector.kt`
+- Modify: `AppContainer.kt` (`hostScanJobs`, `removedDuringScan`, `removedHostIds`, `radarScanNetworkId`, `hostWriteLock`), `data/Repositories.kt` (`PortRepository.upsertOpenIfHostExists`), `ui/home/QuickScanAll.kt` (`QuickScanAllLoop`), `ui/home/ScanController.kt` (`stopAndJoin`), `ui/home/HomeViewModel.kt` (`discoverOn` uses `RadarCollector`, `quickScanAllBody` uses the loop, `quickScanHostOn` writes through `upsertOpenIfHostExists`), `ui/detail/DetailViewModel.kt` (`removeDevice`, `scanHostOn` writes through `upsertOpenIfHostExists`), `ui/detail/DetailContent.kt` (`onRemove`, overflow item), `ui/detail/DetailScreen.kt`
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/home/RemovedHostsTest.kt`, `QuickScanAllLoopTest.kt`, `ScanControllerJoinTest.kt`; `app/src/androidTest/java/com/northwalessolutions/netprobe/data/RemoveDeviceTest.kt`, `ui/detail/DetailContentTest.kt` (one test), all androidTest compile only
 
 **Interfaces:**
-- Consumes: `UndoStore`, `appScope` (Task 13), `HostRepository.snapshot/delete/restore` (Task 2), `HomeCopy.removed` (Task 13).
+- Consumes: `UndoStore`, `appScope` (Task 13), `HostRepository.snapshot/delete/restore` (Task 2; `restore` clears anything a late scan wrote), `HomeCopy.removed` (Task 13).
 - Produces:
 ```kotlin
 object RemovedHosts { fun skip(removed: Set<Pair<Long, String>>, networkId: Long, ip: String): Boolean
                       fun added(removed: Set<Pair<Long, String>>, networkId: Long, ip: String): Set<Pair<Long, String>>
-                      fun without(removed: Set<Pair<Long, String>>, networkId: Long, ip: String): Set<Pair<Long, String>> }
+                      fun without(removed: Set<Pair<Long, String>>, networkId: Long, ip: String): Set<Pair<Long, String>>
+                      fun skipQuickScan(removedIds: Set<Long>, removedPairs: Set<Pair<Long, String>>, networkId: Long, hostId: Long, ip: String): Boolean }
+class RadarCollector(hosts: HostRepository, ports: PortRepository, identifier: DeviceIdentifier, ouiLookup: (String) -> String?,
+                     lock: Mutex, removed: () -> Set<Pair<Long, String>>) { suspend fun store(networkId: Long, h: DiscoveredHost, runId: Long): Boolean }
 object QuickScanAllLoop { suspend fun <H> run(hosts: List<H>, idOf: (H) -> Long, skip: (H) -> Boolean, jobs: MutableMap<Long, Job>, scanOne: suspend (H) -> Unit) }
+PortRepository.upsertOpenIfHostExists(hostId: Long, port: Int, info: ServiceInfo): Boolean
 ScanController.stopAndJoin()
-AppContainer.hostScanJobs: ConcurrentHashMap<Long, Job>; removedDuringScan: MutableStateFlow<Set<Pair<Long, String>>>; radarScanNetworkId: MutableStateFlow<Long?>
+AppContainer.hostScanJobs: ConcurrentHashMap<Long, Job>; removedDuringScan: MutableStateFlow<Set<Pair<Long, String>>>; removedHostIds: MutableStateFlow<Set<Long>>
+AppContainer.radarScanNetworkId: MutableStateFlow<Long?>; hostWriteLock: Mutex
 DetailViewModel.removeDevice(); DetailActions(..., val onRemove: () -> Unit = {})
 ```
+
+The three race paths Gruff's plan review (G2) found, and what closes each:
+- A host removed while Quick scan all runs, before the loop reaches it: `removedHostIds` is filled by every Remove (radar running or not) and the loop checks it immediately before each host.
+- A Quick scan all or Detail write that lands after the delete: scan paths write ports through `upsertOpenIfHostExists`, which checks the host row in the same transaction, so no orphan port row can appear.
+- A radar emission that passed the removed check before Remove ran: the check and the write happen under `hostWriteLock` in `RadarCollector.store`, and Remove marks and deletes under the same lock, so an emission is either fully before the Remove or sees the mark.
+- Whatever still slips through, `HostRepository.restore` (Task 2) clears it before re-inserting, so Undo never fails and never loses the mark, note or overrides.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4279,7 +4421,7 @@ package com.northwalessolutions.netprobe.ui.home
 import org.junit.Assert.*
 import org.junit.Test
 
-/** Review Focus 4: the running radar scan never re-inserts a removed host (spec 5.3 step 2). */
+/** Review Focus 4: a removed host stays out of every scan that is running (spec 5.3 step 2, plan review G2). */
 class RemovedHostsTest {
     @Test fun `a removed ip is skipped for the rest of the radar scan`() {
         val set = RemovedHosts.added(emptySet(), 1, "10.0.3.59")
@@ -4290,6 +4432,11 @@ class RemovedHostsTest {
     @Test fun `undo takes the pair out again`() {
         val set = RemovedHosts.added(RemovedHosts.added(emptySet(), 1, "10.0.3.59"), 1, "10.0.3.70")
         assertEquals(setOf(1L to "10.0.3.70"), RemovedHosts.without(set, 1, "10.0.3.59"))
+    }
+    @Test fun `quick scan all skips a removed host by id whether or not a radar scan marked its ip`() {
+        assertTrue(RemovedHosts.skipQuickScan(setOf(7L), emptySet(), 1, 7, "10.0.3.59"))
+        assertTrue(RemovedHosts.skipQuickScan(emptySet(), setOf(1L to "10.0.3.59"), 1, 7, "10.0.3.59"))
+        assertFalse(RemovedHosts.skipQuickScan(setOf(8L), setOf(2L to "10.0.3.59"), 1, 7, "10.0.3.59"))
     }
 }
 ```
@@ -4304,7 +4451,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.ConcurrentHashMap
 
-/** spec 5.3 step 1, Review Focus 4: Remove cancels one host's child job; Quick scan all treats it as "skip this host". */
+/** spec 5.3 step 1, Review Focus 4: Remove cancels one host's child job, or keeps an unreached host out; the loop carries on. */
 class QuickScanAllLoopTest {
     @Test fun `cancelling one host skips it and the loop carries on`() = runTest {
         val jobs = ConcurrentHashMap<Long, Job>(); val done = mutableListOf<Long>()
@@ -4320,16 +4467,26 @@ class QuickScanAllLoopTest {
         loop.join()
         assertEquals(listOf(1L, 3L), done); assertTrue(jobs.isEmpty()); assertFalse(loop.isCancelled)
     }
+    @Test fun `a host removed after the loop started but before it is reached is never scanned`() = runTest {   // G2 path (a)
+        val removedIds = mutableSetOf<Long>(); val done = mutableListOf<Long>()
+        QuickScanAllLoop.run(listOf(1L, 2L, 3L), { it }, { RemovedHosts.skipQuickScan(removedIds, emptySet(), 1, it, "10.0.3.$it") }, ConcurrentHashMap()) { id ->
+            if (id == 1L) removedIds += 3L                // the Director removes host 3 from Detail while host 1 is scanned
+            done += id
+        }
+        assertEquals(listOf(1L, 2L), done)
+    }
+    @Test fun `a host's job is registered before its body runs`() = runTest {   // G13: Remove can always find the job to cancel
+        val jobs = ConcurrentHashMap<Long, Job>(); val seen = mutableListOf<Boolean>()
+        withContext(Dispatchers.Unconfined) {
+            QuickScanAllLoop.run(listOf(1L, 2L), { it }, { false }, jobs) { id -> seen += jobs.containsKey(id) }
+        }
+        assertEquals(listOf(true, true), seen)
+    }
     @Test fun `stopping quick scan all stops the loop`() = runTest {
-        val jobs = ConcurrentHashMap<Long, Job>(); val started = CompletableDeferred<Unit>(); val done = mutableListOf<Long>()
+        val jobs = ConcurrentHashMap<Long, Job>(); val started = CompletableDeferred<Unit>()
         val loop = launch { QuickScanAllLoop.run(listOf(1L, 2L), { it }, { false }, jobs) { started.complete(Unit); awaitCancellation() } }
         started.await(); loop.cancelAndJoin()
-        assertTrue(loop.isCancelled); assertTrue(jobs.isEmpty()); assertTrue(done.isEmpty())
-    }
-    @Test fun `a host removed during the radar scan is skipped`() = runTest {
-        val done = mutableListOf<Long>()
-        QuickScanAllLoop.run(listOf(1L, 2L), { it }, { it == 2L }, ConcurrentHashMap()) { done += it }
-        assertEquals(listOf(1L), done)
+        assertTrue(loop.isCancelled); assertTrue(jobs.isEmpty())
     }
 }
 ```
@@ -4363,7 +4520,7 @@ class ScanControllerJoinTest {
 }
 ```
 
-`app/src/androidTest/java/com/northwalessolutions/netprobe/data/RemoveDeviceTest.kt` (spec 9.3 tests 5 and 6):
+`app/src/androidTest/java/com/northwalessolutions/netprobe/data/RemoveDeviceTest.kt` (spec 9.3 tests 5 and 6; it drives the production `RadarCollector`, `QuickScanAllLoop`, `RemovedHosts.skipQuickScan` and `upsertOpenIfHostExists`, never a copy of their logic):
 ```kotlin
 package com.northwalessolutions.netprobe.data
 
@@ -4373,11 +4530,15 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.AppScopes
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
+import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.Confidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.ui.home.QuickScanAllLoop
+import com.northwalessolutions.netprobe.ui.home.RadarCollector
 import com.northwalessolutions.netprobe.ui.home.RemovedHosts
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -4392,50 +4553,84 @@ class RemoveDeviceTest {
     private lateinit var db: NetProbeDb
     private lateinit var hosts: HostRepository
     private lateinit var ports: PortRepository
+    private val lock = Mutex()
+    private var removed: Set<Pair<Long, String>> = emptySet()
+    private fun collector() = RadarCollector(hosts, ports, DeviceIdentifier(emptyList()), { null }, lock) { removed }
     @Before fun setUp() {
         db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), NetProbeDb::class.java).build()
         hosts = HostRepository(db); ports = PortRepository(db)
     }
     @After fun tearDown() { db.close() }
     private fun ip(s: String) = InetAddress.getByName(s) as Inet4Address
+    /** Remove device's data steps, as DetailViewModel.removeDevice runs them under the shared lock. */
+    private suspend fun remove(id: Long): HostSnapshot = lock.withLock {
+        val h = hosts.byIdOnce(id)!!
+        removed = RemovedHosts.added(removed, h.networkId, h.ip)
+        hosts.snapshot(id)!!.also { hosts.delete(it) }
+    }
 
-    @Test fun aRemovedIpIsNotReinsertedByTheSameRunAndUndoRestoresIt() = runBlocking {
-        val id = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.59"), mdnsName = "CHNAS"), 1L)
+    @Test fun theRadarCollectorNeverReinsertsARemovedIp() = runBlocking {
+        val c = collector()
+        assertTrue(c.store(1, DiscoveredHost(ip("10.0.3.59"), mdnsName = "CHNAS"), 1L))
+        val id = db.hosts().find(1, "10.0.3.59")!!.id
         hosts.setNote(id, "QA note NAS")
-        val snap = hosts.snapshot(id)!!; hosts.delete(snap)
-        val removed = RemovedHosts.added(emptySet(), 1, "10.0.3.59")
-        // The running discovery emits the host again; the collector's guard (HomeViewModel.discover) skips it.
-        for (h in listOf(DiscoveredHost(ip("10.0.3.59")), DiscoveredHost(ip("10.0.3.60")))) {
-            if (!RemovedHosts.skip(removed, 1, h.ip.hostAddress!!)) hosts.upsertDiscovered(1, h, 1L)
-        }
+        val snap = remove(id)
+        assertFalse(c.store(1, DiscoveredHost(ip("10.0.3.59")), 1L))           // a later emission of the same run
+        assertTrue(c.store(1, DiscoveredHost(ip("10.0.3.60")), 1L))
         assertNull(db.hosts().find(1, "10.0.3.59")); assertNotNull(db.hosts().find(1, "10.0.3.60"))
         hosts.restore(snap)
         assertEquals(snap, hosts.snapshot(id)); assertEquals("QA note NAS", hosts.byIdOnce(id)!!.note)
     }
-    @Test fun removeDuringQuickScanAllLeavesNoOrphansAndTheLoopCarriesOn() = runBlocking {
+    @Test fun anEmissionWaitingOnTheLockSeesTheRemove() = runBlocking {   // G2 path (b)
+        val c = collector()
+        c.store(1, DiscoveredHost(ip("10.0.3.61")), 1L); val id = db.hosts().find(1, "10.0.3.61")!!.id
+        lock.lock()                                                            // Remove has the lock
+        val pending = async(Dispatchers.Default) { c.store(1, DiscoveredHost(ip("10.0.3.61")), 1L) }
+        delay(200)                                                             // the emission is now waiting on the lock
+        removed = RemovedHosts.added(removed, 1, "10.0.3.61"); hosts.snapshot(id)!!.also { hosts.delete(it) }
+        lock.unlock()
+        assertFalse(pending.await()); assertNull(db.hosts().find(1, "10.0.3.61"))
+    }
+    @Test fun quickScanAllSkipsAHostRemovedBeforeItIsReached() = runBlocking {   // G2 path (a), production loop and write
         val a = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.1")), 1L)
         val b = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.2")), 1L)
-        val c = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.3")), 1L)
+        val removedIds = mutableSetOf<Long>(); val scanned = mutableListOf<Long>()
+        QuickScanAllLoop.run(listOf(a, b), { it }, { RemovedHosts.skipQuickScan(removedIds, emptySet(), 1, it, "") }, ConcurrentHashMap()) { id ->
+            if (id == a) { removedIds += b; remove(b) }                       // the Director removes b while a is scanned
+            if (ports.upsertOpenIfHostExists(id, 80, ServiceInfo("HTTP", confidence = Confidence.PORT_TABLE))) scanned += id
+        }
+        assertEquals(listOf(a), scanned); assertEquals(emptyMap<Int, ServiceInfo>(), ports.servicesFor(b))
+    }
+    @Test fun aLateWriteForADeletedHostIsDropped() = runBlocking {
+        val id = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.62")), 1L)
+        remove(id)
+        assertFalse(ports.upsertOpenIfHostExists(id, 22, ServiceInfo("SSH", confidence = Confidence.CONFIRMED)))
+        assertEquals(emptyMap<Int, ServiceInfo>(), ports.servicesFor(id))
+    }
+    @Test fun removeDuringQuickScanAllLeavesNoOrphansAndTheLoopCarriesOn() = runBlocking {
+        val a = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.11")), 1L)
+        val b = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.12")), 1L)
+        val c = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.13")), 1L)
         val jobs = ConcurrentHashMap<Long, Job>(); val scanned = mutableListOf<Long>(); val inB = CompletableDeferred<Unit>()
         val loop = launch(Dispatchers.Default) {
             QuickScanAllLoop.run(listOf(a, b, c), { it }, { false }, jobs) { id ->
-                if (id == b) { ports.upsertOpen(b, 22, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)); inB.complete(Unit); awaitCancellation() }
-                ports.upsertOpen(id, 80, ServiceInfo("HTTP", confidence = Confidence.PORT_TABLE)); synchronized(scanned) { scanned += id }
+                if (id == b) { ports.upsertOpenIfHostExists(b, 22, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)); inB.complete(Unit); awaitCancellation() }
+                ports.upsertOpenIfHostExists(id, 80, ServiceInfo("HTTP", confidence = Confidence.PORT_TABLE)); synchronized(scanned) { scanned += id }
             }
         }
         inB.await()
-        jobs.getValue(b).cancelAndJoin()                                  // Remove step 1: that host's job, and wait for it
-        val snap = hosts.snapshot(b)!!; hosts.delete(snap)                // Remove step 3
+        jobs.getValue(b).cancelAndJoin()                                      // Remove step 1: that host's job, and wait for it
+        remove(b)                                                             // Remove step 3
         loop.join()
         assertEquals(listOf(a, c), scanned)
         assertNull(hosts.byIdOnce(b)); assertEquals(emptyMap<Int, ServiceInfo>(), ports.servicesFor(b))   // no orphan port rows
     }
-    @Test fun aRestoreThatHitsAConstraintIsCaughtByTheAppScopeHandler() = runBlocking {
+    @Test fun anUnexpectedFailureIsCaughtByTheAppScopeHandler() = runBlocking {   // spec 9.3 test 6
         val id = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.80")), 1L)
-        val snap = hosts.snapshot(id)!!                                   // not deleted: the restore clashes on the primary key
+        val row = hosts.byIdOnce(id)!!
         val seen = CompletableDeferred<Throwable>()
         val scope = AppScopes.create(AppScopes.handler { seen.complete(it) })
-        scope.launch { hosts.restore(snap) }
+        scope.launch { db.hosts().insertAll(listOf(row)) }                    // a raw clash: restore itself can no longer clash (Task 2)
         assertTrue(withTimeout(5_000) { seen.await() } is SQLiteConstraintException)
         assertEquals(42, scope.async { 42 }.await()); scope.cancel()
     }
@@ -4469,20 +4664,64 @@ Expected: `BUILD FAILED`, `Unresolved reference 'RemovedHosts'`, `'QuickScanAllL
 ```kotlin
 package com.northwalessolutions.netprobe.ui.home
 
-/** (network, ip) pairs removed while a radar scan runs: that scan merges by IP, so it must skip them until it ends (spec 5.3 step 2). */
+/**
+ * Removed hosts stay out of running scans (spec 5.3 step 2, plan review G2): the radar merges by IP, so it skips (network, ip)
+ * pairs until it ends; Quick scan all also skips any host id Remove device recorded, radar running or not.
+ */
 object RemovedHosts {
     fun skip(removed: Set<Pair<Long, String>>, networkId: Long, ip: String): Boolean = (networkId to ip) in removed
     fun added(removed: Set<Pair<Long, String>>, networkId: Long, ip: String): Set<Pair<Long, String>> = removed + (networkId to ip)
     fun without(removed: Set<Pair<Long, String>>, networkId: Long, ip: String): Set<Pair<Long, String>> = removed - (networkId to ip)
+    fun skipQuickScan(removedIds: Set<Long>, removedPairs: Set<Pair<Long, String>>, networkId: Long, hostId: Long, ip: String): Boolean =
+        hostId in removedIds || skip(removedPairs, networkId, ip)
 }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/home/QuickScanAll.kt`: add (imports `kotlinx.coroutines.Job`, `kotlinx.coroutines.coroutineScope`, `kotlinx.coroutines.ensureActive`, `kotlinx.coroutines.launch`):
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/RadarCollector.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.ui.home
+
+import com.northwalessolutions.netprobe.data.HostRepository
+import com.northwalessolutions.netprobe.data.PortRepository
+import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
+import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
+import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+/**
+ * One radar discovery emission, stored exactly as HomeViewModel.discoverOn stores it (spec 5.3 step 2, plan review G2). The removed
+ * check and the write happen under [lock], which Remove device also holds while it marks and deletes, so an emission can never
+ * slip between the check and the delete and re-insert a removed host.
+ */
+class RadarCollector(
+    private val hosts: HostRepository, private val ports: PortRepository, private val identifier: DeviceIdentifier,
+    private val ouiLookup: (String) -> String?, private val lock: Mutex, private val removed: () -> Set<Pair<Long, String>>,
+) {
+    /** Ports seen open per IP during this run: later emissions for the host carry none. */
+    private val openPorts = HashMap<String, MutableSet<Int>>()
+
+    /** False when the host was removed during this run and the emission was dropped. */
+    suspend fun store(networkId: Long, h: DiscoveredHost, runId: Long): Boolean = lock.withLock {
+        val ip = h.ip.hostAddress ?: return@withLock false
+        if (RemovedHosts.skip(removed(), networkId, ip)) return@withLock false
+        val id = hosts.upsertDiscovered(networkId, h, runId)
+        val merged = hosts.byIdOnce(id) ?: return@withLock true
+        val seen = openPorts.getOrPut(ip) { HashSet() }.also { it += h.probedOpenPorts }.toSet()
+        // Stored port findings are part of the evidence, so a rediscovery never downgrades an identity a port scan established.
+        val ev = HostEvidenceBuilder.build(hosts.toDiscovered(merged), ports.servicesFor(id), seen, emptyMap(), merged.mac?.let(ouiLookup))
+        hosts.setIdentity(id, identifier.identify(ev))
+        true
+    }
+}
+```
+
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/QuickScanAll.kt`: add (imports `kotlinx.coroutines.CoroutineStart`, `kotlinx.coroutines.Job`, `kotlinx.coroutines.coroutineScope`, `kotlinx.coroutines.ensureActive`, `kotlinx.coroutines.launch`):
 ```kotlin
 /**
- * Quick scan all's host loop (spec 5.3 step 1): each host runs in its own child job registered in [jobs], so Remove device can
- * cancel exactly that host and wait for it. That one cancellation means "skip this host"; stopping the whole scan still stops the loop.
- * [scanOne] must catch its own failures (one odd host never ends the sweep).
+ * Quick scan all's host loop (spec 5.3 step 1): [skip] is checked immediately before each host, and each host runs in its own child
+ * job, registered in [jobs] before it starts (plan review G13), so Remove device can cancel exactly that host and wait for it. That
+ * one cancellation means "skip this host"; stopping the whole scan still stops the loop. [scanOne] must catch its own failures.
  */
 object QuickScanAllLoop {
     suspend fun <H> run(hosts: List<H>, idOf: (H) -> Long, skip: (H) -> Boolean, jobs: MutableMap<Long, Job>, scanOne: suspend (H) -> Unit) {
@@ -4490,8 +4729,9 @@ object QuickScanAllLoop {
             for (h in hosts) {
                 if (skip(h)) continue
                 val id = idOf(h)
-                val job = launch { scanOne(h) }
+                val job = launch(start = CoroutineStart.LAZY) { scanOne(h) }
                 jobs[id] = job
+                job.start()
                 try { job.join() } finally { jobs.remove(id, job) }
                 ensureActive()
             }
@@ -4510,41 +4750,55 @@ object QuickScanAllLoop {
     }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`: add (imports `java.util.concurrent.ConcurrentHashMap`, `kotlinx.coroutines.Job`):
+`app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`: add (imports `java.util.concurrent.ConcurrentHashMap`, `kotlinx.coroutines.Job`, `kotlinx.coroutines.sync.Mutex`):
 ```kotlin
     /** Each host's Quick scan all child job, so Remove device cancels exactly that host's scan (spec 5.3 step 1). */
     val hostScanJobs = ConcurrentHashMap<Long, Job>()
     /** (network, ip) removed while a radar scan runs; that scan and Quick scan all skip them; cleared at the next radar scan start. */
     val removedDuringScan = MutableStateFlow<Set<Pair<Long, String>>>(emptySet())
+    /** Host ids removed in this process; Quick scan all skips them radar or not (plan review G2). Ids are AUTOINCREMENT, never reused. */
+    val removedHostIds = MutableStateFlow<Set<Long>>(emptySet())
     /** The network a radar scan is running on, or null. */
     val radarScanNetworkId = MutableStateFlow<Long?>(null)
+    /** Held by each radar emission's check and write and by Remove's mark and delete, so the two never interleave (G2). */
+    val hostWriteLock = Mutex()
+```
+
+`app/src/main/java/com/northwalessolutions/netprobe/data/Repositories.kt`, in `PortRepository`, add:
+```kotlin
+    /** Scan paths write through this: the row lands only while its host row exists, checked in the same transaction, so a host removed mid-scan never gets orphan ports (G2). */
+    suspend fun upsertOpenIfHostExists(hostId: Long, port: Int, info: ServiceInfo): Boolean = db.withTransaction {
+        if (db.hosts().byIdOnce(hostId) == null) return@withTransaction false
+        upsertOpen(hostId, port, info)
+        true
+    }
 ```
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt`:
-- In `discover`, inside the `try` before `c.discoveryEngine.discover(...)`, add:
+- In `discoverOn`, delete the line `val openPorts = HashMap<String, MutableSet<Int>>()` (it moves into `RadarCollector`); inside the `try`, before `c.discoveryEngine.discover(...)`, add:
 ```kotlin
             c.removedDuringScan.value = emptySet()          // a new radar scan starts with nothing removed (spec 5.3 step 2)
             c.radarScanNetworkId.value = net.id
+            val collector = RadarCollector(c.hosts, c.ports, c.deviceIdentifier, c.ouiLookup, c.hostWriteLock) { c.removedDuringScan.value }
 ```
-  as the first statement of the collect lambda:
+  replace the whole collect lambda body with `c.discoveryEngine.discover(e, opts, binder).collect { h -> collector.store(net.id, h, runId) }`, and make the first line of the `finally` `c.radarScanNetworkId.value = null`.
+- In `quickScanAllBody`, replace the `for (h in ...)` loop with:
 ```kotlin
-                if (RemovedHosts.skip(c.removedDuringScan.value, net.id, h.ip.hostAddress)) return@collect   // removed during this run: never re-inserted
-```
-  and in the `finally`, first line: `c.radarScanNetworkId.value = null`.
-- Replace the `for (h in ...)` loop in `quickScanAllOn` with:
-```kotlin
-            QuickScanAllLoop.run(c.hosts.hostsForNetwork(net).first(), { it.id }, { RemovedHosts.skip(c.removedDuringScan.value, net, it.ip) }, c.hostScanJobs) { h ->
+            QuickScanAllLoop.run(c.hosts.hostsForNetwork(net).first(), { it.id },
+                { RemovedHosts.skipQuickScan(c.removedHostIds.value, c.removedDuringScan.value, net, it.id, it.ip) }, c.hostScanJobs) { h ->
                 // One unreachable or odd host must not end the sweep for the rest; an off-subnet host that cannot be bound is skipped and said so.
                 try { quickScanHost(h, e) } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
             }
 ```
+- In `quickScanHostOn`, change `c.ports.upsertOpen(h.id, r.port, info)` to `c.ports.upsertOpenIfHostExists(h.id, r.port, info)`.
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt`: add (imports `com.northwalessolutions.netprobe.PendingUndo`, `com.northwalessolutions.netprobe.ui.home.RemovedHosts`):
+`app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt`: in `scanHostOn`, change `c.ports.upsertOpen(hostId, r.port, info)` to `c.ports.upsertOpenIfHostExists(hostId, r.port, info)`, and add (imports `com.northwalessolutions.netprobe.PendingUndo`, `com.northwalessolutions.netprobe.ui.home.RemovedHosts`, `kotlinx.coroutines.sync.withLock`):
 ```kotlin
     /**
-     * Detail overflow "Remove device" (spec 5.3): stop every scan of this host and wait for it, mark its IP removed for a running radar
-     * scan, delete the host and its ports in one transaction, and offer Undo on Home. Runs on appScope (on Main first, so the scan
-     * controller is touched on its own thread), so leaving the screen never cancels it.
+     * Detail overflow "Remove device" (spec 5.3): stop every scan of this host and wait for it; under the radar collector's lock, record
+     * the host id (Quick scan all skips it) and, when a radar scan runs on its network, its IP, then delete the host and its ports in one
+     * transaction; offer Undo on Home. Runs on appScope (on Main first, so the scan controller is touched on its own thread), so leaving
+     * the screen never cancels it. Undo restores under the same lock, through a restore that clears anything a late scan wrote.
      */
     fun removeDevice() {
         val h = state.value.host ?: return
@@ -4552,11 +4806,17 @@ object QuickScanAllLoop {
         c.appScope.launch(Dispatchers.Main.immediate) {
             scan.stopAndJoin()
             c.hostScanJobs[hostId]?.cancelAndJoin()
-            if (c.radarScanNetworkId.value == h.networkId) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
-            val snap = c.hosts.snapshot(hostId) ?: return@launch
-            c.hosts.delete(snap)
+            val snap = c.hostWriteLock.withLock {
+                c.removedHostIds.update { it + hostId }
+                if (c.radarScanNetworkId.value == h.networkId) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
+                c.hosts.snapshot(hostId)?.also { c.hosts.delete(it) }
+            } ?: return@launch
             c.undo.post(PendingUndo(HomeCopy.removed(name),
-                restore = { c.hosts.restore(snap); c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) } },
+                restore = {
+                    c.hostWriteLock.withLock { c.hosts.restore(snap) }
+                    c.removedHostIds.update { it - hostId }
+                    c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                },
                 commit = {}))
         }
     }
@@ -4574,12 +4834,12 @@ object QuickScanAllLoop {
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.ui.home.*" --console=plain 2>&1 | tail -15
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `RemovedHostsTest` (2), `QuickScanAllLoopTest` (3), `ScanControllerJoinTest` (2) pass with the existing Home tests; `BUILD SUCCESSFUL`.
+Expected: `RemovedHostsTest` (3), `QuickScanAllLoopTest` (4) and `ScanControllerJoinTest` (2) pass with the existing Home tests; `BUILD SUCCESSFUL`. Reviewer: `discoverOn`'s collect lambda is exactly `collector.store(...)` and both scan paths write ports only through `upsertOpenIfHostExists`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A && git commit -m "Remove device: stop that host's scans, skip it for the rest of a radar scan, delete with Undo"
+git add -A && git commit -m "Remove device: stop that host's scans, keep it out of running scans, delete with an Undo that cannot fail"
 ```
 
 ---
@@ -4595,7 +4855,7 @@ git add -A && git commit -m "Remove device: stop that host's scans, skip it for 
 - Consumes: `blipOffset`, `RadarGeometry.GOLDEN_ANGLE_DEG`, `RadarGeometry.jitterDeg` (existing).
 - Produces:
 ```kotlin
-object Motion { /* existing tokens, ARM_TURN_MS = 3000 */ TRAIL_DEG, ARM_HEAD_ALPHA, HEAD_LINE_ALPHA, HEAD_LINE_WIDTH, AFTERGLOW_DEG, BLIP_REST_ALPHA,
+object Motion { /* existing tokens, ARM_TURN_MS = 3000 */ QUICK_ARC_TURN_MS, TRAIL_DEG, ARM_HEAD_ALPHA, HEAD_LINE_ALPHA, HEAD_LINE_WIDTH, AFTERGLOW_DEG, BLIP_REST_ALPHA,
     BLIP_STATIC_ALPHA, GLOW_REST_ALPHA, GLOW_LIT_ALPHA, GLOW_LIT_SCALE, PULSE_MS, PULSE_ALPHA, PULSE_STROKE, PULSE_MIN_GAP_MS, BREATH_MIN, BREATH_MAX,
     SETTLE_DAMPING, SETTLE_STIFFNESS, ARM_FADE_MS, ROW_STAGGER_MS, ROW_STAGGER_MAX_MS, NAV_MS, NAV_ENTER_OFFSET, NAV_EXIT_OFFSET, PORT_ROW_MS,
     SELECT_MS, PILL_MORPH_MS, PILL_SQUASH, PILL_SQUASH_AT_MS, NOTICE_IN_MS, NOTICE_OUT_MS, IDENTITY_FADE_MS, EDGE_COLOUR_MS, PROGRESS_MS }
@@ -4697,6 +4957,7 @@ class MotionRulesTest {
         assertEquals(160, Motion.SELECT_MS); assertEquals(220, Motion.PILL_MORPH_MS); assertEquals(0.88f, Motion.PILL_SQUASH); assertEquals(90, Motion.PILL_SQUASH_AT_MS)
         assertEquals(200, Motion.NOTICE_IN_MS); assertEquals(160, Motion.NOTICE_OUT_MS); assertEquals(240, Motion.IDENTITY_FADE_MS)
         assertEquals(300, Motion.EDGE_COLOUR_MS); assertEquals(250, Motion.PROGRESS_MS); assertEquals(40f, Motion.STATIC_ARM_DEG)
+        assertEquals(1200, Motion.QUICK_ARC_TURN_MS)
     }
 }
 ```
@@ -4720,6 +4981,8 @@ object Motion {
     const val BLIP_OUT_MS = 200
     /** One full turn, LinearEasing (A1: was 2400). */
     const val ARM_TURN_MS = 3000
+    /** Quick scan all's arc keeps its Phase 2 speed (2400 / 2), not half of the slower arm turn (plan review G17). */
+    const val QUICK_ARC_TURN_MS = 1200
     const val ROW_ARRIVAL_MS = 600
     const val STATIC_ARM_DEG = 40f
     const val PROGRESS_SAMPLE_MS = 250L
@@ -4828,7 +5091,7 @@ object RowStagger {
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.ui.*" --console=plain 2>&1 | tail -15
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `RadarMotionTest` (5) and `MotionRulesTest` (3) pass, with `BlipOffsetTest` and `ReducedMotionTest` still green; `BUILD SUCCESSFUL`. The radar still uses its old private sweep constants until Task 16; only the turn time changes in this task.
+Expected: `RadarMotionTest` (5) and `MotionRulesTest` (3) pass, with `BlipOffsetTest` and `ReducedMotionTest` still green; `BUILD SUCCESSFUL`. The radar still uses its old private sweep constants until Task 16; only the arm's turn time changes in this task (the Quick scan arc moves to `QUICK_ARC_TURN_MS` in Task 16, keeping its 1200 ms).
 
 - [ ] **Step 5: Commit**
 
@@ -4859,7 +5122,7 @@ val PulseActiveKey: SemanticsPropertyKey<Boolean>; val BreathingKey: SemanticsPr
 
 Layer structure inside the disc box (spec 1.16): (1) `DiscBackground` with its own `graphicsLayer()`: fill, inner rings, HERO dots, recorded only when `f` or the size changes; (2) `ArmLayer`: rotated in its `graphicsLayer {}` block, a property change per frame; (3) `LiveLayer`: one `Spacer` with its own `graphicsLayer()` then `drawWithCache`, drawing the breathing outline, the pulse ring and the blips, in that order, above the arm. The count, "found" and the Stop pill sit outside all three.
 
-- [ ] **Step 1: Write the Compose tests (compile only, run in Task 18)**
+- [ ] **Step 1: Write the Compose tests (compile only, run in Task 19)**
 
 In `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/RadarBlockTest.kt`, add imports (`androidx.compose.runtime.Composable`, `androidx.compose.runtime.mutableIntStateOf`, `androidx.compose.ui.semantics.SemanticsPropertyKey`, `org.junit.Assert.assertFalse`) and these helpers and tests (spec 9.2 tests 1 to 5; every one sets `autoAdvance = false`):
 ```kotlin
@@ -4882,7 +5145,9 @@ In `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/RadarBlock
         hosted { RadarBlock(mode, found, null, summary, true, {}, {}) }
         rule.mainClock.advanceTimeBy(500)                                   // the expand is done
         val counts = (1..20).map { i -> found = i; rule.mainClock.advanceTimeBy(50); value(PulseCountKey) }   // counts[k] is at (k + 1) * 50 ms
-        assertEquals("at 100 ms", 1, counts[1]); assertEquals("at 300 ms", 1, counts[5]); assertEquals("at 400 ms", 2, counts[7])
+        // The contract, not the frame (plan review G5): a pulse starts two or three frames after its find, so the spec's
+        // 100 / 300 / 400 ms marks are checked with that lag allowed: 1 by 150 ms, still 1 at 300 ms, 2 by 450 ms.
+        assertEquals("by 150 ms", 1, counts[2]); assertEquals("at 300 ms", 1, counts[5]); assertEquals("by 450 ms", 2, counts[8])
         for (k in 7 until counts.size) assertTrue("two starts inside one 350 ms window ending at ${(k + 1) * 50} ms", counts[k] - counts[k - 7] <= 1)
         rule.mainClock.advanceTimeBy(700)
         assertFalse("a pulse froze on the disc", value(PulseActiveKey))
@@ -4905,10 +5170,11 @@ In `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/RadarBlock
             if (fr != 0f) rule.onNodeWithTag("radarRing").assertIsNotEnabled()
         }
         assertTrue("no undershoot, minimum ${fractions.min()}", fractions.min() < 0f)
-        assertEquals("not at rest by 448 ms", 0f, fractions[27], 0f)
+        assertEquals("not at rest by about 500 ms (the 512 ms sample)", 0f, fractions[31], 0f)   // spec: about 350 to 400 ms, plus start lag (G5)
         rule.onNodeWithTag("radarRing").assertIsEnabled()
         assertFalse(busy)
     }
+    // Counts RadarBlock and its three layer composables (plan review G6): a per-frame read in a layer's body would show here.
     @Test fun steadyScanningDoesNotRecomposePerFrame() {
         rule.mainClock.autoAdvance = false
         var compositions = 0
@@ -4916,7 +5182,7 @@ In `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/RadarBlock
         rule.mainClock.advanceTimeBy(1_000)                                 // after the expand (which recomposes per frame by design)
         val before = compositions
         repeat(60) { rule.mainClock.advanceTimeByFrame() }
-        assertTrue("recomposed ${compositions - before} times in 60 frames", compositions - before <= 2)
+        assertTrue("RadarBlock and its layers recomposed ${compositions - before} times in 60 frames", compositions - before <= 2)
     }
     @Test fun reducedMotionRadarIsStaticAndInstant() {
         rule.mainClock.autoAdvance = false
@@ -5033,7 +5299,8 @@ private val HERO_DOTS = listOf(Offset(-0.45f, -0.30f), Offset(0.50f, -0.10f), Of
 /**
  * The scan control (Radar spec section 3, Phase 3A spec section 1): one composable owns HERO, SCANNING and SETTLED so the size
  * change is one continuous animation driven by a single `fraction` (0 = ring, 1 = disc). Only the ring, the HERO circle and the
- * Stop pill are actionable. [onBusyChange] is true from SCANNING until the settle ends; [onComposed] is a test hook.
+ * Stop pill are actionable. [onBusyChange] is true from SCANNING until the settle ends; [onComposed] is a test hook called after
+ * every composition of this block and of its three layer composables (plan review G6).
  */
 @Composable
 fun RadarBlock(
@@ -5171,10 +5438,10 @@ fun RadarBlock(
             Box(Modifier.fillMaxWidth().heightIn(min = areaHeight)) {
                 Box(Modifier.offset(x = centreX - target / 2, y = (areaHeight - target) / 2).size(target).then(modeModifier), contentAlignment = Alignment.Center) {
                     Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
-                        DiscBackground(f, mode == RadarMode.HERO, Modifier.matchParentSize().clearAndSetSemantics { })
-                        if (live) ArmLayer(angle, { liveAlpha }, lastAngle, Modifier.matchParentSize())
+                        DiscBackground(f, mode == RadarMode.HERO, onComposed, Modifier.matchParentSize().clearAndSetSemantics { })
+                        if (live) ArmLayer(angle, { liveAlpha }, lastAngle, onComposed, Modifier.matchParentSize())
                         LiveLayer(stroke, strokeColor, breathingOn, shownBlips, newestFrom, reduced, angle, { pulse.value }, { newest.value }, { liveAlpha },
-                            Modifier.matchParentSize().clearAndSetSemantics { })
+                            onComposed, Modifier.matchParentSize().clearAndSetSemantics { })
                         if (mode == RadarMode.SETTLED && quickScanning) QuickArc(animate = resumed && !reduced, Modifier.matchParentSize())
                         if (mode != RadarMode.HERO && labelAlpha > 0f) Text(if (quickScanning) HomeCopy.STOP else HomeCopy.SCAN, style = NetProbeText.ringLabel,
                             color = if (actionable) NetProbeColors.signal else NetProbeColors.border, modifier = Modifier.alpha(labelAlpha))
@@ -5213,7 +5480,8 @@ fun RadarBlock(
 
 /** Layer 1 (spec 1.16): fill, inner rings and HERO dots on their own layer, re-recorded only when f or the size changes. */
 @Composable
-private fun DiscBackground(f: Float, hero: Boolean, modifier: Modifier) {
+private fun DiscBackground(f: Float, hero: Boolean, onComposed: () -> Unit, modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): this body must not recompose per frame either
     Spacer(modifier.graphicsLayer().drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
@@ -5236,7 +5504,8 @@ private fun DiscBackground(f: Float, hero: Boolean, modifier: Modifier) {
 
 /** Layer 2: the sweep, rotated in its layer block (a property change per frame, never a re-record); the bright edge leads (spec 1.3). */
 @Composable
-private fun ArmLayer(angle: () -> Float, armAlpha: () -> Float, lastAngle: FloatArray, modifier: Modifier) {
+private fun ArmLayer(angle: () -> Float, armAlpha: () -> Float, lastAngle: FloatArray, onComposed: () -> Unit, modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): never call angle() or armAlpha() in this body
     Spacer(modifier.clearAndSetSemantics { }.graphicsLayer {
         val a = angle()
         lastAngle[0] = a % FULL_TURN_DEG          // a non-state holder: no recomposition; the arm resumes from here
@@ -5266,7 +5535,9 @@ private fun ArmLayer(angle: () -> Float, armAlpha: () -> Float, lastAngle: Float
  */
 @Composable
 private fun LiveLayer(stroke: Dp, strokeColor: Color, breathing: Boolean, blips: Int, newestFrom: Int, reduced: Boolean,
-                      angle: () -> Float, pulse: () -> Float, newestAlpha: () -> Float, blipsAlpha: () -> Float, modifier: Modifier) {
+                      angle: () -> Float, pulse: () -> Float, newestAlpha: () -> Float, blipsAlpha: () -> Float, onComposed: () -> Unit,
+                      modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): never call angle(), pulse() or the alphas in this body
     Spacer(modifier.graphicsLayer().drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
@@ -5308,7 +5579,7 @@ private fun QuickArc(animate: Boolean, modifier: Modifier) {
     if (!animate) QuickArcLayer({ Motion.STATIC_ARM_DEG }, modifier)
     else {
         val angle = rememberInfiniteTransition(label = "quick")
-            .animateFloat(0f, FULL_TURN_DEG, infiniteRepeatable(tween(Motion.ARM_TURN_MS / 2, easing = LinearEasing)), label = "quickAngle")
+            .animateFloat(0f, FULL_TURN_DEG, infiniteRepeatable(tween(Motion.QUICK_ARC_TURN_MS, easing = LinearEasing)), label = "quickAngle")
         QuickArcLayer({ angle.value }, modifier)
     }
 }
@@ -5370,25 +5641,24 @@ git add -A && git commit -m "Radar redesign: leading trail with head line, after
 
 ---
 
-### Task 17: Motion everywhere else: row stagger, screen transitions, Detail port arrival, selection fades, pill morph, notice slide, identity and edge changes, progress glide
+### Task 17: Motion, part 1: screen transitions and the shared controls (pill morph, segment and chip fades)
+
+Split from the original motion task on Gruff's plan review (G10), so one implementer holds one coherent piece: navigation and three
+shared controls here, the lists and lines in Task 18. Each task has its own Compose test file.
 
 **Files:**
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt` (`ArrivalDelayKey`, `FilterPill`, `HostRowItem`, `Notice`, `NoticeArea`), `ui/home/HomeContent.kt` (`DeviceList`, notice), `ui/Controls.kt` (`ScanPill`, `PinnedSegmented`), `ui/Nav.kt` (replace), `ui/detail/DetailContent.kt` (port arrival, identity cross-fade), `ui/detail/DetailComponents.kt` (`PortRowItem` modifier, `ScanBar` glide and tag)
-- Test: `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/NavTransitionTest.kt`, `ui/MotionTest.kt` (compile only)
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt` (replace), `ui/Controls.kt` (`ScanPill`, `PinnedSegmented`), `ui/home/HomeComponents.kt` (`FilterPill`), `ui/detail/DetailComponents.kt` (`ScanBar`: the `profileSegments` tag only)
+- Test: `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/NavTransitionTest.kt`, `ui/ControlsMotionTest.kt` (compile only)
 
 **Interfaces:**
-- Consumes: Task 15 tokens and `RowStagger`, `LocalReducedMotion`, `HomeContent`, `DetailContent`, `HomeScreen`, `DetailScreen`, `SettingsScreen`.
+- Consumes: Task 15 tokens, `LocalReducedMotion`, `HomeContent`, `DetailContent`, `HomeScreen`, `DetailScreen`, `SettingsScreen`, `HomeFakes`, `DetailFakes`.
 - Produces:
 ```kotlin
-val ArrivalDelayKey: SemanticsPropertyKey<Int>     // ui/home; stagger delay, or -1 for "does not animate"; on Home rows and Detail port rows
-data class Notice(val text: String, val undo: Boolean)
-@Composable fun NoticeArea(notice: Notice?, onDismiss: () -> Unit, onUndo: () -> Unit, onDismissUndo: () -> Unit)   // tag noticeArea
 @Composable fun NetProbeNavHost(nav: NavHostController, home: @Composable () -> Unit, detail: @Composable (Long) -> Unit, settings: @Composable () -> Unit)
-@Composable fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLongPress: () -> Unit, modifier: Modifier = Modifier)
-// tags: chip:<label> (filter chips), segment:<label> (status and profile segments), profileSegments
+// tags: chip:<label> (filter chips), segment:<label> (status and profile segments), profileSegments (the Detail profile control)
 ```
 
-- [ ] **Step 1: Write the Compose tests (compile only, run in Task 18)**
+- [ ] **Step 1: Write the Compose tests (compile only, run in Task 19)**
 
 `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/NavTransitionTest.kt` (spec 9.2 test 7):
 ```kotlin
@@ -5445,7 +5715,7 @@ class NavTransitionTest {
 }
 ```
 
-`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/MotionTest.kt` (spec 9.2 tests 6, 8, 9, 10, 11, 12; every test sets `autoAdvance = false`):
+`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/ControlsMotionTest.kt` (spec 9.2 tests 9 and 10; every test sets `autoAdvance = false`):
 ```kotlin
 package com.northwalessolutions.netprobe.ui
 
@@ -5478,7 +5748,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
-class MotionTest {
+class ControlsMotionTest {
     @get:Rule val rule = createComposeRule()
     private val phone = DeviceConfigurationOverride.ForcedSize(DpSize(412.dp, 820.dp))
     private val channels = listOf<(Color) -> Float>({ it.red }, { it.green }, { it.blue })
@@ -5487,10 +5757,6 @@ class MotionTest {
         NetProbeTheme { CompositionLocalProvider(LocalReducedMotion provides reduced) { DeviceConfigurationOverride(phone) { content() } } }
     }
     @Composable private fun home(st: HomeUiState) = HomeContent(st, RecordingHomeActions().actions, now = 121_000L, ownModel = "Pixel 7 Pro")
-    private fun delayOf(matcher: SemanticsMatcher): Int =
-        rule.onNode(matcher and SemanticsMatcher.keyIsDefined(ArrivalDelayKey), useUnmergedTree = true).fetchSemanticsNode().config[ArrivalDelayKey]
-    private fun rowDelays(): List<Int> =
-        rule.onAllNodes(hasTestTag("hostRow") and SemanticsMatcher.keyIsDefined(ArrivalDelayKey), useUnmergedTree = true).fetchSemanticsNodes().map { it.config[ArrivalDelayKey] }
     /** A pixel on the vertical centre line of [tag], [x] from its left edge (the centre when null). */
     private fun pixel(tag: String, x: Dp? = null): Color {
         val img = rule.onNodeWithTag(tag, useUnmergedTree = true).captureToImage().toPixelMap()
@@ -5509,36 +5775,6 @@ class MotionTest {
     }
     private fun assertClose(expected: Color, actual: Color, what: String) { for (ch in channels) assertEquals(what, ch(expected), ch(actual), CLOSE) }
 
-    @Test fun homeRowsLandingInOneEmissionAreStaggered() {   // test 6
-        rule.mainClock.autoAdvance = false
-        var st by mutableStateOf(HomeFakes.scanning(rows = HomeFakes.rows(2)))
-        motion { home(st) }
-        rule.mainClock.advanceTimeBy(100)                                   // the scan-start baseline is taken
-        st = HomeFakes.scanning(rows = HomeFakes.rows(5)); rule.mainClock.advanceTimeByFrame()
-        assertEquals(listOf(-1, -1, 0, 40, 80), rowDelays())
-        st = HomeFakes.settled(rows = HomeFakes.rows(5)); rule.mainClock.advanceTimeBy(1_000)
-        st = HomeFakes.settled(rows = HomeFakes.rows(5), filter = StatusFilter.UNMARKED); rule.mainClock.advanceTimeBy(100)
-        assertTrue("a filter change animated: ${rowDelays()}", rowDelays().all { it == -1 })
-    }
-    @Test fun aNewPortSlidesTheRowsBelowItIntoPlace() {   // test 8
-        rule.mainClock.autoAdvance = false
-        val p80 = DetailFakes.port(80, "http"); val p8123 = DetailFakes.port(8123, "http"); val p8443 = DetailFakes.port(8443, "https")
-        var st by mutableStateOf(DetailFakes.state(listOf(p80, p8443), scanning = true))
-        motion { DetailContent(st, DetailActions()) }
-        rule.mainClock.advanceTimeBy(100)
-        fun top(port: Int) = rule.onNodeWithText("$port").getBoundsInRoot().top
-        val before = top(8443)
-        st = st.copy(ports = listOf(p80, p8123, p8443)); rule.mainClock.advanceTimeByFrame()
-        assertEquals(0, delayOf(hasAnyDescendant(hasText("8123")))); assertEquals(-1, delayOf(hasAnyDescendant(hasText("80"))))
-        assertEquals(-1, delayOf(hasAnyDescendant(hasText("8443"))))
-        val tops = (1..15).map { rule.mainClock.advanceTimeBy(16); top(8443) }
-        assertTrue("8443 did not move down", tops.last() > before + 1.dp)
-        assertTrue("8443 jumped in one frame", tops.first() < tops.last() - 1.dp)
-        tops.zipWithNext().forEach { (a, b) -> assertTrue("8443 moved back up", b >= a - 0.5.dp) }
-        st = st.copy(scanning = false); rule.mainClock.advanceTimeBy(300)
-        st = st.copy(ports = st.ports + DetailFakes.port(9000, "http")); rule.mainClock.advanceTimeByFrame()
-        assertEquals(-1, delayOf(hasAnyDescendant(hasText("9000"))))
-    }
     @Test fun aSelectedChipCrossFadesItsFill() {   // test 9
         rule.mainClock.autoAdvance = false
         var st by mutableStateOf(HomeFakes.settled())
@@ -5585,33 +5821,6 @@ class MotionTest {
         rule.mainClock.advanceTimeBy(110); assertEquals("moved at 220 ms", at0, profile())
         assertEquals("the pill is one node throughout", nodeId, rule.onNodeWithTag("detailScanButton").fetchSemanticsNode().id)
     }
-    @Test fun noticeSlidesInAndOutWithItsOldWords() {   // test 11
-        rule.mainClock.autoAdvance = false
-        var st by mutableStateOf(HomeFakes.settled())
-        motion { home(st) }
-        rule.mainClock.advanceTimeBy(100)
-        st = st.copy(message = "Scan failed: socket closed"); rule.mainClock.advanceTimeByFrame()
-        rule.mainClock.advanceTimeBy(100)
-        val mid = rule.onNodeWithTag("noticeArea").getBoundsInRoot().height
-        rule.mainClock.advanceTimeBy(150)
-        val full = rule.onNodeWithTag("noticeArea").getBoundsInRoot().height
-        assertTrue("mid $mid, full $full", mid > 0.dp && mid < full)
-        st = st.copy(message = null); rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeBy(80)
-        rule.onNodeWithText("Scan failed: socket closed").assertExists()   // the exit shows the old words, not a blank line
-        rule.mainClock.advanceTimeBy(200)
-        rule.onNodeWithTag("noticeArea").assertDoesNotExist()
-    }
-    @Test fun identityLineCrossFades() {   // test 12
-        rule.mainClock.autoAdvance = false
-        var st by mutableStateOf(DetailFakes.state())
-        motion { DetailContent(st, DetailActions()) }
-        rule.mainClock.advanceTimeBy(100)
-        st = st.copy(host = DetailFakes.host().copy(identModel = "DS920+")); rule.mainClock.advanceTimeByFrame()
-        rule.mainClock.advanceTimeBy(120)
-        rule.onNodeWithText("Synology DS220+  NAS").assertExists(); rule.onNodeWithText("Synology DS920+  NAS").assertExists()
-        rule.mainClock.advanceTimeBy(140)
-        rule.onNodeWithText("Synology DS220+  NAS").assertDoesNotExist(); rule.onNodeWithText("Synology DS920+  NAS").assertExists()
-    }
 
     private companion object {
         val FILL_X = 8.dp                 // inside the fill, clear of the 1 dp outline and the centred label
@@ -5625,7 +5834,7 @@ class MotionTest {
 ```bash
 ./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
 ```
-Expected: `BUILD FAILED`, `Unresolved reference 'NetProbeNavHost'` and `'ArrivalDelayKey'`.
+Expected: `BUILD FAILED`, `Unresolved reference 'NetProbeNavHost'`.
 
 - [ ] **Step 2: Implement**
 
@@ -5748,13 +5957,7 @@ fun ScanPill(scanning: Boolean, enabled: Boolean, onClick: () -> Unit, modifier:
 ```
   (Only alpha animates on the fill, so the composite always lies between the two ends.)
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt` (imports `androidx.compose.animation.*`, `androidx.compose.animation.core.*`):
-- Add next to the other test hooks:
-```kotlin
-/** Test hook (spec 1.17): a row's stagger delay in ms, or -1 when it does not animate. Home rows and Detail port rows. */
-val ArrivalDelayKey = SemanticsPropertyKey<Int>("ArrivalDelay")
-var SemanticsPropertyReceiver.arrivalDelay by ArrivalDelayKey
-```
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt` (imports `androidx.compose.animation.animateColorAsState`, `androidx.compose.animation.core.*`):
 - Replace `FilterPill` with:
 ```kotlin
 @Composable
@@ -5773,6 +5976,190 @@ private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
         }
     }
 }
+```
+
+`app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailComponents.kt`: in `ScanBar`, tag the profile control `modifier = Modifier.weight(1f).testTag("profileSegments")` (the pill test checks it never moves).
+
+- [ ] **Step 3: Compile the Compose tests, then the task gate**
+
+```bash
+./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
+```
+Expected: `BUILD SUCCESSFUL` for both. Reviewer: every new animation has a `snap()` / `None` branch under `LocalReducedMotion`; the pill's fill and outline alphas are read in its draw block only.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A && git commit -m "Motion: screen transitions, Scan pill morph, segment and chip fades"
+```
+
+---
+
+### Task 18: Motion, part 2: lists and lines (row stagger, notice slide, row identity and edge fades, Detail port arrival, identity cross-fade, progress glide)
+
+**Files:**
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt` (`ArrivalDelayKey`, `HostRowItem`, `Notice`, `NoticeArea`), `ui/home/HomeContent.kt` (`DeviceList`, notice), `ui/detail/DetailContent.kt` (port arrival, identity cross-fade), `ui/detail/DetailComponents.kt` (`PortRowItem` modifier, `ScanBar` glide)
+- Test: `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/ListMotionTest.kt` (compile only)
+
+**Interfaces:**
+- Consumes: Task 15 tokens and `RowStagger`, `LocalReducedMotion`, `NoticeLine` (Task 13), `detailFraction` (Task 12), `HomeFakes`, `DetailFakes`, `RecordingHomeActions`.
+- Produces:
+```kotlin
+val ArrivalDelayKey: SemanticsPropertyKey<Int>     // ui/home; stagger delay, or -1 for "does not animate"; on Home rows and Detail port rows
+var SemanticsPropertyReceiver.arrivalDelay: Int    // public, so DetailContent can set it
+data class Notice(val text: String, val undo: Boolean)
+@Composable fun NoticeArea(notice: Notice?, onDismiss: () -> Unit, onUndo: () -> Unit, onDismissUndo: () -> Unit)   // tag noticeArea
+@Composable fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLongPress: () -> Unit, modifier: Modifier = Modifier)
+```
+
+- [ ] **Step 1: Write the Compose tests (compile only, run in Task 19)**
+
+`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/ListMotionTest.kt` (spec 9.2 tests 6, 8, 11, 12; every test sets `autoAdvance = false`):
+```kotlin
+package com.northwalessolutions.netprobe.ui
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.northwalessolutions.netprobe.data.HostStatus
+import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
+import com.northwalessolutions.netprobe.ui.detail.DetailActions
+import com.northwalessolutions.netprobe.ui.detail.DetailContent
+import com.northwalessolutions.netprobe.ui.detail.DetailFakes
+import com.northwalessolutions.netprobe.ui.home.*
+import com.northwalessolutions.netprobe.ui.theme.LocalReducedMotion
+import com.northwalessolutions.netprobe.ui.theme.NetProbeColors
+import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ListMotionTest {
+    @get:Rule val rule = createComposeRule()
+    private val phone = DeviceConfigurationOverride.ForcedSize(DpSize(412.dp, 820.dp))
+    private val channels = listOf<(Color) -> Float>({ it.red }, { it.green }, { it.blue })
+
+    private fun motion(reduced: Boolean = false, content: @Composable () -> Unit) = rule.setContent {
+        NetProbeTheme { CompositionLocalProvider(LocalReducedMotion provides reduced) { DeviceConfigurationOverride(phone) { content() } } }
+    }
+    @Composable private fun home(st: HomeUiState) = HomeContent(st, RecordingHomeActions().actions, now = 121_000L, ownModel = "Pixel 7 Pro")
+    private fun delayOf(matcher: SemanticsMatcher): Int =
+        rule.onNode(matcher and SemanticsMatcher.keyIsDefined(ArrivalDelayKey), useUnmergedTree = true).fetchSemanticsNode().config[ArrivalDelayKey]
+    private fun rowDelays(): List<Int> =
+        rule.onAllNodes(hasTestTag("hostRow") and SemanticsMatcher.keyIsDefined(ArrivalDelayKey), useUnmergedTree = true).fetchSemanticsNodes().map { it.config[ArrivalDelayKey] }
+    /** A pixel on the vertical centre line of [tag], [x] from its left edge (the centre when null). */
+    private fun pixel(tag: String, x: Dp? = null): Color {
+        val img = rule.onNodeWithTag(tag, useUnmergedTree = true).captureToImage().toPixelMap()
+        val px = x?.let { with(rule.density) { it.roundToPx() } } ?: (img.width / 2)
+        return img[px, img.height / 2]
+    }
+    private fun assertBetween(a: Color, b: Color, c: Color, what: String) {
+        var differing = 0
+        for (ch in channels) {
+            val lo = minOf(ch(a), ch(b)); val hi = maxOf(ch(a), ch(b))
+            if (hi - lo < CHANNEL_GAP) continue
+            differing++
+            assertTrue("$what: ${ch(c)} not strictly between $lo and $hi", ch(c) > lo + EPS && ch(c) < hi - EPS)
+        }
+        assertTrue("$what: the two ends are the same colour", differing > 0)
+    }
+    private fun assertClose(expected: Color, actual: Color, what: String) { for (ch in channels) assertEquals(what, ch(expected), ch(actual), CLOSE) }
+
+    @Test fun homeRowsLandingInOneEmissionAreStaggered() {   // test 6
+        rule.mainClock.autoAdvance = false
+        var st by mutableStateOf(HomeFakes.scanning(rows = HomeFakes.rows(2)))
+        motion { home(st) }
+        rule.mainClock.advanceTimeBy(100)                                   // the scan-start baseline is taken
+        st = HomeFakes.scanning(rows = HomeFakes.rows(5)); rule.mainClock.advanceTimeByFrame()
+        assertEquals(listOf(-1, -1, 0, 40, 80), rowDelays())
+        st = HomeFakes.settled(rows = HomeFakes.rows(5)); rule.mainClock.advanceTimeBy(1_000)
+        st = HomeFakes.settled(rows = HomeFakes.rows(5), filter = StatusFilter.UNMARKED); rule.mainClock.advanceTimeBy(100)
+        assertTrue("a filter change animated: ${rowDelays()}", rowDelays().all { it == -1 })
+    }
+    @Test fun aNewPortSlidesTheRowsBelowItIntoPlace() {   // test 8
+        rule.mainClock.autoAdvance = false
+        val p80 = DetailFakes.port(80, "http"); val p8123 = DetailFakes.port(8123, "http"); val p8443 = DetailFakes.port(8443, "https")
+        var st by mutableStateOf(DetailFakes.state(listOf(p80, p8443), scanning = true))
+        motion { DetailContent(st, DetailActions()) }
+        rule.mainClock.advanceTimeBy(100)
+        fun top(port: Int) = rule.onNodeWithText("$port").getBoundsInRoot().top
+        val before = top(8443)
+        st = st.copy(ports = listOf(p80, p8123, p8443)); rule.mainClock.advanceTimeByFrame()
+        assertEquals(0, delayOf(hasAnyDescendant(hasText("8123")))); assertEquals(-1, delayOf(hasAnyDescendant(hasText("80"))))
+        assertEquals(-1, delayOf(hasAnyDescendant(hasText("8443"))))
+        val tops = (1..15).map { rule.mainClock.advanceTimeBy(16); top(8443) }
+        assertTrue("8443 did not move down", tops.last() > before + 1.dp)
+        assertTrue("8443 jumped in one frame", tops.first() < tops.last() - 1.dp)
+        tops.zipWithNext().forEach { (a, b) -> assertTrue("8443 moved back up", b >= a - 0.5.dp) }
+        st = st.copy(scanning = false); rule.mainClock.advanceTimeBy(300)
+        st = st.copy(ports = st.ports + DetailFakes.port(9000, "http")); rule.mainClock.advanceTimeByFrame()
+        assertEquals(-1, delayOf(hasAnyDescendant(hasText("9000"))))
+    }
+    @Test fun noticeSlidesInAndOutWithItsOldWords() {   // test 11
+        rule.mainClock.autoAdvance = false
+        var st by mutableStateOf(HomeFakes.settled())
+        motion { home(st) }
+        rule.mainClock.advanceTimeBy(100)
+        st = st.copy(message = "Scan failed: socket closed"); rule.mainClock.advanceTimeByFrame()
+        rule.mainClock.advanceTimeBy(100)
+        val mid = rule.onNodeWithTag("noticeArea").getBoundsInRoot().height
+        rule.mainClock.advanceTimeBy(150)
+        val full = rule.onNodeWithTag("noticeArea").getBoundsInRoot().height
+        assertTrue("mid $mid, full $full", mid > 0.dp && mid < full)
+        st = st.copy(message = null); rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeBy(80)
+        rule.onNodeWithText("Scan failed: socket closed").assertExists()   // the exit shows the old words, not a blank line
+        rule.mainClock.advanceTimeBy(200)
+        rule.onNodeWithTag("noticeArea").assertDoesNotExist()
+    }
+    @Test fun identityLineCrossFades() {   // test 12
+        rule.mainClock.autoAdvance = false
+        var st by mutableStateOf(DetailFakes.state())
+        motion { DetailContent(st, DetailActions()) }
+        rule.mainClock.advanceTimeBy(100)
+        st = st.copy(host = DetailFakes.host().copy(identModel = "DS920+")); rule.mainClock.advanceTimeByFrame()
+        rule.mainClock.advanceTimeBy(120)
+        rule.onNodeWithText("Synology DS220+  NAS").assertExists(); rule.onNodeWithText("Synology DS920+  NAS").assertExists()
+        rule.mainClock.advanceTimeBy(140)
+        rule.onNodeWithText("Synology DS220+  NAS").assertDoesNotExist(); rule.onNodeWithText("Synology DS920+  NAS").assertExists()
+    }
+
+
+    private companion object {
+        val FILL_X = 8.dp                 // inside the fill, clear of the 1 dp outline and the centred label
+        const val CHANNEL_GAP = 0.02f
+        const val EPS = 0.004f
+        const val CLOSE = 0.02f
+    }
+}
+```
+
+```bash
+./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
+```
+Expected: `BUILD FAILED`, `Unresolved reference 'ArrivalDelayKey'`.
+
+- [ ] **Step 2: Implement**
+
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt` (imports `androidx.compose.animation.*`, `androidx.compose.animation.core.*`):
+- Add next to the other test hooks:
+```kotlin
+/** Test hook (spec 1.17): a row's stagger delay in ms, or -1 when it does not animate. Home rows and Detail port rows. */
+val ArrivalDelayKey = SemanticsPropertyKey<Int>("ArrivalDelay")
+var SemanticsPropertyReceiver.arrivalDelay by ArrivalDelayKey
 ```
 - In `HostRowItem`: add `val reduced = LocalReducedMotion.current`; rename `edge` to `edgeTarget` and add `val edge by animateColorAsState(edgeTarget, if (reduced) snap() else tween(Motion.EDGE_COLOUR_MS), label = "edge")`; publish `edgeColor = edgeTarget` in the semantics; pass `edge` to `TypeEdge`; and replace the data-line `Text` with:
 ```kotlin
@@ -5850,7 +6237,7 @@ private fun DeviceList(groups: List<HostGroup>, state: HomeUiState, actions: Hom
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailComponents.kt`:
 - Give `PortRowItem` a last parameter `modifier: Modifier = Modifier` and wrap its `Row` and `HorizontalDivider` in `Column(modifier) { ... }`, so an arriving row's divider moves with it.
-- In `ScanBar`: add `val reduced = LocalReducedMotion.current`; tag the profile control `modifier = Modifier.weight(1f).testTag("profileSegments")`; and glide the line (spec 1.14):
+- In `ScanBar`: add `val reduced = LocalReducedMotion.current` and glide the line (spec 1.14):
 ```kotlin
         val target = detailFraction(progress, identified)
         val shown by animateFloatAsState(target, if (reduced) snap() else tween(Motion.PROGRESS_MS, easing = LinearEasing), label = "progress")
@@ -5897,28 +6284,31 @@ private fun DeviceList(groups: List<HostGroup>, state: HomeUiState, actions: Hom
 ./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `BUILD SUCCESSFUL` for both. Reviewer: every new animation has a `snap()` / `None` branch under `LocalReducedMotion`; the pill's fill and outline, the progress line and the arrival rise are read in draw or layer blocks only.
+Expected: `BUILD SUCCESSFUL` for both. Reviewer: every new animation has a `snap()` / `None` branch under `LocalReducedMotion`; the progress line and the arrival rise are read in draw or layer blocks only.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add -A && git commit -m "Motion elsewhere: row stagger, screen transitions, port arrival, selection fades, pill morph, notice slide, identity and edge fades"
+git add -A && git commit -m "Motion: row stagger, notice slide, row fades, port arrival, identity cross-fade, progress glide"
 ```
 
 ---
 
-### Task 18: Deferred on-device QA (executed later, when the Director returns with the Pixel)
+### Task 19: Deferred on-device QA (executed later, when the Director returns with the Pixel)
 
-This task is NOT executed during the plan. Tasks 1 to 17 end with JVM tests green and every instrumented test compiled; no task has device evidence. When the Director is back with the Pixel 7 Pro (`28221FDH300AP9`) on his LAN, Bugsy runs every item below in order and records each result, pass or fail, in `docs/qa/phase3a-on-device.md`. Per the standing QA rule, Bugsy builds, installs and runs every item; a green suite is not a substitute, and code review is not QA. If any step fails, stop, record it, and tell the Director; never fix anything on his live database.
+This task is NOT executed during the plan. Tasks 1 to 18 end with JVM tests green and every instrumented test compiled; no task has device evidence. When the Director is back with the Pixel 7 Pro (`28221FDH300AP9`) on his LAN, Bugsy runs every item below in order and records each result, pass or fail, in `docs/qa/phase3a-on-device.md`. Per the standing QA rule, Bugsy builds, installs and runs every item; a green suite is not a substitute, and code review is not QA. If any step fails, stop, record it, and tell the Director; never fix anything on his live database. The restore procedure at the end is used only on the Director's say-so.
+
+Why the order is safe (Gruff plan review G1): building `AppContainer` touches no database, and the leftover-Forget purge runs inside the first `NetworkRepository.ensure`, which only Home calls. No instrumented class except `HomeScreenTest` shows Home, so steps 3 and 5 never open `netprobe.db`, and step 3's "unchanged" check is real.
 
 **Files:**
 - Create (at execution time): `docs/qa/phase3a-on-device.md`, `docs/qa/shots/phase3a/*.png`, `docs/qa/shots/phase3a/*.mp4`
-- Backups go OUTSIDE the repository (they hold the Director's network inventory): `K:/claude/netprobe_db_backup/phase3a/`
+- Backups and the rollback APK go OUTSIDE the repository (they hold the Director's network inventory): `K:/claude/netprobe_db_backup/phase3a/`
 
 Common setup:
 ```bash
 ADB="/c/Users/blastdav/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 DEV=28221FDH300AP9
+PKG=com.northwalessolutions.netprobe
 BK=/k/claude/netprobe_db_backup/phase3a
 mkdir -p "$BK" docs/qa/shots/phase3a
 run() { ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
@@ -5930,54 +6320,69 @@ If `leaveApksInstalledAfterRun` is rejected by this AGP version, stop and ask th
 
 The installed build is still schema 1. Force-stop the app first so nothing writes during the copy:
 ```bash
-"$ADB" -s $DEV shell am force-stop com.northwalessolutions.netprobe
+"$ADB" -s $DEV shell am force-stop $PKG
 for f in netprobe.db netprobe.db-wal netprobe.db-shm; do
-  "$ADB" -s $DEV exec-out run-as com.northwalessolutions.netprobe cat databases/$f > "$BK/$f.bak"
+  "$ADB" -s $DEV exec-out run-as $PKG cat databases/$f > "$BK/$f.bak"
 done
 ls -l "$BK"
 ```
 Expected: three files; `netprobe.db.bak` non-empty (the `-wal` and `-shm` files may be empty if the last session checkpointed; record their sizes). If `netprobe.db.bak` is empty, stop.
 
-- [ ] **Step 1: Push the copy for DirectorCopyMigrationTest**
-```bash
-"$ADB" -s $DEV push "$BK/netprobe.db.bak" /data/local/tmp/netprobe-migration-copy.db
-"$ADB" -s $DEV push "$BK/netprobe.db-wal.bak" /data/local/tmp/netprobe-migration-copy.db-wal
-"$ADB" -s $DEV push "$BK/netprobe.db-shm.bak" /data/local/tmp/netprobe-migration-copy.db-shm
-for s in "" -wal -shm; do
-  "$ADB" -s $DEV shell run-as com.northwalessolutions.netprobe cp /data/local/tmp/netprobe-migration-copy.db$s databases/netprobe-migration-copy.db$s
-done
-"$ADB" -s $DEV shell run-as com.northwalessolutions.netprobe ls -l databases/
-```
-Expected: `netprobe.db*` untouched and `netprobe-migration-copy.db*` present.
+- [ ] **Step 1: Build the schema 1 rollback APK from the local tree (no downloads)**
 
-- [ ] **Step 2: The migration tests first (they install the new APKs but never open `netprobe.db`)**
+The Phase 3A install replaces the schema 1 build; keep a way back (G3). Build master b37db04 in a throwaway worktree, offline:
 ```bash
+RB=/k/claude/netprobe_rollback_b37db04
+git worktree add "$RB" b37db04
+cp local.properties "$RB/"
+(cd "$RB" && ./gradlew :app:assembleDebug --offline --console=plain 2>&1 | tail -3)
+cp "$RB/app/build/outputs/apk/debug/app-debug.apk" "$BK/netprobe-schema1-b37db04.apk"
+git worktree remove --force "$RB"
+ls -l "$BK"
+```
+Expected: `BUILD SUCCESSFUL` and the APK in `$BK`. If Gradle reports anything missing offline, stop and ask the Director; never drop `--offline`.
+
+- [ ] **Step 2: Put the copy for DirectorCopyMigrationTest in place**
+
+Streamed straight into the app's data directory, so no SELinux rule on `/data/local/tmp` can block it (G15); SQLite rebuilds the `-shm` file:
+```bash
+for f in netprobe.db netprobe.db-wal; do
+  "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/${f/netprobe.db/netprobe-migration-copy.db}'" < "$BK/$f.bak"
+done
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/
+```
+Expected: `netprobe.db*` untouched; `netprobe-migration-copy.db` the same size as `netprobe.db.bak`.
+
+- [ ] **Step 3: The migration tests first (they install the new APKs but never open `netprobe.db`)**
+```bash
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/ > "$BK/before-tests.txt"
 run com.northwalessolutions.netprobe.data.MigrationTest
 run com.northwalessolutions.netprobe.data.DirectorCopyMigrationTest
-"$ADB" -s $DEV shell run-as com.northwalessolutions.netprobe ls -l databases/
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/
 ```
-Expected: both pass (DirectorCopyMigrationTest is not skipped: it reports 1 test, not an assumption failure); `netprobe.db` has the same size and time as before; the copy is gone (the test deletes it). If either fails, stop: do not open the app.
+Expected: both pass (DirectorCopyMigrationTest is not skipped: it reports 1 test, not an assumption failure); `netprobe.db` and its `-wal` have the same size and time as in `before-tests.txt`; the copy is gone (the test deletes it). If either fails, stop: do not open the app.
 
-- [ ] **Step 3: In-place migration of the real database (install over, never clean)**
+- [ ] **Step 4: In-place migration of the real database (install over, never clean)**
 ```bash
 ./gradlew :app:installDebug --console=plain 2>&1 | tail -3
-"$ADB" -s $DEV shell am start -W -n com.northwalessolutions.netprobe/.MainActivity
+"$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 "$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3a/q00-after-migration.png
 "$ADB" -s $DEV logcat -d | grep -E "AndroidRuntime|FATAL|IllegalStateException: Migration|Room" | tail -10
 ```
-Check on screen: every host the Director marked shows its mark; open two marked hosts and confirm their notes and custom names. Record pass or fail. If anything is missing, stop and restore from `$BK` with the Director.
+Check on screen: every host the Director marked shows its mark; open two marked hosts and confirm their notes and custom names. Record pass or fail. If anything is missing, stop and tell the Director; the restore procedure below is his call.
 
-- [ ] **Step 4: The rest of the instrumented suite** (DAO and Compose tests use in-memory databases or fake state):
+- [ ] **Step 5: The rest of the instrumented suite** (DAO and Compose tests use in-memory databases or fake state):
 ```bash
 for c in data.DaoTest data.RemoveDeviceTest ui.home.RadarBlockTest ui.home.HomeContentTest ui.home.RadarStateTest ui.detail.DetailContentTest \
-         ui.NavTransitionTest ui.MotionTest ui.settings.SettingsRowsTest ui.settings.ExtendedSectionTest ui.theme.TypographyTest ui.KeepScreenOnTest; do
+         ui.NavTransitionTest ui.ControlsMotionTest ui.ListMotionTest ui.settings.SettingsRowsTest ui.settings.ExtendedSectionTest \
+         ui.theme.TypographyTest ui.KeepScreenOnTest; do
   run com.northwalessolutions.netprobe.$c
 done
 run com.northwalessolutions.netprobe.ui.HomeScreenTest   # last: it launches the real activity, which opens netprobe.db as the app does
 ```
 Expected: every class passes. Record each class's count. The radar, motion and stagger tests are timing tests on a real frame clock: a failure is recorded with its message, not retried into a pass and not relaxed.
 
-- [ ] **Step 5: Screen recordings** (10 to 20 s each; motion on unless stated):
+- [ ] **Step 6: Screen recordings** (10 to 20 s each; motion on unless stated):
 ```bash
 rec() { "$ADB" -s $DEV shell screenrecord --time-limit "$2" /sdcard/$1.mp4; "$ADB" -s $DEV pull /sdcard/$1.mp4 docs/qa/shots/phase3a/$1.mp4; "$ADB" -s $DEV shell rm /sdcard/$1.mp4; }
 ```
@@ -5987,7 +6392,7 @@ rec() { "$ADB" -s $DEV shell screenrecord --time-limit "$2" /sdcard/$1.mp4; "$AD
 4. `rec r4-detail-full 20`: a Detail Full scan on the NAS or Home Assistant host: port rows arriving and sliding into order, the pill morph, the progress line gliding, the identity line changing.
 5. `rec r5-selection 10`: filter chips, status segments and profile segments.
 
-- [ ] **Step 6: Screenshots** (`"$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3a/<name>.png`, at font scale 1.0 and again at 1.3 via `"$ADB" -s $DEV shell settings put system font_scale 1.3`, restored to 1.0 afterwards):
+- [ ] **Step 7: Screenshots** (`"$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3a/<name>.png`, at font scale 1.0 and again at 1.3 via `"$ADB" -s $DEV shell settings put system font_scale 1.3`, restored to 1.0 afterwards):
 6. `s06-mid-sweep` at about 12 devices (arm head, trail and lit blips visible).
 7. `s07-port-sheet` on a non-standard HTTP port showing "Open with..." and the Try as chips; `s07b-chooser` after a chip tap.
 8. `s08-why` "Why this identity" for a host identified from port evidence (port lines visible).
@@ -5996,84 +6401,135 @@ rec() { "$ADB" -s $DEV shell screenrecord --time-limit "$2" /sdcard/$1.mp4; "$AD
 11. `s11-stopped` "Stopped after N s" after Stop.
 12. `s12-restart-stale` Home after `am force-stop` and relaunch, stale rows still dimmed.
 
-- [ ] **Step 7: Behaviour checks, each recorded pass or fail**
+- [ ] **Step 8: Behaviour checks, each recorded pass or fail**
 - The non-standard HTTP port the Director saw shows "Open" and opens in the browser.
 - Try as ssh on port 22 offers his SSH app.
-- After a Full scan, the Synology, Home Assistant, Hue, UniFi and Hub Manager hosts each gain or keep the right identity (record the identity line and the "Why this identity" lines).
+- After a Full scan, the Synology, Home Assistant, Hue, UniFi and Hub Manager hosts each gain or keep the right identity (record the identity line and the "Why this identity" lines). A Proxmox node, if there is one, reads "Proxmox VE" (G9 rule).
 - An identity never drops after a Quick scan, or after the next radar scan (Review Focus 3).
-- Remove device on a marked host, then Undo: mark and note restored exactly; Remove during a running radar scan: the host does not come back before the scan ends (Review Focus 4).
-- Forget this network, then Undo: every host, mark, note and manual range back; Forget, then dismiss: a fresh empty network row.
+- Remove device on a marked host, then Undo: mark and note restored exactly. Remove during a running radar scan: the host does not come back before the scan ends. Remove a host while Quick scan all runs, before the loop reaches it: no ports appear for it, and Undo still restores it (Review Focus 4, G2).
+- A new scan drops a pending Undo (G8): Remove a marked host, start a Detail scan on another host: the Undo notice is gone and the host stays removed. Forget this network, then start a radar scan: a fresh empty network row, no Undo.
+- Forget this network, then Undo: every host, mark, note and manual range back. Forget, then back out of the app and reopen it, then Undo: Home shows the network again (G4). Forget, then dismiss: a fresh empty network row.
 - A Full scan of a host with 9100 open prints nothing (check the printer), and the scan ends within the budget (Review Focus 1 and 2).
 - Janky frames under 5 percent during a radar scan:
 ```bash
-"$ADB" -s $DEV shell dumpsys gfxinfo com.northwalessolutions.netprobe reset
+"$ADB" -s $DEV shell dumpsys gfxinfo $PKG reset
 # start a radar scan on the LAN and wait for it to settle
-"$ADB" -s $DEV shell dumpsys gfxinfo com.northwalessolutions.netprobe | grep -E "Total frames rendered|Janky frames"
+"$ADB" -s $DEV shell dumpsys gfxinfo $PKG | grep -E "Total frames rendered|Janky frames"
 ```
-- The database migrated in place on the installed build with marks and notes intact (step 3).
+- The database migrated in place on the installed build with marks and notes intact (step 4).
 
-- [ ] **Step 8: Record and hand over**
+- [ ] **Step 9: Record and hand over**
 
-Write `docs/qa/phase3a-on-device.md`: the date, build commit, every step's result, the test counts per class, the screenshot and recording names, the gfxinfo numbers, and the spec section 10 assumptions (A1 to A10) and section 11 open items for the Director to rule on. Then commit:
+Write `docs/qa/phase3a-on-device.md`: the date, build commit, every step's result, the test counts per class, the screenshot and recording names, the gfxinfo numbers, and for the Director to rule on: the spec section 10 assumptions (A1 to A10), the section 11 open items, and these plan-review items: the active-probe worst case is about 60 s + 8 x 12 s of summed probe time because a GET with its redirect can take about 12 s, not the spec's "about 76 s" (G12); port evidence never expires, so a reused IP keeps the old device's titles and certificates until its port rows are dropped (G16); the Quick scan all arc keeps its 1200 ms turn through its own token (G17); a vendor-only override on his own phone shows on Detail but Home keeps "Android device" (G18); the `p-proxmox-cert` rule matches O, not the spec's "PVE Cluster" (G9). Then commit:
 ```bash
 git add docs/qa/phase3a-on-device.md docs/qa/shots/phase3a && git commit -m "Phase 3A on-device QA record"
 ```
-The backups in `K:/claude/netprobe_db_backup/phase3a/` are never committed.
+The backups and the rollback APK in `K:/claude/netprobe_db_backup/phase3a/` are never committed.
+
+**Restore procedure (only on the Director's say-so; G3).** This puts the schema 1 build and the step 0 backup back together. All three database files are replaced with the app stopped, because a stale `-wal` or `-shm` next to a restored file can corrupt it:
+```bash
+"$ADB" -s $DEV shell am force-stop $PKG
+"$ADB" -s $DEV install -r -d "$BK/netprobe-schema1-b37db04.apk"   # -r keeps the data directory; -d allows going back to the older build
+for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV shell run-as $PKG rm -f databases/$f; done
+for f in netprobe.db netprobe.db-wal; do "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/$f'" < "$BK/$f.bak"; done
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/
+ls -l "$BK"
+"$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
+```
+Expected: `netprobe.db` and `netprobe.db-wal` the same sizes as their backups; the app opens on the schema 1 build with every mark and note. Record what was restored and why.
 
 ---
 
 ## Plan Self-Review Notes
 
 - **Spec coverage, by section:**
-  - Decision table: D1 Tasks 15, 16; D2 Task 15 (`ARM_TURN_MS = 3000`); D3 Task 17; D4 Task 17 (identity cross-fade, edge colour, progress glide); D5 Tasks 15 to 17 (Compose APIs only, `LocalReducedMotion` everywhere); D6 Tasks 5 and 11; D7 Task 5; D8 Task 11; D9 Task 11 (`sheetLabel` still drops the no-app row; `tryAs` filtered by handler); D10 Tasks 3, 4, 6; D11 Tasks 2 and 8; D12 Task 7; D13 Task 6 (reason form) and Task 8; D14 Task 10; D15 Tasks 9 and 10; D16 Task 1; D17 Task 12; D18 unchanged (no task touches `RangeSummary`); D19 Tasks 13 and 14; D20 Task 12; D21 Task 12.
-  - Section 1 motion: 1.1 diagnosis fixed by 1.3 in Task 16; 1.2 tokens Task 15 (`MotionRulesTest.tokens match spec 1 2`); 1.3 sweep Tasks 15 (`ArmTrail`) and 16 (head line, hoisted angle); 1.4 afterglow Tasks 15 and 16; 1.5 pulse Tasks 15 (`PulseGate`) and 16; 1.6 breathing Tasks 15 and 16; 1.7 spring settle, clamping table, `atRest` click, `onBusyChange` Task 16; 1.8 stagger Tasks 15 and 17; 1.9 transitions and the frozen-angle resume Tasks 16 (resume) and 17 (`NetProbeNavHost`); 1.10 port rows Task 17; 1.11 selection Task 17; 1.12 pill Task 17; 1.13 notice Task 17; 1.14 identity, edge, progress Task 17, identify tail Task 12; 1.15 reduced motion in every motion task; 1.16 layers Task 16 (review checklist); 1.17 hooks Tasks 16 and 17.
+  - Decision table: D1 Tasks 15, 16; D2 Task 15 (`ARM_TURN_MS = 3000`); D3 Tasks 17 and 18; D4 Task 18 (identity cross-fade, edge colour, progress glide); D5 Tasks 15 to 18 (Compose APIs only, `LocalReducedMotion` everywhere); D6 Tasks 5 and 11; D7 Task 5; D8 Task 11; D9 Task 11 (`sheetLabel` still drops the no-app row; `tryAs` filtered by handler); D10 Tasks 3, 4, 6; D11 Tasks 2 and 8; D12 Task 7; D13 Task 6 (reason form) and Task 8; D14 Task 10; D15 Tasks 9 and 10; D16 Task 1; D17 Task 12; D18 unchanged (no task touches `RangeSummary`); D19 Tasks 2, 13 and 14; D20 Task 12; D21 Task 12.
+  - Section 1 motion: 1.1 diagnosis fixed by 1.3 in Task 16; 1.2 tokens Task 15 (`MotionRulesTest.tokens match spec 1 2`); 1.3 sweep Tasks 15 (`ArmTrail`) and 16 (head line, hoisted angle); 1.4 afterglow Tasks 15 and 16; 1.5 pulse Tasks 15 (`PulseGate`) and 16; 1.6 breathing Tasks 15 and 16; 1.7 spring settle, clamping table, `atRest` click, `onBusyChange` Task 16; 1.8 stagger Tasks 15 and 18; 1.9 transitions and the frozen-angle resume Tasks 16 (resume) and 17 (`NetProbeNavHost`); 1.10 port rows Task 18; 1.11 selection Task 17; 1.12 pill Task 17; 1.13 notice Task 18; 1.14 identity, edge, progress Task 18, identify tail Task 12; 1.15 reduced motion in every motion task; 1.16 layers Task 16 (review checklist); 1.17 hooks Tasks 16 and 18.
   - Section 2: 2.1 explained by Tasks 5 and 11 together; 2.2.1 gate, 2.2.2 passive-only, 2.2.3 steps, 2.2.4 budget Task 5; 2.2.5 timeouts (constants) Task 5 and close-on-cancel Task 4; 2.3 Task 11; 2.4 Task 11.
-  - Section 3: 3.1 Task 3 (fields, merge, every read and write path) and Task 4 (`CertInfo`, `poweredBy`); 3.2 Task 6; 3.3 Tasks 2 (DAO) and 8 (callers); 3.4 Task 6 (reason form) and Task 10 ("Set by you" first line); 3.5 Task 7; 3.6 Tasks 6 (software list), 7 (rules), 8 (chips, column write in Task 2).
+  - Section 3: 3.1 Task 3 (fields, merge, every read and write path) and Task 4 (`CertInfo`, `poweredBy`); 3.2 Task 6; 3.3 Tasks 2 (DAO) and 8 (callers); 3.4 Task 6 (reason form) and Task 10 ("Set by you" first line); 3.5 Task 7 (with ruling R1); 3.6 Tasks 6 (software list), 7 (rules), 8 (chips, column write in Task 2).
   - Section 4: 4.1 Tasks 1 and 2; 4.2 Task 9; 4.3 Task 10 (with `DeviceEdits.of` in Task 9); 4.4 Tasks 9 and 10; 4.5 Tasks 10 and 14.
-  - Section 5: 5.1 Task 12; 5.2 unchanged; 5.3 Tasks 2 (DAO), 13 (appScope, UndoStore, Forget), 14 (Remove); 5.4 Task 12; 5.5 Task 12 (with `markRun` in Task 2).
+  - Section 5: 5.1 Task 12; 5.2 unchanged; 5.3 Tasks 2 (DAO, purge on first `ensure`, a restore that cannot fail), 13 (appScope, UndoStore, Forget), 14 (Remove); 5.4 Task 12; 5.5 Task 12 (with `markRun` in Task 2).
   - Section 6: Task 1 (columns, migration, `open(name)`, schema 2, androidTest assets, `MIGRATION_TEST_DB`), Task 2 (DAO).
   - Section 7 copy: every string is a constant in `HomeCopy`, `DetailCopy`, `EditCopy` or `DetailText` and has a `CopyTableTest` template (Tasks 8, 9, 11, 12, 13); the removed rename strings go in Task 10.
-  - Section 8 scope: honoured; no file outside the list changes except those named in deviations 3 and 7 below.
-  - Section 9.1 JVM tests: 1 to 4 Task 15 `RadarMotionTest`; 5 and 28 Task 15 `MotionRulesTest`; 6, 7 Task 11 `PortUrisTest`; 8 Task 11 `ActionProviderTest`; 9 Task 4 `ProbeParsersTest`; 10 to 13 Task 5 `ServiceIdentifierLadderTest`, `ActiveProbeBudgetTest`; 14 Task 4 `CancellationTest`; 15 Task 4 `TlsSubjectTest`; 16 Task 3 `ServiceMergeTest`, `PortMappingTest`; 17 Task 6; 18 Task 7 (`DeviceIdentifierTest`, `NewRulesTest`); 19 Task 7 `RulesPrecedenceTest`; 20 Task 7 `RouterPatternTest` and Task 6; 21 Task 2 `IdentityWriteTest`; 22, 24 Task 9 `OverridesTest`; 22 (edge), 23 Task 9 `IdentityLineOverridesTest`; 25 Task 9 `DetailTextTest`; 26, 27 Task 12 `ScanSummaryTextTest`; 29 Task 12 `DetailTextTest`; 30 Task 13 `UndoStoreTest`; 31 Task 12 `StaleRunTest`; 32 Tasks 8, 9, 11, 12, 13 `CopyTableTest`.
-  - Section 9.2 Compose tests (compiled in their tasks, run in Task 18): 1 to 5 Task 16 `RadarBlockTest`; 3 (menu half) and 16 (settle half) Task 16 `HomeContentTest.quickScanAllAndForgetWaitForTheSettle`; 6, 8 to 12 Task 17 `MotionTest`; 7 Task 17 `NavTransitionTest`; 13 Task 11; 14 Task 10; 15 Tasks 10 and 14; 16 Task 13; 17 Task 8; 18 Task 12; 19 existing tests updated in Tasks 10 (Detail), 16 (radar settle sample) and 17 (notice is animated but its tests run with the clock).
-  - Section 9.3 Room: 1 Task 1 `MigrationTest` and `DirectorCopyMigrationTest`; 2 Task 2; 3 Task 7; 4 Task 2; 5 Task 2 (snapshot round trip) and Task 14 `RemoveDeviceTest`; 6 Task 13 `AppScopesTest` (JVM) and Task 14 `RemoveDeviceTest` (instrumented).
-  - Section 9.4: Task 18, step 0 included, plus the copy-of-the-Director's-database migration run.
-  - Sections 10 to 13: assumptions and open items go to the Director in the Task 18 record; section 12 deviations and section 13 rulings are implemented as written.
+  - Section 8 scope: honoured; no file outside the list changes except those named in deviations 3 and 7 below and the new `PurgeOnce.kt` and `RadarCollector.kt` (plan review G1, G2).
+  - Section 9.1 JVM tests: 1 to 4 Task 15 `RadarMotionTest`; 5 and 28 Task 15 `MotionRulesTest`; 6, 7 Task 11 `PortUrisTest`; 8 Task 11 `ActionProviderTest`; 9 Task 4 `ProbeParsersTest`; 10 to 13 Task 5 `ServiceIdentifierLadderTest`, `ActiveProbeBudgetTest`; 14 Task 4 `CancellationTest` (with the server-side close check); 15 Task 4 `TlsSubjectTest`; 16 Task 3 `ServiceMergeTest`, `PortMappingTest`; 17 Task 6; 18 Task 7 (`DeviceIdentifierTest`, `NewRulesTest`); 19 Task 7 `RulesPrecedenceTest`; 20 Task 7 `RouterPatternTest` and Task 6; 21 Task 2 `IdentityWriteTest`; 22, 24 Task 9 `OverridesTest`; 22 (edge), 23 Task 9 `IdentityLineOverridesTest`; 25 Task 9 `DetailTextTest`; 26, 27 Task 12 `ScanSummaryTextTest`; 29 Task 12 `DetailTextTest`; 30 Task 13 `UndoStoreTest`; 31 Task 12 `StaleRunTest`; 32 Tasks 8, 9, 11, 12, 13 `CopyTableTest`.
+  - Section 9.2 Compose tests (compiled in their tasks, run in Task 19): 1 to 5 Task 16 `RadarBlockTest`; 3 (menu half) and 16 (settle half) Task 16 `HomeContentTest.quickScanAllAndForgetWaitForTheSettle`; 6, 8, 11, 12 Task 18 `ListMotionTest`; 9, 10 Task 17 `ControlsMotionTest`; 7 Task 17 `NavTransitionTest`; 13 Task 11; 14 Task 10; 15 Tasks 10 and 14; 16 Task 13; 17 Task 8; 18 Task 12; 19 existing tests updated in Tasks 10 (Detail), 16 (radar settle sample) and 18 (notice is animated but its tests run with the clock).
+  - Section 9.3 Room: 1 Task 1 `MigrationTest` and `DirectorCopyMigrationTest`; 2 Task 2; 3 Task 7; 4 Task 2 (with `ensurePurgesALeftoverForgetBeforeItsFirstLookup`); 5 Task 2 (snapshot round trip, `restoreWinsOverAnythingALateScanWrote`) and Task 14 `RemoveDeviceTest`; 6 Task 13 `AppScopesTest` (JVM) and Task 14 `RemoveDeviceTest.anUnexpectedFailureIsCaughtByTheAppScopeHandler` (instrumented).
+  - Section 9.4: Task 19, with the step 0 backup, a schema 1 rollback APK built offline, the copy-of-the-Director's-database migration run, and a restore procedure.
+  - Sections 10 to 13: assumptions and open items go to the Director in the Task 19 record; section 12 deviations and section 13 rulings are implemented as written.
 - **Placeholder scan:** no "TBD", "similar to Task N" or "add error handling" remains; every test and implementation block is complete code. Where an existing file is edited rather than replaced, the step names the exact function or line and gives the full replacement.
 - **Deviations and additions, each flagged for the Director:**
   1. `DeviceEdits`, `Effective`, `EditDraft` and `Detected` live in `data/Overrides.kt`, not `ui/detail/EditDevice.kt`, so `HostRepository.setOverrides(hostId, DeviceEdits)` does not make the data layer depend on the UI.
   2. `deleteNetworkCascade` is a repository transaction over three DAO deletes in the spec's order, not a DAO `@Transaction` default method (avoids the KSP interface default-method path); atomicity is the same.
-  3. `AppContainer.radarScanNetworkId` is added: spec 5.3 step 2 needs Detail to know whether a radar scan runs on the removed host's network, and section 8 does not list a field for it.
-  4. `HomeUiState` gains `networkId`, `undoText` and `scanCompleted`; `DetailUiState` gains `identifying` and `identified`; `RadarBlock` gains `onBusyChange` (spec) and an `onComposed` test hook (spec 9.2 test 4's counter).
-  5. While a Detail scan runs, every port row gets the placement spec (old rows slide, only new rows fade and rise), because spec 1.10's "rows present at scan start get no animation" contradicts 9.2 test 8's sliding 443 row.
-  6. Spec 9.2 test 8 says port 8123 lands between 80 and 443; ports sort by number, so the test uses 80, 8123 and 8443.
+  3. `AppContainer` gains fields section 8 does not list: `radarScanNetworkId` (spec 5.3 step 2 needs Detail to know whether a radar scan runs on the removed host's network), `removedHostIds` and `hostWriteLock` (G2), `forgottenNetworkId` and `networkEpoch` (G4).
+  4. `HomeUiState` gains `networkId`, `undoText` and `scanCompleted`; `DetailUiState` gains `identifying` and `identified`; `RadarBlock` gains `onBusyChange` (spec) and an `onComposed` test hook (spec 9.2 test 4's counter, now also counting the three layer composables).
+  5. While a Detail scan runs, every port row gets the placement spec (old rows slide, only new rows fade and rise), because spec 1.10's "rows present at scan start get no animation" contradicts 9.2 test 8's sliding 443 row. The spec text still says otherwise (G19, for the controller to amend).
+  6. Spec 9.2 test 8 says port 8123 lands between 80 and 443; ports sort by number, so the test uses 80, 8123 and 8443 (spec amendment pending, G19).
   7. Spec 9.2 test 14 sets Type NAS and Vendor Synology on a host whose detected values are Synology NAS, which `DeviceEdits.of` must store as nothing; the test uses a host with nothing detected.
   8. An HTTP-set port whose HEAD fails and whose TLS handshake succeeds is named by the unknown-port rule (HTTPS with an HTTP answer, else TLS); the spec names only TLS-set and unknown ports.
   9. RTSP and RDP probes run when the passive read did not confirm a service (the spec's "each step only if the previous did not confirm"); the zero-byte rule is kept for every other port.
   10. The identity line gets `Role.Button` and the "Edit device" description but no 48 dp minimum height, so the font-scale 1.3 port-row floors hold; the name above it is a 48 dp target for the same action.
-  11. On the own-phone row, `Build.MODEL` is shown only while the identity line is the own-line, so a set model wins (spec 4.2) without a new `HostRow` field.
-  12. The Phase 2 `HomeScreenTest` launches the real activity, which opens `netprobe.db`, against spec 6's rule; Task 18 runs it last, after the backup and the in-place migration check.
-  13. `p-proxmox-cert` is kept exactly as specified, but real Proxmox certificates carry "PVE Cluster Node" in OU and "Proxmox Virtual Environment" in O, so the rule will rarely fire; the Director should decide whether it should read the OU or match O.
+  11. On the own-phone row, `Build.MODEL` is shown only while the identity line is the own-line, so a set model wins (spec 4.2) without a new `HostRow` field. A vendor-only override keeps "Android device" on Home (G18, for the Director).
+  12. The Phase 2 `HomeScreenTest` launches the real activity, which opens `netprobe.db`, against spec 6's rule; Task 19 runs it last, after the backup and the in-place migration check. With G1 applied it is the only instrumented class that opens the file.
+  13. `p-proxmox-cert` matches certificate O `^Proxmox Virtual Environment$` with sample "Proxmox Virtual Environment" instead of the spec's "PVE Cluster" on O, which never fires on a real node (OU holds "PVE Cluster Node"; NetProbe does not read OU). Flagged for the Director; a one-line revert (G9).
   14. Three pure helpers, `blipCoreAlpha`, `blipGlowAlpha` and `blipGlowScale`, carry the blip look so the JVM pins the reduced-motion values 9.2 test 5 cannot read from the draw phase.
   15. Close-on-cancel uses `suspendCancellableCoroutine` with `Dispatchers.IO.dispatch`, as the spec words it; Probe.connect's existing watcher pattern is untouched.
-- **Type consistency:**
+  16. The leftover-Forget purge moves from "when `AppContainer` is created" (spec 5.3) to the first `NetworkRepository.ensure` (G1): the outcome is the same, a Forget pending at process death is final, but no instrumented test and no process start opens the database.
+  17. `ensure` returns null, and inserts nothing, while any row on the same gateway and prefix is forgotten, not only the signature match (G14), so an unreadable MAC during a pending Forget cannot create a second row for the same network.
+  18. `HostRepository.restore` deletes any row at the snapshot's (network, ip) and any port rows under its id before re-inserting (G2), so Undo cannot fail on a row a late scan wrote; spec 5.3 step 4 relied on "no conflict is possible" plus the handler.
+  19. The Quick scan all arc keeps its 1200 ms turn through its own token `QUICK_ARC_TURN_MS` instead of slowing to 1500 ms as a side effect of D2 (G17).
+- **Rulings on review findings not applied as written:**
+  - R1 (G12): no code change; the budget comment now states the real GET bound (about 12 s with its redirect, so up to about 60 s + 8 x 12 s of summed probe time) and Task 19 hands it to the Director, as Gruff recommended.
+  - R2 (G16): no change in 3A, as Gruff recommended; listed for the Director in the Task 19 record (port evidence never expires).
+  - R3 (G18): not applied. Spec 4.2 is explicit that the own phone keeps its model line "unless the Director sets a model"; widening it to vendor changes the spec, so it goes to the Director in the Task 19 record.
+  - R4 (G19): not applied in this plan. The fix round is plan-only, so spec 1.10 and 9.2 test 8 are not edited here; deviations 5 and 6 say what the tasks do, and the controller should amend the spec so per-task reviewers check against matching text.
+  - R5 (G2, JVM coverage): the radar collector and Quick scan all paths are tested through the extracted production functions (`RadarCollector.store`, `QuickScanAllLoop.run` with `RemovedHosts.skipQuickScan`, `PortRepository.upsertOpenIfHostExists`). The collector and repository paths run against an in-memory Room database (instrumented, compile only until Task 19) because `HostRepository` and `PortRepository` are concrete Room classes; giving them interfaces only for fakes would be a wider refactor than the finding asks. The loop and the skip rule have JVM tests.
+- **Type consistency (re-checked after renumbering):**
   - `ServiceInfo` keeps its five positional parameters first (Task 3); every existing `ServiceInfo(name, product, version, detail, confidence)` call compiles; `PortEntity.toServiceInfo()` and `withService()` (Task 3) are the only conversions and are used by `PortRepository` (Task 3), `DetailViewModel` (Task 3) and `servicesFor` (Task 3).
   - `ServiceMerge.merge` (Task 3) is used by `PortMapping.merge` (Task 3), `HostEvidenceBuilder` (Task 3) and `IdentityStabilityTest` (Task 7).
   - `CertInfo` (Task 4) is produced by `TlsPeek.certInfo` and consumed by `ServiceIdentifier` (Tasks 4 and 5) and the ladder fakes (Task 5). `TlsPeek.certNames` is removed in Task 4 together with its only caller and its test fake.
   - `BannerReader` and `HttpTitleFetcher` become `open` in Task 4 before Task 5 subclasses them; `HttpPeek.poweredBy` (Task 4) has a default, so `DiscoveryEngineTest`'s four-argument `HttpPeek` still compiles.
-  - `ProbeMode`, `ActiveProbeBudget`, `ProbeModes` (Task 5) are consumed by `DetailViewModel.scanHostOn` (Task 5) and `QuickScanAllPolicy` (Task 5); `QuickScanAll.kt` grows `QuickScanAllLoop` in Task 14.
+  - `ProbeMode`, `ActiveProbeBudget`, `ProbeModes` (Task 5) are consumed by `DetailViewModel.scanHostOn` (Task 5) and `QuickScanAllPolicy` (Task 5); `QuickScanAll.kt` grows `QuickScanAllLoop` (LAZY-started child jobs) in Task 14.
   - `DeviceIdentity.software` (Task 2) is filled by `DeviceIdentifier` (Task 6), stored by `SoftwareColumn.encode` in `setIdentity` / `setIdentityIfNotWeaker` (Task 2), read back by `softwareLabels` (Task 8).
   - `Rule.onPorts` / `Rule.software` (Task 6) are used by the rules file (Task 7) and `SyntheticEvidence` (Task 7).
   - `DeviceEdits` (Task 2) gains its companion `of` in Task 9; `EditDraft`, `Detected`, `Effective` (Task 9) are used by `EditDeviceDialog` and `DetailContent` (Task 10) and by `IdentityLine`, `RowRules`, `lookupVulnsForDevice` (Task 9). `HostRepository.setCustomName` and `HostDao.setCustomName` are removed in Task 10 together with their last callers (`DetailViewModel.setCustomName`, `DaoTest`).
-  - `NetworkRepository.ensure` returns `NetworkEntity?` from Task 2; `discover` (Task 2) and the four existing DAO tests (Task 2) are updated in the same task.
+  - `NetworkRepository(db, onPurged = {})` and `PurgeOnce` (Task 2): every existing `NetworkRepository(db)` call in `DaoTest` compiles through the default; `AppContainer` passes `onPurged` in Task 13. `ensure` returns `NetworkEntity?` from Task 2; `discover` (Task 2, renamed `discoverOn` in Task 13) and the four existing DAO tests (Task 2) are updated in the same task.
+  - `HostRepository.restore` (Task 2) is used by `DetailViewModel.removeDevice` (Task 14) and `RemoveDeviceTest` (Task 14); its new delete steps use only DAO calls that exist from Task 2 (`find`, `deletePortsForHost`, `deleteHost`, `insertAll`).
+  - `UndoStore.committedBefore` (Task 13) wraps `discoverOn` and `quickScanAllBody` in `HomeViewModel` and the Detail scan body (Task 13); Task 14 edits `discoverOn` and `quickScanAllBody` by those names. `AppContainer.forgottenNetworkId` and `networkEpoch` (Task 13) replace the per-ViewModel fields of the first draft.
+  - `RadarCollector` (Task 14) takes `HostRepository`, `PortRepository`, `DeviceIdentifier`, `ouiLookup`, `AppContainer.hostWriteLock` and a `removedDuringScan` reader, all existing by Task 14; `PortRepository.upsertOpenIfHostExists` (Task 14) is used by `quickScanHostOn`, `DetailViewModel.scanHostOn` and `RemoveDeviceTest`.
   - `DetailCopy` is created in Task 8 and only grows (Tasks 9, 11, 12); `EditCopy` is created in Task 9; `HomeCopy` grows in Tasks 12 and 13.
   - `PortRow.tryAs` (Task 11) has a default, so `DetailTextTest.port` and `DetailFakes.port` compile before and after; `DetailFakes.port` gains the `tryAs` parameter in Task 11.
-  - `NoticeLine(text, onDismiss, onUndo)` (Task 13) is wrapped by `NoticeArea` (Task 17); `HomeMenu`'s new parameters (Task 13) have defaults; `forgetEnabled` gains `!radarBusy` in Task 16.
-  - `RadarBlock(scanCompleted)` arrives in Task 12 and is kept by the Task 16 rewrite, which adds `onBusyChange` and `onComposed`; the semantics keys `ArmSpinningKey` (existing), `RadarFractionKey`, `PulseCountKey`, `PulseActiveKey`, `BreathingKey` are defined in Task 16 and read by `RadarBlockTest` (Task 16). `ArrivalDelayKey` and its `arrivalDelay` setter (Task 17) are public so `DetailContent` can set it.
+  - `NoticeLine(text, onDismiss, onUndo)` (Task 13) is wrapped by `NoticeArea` (Task 18); `HomeMenu`'s new parameters (Task 13) have defaults; `forgetEnabled` gains `!radarBusy` in Task 16.
+  - `RadarBlock(scanCompleted)` arrives in Task 12 and is kept by the Task 16 rewrite, which adds `onBusyChange` and `onComposed` and passes `onComposed` into `DiscBackground`, `ArmLayer` and `LiveLayer`; the semantics keys `ArmSpinningKey` (existing), `RadarFractionKey`, `PulseCountKey`, `PulseActiveKey`, `BreathingKey` are defined in Task 16 and read by `RadarBlockTest` (Task 16). `Motion.QUICK_ARC_TURN_MS` (Task 15) is read by `QuickArc` (Task 16).
+  - Task 17 adds the `chip:`, `segment:` and `profileSegments` tags that `ControlsMotionTest` (Task 17) reads, and needs no type from Task 18. `ArrivalDelayKey` and its public `arrivalDelay` setter are defined in Task 18 and used only by Task 18's `DeviceList`, `DetailContent` and `ListMotionTest`; `ControlsMotionTest` does not reference them.
   - `ScanController.stopAndJoin` (Task 14) is used by `DetailViewModel.removeDevice` (Task 14). `UndoStore`, `PendingUndo`, `AppScopes` (Task 13) are used in Tasks 13 and 14.
 - **Review Focus mapping:**
-  1. Printer ports never receive an active probe: Task 5 `ServiceIdentifierLadderTest.passive only ports never receive a byte in either mode`, `ipp gets one head in active mode and nothing more`, `passive only and head only sets are pinned`; device check in Task 18 step 7.
+  1. Printer ports never receive an active probe: Task 5 `ServiceIdentifierLadderTest.passive only ports never receive a byte in either mode`, `ipp gets one head in active mode and nothing more`, `passive only and head only sets are pinned`; device check in Task 19 step 8.
   2. The active budget: Task 5 `no more than 64 ports ever enter the ladder`, `no step starts once 60 s have been spent and refused ports stay open and unknown`, `today's steps are not counted against the budget`, `eight parallel identifies overshoot by at most eight steps`, `passive mode sends nothing new to a silent unknown port`, `quick scan all is passive`; `ActiveProbeBudgetTest`.
   3. Identity flapping: Task 3 `ServiceMergeTest.a port table result never replaces a confirmed name` and `the evidence builder uses the same merge`; Task 7 `IdentityStabilityTest` (three tests); Task 2 `IdentityWriteTest.identity guard replaces on equal or higher confidence only`; instrumented Task 7 `DaoTest.portEvidenceSurvivesRediscoveryAndATimedOutRescan` and Task 2 `DaoTest.identityGuardKeepsAStrongerStoredIdentity`.
-  4. Undo re-adding a host mid-scan, and orphan ports: Task 13 `UndoStoreTest` (post commits the previous, undo once, commit idempotent, dismiss commits) with the commit at every scan start; Task 14 `RemovedHostsTest.a removed ip is skipped for the rest of the radar scan`, `QuickScanAllLoopTest.cancelling one host skips it and the loop carries on`, `ScanControllerJoinTest.stop and join waits for the scan's cleanup`; instrumented Task 14 `RemoveDeviceTest` (no re-insert, no orphans, restore clash caught).
-  5. Migration preserving marks and notes: Task 1 `MigrationSqlTest` (three tests), `SchemaExportTest` (three tests); instrumented Task 1 `MigrationTest.marksNotesAndPortsSurviveTheMigration` and `DirectorCopyMigrationTest.theDirectorsCopyMigratesWithEveryMarkAndNote`, run first in Task 18 before the real database is touched.
+  4. Undo re-adding a host mid-scan, orphan ports, or a failed Undo: Task 13 `UndoStoreTest` (five, including `a scan body runs only after the pending undo is committed`); Task 14 `RemovedHostsTest` (three), `QuickScanAllLoopTest` (four, including the unreached host and the job registered before its body), `ScanControllerJoinTest`; instrumented Task 2 `DaoTest.restoreWinsOverAnythingALateScanWrote` and Task 14 `RemoveDeviceTest` (`theRadarCollectorNeverReinsertsARemovedIp`, `anEmissionWaitingOnTheLockSeesTheRemove`, `quickScanAllSkipsAHostRemovedBeforeItIsReached`, `aLateWriteForADeletedHostIsDropped`, `removeDuringQuickScanAllLeavesNoOrphansAndTheLoopCarriesOn`); device checks in Task 19 step 8.
+  5. Migration preserving marks and notes: Task 1 `MigrationSqlTest` (three tests), `SchemaExportTest` (three tests); instrumented Task 1 `MigrationTest.marksNotesAndPortsSurviveTheMigration` and `DirectorCopyMigrationTest.theDirectorsCopyMigratesWithEveryMarkAndNote`, run first in Task 19 before the real database is touched; the "app file unchanged" check holds because nothing opens `netprobe.db` at process start (Task 2 rule, `PurgeOnceTest`, `DaoTest.ensurePurgesALeftoverForgetBeforeItsFirstLookup`); restore procedure and rollback APK in Task 19.
+
+## Gruff plan review response
+
+Review: `docs/superpowers/plans/2026-10-20-phase3a-plan-gruff-review.md` (ecb3f66), verdict "execute after fixes". The review numbers its findings G1 to G19; there are no G20 or G21.
+
+- G1 (BLOCKING): applied. No database work when `AppContainer` is built (Task 13 rule and implementation, no `init` block); the purge runs once at the top of `NetworkRepository.ensure` through `PurgeOnce` (Task 2), pinned by `PurgeOnceTest` and `DaoTest.ensurePurgesALeftoverForgetBeforeItsFirstLookup`; Task 19 states why steps 3 and 5 never open `netprobe.db`.
+- G2 (BLOCKING): applied. `AppContainer.removedHostIds` checked by Quick scan all before each host; scan paths write ports through `PortRepository.upsertOpenIfHostExists`; the radar's check and write run in the extracted `RadarCollector` under `hostWriteLock`, which Remove also holds; `HostRepository.restore` clears stray rows first (Task 2); tests drive the production functions (Tasks 2 and 14, ruling R5).
+- G3: applied. Task 19 step 1 builds the b37db04 schema 1 APK offline into the backup folder, and a restore procedure closes the task.
+- G4: applied. `forgottenNetworkId` and `networkEpoch` moved to `AppContainer` (Task 13); Task 19 step 8 checks Undo after the activity is recreated.
+- G5: applied. Pulse counts checked as 1 by 150 ms, 1 at 300 ms, 2 by 450 ms, plus the window invariant; settle rest asserted at the 512 ms sample (Task 16).
+- G6: applied. `onComposed` is passed into `DiscBackground`, `ArmLayer` and `LiveLayer`, and the test bounds the sum (Task 16).
+- G7: applied. Each `CancellationTest` case also requires the server to see the socket close within 300 ms (Task 4).
+- G8: applied. `UndoStore.committedBefore` wraps every scan body, pinned by `UndoStoreTest.a scan body runs only after the pending undo is committed` (Task 13); Task 19 step 8 checks it on the device.
+- G9: applied. `p-proxmox-cert` matches O `^Proxmox Virtual Environment$`; flagged for the Director (Task 7, deviation 13).
+- G10: applied. The motion task is split into Task 17 (navigation and controls, `ControlsMotionTest`) and Task 18 (lists and lines, `ListMotionTest`); deferred QA is now Task 19 and every reference follows.
+- G11: applied through G2: the tests call `RadarCollector.store`, `QuickScanAllLoop.run`, `RemovedHosts.skipQuickScan` and `upsertOpenIfHostExists`, not copies of their logic.
+- G12: applied as Gruff recommended (comment corrected, no code change; ruling R1).
+- G13: applied. `QuickScanAllLoop` starts each child LAZY, registers it, then starts it; pinned by `a host's job is registered before its body runs` (Task 14).
+- G14: applied. `ensure` returns null while any same-addressing row is forgotten (Task 2), with the DAO test updated.
+- G15: applied. Task 19 step 2 streams the copy through `run-as sh -c 'cat > ...'`, no `-shm`.
+- G16: not changed in code, as recommended; handed to the Director in the Task 19 record (ruling R2).
+- G17: applied. `Motion.QUICK_ARC_TURN_MS = 1200` (Tasks 15, 16), and noted in the Task 19 record.
+- G18: not applied; spec 4.2 names the model only, so it goes to the Director (ruling R3).
+- G19: not applied in this plan-only round; the controller should amend spec 1.10 and 9.2 test 8 (ruling R4).
