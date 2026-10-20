@@ -1,3 +1,8 @@
 <resources>
-    <style name="Theme.NetProbe" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Dark from the first frame: no white flash on cold start or navigation (Radar spec 2.5). -->
+    <style name="Theme.NetProbe" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/np_background</item>
+        <item name="android:statusBarColor">@color/np_background</item>
+        <item name="android:navigationBarColor">@color/np_background</item>
+    </style>
 </resources>
