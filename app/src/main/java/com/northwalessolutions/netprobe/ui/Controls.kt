@@ -93,6 +93,9 @@ private fun PillLabel(text: String, color: Color, visible: Boolean) {
         modifier = if (visible) Modifier else Modifier.alpha(0f).clearAndSetSemantics {})
 }
 
+/** Label padding inside a segment: 2 dp, so "Investigated" at 12 sp x 1.3 stays on one line in a quarter of the 411 dp Pixel 7 Pro width. */
+private val SEGMENT_TEXT_PAD = 2.dp
+
 /** Equal segments in an 8 dp outlined control; 40 dp visual inside a 48 dp target; labels wrap rather than truncate (spec 5.1, 7.5). */
 @Composable
 fun PinnedSegmented(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, activeFill: Color, activeText: Color,
@@ -109,7 +112,7 @@ fun PinnedSegmented(labels: List<String>, selected: Int, onSelect: (Int) -> Unit
             Box(Modifier.weight(1f).heightIn(min = Dimens.touch).selectable(active, enabled = enabled, role = Role.RadioButton) { onSelect(i) }
                 .padding(vertical = CONTROL_INSET), contentAlignment = Alignment.Center) {
                 Box(Modifier.fillMaxWidth().heightIn(min = CONTROL_VISUAL).clip(shape).background(if (active) activeFill else Color.Transparent)
-                    .padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                    .padding(horizontal = SEGMENT_TEXT_PAD), contentAlignment = Alignment.Center) {
                     Text(label, style = NetProbeText.chip.copy(fontWeight = if (active) activeWeight else FontWeight.W400),
                         color = if (active) activeText else NetProbeColors.textSecondary, textAlign = TextAlign.Center)
                 }

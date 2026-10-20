@@ -6,12 +6,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.actions.DeviceAction
+import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
@@ -127,5 +130,18 @@ class DetailContentTest {
         show(DetailFakes.state(note = note), noteExpanded = true)
         rule.onNode(hasTestTag("note") and hasSetTextAction())
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(note.length)))
+    }
+    @Test fun segmentLabelsStayOnOneLineAtFontScale13OnAPixel7Pro() {   // on-device QA: "Investigated" broke mid-word at 1.3 on the Pixel 7 Pro
+        val pixel7Pro = DeviceConfigurationOverride.ForcedSize(DpSize(411.dp, 820.dp))   // 1440 px at 560 dpi
+        var st by mutableStateOf(DetailFakes.state())
+        rule.setContent { NetProbeTheme { DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(1.3f) then pixel7Pro) { DetailContent(st, recording) } } }
+        for (status in HostStatus.values()) {   // each label is checked inactive (W400) and active (W500, the widest)
+            st = st.copy(host = DetailFakes.host(status = status)); rule.waitForIdle()
+            for (label in listOf("Unmarked", "Interesting", "Investigated", "Ignored", "Quick", "Full", "Custom")) {
+                val results = mutableListOf<TextLayoutResult>()
+                rule.onNodeWithText(label, useUnmergedTree = true).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+                assertEquals("$label lines with $status active", 1, results.first().lineCount)
+            }
+        }
     }
 }
