@@ -266,7 +266,7 @@ class DaoTest {
         val hosts = HostRepository(db); val ports = PortRepository(db)
         val id = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.70"), mdnsName = "Printer"), 1L)
         hosts.setStatus(id, HostStatus.INVESTIGATED); hosts.setNote(id, "toner low")
-        ports.upsertOpen(id, 631, ServiceInfo("IPP", confidence = Confidence.CONFIRMED))
+        ports.upsertOpen(id, 631, ServiceInfo("IPP", confidence = Confidence.CONFIRMED, title = "HP OfficeJet"))
         hosts.setOverrides(id, DeviceEdits("DiskStation", DeviceType.NAS, "Synology", "DS220+"))
         val snap = hosts.snapshot(id)!!
         hosts.delete(snap)

@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.engine.serviceid
 
 object BannerParsers {
+    private const val MAX_HEADER = 120
     const val OPENSSH_WINDOWS = "OpenSSH_for_Windows"
     private val versionRe = Regex("(\\d+(?:\\.\\d+)+[A-Za-z0-9]*)")
 
@@ -41,10 +42,12 @@ object BannerParsers {
         val status = lines.firstOrNull()?.takeIf { it.startsWith("HTTP/") && it.length > 9 } ?: return null
         val headers = lines.drop(1).takeWhile { it.isNotBlank() }
             .mapNotNull { h -> h.indexOf(':').takeIf { it > 0 }?.let { h.substring(0, it).trim().lowercase() to h.substring(it + 1).trim() } }.toMap()
-        val (product, version) = headers["server"]?.let { serverHeader(it) } ?: (null to null)
-        val realm = headers["www-authenticate"]?.let { Regex("realm=\"?([^\"]+)\"?").find(it)?.groupValues?.get(1) }
+        val server = headers["server"]?.take(MAX_HEADER)?.ifEmpty { null }
+        val (product, version) = server?.let { serverHeader(it) } ?: (null to null)
+        val realm = headers["www-authenticate"]?.let { Regex("realm=\"?([^\"]+)\"?").find(it)?.groupValues?.get(1) }?.take(MAX_HEADER)
         val detail = listOfNotNull(status.substringAfter(' ').take(40), realm?.let { "realm $it" }).joinToString(", ")
-        return ServiceInfo("HTTP", product, version, detail, Confidence.CONFIRMED)
+        return ServiceInfo("HTTP", product, version, detail, Confidence.CONFIRMED,
+            server = server, realm = realm, poweredBy = headers["x-powered-by"]?.take(MAX_HEADER)?.ifEmpty { null })
     }
 
     fun classifyUnknown(bytes: ByteArray, portName: String): ServiceInfo {

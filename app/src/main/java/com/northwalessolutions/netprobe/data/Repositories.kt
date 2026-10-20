@@ -179,19 +179,15 @@ class PortRepository(private val db: NetProbeDb) {
     suspend fun upsertOpen(hostId: Long, port: Int, info: ServiceInfo): Unit = db.withTransaction {
         val now = System.currentTimeMillis()
         val e = db.ports().find(hostId, port)
-        val fresh = PortEntity(hostId = hostId, port = port, serviceName = info.name, product = info.product, version = info.version, detail = info.detail, confidence = info.confidence, lastSeen = now)
         if (e == null) {
-            try { db.ports().insert(fresh) } catch (ex: SQLiteConstraintException) {
+            try { db.ports().insert(PortMapping.newRow(hostId, port, info, now)) } catch (ex: SQLiteConstraintException) {
                 val raced = db.ports().find(hostId, port) ?: throw ex
-                db.ports().update(mergePort(raced, info, now))
+                db.ports().update(PortMapping.merge(raced, info, now))
             }
-        } else db.ports().update(mergePort(e, info, now))
+        } else db.ports().update(PortMapping.merge(e, info, now))
     }
-    private fun mergePort(e: PortEntity, info: ServiceInfo, now: Long) =
-        e.copy(serviceName = info.name, product = info.product ?: e.product, version = info.version ?: e.version, detail = info.detail ?: e.detail, confidence = info.confidence, lastSeen = now)
-    /** Stored open ports of a host as identification input, so a rediscovery or narrow rescan never forgets earlier findings. */
-    suspend fun servicesFor(hostId: Long): Map<Int, ServiceInfo> =
-        db.ports().forHostOnce(hostId).associate { it.port to ServiceInfo(it.serviceName, it.product, it.version, it.detail, it.confidence) }
+    /** Stored open ports of a host as identification input, all eleven fields, so a rediscovery never forgets earlier findings. */
+    suspend fun servicesFor(hostId: Long): Map<Int, ServiceInfo> = db.ports().forHostOnce(hostId).associate { it.port to it.toServiceInfo() }
     suspend fun markScanned(hostId: Long) = db.hosts().markScanned(hostId, System.currentTimeMillis())
 }
 class VulnCacheRepository(private val db: NetProbeDb) {

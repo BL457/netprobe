@@ -51,4 +51,13 @@ class BannerParsersTest {
             BannerParsers.classifyUnknown(junk.toByteArray(), "Unknown")
         }
     }
+
+    @Test fun `http head keeps the full server header, the realm and x powered by`() {
+        val r = BannerParsers.httpHead("HTTP/1.1 401 Unauthorized\r\nServer: nginx/1.18.0 (Ubuntu)\r\nX-Powered-By: PHP/8.2.7\r\nWWW-Authenticate: Basic realm=\"TP-LINK\"\r\n\r\n")!!
+        assertEquals("nginx/1.18.0 (Ubuntu)", r.server); assertEquals("TP-LINK", r.realm); assertEquals("PHP/8.2.7", r.poweredBy)
+        assertEquals("nginx", r.product); assertEquals("1.18.0", r.version)
+        val bare = BannerParsers.httpHead("HTTP/1.0 200 OK\r\n\r\n")!!
+        assertNull(bare.server); assertNull(bare.realm); assertNull(bare.poweredBy)
+        assertEquals(120, BannerParsers.httpHead("HTTP/1.1 200 OK\r\nServer: " + "s".repeat(300) + "\r\n\r\n")!!.server!!.length)
+    }
 }

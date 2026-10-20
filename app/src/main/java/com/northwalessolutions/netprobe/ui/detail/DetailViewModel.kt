@@ -43,7 +43,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         @Suppress("UNCHECKED_CAST")
         val ps = arr[1] as List<PortEntity>
         val h = arr[0] as HostEntity?; val sc = arr[2] as ScanController.State; val pr = arr[3] as ScanProgress?; val e = arr[9] as NetworkEnv?
-        val rows = ps.map { p -> val info = ServiceInfo(p.serviceName, p.product, p.version, p.detail, p.confidence)
+        val rows = ps.map { p -> val info = p.toServiceInfo()
             PortRow(p.port, info, h?.let { c.actions.primary(it.ip, p.port, info) }, h?.let { c.actions.actionsFor(it.ip, p.port, info) } ?: emptyList()) }
         val name = h?.let { if (RowRules.isOwn(it.ip, e) && it.customName.isNullOrBlank()) RowRules.THIS_PHONE else DisplayName.of(it) } ?: ""
         DetailUiState(h, name, rows, sc.scanning, if (sc.scanning) pr else null, arr[4] as ScanProfile, arr[5] as String, arr[6] as String?, sc.message ?: arr[7] as String?, arr[8] as VulnSheetState?)
