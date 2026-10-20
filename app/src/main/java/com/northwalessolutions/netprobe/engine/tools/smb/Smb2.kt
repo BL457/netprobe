@@ -16,6 +16,7 @@ object Smb2 {
     const val SESSION_FLAG_IS_GUEST = 0x0001
     const val SESSION_FLAG_IS_NULL = 0x0002
     private val PROTOCOL_ID = byteArrayOf(0xFE.toByte(), 'S'.code.toByte(), 'M'.code.toByte(), 'B'.code.toByte())
+    private val SMB1_PROTOCOL_ID = byteArrayOf(0xFF.toByte(), 'S'.code.toByte(), 'M'.code.toByte(), 'B'.code.toByte())
     private const val CREDIT_REQUEST = 1
     private const val NEGOTIATE_STRUCTURE = 36; private const val NEGOTIATE_RESPONSE_STRUCTURE = 65
     private const val NEGOTIATE_RESPONSE_READ = 6          // StructureSize, SecurityMode, DialectRevision
@@ -59,6 +60,8 @@ object Smb2 {
         if ((b.getShort(4).toInt() and 0xFFFF) != HEADER_SIZE) return null
         return Header(b.getInt(8), b.getShort(12).toInt() and 0xFFFF, b.getLong(24), b.getLong(40))
     }
+    /** An SMB1 message (MS-CIFS 2.2.3.1: 0xFF 'S' 'M' 'B'), the reply of a server that speaks no SMB2 dialect. */
+    fun isSmb1(m: ByteArray): Boolean = m.size >= SMB1_PROTOCOL_ID.size && m.copyOfRange(0, SMB1_PROTOCOL_ID.size).contentEquals(SMB1_PROTOCOL_ID)
     /** A non-zero status means no dialect was agreed; the body is then an ERROR response and is not read. */
     fun parseNegotiate(m: ByteArray): NegotiateResponse? {
         val h = parseHeader(m) ?: return null

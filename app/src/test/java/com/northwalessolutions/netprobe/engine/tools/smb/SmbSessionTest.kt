@@ -158,4 +158,55 @@ class SmbSessionTest {
         val at = (0..b.size - from.size).first { i -> from.indices.all { b[i + it] == from[it] } }
         to.copyInto(b, at)
     }
+
+    // Review fix round 1.
+    /** Like [Script], but the exchange at [pauseAt] (0-based) begins a pause before its reply (which may be null) is returned. */
+    private class PausingScript(private val c: ToolTestSupport.EpochControl, private val pauseAt: Int, vararg replies: ByteArray?) : SmbTransport {
+        val sent = mutableListOf<ByteArray>(); var closed = false
+        private val queue = ArrayDeque(replies.toList())
+        override suspend fun exchange(request: ByteArray): ByteArray? { if (sent.size == pauseAt) c.epoch++; sent += request; return queue.removeFirstOrNull() }
+        override fun close() { closed = true }
+    }
+    private suspend fun runWith(c: RunControl, vararg connections: SmbTransport?): ToolResult {
+        val queue = ArrayDeque(connections.toList())
+        return SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L })
+            .run(target, ToolOptions.None, c, CollectingProgress())
+    }
+    @Test fun `a reply lost mid guest leg to a pause is retried once`() = runTest {
+        val c = ToolTestSupport.EpochControl()
+        val lost = PausingScript(c, 1, SmbFixtures.negotiateResponse(0x0302, 1), null)                   // the CHALLENGE lost to a pause
+        val retry = guest(0x0302, SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x78, 0))
+        val r = runWith(c, anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)), lost, retry)
+        assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest allowed", r.summary)
+        assertTrue(lost.closed); assertEquals(3, retry.sent.size)
+    }
+    @Test fun `a genuine guest refusal during a pause is not retried`() = runTest {
+        val c = ToolTestSupport.EpochControl()
+        val refused = PausingScript(c, 2, SmbFixtures.negotiateResponse(0x0302, 1), SmbFixtures.challengeResponse(0x78),
+            SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE))
+        val spare = guest(0x0302, SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x78, 0))
+        val r = runWith(c, anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)), refused, spare)
+        assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest refused", r.summary)
+        assertEquals("exactly one guest AUTHENTICATE", 3, refused.sent.size); assertTrue(spare.sent.isEmpty())
+    }
+    @Test fun `a timestamp that is not 8 bytes is ignored for the local clock and lmv2`() = runTest {
+        val ti = av(2, "Domain".toByteArray(Charsets.UTF_16LE)) + av(7, byteArrayOf(1, 2, 3, 4)) + av(0, ByteArray(0))
+        val sc = byteArrayOf(0x01, 0x23, 0x45, 0x67, 0x89.toByte(), 0xab.toByte(), 0xcd.toByte(), 0xef.toByte())
+        val ntlm = ByteBuffer.allocate(56).order(ByteOrder.LITTLE_ENDIAN)
+            .put("NTLMSSP\u0000".toByteArray(Charsets.ISO_8859_1)).putInt(2).putShort(0).putShort(0).putInt(56)
+            .putInt(Ntlm.negotiateFlags(false)).put(sc).putLong(0)
+            .putShort(ti.size.toShort()).putShort(ti.size.toShort()).putInt(56).put(byteArrayOf(10, 0, 0x61, 0x4a, 0, 0, 0, 0x0f)).array() + ti
+        val second = Script(SmbFixtures.negotiateResponse(0x0302, 1), SmbFixtures.sessionSetupResponse(Smb2.STATUS_MORE_PROCESSING_REQUIRED, 0x78, 0, ntlm),
+            SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE))
+        run(anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)), second)
+        val ntowf = Ntlm.ntowfv2("guest", "", ""); val cc = ByteArray(8) { 0x5a }
+        val expected = Ntlm.authenticate("guest", "", Ntlm.lmV2(ntowf, sc, cc), Ntlm.ntResponseV2(ntowf, sc, Ntlm.blob(Ntlm.filetime(0L), cc, ti)), Ntlm.negotiateFlags(false))
+        assertArrayEquals(expected, Spnego.extractNtlm(second.sent[2].copyOfRange(88, second.sent[2].size))!!)
+    }
+    private fun av(id: Int, value: ByteArray) = ByteBuffer.allocate(4 + value.size).order(ByteOrder.LITTLE_ENDIAN).putShort(id.toShort()).putShort(value.size.toShort()).put(value).array()
+    @Test fun `an smb1 reply to negotiate is no dialect in common, other garbage is no response`() = runTest {
+        val smb1 = byteArrayOf(0xFF.toByte(), 'S'.code.toByte(), 'M'.code.toByte(), 'B'.code.toByte(), 0x72) + ByteArray(40)
+        assertEquals("No SMB2 dialect in common", run(Script(smb1)).first.summary)
+        assertEquals("No SMB response on this port", run(Script("HTTP/1.1 400 Bad Request\r\n\r\n".toByteArray())).first.summary)
+    }
 }

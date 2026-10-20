@@ -5,7 +5,6 @@ import com.northwalessolutions.netprobe.actions.ActionProvider
 import com.northwalessolutions.netprobe.actions.AndroidActionRunner
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.common.HttpClient
-import com.northwalessolutions.netprobe.engine.common.Probe
 import com.northwalessolutions.netprobe.engine.serviceid.TlsPeek
 import com.northwalessolutions.netprobe.engine.tools.FingerprintRules
 import com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTool
@@ -36,7 +35,6 @@ import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteforceTool
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.Exchange
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.LoadedWordlist
 import com.northwalessolutions.netprobe.engine.tools.smb.SmbSessionTool
-import com.northwalessolutions.netprobe.engine.tools.smb.TcpSmbTransport
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.wordlists.BuiltInList
@@ -121,11 +119,8 @@ class AppContainer(val context: Context) {
             rules = FingerprintRules.load(RawResources.read(context, R.raw.http_fingerprints))))
         put(ToolId.TLS_CERTIFICATE, TlsCertificateTool(peek = { t, name -> TlsPeek().details(t.ip, t.port, name) }))
         put(ToolId.SNMP_WALK, SnmpWalkTool(exchangeFor = { t -> UdpSnmpExchange(t.ip) }))
-        put(ToolId.SMB_SESSION, SmbSessionTool(connect = { t ->
-            // Probe.connect binds through currentBinder(), so off-subnet hosts are reached over Wi-Fi exactly as port scans are.
-            (Probe.connect(t.ip, t.port, SmbSessionTool.SMB_TIMEOUT_MS, keepOpen = true) as? Probe.Outcome.Connected)?.socket
-                ?.let { TcpSmbTransport(it, SmbSessionTool.SMB_TIMEOUT_MS) }
-        }))
+        // tcpConnect goes through Probe.connect, so off-subnet hosts are reached over Wi-Fi exactly as port scans are.
+        put(ToolId.SMB_SESSION, SmbSessionTool(connect = { t -> SmbSessionTool.tcpConnect(t) }))
     }
     /** The chosen list, else common-short (spec 5.1, 11.10); streams through withEntries, so a list is never loaded whole. */
     private fun resolveWordlist(id: String): LoadedWordlist? {

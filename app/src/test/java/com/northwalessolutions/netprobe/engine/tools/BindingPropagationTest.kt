@@ -3,11 +3,10 @@ package com.northwalessolutions.netprobe.engine.tools
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.common.BoundNetwork
 import com.northwalessolutions.netprobe.engine.common.HttpClient
-import com.northwalessolutions.netprobe.engine.common.Probe
 import com.northwalessolutions.netprobe.engine.common.SocketBinder
 import com.northwalessolutions.netprobe.engine.serviceid.TlsPeek
 import com.northwalessolutions.netprobe.engine.tools.ToolRunnerTestSupport.Rig
-import com.northwalessolutions.netprobe.engine.tools.smb.TcpSmbTransport
+import com.northwalessolutions.netprobe.engine.tools.smb.SmbSessionTool
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runCurrent
@@ -31,7 +30,7 @@ import kotlin.concurrent.thread
  * Every tool socket is bound through the BoundNetwork on the coroutine context, which is how ScanBinding.run routes a run over
  * Wi-Fi past a VPN on a client's network. The four calls below are exactly the socket seams AppContainer's tool factories use:
  * HttpClient.request (dir-bruteforce, fingerprint), TlsPeek.details (tls-certificate), UdpSnmpExchange (snmp-walk) and
- * Probe.connect into TcpSmbTransport (smb-session). A refactor that drops the context (a stray withContext(EmptyCoroutineContext
+ * SmbSessionTool.tcpConnect (smb-session). A refactor that drops the context (a stray withContext(EmptyCoroutineContext
  * + Dispatchers.IO), a socket opened without Probe.connect) fails the first test.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -73,7 +72,7 @@ class BindingPropagationTest {
             HttpClient(500).request(lo, tcp.localPort, false, "GET", "/")
             TlsPeek().details(lo, tcp.localPort, "nas.lan", 500)                    // the named handshake fails on plain HTTP, then the IP retry
             UdpSnmpExchange(lo, udp.localPort, 200).getNext(listOf("1.3.6.1.2.1.1"))
-            (Probe.connect(lo, tcp.localPort, 500, keepOpen = true) as? Probe.Outcome.Connected)?.socket?.let { TcpSmbTransport(it, 500).close() }
+            SmbSessionTool.tcpConnect(ToolTarget(7, lo, tcp.localPort, tls = false, serverName = null), 500)?.close()   // AppContainer's SMB seam
         }
         assertEquals("http 1, tls 2 (named, then IP), smb 1", 4, binder.tcp.get())
         assertEquals("snmp 1", 1, binder.udp.get())

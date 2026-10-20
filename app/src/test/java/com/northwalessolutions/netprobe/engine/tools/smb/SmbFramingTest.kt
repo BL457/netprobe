@@ -42,4 +42,20 @@ class SmbFramingTest {
         val t = TcpSmbTransport(Socket(lo, s.localPort), 200)
         assertNull(t.exchange(byteArrayOf(1))); t.close()
     }
+    // Review fix round 1: spec 6.3's 3000 ms is per exchange; a per-read timeout let a server dripping a byte per read hold it for hours.
+    @Test fun `a server dripping one byte at a time cannot stretch an exchange past its deadline`() = runBlocking {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { s.accept().use { c ->
+            SmbFraming.readFrame(c.getInputStream())
+            val out = c.getOutputStream(); out.write(byteArrayOf(0, 0, 0, 100)); out.flush()
+            repeat(100) { Thread.sleep(DRIP_MS); out.write(1); out.flush() }
+        } } }
+        val t = TcpSmbTransport(Socket(lo, s.localPort), DEADLINE_MS)
+        val started = System.nanoTime()
+        assertNull(t.exchange(byteArrayOf(1)))
+        val tookMs = (System.nanoTime() - started) / 1_000_000
+        assertTrue("took $tookMs ms", tookMs < DEADLINE_MS + DRIP_MS + SLACK_MS)
+        t.close()
+    }
+    private companion object { const val DRIP_MS = 150L; const val DEADLINE_MS = 300; const val SLACK_MS = 250 }
 }

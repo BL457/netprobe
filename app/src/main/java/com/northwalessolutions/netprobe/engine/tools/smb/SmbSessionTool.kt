@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.engine.tools.smb
 
 import com.northwalessolutions.netprobe.data.ToolRunStatus
+import com.northwalessolutions.netprobe.engine.common.Probe
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.*
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
@@ -25,7 +26,13 @@ class SmbSessionTool(
 
     /** [lost] is true when an exchange of the leg got no reply at all, which a pause excuses (spec 4.8). */
     private class Leg(val allowed: Boolean, val names: Ntlm.TargetInfoNames?, val lost: Boolean)
-    private enum class Guest { ALLOWED, MAPPED, REFUSED }
+    /** LOST: an exchange got no reply (or no connection was made), the only guest outcome a pause excuses. */
+    private enum class Guest { ALLOWED, MAPPED, REFUSED, LOST }
+    private sealed interface Negotiated {
+        object Lost : Negotiated
+        object NoDialect : Negotiated
+        class Ok(val neg: Smb2.NegotiateResponse) : Negotiated
+    }
     private sealed interface Opened {
         object NoResponse : Opened
         object NoDialect : Opened
@@ -41,8 +48,11 @@ class SmbSessionTool(
     private suspend fun open(target: ToolTarget, control: RunControl): Opened {
         val conn = connect(target) ?: return Opened.NoResponse
         try {
-            val n = negotiate(conn) ?: return Opened.NoResponse
-            if (n.status != Smb2.STATUS_SUCCESS || n.dialect !in Smb2.DIALECTS) return Opened.NoDialect
+            val n = when (val got = negotiate(conn)) {
+                Negotiated.Lost -> return Opened.NoResponse
+                Negotiated.NoDialect -> return Opened.NoDialect
+                is Negotiated.Ok -> got.neg
+            }
             val dialect = ToolCopy.dialectName(n.dialect) ?: return Opened.NoDialect
             control.gate()
             return Opened.Ok(n, dialect, anonymousLeg(conn, n))
@@ -77,15 +87,20 @@ class SmbSessionTool(
         emit(FindingKind.SMB_SESSION, if (anonymous.allowed) ToolCopy.ANONYMOUS_ALLOWED else ToolCopy.ANONYMOUS_REFUSED, ToolCopy.SESSION)
 
         control.gate()
-        val guest = control.excusedOnce<Guest>({ it == Guest.REFUSED }) {
+        // Only a lost reply is excused: a genuine refusal is never retried, since every retry is another failed logon (4625) on the host.
+        val guest = control.excusedOnce<Guest>({ it == Guest.LOST }) {
             connect(target)?.let { conn ->
                 try {
-                    val again = negotiate(conn)
-                    if (again == null || again.status != Smb2.STATUS_SUCCESS || again.dialect !in Smb2.DIALECTS) Guest.REFUSED else guestLeg(conn, again)
+                    when (val again = negotiate(conn)) {
+                        Negotiated.Lost -> Guest.LOST
+                        Negotiated.NoDialect -> Guest.REFUSED
+                        is Negotiated.Ok -> { control.gate(); guestLeg(conn, again.neg) }
+                    }
                 } finally { conn.close() }
-            } ?: Guest.REFUSED
+            } ?: Guest.LOST
         }
-        emit(FindingKind.SMB_SESSION, when (guest) { Guest.ALLOWED -> ToolCopy.GUEST_ALLOWED; Guest.MAPPED -> ToolCopy.GUEST_MAPPED; Guest.REFUSED -> ToolCopy.GUEST_REFUSED }, ToolCopy.SESSION)
+        val guestAllowed = guest == Guest.ALLOWED || guest == Guest.MAPPED
+        emit(FindingKind.SMB_SESSION, when (guest) { Guest.ALLOWED -> ToolCopy.GUEST_ALLOWED; Guest.MAPPED -> ToolCopy.GUEST_MAPPED; else -> ToolCopy.GUEST_REFUSED }, ToolCopy.SESSION)
 
         names?.let { n ->
             n.netbiosComputer?.let { hint("smb.netbiosName=$it") }
@@ -93,11 +108,16 @@ class SmbSessionTool(
             (n.netbiosDomain ?: n.dnsDomain)?.let { hint("smb.domain=$it") }
             n.osBuild?.let { hint("smb.osBuild=$it") }
         }
-        return ToolResult(ToolRunStatus.DONE, ToolCopy.smbSummary(ok.dialect, neg.signingRequired, anonymous.allowed, guest != Guest.REFUSED))
+        return ToolResult(ToolRunStatus.DONE, ToolCopy.smbSummary(ok.dialect, neg.signingRequired, anonymous.allowed, guestAllowed))
     }
 
-    private suspend fun negotiate(conn: SmbTransport): Smb2.NegotiateResponse? =
-        conn.exchange(Smb2.negotiate(0, randomBytes(GUID_BYTES)))?.let(Smb2::parseNegotiate)
+    /** No reply, or a reply that is neither SMB2 nor SMB1, is Lost; an SMB1 reply, a refusal or an unknown dialect is NoDialect. */
+    private suspend fun negotiate(conn: SmbTransport): Negotiated {
+        val raw = conn.exchange(Smb2.negotiate(0, randomBytes(GUID_BYTES))) ?: return Negotiated.Lost
+        val n = Smb2.parseNegotiate(raw) ?: return if (Smb2.isSmb1(raw)) Negotiated.NoDialect else Negotiated.Lost
+        if (n.status != Smb2.STATUS_SUCCESS || n.dialect !in Smb2.DIALECTS) return Negotiated.NoDialect
+        return Negotiated.Ok(n)
+    }
 
     /**
      * MessageId 1: SESSION_SETUP with the NTLM NEGOTIATE (no NEGOTIATE_ANONYMOUS: that flag goes on the anonymous AUTHENTICATE only).
@@ -127,16 +147,20 @@ class SmbSessionTool(
      * With the server's MsvAvTimestamp that timestamp goes in the blob and LM is Z(24) (MS-NLMP 3.1.5.1.2); without it, the local clock and LMv2.
      */
     private suspend fun guestLeg(conn: SmbTransport, neg: Smb2.NegotiateResponse): Guest {
-        val step = challengeStep(conn, neg) as? Step.Challenged ?: return Guest.REFUSED
+        val step = when (val got = challengeStep(conn, neg)) {
+            Step.Lost -> return Guest.LOST
+            Step.Refused -> return Guest.REFUSED
+            is Step.Challenged -> got
+        }
         val challenge = step.challenge
         val ntowf = Ntlm.ntowfv2(GUEST_USER, "", "")
         val clientChallenge = randomBytes(CLIENT_CHALLENGE_BYTES)
-        val serverTime = challenge.names.timestamp
+        val serverTime = challenge.names.timestamp?.takeIf { it.size == FILETIME_BYTES }     // a FILETIME is 8 bytes; anything else is ignored
         val blob = Ntlm.blob(serverTime ?: Ntlm.filetime(clock()), clientChallenge, challenge.targetInfo)
         val lm = if (serverTime != null) ByteArray(LM_RESPONSE_BYTES) else Ntlm.lmV2(ntowf, challenge.serverChallenge, clientChallenge)
         val auth = Ntlm.authenticate(GUEST_USER, "", lm, Ntlm.ntResponseV2(ntowf, challenge.serverChallenge, blob), Ntlm.negotiateFlags(anonymous = false))
-        val reply = conn.exchange(Smb2.sessionSetup(2, step.sessionId, Smb2.creditCharge(neg.dialect), Spnego.negTokenResp(auth)))
-            ?.let(Smb2::parseSessionSetup) ?: return Guest.REFUSED
+        val raw = conn.exchange(Smb2.sessionSetup(2, step.sessionId, Smb2.creditCharge(neg.dialect), Spnego.negTokenResp(auth))) ?: return Guest.LOST
+        val reply = Smb2.parseSessionSetup(raw) ?: return Guest.REFUSED
         if (reply.status != Smb2.STATUS_SUCCESS) return Guest.REFUSED
         return if (reply.sessionFlags and Smb2.SESSION_FLAG_IS_GUEST != 0) Guest.MAPPED else Guest.ALLOWED
     }
@@ -146,7 +170,11 @@ class SmbSessionTool(
         /** Cap on any server-supplied name before it reaches a finding or a hint. */
         const val SMB_MAX_TEXT = 255
         private const val GUID_BYTES = 16; private const val CLIENT_CHALLENGE_BYTES = 8; private const val GUEST_USER = "guest"
-        private const val LM_RESPONSE_BYTES = 24
+        private const val LM_RESPONSE_BYTES = 24; private const val FILETIME_BYTES = 8
+
+        /** The production connection: Probe.connect binds through the context's BoundNetwork (Wi-Fi past a VPN), kept open for the transport. */
+        suspend fun tcpConnect(target: ToolTarget, timeoutMs: Int = SMB_TIMEOUT_MS): SmbTransport? =
+            (Probe.connect(target.ip, target.port, timeoutMs, keepOpen = true) as? Probe.Outcome.Connected)?.socket?.let { TcpSmbTransport(it, timeoutMs) }
 
         /** Control and format characters removed (no newline, escape or bidi override reaches a finding or a hint), capped; blank becomes null. */
         private fun clean(text: String?): String? = text
