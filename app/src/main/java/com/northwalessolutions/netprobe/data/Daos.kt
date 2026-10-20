@@ -45,7 +45,6 @@ import kotlinx.coroutines.flow.Flow
     suspend fun updateIdentityIfNotWeaker(id: Long, v: String?, m: String?, o: String?, t: DeviceType, c: Int, r: List<String>, s: String?): Int
     @Query("UPDATE hosts SET status = :status WHERE id = :id") suspend fun setStatus(id: Long, status: HostStatus)
     @Query("UPDATE hosts SET note = :note WHERE id = :id") suspend fun setNote(id: Long, note: String)
-    @Query("UPDATE hosts SET customName = :name WHERE id = :id") suspend fun setCustomName(id: Long, name: String?)
     @Query("UPDATE hosts SET customName = :name, userType = :type, userVendor = :vendor, userModel = :model WHERE id = :id")
     suspend fun setOverrides(id: Long, name: String?, type: DeviceType?, vendor: String?, model: String?)
     @Query("UPDATE hosts SET lastPortScan = :now WHERE id = :id") suspend fun markScanned(id: Long, now: Long)

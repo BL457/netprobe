@@ -170,7 +170,6 @@ class HostRepository(private val db: NetProbeDb) {
         db.ports().deletePortsForHost(s.host.id); db.hosts().deleteHost(s.host.id)
         db.hosts().insertAll(listOf(s.host)); db.ports().insertAll(s.ports)
     }
-    suspend fun setCustomName(hostId: Long, name: String?) = db.hosts().setCustomName(hostId, name?.trim()?.takeIf { it.isNotEmpty() })
 }
 
 class PortRepository(private val db: NetProbeDb) {

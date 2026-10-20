@@ -49,7 +49,7 @@ class DaoTest {
     @Test fun upsertKeepsAnnotationsAndRefreshesScanData() = runBlocking {
         val hosts = HostRepository(db); val ip = ip("192.168.1.20")
         val id = hosts.upsertDiscovered(1, DiscoveredHost(ip, mdnsName = "Desk", sources = setOf(Source.MDNS)), runId = 1)
-        hosts.setStatus(id, HostStatus.INTERESTING); hosts.setNote(id, "check me"); hosts.setCustomName(id, "My PC")
+        hosts.setStatus(id, HostStatus.INTERESTING); hosts.setNote(id, "check me"); hosts.setOverrides(id, DeviceEdits(name = "My PC"))
         val id2 = hosts.upsertDiscovered(1, DiscoveredHost(ip, mac = "00:11:22:33:44:55", netbiosName = "DESKTOP"), runId = 2)
         assertEquals(id, id2)
         hosts.setIdentity(id, DeviceIdentity("Dell", "XPS", "Windows", DeviceType.UNKNOWN, 80, listOf("reason")))
@@ -104,7 +104,7 @@ class DaoTest {
                 for (i in 1..steps) {
                     written.add("n$i"); hosts.setNote(id, "n$i")
                     hosts.setStatus(id, if (i % 2 == 0) HostStatus.IGNORED else HostStatus.INTERESTING)
-                    hosts.setCustomName(id, "c$i")
+                    hosts.setOverrides(id, DeviceEdits(name = "c$i"))
                 }
             }
             // The scanner overlaps every writer step; a stale whole-row write would re-apply an older note.

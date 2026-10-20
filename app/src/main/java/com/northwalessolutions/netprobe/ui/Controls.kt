@@ -121,13 +121,16 @@ fun PinnedSegmented(labels: List<String>, selected: Int, onSelect: (Int) -> Unit
     }
 }
 
-/** "Back to Home" with a leading chevron, a 48 dp touch row (spec 5.1 item 1, section 6). */
+/** "Back to Home" with a leading chevron, a 48 dp touch row (spec 5.1 item 1, section 6); [trailing] holds Detail's overflow (Phase 3A 4.5). */
 @Composable
-fun BackToHome(onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button, onClick = onBack).padding(horizontal = Dimens.gutter),
-        verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, tint = NetProbeColors.textMuted, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(4.dp))
-        Text("Back to Home", style = NetProbeText.data, color = NetProbeColors.textMuted)
+fun BackToHome(onBack: () -> Unit, trailing: @Composable () -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f).heightIn(min = Dimens.touch).clickable(role = Role.Button, onClick = onBack).padding(horizontal = Dimens.gutter),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, tint = NetProbeColors.textMuted, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Back to Home", style = NetProbeText.data, color = NetProbeColors.textMuted)
+        }
+        trailing()
     }
 }

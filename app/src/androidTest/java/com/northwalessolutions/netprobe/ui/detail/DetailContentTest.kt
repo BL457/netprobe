@@ -14,7 +14,9 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.actions.DeviceAction
+import com.northwalessolutions.netprobe.data.DeviceEdits
 import com.northwalessolutions.netprobe.data.HostStatus
+import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
@@ -28,8 +30,9 @@ import org.junit.runner.RunWith
 class DetailContentTest {
     @get:Rule val rule = createComposeRule()
     private val actions = mutableListOf<DeviceAction>()
+    private val edits = mutableListOf<DeviceEdits>()
     private var scans = 0; private var stops = 0
-    private val recording get() = DetailActions(onAction = { actions += it }, onScan = { scans++ }, onStop = { stops++ })
+    private val recording get() = DetailActions(onAction = { actions += it }, onScan = { scans++ }, onStop = { stops++ }, onEdit = { edits += it })
     private val phone = DeviceConfigurationOverride.ForcedSize(DpSize(412.dp, 820.dp))
     private val longNote = "Line one of the note\nLine two of the note\nLine three of the note\nLine four of the note"
 
@@ -154,5 +157,50 @@ class DetailContentTest {
     @Test fun noSoftwareMeansNoChipRow() {
         show(DetailFakes.state())
         rule.onNodeWithTag("softwareChips").assertDoesNotExist()
+    }
+
+    /** Nothing detected, so every value the test types is an override. */
+    private fun bareHost() = DetailFakes.host().copy(deviceType = DeviceType.UNKNOWN, identVendor = null, identModel = null)
+
+    @Test fun editDeviceFromTheIdentityLineSavesOnlyTheOverrides() {
+        var st by mutableStateOf(DetailFakes.state().copy(host = bareHost()))
+        rule.setContent { NetProbeTheme { DeviceConfigurationOverride(phone) { DetailContent(st, recording) } } }
+        rule.onNodeWithTag("identityLine").assert(hasContentDescription("Edit device, CHNAS")).performClick()
+        rule.onNodeWithText("Edit device").assertIsDisplayed()
+        rule.onNodeWithTag("editType").performClick(); rule.onNodeWithTag("type:NAS").performClick()
+        rule.onNodeWithTag("editVendor").performTextReplacement("Synology")
+        rule.onNodeWithTag("editSave").performClick()
+        assertEquals(listOf(DeviceEdits(type = DeviceType.NAS, vendor = "Synology")), edits)
+        // Reopened with those overrides stored: "Reset to detected" shows on Type and Vendor only.
+        st = st.copy(host = bareHost().copy(userType = DeviceType.NAS, userVendor = "Synology"))
+        rule.onNodeWithTag("detailName").assert(hasContentDescription("Edit device, CHNAS")).performClick()
+        rule.onNodeWithTag("resetType").assertExists(); rule.onNodeWithTag("resetVendor").assertExists()
+        rule.onNodeWithTag("resetName").assertDoesNotExist(); rule.onNodeWithTag("resetModel").assertDoesNotExist()
+        rule.onNodeWithTag("resetType").performClick(); rule.onNodeWithTag("editSave").performClick()
+        assertEquals(DeviceEdits(vendor = "Synology"), edits.last())
+    }
+    @Test fun theOwnPhonesNameFieldStartsWithTheDetectedName() {
+        show(DetailFakes.state().copy(displayName = "This phone"))
+        rule.onNodeWithTag("detailName").performClick()
+        rule.onNodeWithTag("editName").assert(hasText("CHNAS")); rule.onNodeWithTag("editName").assert(!hasText("This phone"))
+        rule.onNodeWithTag("editSave").performClick()
+        assertEquals(DeviceEdits(), edits.single())
+    }
+    @Test fun editButtonsStayVisibleWithTheBodyScrolledAtFontScale20() {
+        show(DetailFakes.state(), fontScale = 2f)
+        rule.onNodeWithTag("detailName").performClick()
+        rule.onNodeWithTag("editBody").performScrollToNode(hasTestTag("editModel"))
+        rule.onNodeWithTag("editSave").assertIsDisplayed(); rule.onNodeWithTag("editCancel").assertIsDisplayed()
+    }
+    @Test fun overflowOffersEditDevice() {
+        show(DetailFakes.state())
+        rule.onNodeWithTag("detailMenu").assert(hasContentDescription("More options")).performClick()
+        rule.onNodeWithText("Edit device").assertIsEnabled().performClick()
+        rule.onNodeWithTag("editSave").assertIsDisplayed()
+    }
+    @Test fun whyThisIdentityStartsWithSetByYou() {
+        show(DetailFakes.state().copy(host = DetailFakes.host().copy(userType = DeviceType.NAS, userModel = "DS220+")))
+        rule.onNodeWithText("Why this identity").performClick()
+        rule.onNodeWithText("Set by you: type NAS, model DS220+").assertIsDisplayed()
     }
 }

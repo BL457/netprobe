@@ -98,7 +98,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     fun setStatus(s: HostStatus) { viewModelScope.launch { c.hosts.setStatus(hostId, s) } }
     /** NonCancellable job: the last save fires as the screen leaves, when viewModelScope is about to be (or already is) cancelled. */
     fun setNote(n: String) { viewModelScope.launch(NonCancellable) { c.hosts.setNote(hostId, n) } }
-    fun setCustomName(n: String?) { viewModelScope.launch { c.hosts.setCustomName(hostId, n) } }
+    fun setOverrides(edits: DeviceEdits) { viewModelScope.launch { c.hosts.setOverrides(hostId, edits) } }
     fun runAction(a: DeviceAction) {
         if (c.actionRunner.run(a)) return
         c.actionRunner.run(DeviceAction.Copy("Copy IP", state.value.host?.ip ?: ""))

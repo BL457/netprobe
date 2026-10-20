@@ -12,9 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.style.TextOverflow
 import com.northwalessolutions.netprobe.actions.DeviceAction
-import com.northwalessolutions.netprobe.data.HostStatus
+import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.EmptyState
@@ -25,7 +24,7 @@ import com.northwalessolutions.netprobe.ui.theme.NetProbeText
 import com.northwalessolutions.netprobe.ui.vulns.VulnSheet
 
 data class DetailActions(
-    val onBack: () -> Unit = {}, val onRename: (String?) -> Unit = {}, val onStatus: (HostStatus) -> Unit = {}, val onNote: (String) -> Unit = {},
+    val onBack: () -> Unit = {}, val onEdit: (DeviceEdits) -> Unit = {}, val onStatus: (HostStatus) -> Unit = {}, val onNote: (String) -> Unit = {},
     val onProfile: (ScanProfile) -> Unit = {}, val onCustom: (String) -> Unit = {}, val onScan: () -> Unit = {}, val onStop: () -> Unit = {},
     val onAction: (DeviceAction) -> Unit = {}, val onPortVulns: (Int) -> Unit = {}, val onDeviceVulns: () -> Unit = {}, val onCloseVulns: () -> Unit = {},
     val onRerunVulns: (String) -> Unit = {}, val onOpenLink: (String) -> Unit = {}, val onDismissMessage: () -> Unit = {},
@@ -37,6 +36,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
     var why by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf(false) }
     var sheetPort by rememberSaveable { mutableStateOf<Int?>(null) }
     val ip = state.host?.ip.orEmpty()
     val focusManager = LocalFocusManager.current
@@ -44,13 +44,11 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     // on the list counted the navigation bar twice and left a 48 dp gap above the keyboard on the Pixel.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("detailHeader")) {
-            BackToHome(actions.onBack)
+            BackToHome(actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }) }
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
-                    EditableName(state.displayName, h.customName, actions.onRename)
-                    identityWithType(IdentityLine.of(h), h.deviceType)?.let {
-                        Text(it, style = NetProbeText.secondary, color = NetProbeColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
+                    DetailName(state.displayName) { editing = true }
+                    identityWithType(IdentityLine.of(h), Effective.type(h))?.let { IdentityText(it, state.displayName) { editing = true } }
                     Text(listOfNotNull(h.ip, h.mac).joinToString("  "), style = NetProbeText.data, color = NetProbeColors.textMuted)
                     SoftwareChips(softwareLabels(h))
                     DetailLinks(onWhy = { why = true }, onVulns = actions.onDeviceVulns)
@@ -70,6 +68,9 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
         }
     }
     if (why) state.host?.let { ReasonsSheet(it) { why = false } }
+    if (editing) state.host?.let { h ->
+        EditDeviceDialog(EditDraft.initial(h), Detected.of(h), onSave = { actions.onEdit(it); editing = false }, onCancel = { editing = false })
+    }
     sheetPort?.let { port ->
         state.ports.firstOrNull { it.port == port }?.let { p ->
             PortSheet(ip, p, onAction = actions.onAction, onVulns = { actions.onPortVulns(p.port) }, onClose = { sheetPort = null })

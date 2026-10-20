@@ -33,7 +33,7 @@ data class Detected(val name: String, val type: DeviceType, val vendor: String?,
 data class EditDraft(val name: String, val type: DeviceType?, val vendor: String, val model: String) {
     companion object {
         fun initial(h: HostEntity): EditDraft = EditDraft(
-            name = h.customName ?: Detected.of(h).name,
+            name = h.customName?.takeIf { it.isNotBlank() } ?: Detected.of(h).name,
             type = Effective.type(h).takeIf { it != DeviceType.UNKNOWN },
             vendor = Effective.vendor(h).orEmpty(),
             model = Effective.model(h).orEmpty(),

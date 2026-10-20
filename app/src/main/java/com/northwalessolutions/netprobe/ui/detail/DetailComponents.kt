@@ -9,6 +9,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -54,34 +56,34 @@ private val SHEET_SHAPE = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
 private val STATUSES = listOf(HostStatus.UNMARKED, HostStatus.INTERESTING, HostStatus.INVESTIGATED, HostStatus.IGNORED)
 private val PROFILES = listOf<ScanProfile>(ScanProfile.Quick, ScanProfile.Full, ScanProfile.Custom(emptyList()))
 
-/** Title; a tap opens the rename dialog (Save, Reset, Cancel), unchanged rules. */
+/** Title; a tap opens Edit device (spec 4.3, replaces the rename dialog). */
 @Composable
-fun EditableName(name: String, customName: String?, onRename: (String?) -> Unit) {
-    var editing by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button) { editing = true }
-        .semantics { contentDescription = "Rename, $name" }, contentAlignment = Alignment.CenterStart) {
+fun DetailName(name: String, onEdit: () -> Unit) {
+    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button, onClick = onEdit)
+        .semantics { contentDescription = DetailCopy.editDescription(name) }.testTag("detailName"), contentAlignment = Alignment.CenterStart) {
         Text(name, style = NetProbeText.title, color = NetProbeColors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
-    if (editing) {
-        var text by remember { mutableStateOf(customName ?: name) }
-        AlertDialog(
-            onDismissRequest = { editing = false }, containerColor = NetProbeColors.surface,
-            title = { Text("Rename device", style = NetProbeText.rowName, color = NetProbeColors.text) },
-            text = { OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Name") }, colors = npFieldColors(), shape = RoundedCornerShape(BOX_RADIUS)) },
-            confirmButton = {
-                TextButton({
-                    // Blank, or the discovered name left unchanged, is not a custom name: store null so "Reset" only appears for real renames.
-                    val t = text.trim()
-                    onRename(if (t.isEmpty() || (customName == null && t == name)) null else t); editing = false
-                }) { Text("Save", color = NetProbeColors.signal) }
-            },
-            dismissButton = {
-                Row {
-                    if (customName != null) TextButton({ onRename(null); editing = false }) { Text("Reset", color = NetProbeColors.signal) }
-                    TextButton({ editing = false }) { Text("Cancel", color = NetProbeColors.textSecondary) }
-                }
-            },
-        )
+}
+
+/** The identity line; a tap opens Edit device too (spec 4.3). */
+@Composable
+fun IdentityText(text: String, name: String, onEdit: () -> Unit) {
+    Text(text, style = NetProbeText.secondary, color = NetProbeColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.clickable(role = Role.Button, onClick = onEdit).semantics { contentDescription = DetailCopy.editDescription(name) }.testTag("identityLine"))
+}
+
+/** Overflow on the "Back to Home" row (spec 4.5): "Edit device" and, from Task 14, "Remove device"; both always enabled. */
+@Composable
+fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null) {
+    Box {
+        var open by remember { mutableStateOf(false) }
+        IconButton(onClick = { open = true }, modifier = Modifier.testTag("detailMenu")) {
+            Icon(Icons.Default.MoreVert, DetailCopy.MORE_OPTIONS, tint = NetProbeColors.textSecondary)
+        }
+        DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
+            DropdownMenuItem(text = { Text(DetailCopy.EDIT_DEVICE) }, onClick = { open = false; onEdit() })
+            onRemove?.let { remove -> DropdownMenuItem(text = { Text(DetailCopy.REMOVE_DEVICE) }, onClick = { open = false; remove() }) }
+        }
     }
 }
 
@@ -233,6 +235,7 @@ fun ReasonsSheet(h: HostEntity, onClose: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onClose, containerColor = NetProbeColors.surface, shape = SHEET_SHAPE) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Why this identity", style = NetProbeText.rowName, color = NetProbeColors.text)
+            setByYouLine(h)?.let { Text(it, style = NetProbeText.secondary, color = NetProbeColors.text) }
             h.identReasons.forEach { Text(it, style = NetProbeText.secondary, color = NetProbeColors.textSecondary) }
             if (found.isNotEmpty()) Text("Found as: ${found.joinToString(", ")}", style = NetProbeText.data, color = NetProbeColors.textMuted)
         }
