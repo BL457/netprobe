@@ -30,7 +30,7 @@ class ToolCopyTableTest {
         "Network changed, run stopped", "Tool skipped: could not bind to Wi-Fi", "Failed: .+", "Interrupted, \\d+ found",
         "Stopped after \\d+ of \\d+, \\d+ found", "Stopped after \\d+ steps?, \\d+ found",
         "\\d+ found in \\d+ paths?(, \\d+ errors?)?", "Stopped at 500 findings", "Stopped: the server answers every path alike",
-        "The server did not answer the first request", "The server stopped answering after \\d+ paths?",
+        "The server did not answer the first request", "Wordlist not found", "Wordlist not found, common-short used, .+", "The server stopped answering after \\d+ paths?",
         ".+, \\d+ findings?", "No HTTP response on this port", ".+, expires .+(, self-signed)?", "No TLS handshake on this port",
         "SMB [0-9.]+, signing (required|not required), anonymous (allowed|refused), guest (allowed|refused)",
         "No SMB2 dialect in common", "No SMB response on this port", ".+, \\d+ interfaces?", "No SNMP answer to public",
@@ -84,6 +84,7 @@ class ToolCopyTableTest {
         assertEquals("12 done, 3 found  2 s", ToolCopy.progress(12, null, 3, 0, 2))
         assertEquals("Last run 2 hours ago: Directory brute-force on 5000, 7 found in 4614 paths",
             ToolCopy.rowHistory("2 hours ago", ToolCopy.DIR_BRUTEFORCE, "5000", ToolCopy.bruteDone(7, 4614, 0)))
+        assertEquals("Wordlist not found, common-short used, 7 found in 312 paths", ToolCopy.bruteFallback(ToolCopy.bruteDone(7, 312, 0)))
         assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest refused", ToolCopy.smbSummary("SMB 3.0.2", true, true, false))
         assertEquals("200  1.2 KB", ToolCopy.pathDetail(200, ToolCopy.size(1229, false), null))
         assertEquals("301  0 B  to /admin/", ToolCopy.pathDetail(301, ToolCopy.size(0, false), "/admin/"))
@@ -109,7 +110,8 @@ class ToolCopyTableTest {
         ToolRunStatus.entries.forEach { add(ToolCopy.statusLabel(it)) }
         for (t in listOf<Int?>(null, 4614)) for (d in listOf(1, 12)) add(ToolCopy.stopped(d, t, 7))
         for (e in listOf(0, 1, 3)) for (p in listOf(1, 4614)) add(ToolCopy.bruteDone(7, p, e))
-        addAll(listOf(ToolCopy.BRUTE_CAP, ToolCopy.BRUTE_RUNAWAY, ToolCopy.BRUTE_NO_ANSWER, ToolCopy.bruteStoppedAnswering(1), ToolCopy.bruteStoppedAnswering(51)))
+        addAll(listOf(ToolCopy.BRUTE_CAP, ToolCopy.BRUTE_RUNAWAY, ToolCopy.BRUTE_NO_ANSWER, ToolCopy.bruteStoppedAnswering(1), ToolCopy.bruteStoppedAnswering(51),
+            ToolCopy.BRUTE_NO_WORDLIST, ToolCopy.failed(ToolCopy.BRUTE_NO_WORDLIST), ToolCopy.bruteFallback(ToolCopy.bruteDone(7, 312, 0))))
         for (n in listOf(1, 6)) { add(ToolCopy.fingerprintSummary("Pi-hole", n)); add(ToolCopy.fingerprintSummary(null, n)) }
         addAll(listOf(ToolCopy.FINGERPRINT_NO_RESPONSE, ToolCopy.tlsSummary("unifi.local", date, false), ToolCopy.tlsSummary("unifi.local", date, true), ToolCopy.TLS_NO_HANDSHAKE))
         for (a in listOf(true, false)) for (b in listOf(true, false)) for (c in listOf(true, false)) add(ToolCopy.smbSummary("SMB 2.1", a, b, c))

@@ -76,6 +76,10 @@ object ToolCopy {
     const val BRUTE_CAP = "Stopped at 500 findings"
     const val BRUTE_RUNAWAY = "Stopped: the server answers every path alike"
     const val BRUTE_NO_ANSWER = "The server did not answer the first request"
+    /** The reason inside failed(...) when no wordlist resolves at all, not even common-short (spec 5.1). */
+    const val BRUTE_NO_WORDLIST = "Wordlist not found"
+    /** A run whose chosen list was deleted ran common-short instead; [summary] is the run's own summary. */
+    fun bruteFallback(summary: String) = "Wordlist not found, common-short used, $summary"
     fun bruteDone(found: Int, paths: Int, errors: Int) = "$found found in ${paths(paths)}${if (errors > 0) ", ${if (errors == 1) "1 error" else "$errors errors"}" else ""}"
     fun bruteStoppedAnswering(paths: Int) = "The server stopped answering after ${paths(paths)}"
 

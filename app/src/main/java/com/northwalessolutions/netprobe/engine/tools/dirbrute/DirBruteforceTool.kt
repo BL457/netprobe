@@ -36,7 +36,8 @@ class DirBruteforceTool(
     override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(ToolId.DIR_BRUTEFORCE, port, service)
 
     private data class Item(val path: String, val group: String)
-    private sealed interface Outcome { data class Hit(val r: HttpResponse) : Outcome; object Miss : Outcome; data class Failure(val f: HttpFailure) : Outcome }
+    /** [Failure.headPassed]: the HEAD already answered, so a retry re-sends only the GET (and a 405 never counts twice). */
+    private sealed interface Outcome { data class Hit(val r: HttpResponse) : Outcome; object Miss : Outcome; data class Failure(val f: HttpFailure, val headPassed: Boolean) : Outcome }
 
     /** Shared run state; every field is touched by the workers, so all are atomic or guarded. */
     private class State(getOnly: Boolean) {
@@ -54,7 +55,16 @@ class DirBruteforceTool(
 
     override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
         val o = ((options as? ToolOptions.DirBrute)?.options ?: DirBruteOptions()).coerced()
-        val list = resolve(o.wordlistId) ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolCopy.WORDLIST_FALLBACK))
+        val list = resolve(o.wordlistId) ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolCopy.BRUTE_NO_WORDLIST))
+        val fellBack = list.id != o.wordlistId
+        if (fellBack) {                                          // the chosen list is gone: optionsJson records what actually ran
+            progress.option(WORDLIST_ID, list.id); progress.option(WORDLIST_NAME, list.name); progress.option(WORDLIST_ENTRIES, list.count.toString())
+        }
+        val result = runList(list, o, target, control, progress)
+        return if (fellBack) result.copy(summary = ToolCopy.bruteFallback(result.summary)) else result
+    }
+
+    private suspend fun runList(list: LoadedWordlist, o: DirBruteOptions, target: ToolTarget, control: RunControl, progress: ToolProgress): ToolResult {
         val timeoutMs = o.timeoutS * MS_PER_S
         val exchange = exchangeFor(target, timeoutMs)
         val total = list.count * (1 + o.extensions.size)
@@ -115,17 +125,19 @@ class DirBruteforceTool(
 
     /**
      * One path to a counted outcome: excused failures retry after the resume; Timeout and Reset retry once after RETRY_DELAY_MS.
+     * A retry re-sends only the step that failed: once the HEAD has answered, only the GET goes again.
      * The gate is not taken here: [attempt] takes it before every request, so a HEAD then GET costs two rate tokens (plan review G3).
      * The epoch is read before the first gate, so a pause that starts while this path waits at the gate also excuses its failure:
      * at worst one uncounted extra try, never a counted error the Director caused.
      */
     private suspend fun attemptCounted(path: String, exchange: Exchange, control: RunControl, limiter: AdaptiveLimiter, reportSet: Set<Int>, state: State): Outcome {
-        var retried = false
+        var retried = false; var headPassed = false
         while (true) {
             val epoch = control.pauseEpoch
             limiter.acquire()
-            val outcome = try { attempt(path, exchange, control, reportSet, state) } finally { limiter.release() }
+            val outcome = try { attempt(path, exchange, control, reportSet, state, headPassed) } finally { limiter.release() }
             if (outcome !is Outcome.Failure) { limiter.onSuccess(); return outcome }
+            headPassed = outcome.headPassed
             if (control.excused(epoch)) continue                         // spec 4.8: not counted, no limiter change, run again after the resume
             val transient = outcome.f == HttpFailure.Timeout || outcome.f == HttpFailure.Reset
             if (!transient) return outcome                               // Refused and Malformed: no retry
@@ -137,11 +149,11 @@ class DirBruteforceTool(
     }
 
     /** HEAD then GET, or GET only; [RunControl.gate] (pause, then one rate token) runs before each request it sends. */
-    private suspend fun attempt(path: String, exchange: Exchange, control: RunControl, reportSet: Set<Int>, state: State): Outcome {
-        if (!state.getOnly) {
+    private suspend fun attempt(path: String, exchange: Exchange, control: RunControl, reportSet: Set<Int>, state: State, headPassed: Boolean): Outcome {
+        if (!headPassed && !state.getOnly) {
             control.gate()
             when (val head = exchange.request("HEAD", path)) {
-                is HttpResult.Failed -> return Outcome.Failure(head.failure)
+                is HttpResult.Failed -> return Outcome.Failure(head.failure, headPassed = false)
                 is HttpResult.Ok -> {
                     val s = head.response.status
                     if (s == 405 || s == 501) { if (state.headFallbacks.incrementAndGet() >= HEAD_FALLBACK_SWITCH) state.getOnly = true }
@@ -151,7 +163,7 @@ class DirBruteforceTool(
         }
         control.gate()
         return when (val get = exchange.request("GET", path)) {
-            is HttpResult.Failed -> Outcome.Failure(get.failure)
+            is HttpResult.Failed -> Outcome.Failure(get.failure, headPassed = true)
             is HttpResult.Ok -> if (get.response.status in reportSet) Outcome.Hit(get.response) else Outcome.Miss
         }
     }
@@ -177,6 +189,7 @@ class DirBruteforceTool(
         const val MAX_FINDINGS = 500; const val MAX_CONSECUTIVE_FAILURES = 50; const val HEAD_FALLBACK_SWITCH = 3
         const val RETRY_DELAY_MS = 250L; const val RUNAWAY_AFTER = 200; const val RUNAWAY_MIN_ALIKE = 50; const val RUNAWAY_BAND = 64L
         private const val CHANNEL_CAPACITY = 16; private const val MS_PER_S = 1000; private const val METHOD_USED = "methodUsed"
+        private const val WORDLIST_ID = "wordlistId"; private const val WORDLIST_NAME = "wordlistName"; private const val WORDLIST_ENTRIES = "wordlistEntries"
 
         /** spec 5.4.3: true when more than RUNAWAY_MIN_ALIKE findings share one status and their sizes lie within RUNAWAY_BAND bytes. */
         fun runaway(samples: List<Pair<Int, Long?>>): Boolean {

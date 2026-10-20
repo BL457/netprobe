@@ -30,7 +30,8 @@ class AdaptiveLimiter(private val c: Int, private val now: () -> Long = System::
             throw ce
         }
     }
-    suspend fun release() { mutex.withLock { active--; admit() } }
+    /** NonCancellable, as in [acquire]: a cancelled worker always hands its permit back, even when the lock is contended. */
+    suspend fun release() { withContext(NonCancellable) { mutex.withLock { active--; admit() } } }
     suspend fun onSuccess() {
         mutex.withLock {
             consecutive++

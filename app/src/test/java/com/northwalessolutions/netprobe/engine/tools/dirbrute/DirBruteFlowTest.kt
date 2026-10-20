@@ -150,4 +150,42 @@ class DirBruteFlowTest {
         val r = t.run(target(), options(DirBruteOptions(baseline = false, concurrency = 8)), TestControl(), p)
         assertEquals(ToolRunStatus.DONE, r.status); assertEquals(0, p.lastErrors); assertEquals(40, p.lastDone)
     }
+    @Test fun `a get timeout retries the get alone, never re-sending the head`() = runTest {
+        val sent = mutableListOf<String>(); var getFailed = false
+        val ex = Exchange { method, path ->
+            sent += "$method $path"
+            if (method == "GET" && !getFailed) { getFailed = true; HttpResult.Failed(HttpFailure.Timeout) } else resp(200, "x")
+        }
+        val p = CollectingProgress()
+        tool(ex, listOf("a")).run(target(), options(off), TestControl(), p)
+        assertEquals(listOf("HEAD /a", "GET /a", "GET /a"), sent); assertEquals(listOf("/a"), p.paths()); assertEquals(0, p.lastErrors)
+    }
+    @Test fun `a head 405 counts once toward the switch even when its get is retried`() = runTest {
+        // Every GET times out once, then answers 404. Each path's 405 must count once, so the switch comes after /p3, not /p2.
+        val heads = mutableListOf<String>(); val failedOnce = mutableSetOf<String>()
+        val ex = Exchange { method, path ->
+            if (method == "HEAD") { heads += path; resp(405) }
+            else if (failedOnce.add(path)) HttpResult.Failed(HttpFailure.Timeout) else resp(404)
+        }
+        tool(ex, (1..5).map { "p$it" }).run(target(), options(off), TestControl(), CollectingProgress())
+        assertEquals(listOf("/p1", "/p2", "/p3"), heads)
+    }
+    @Test fun `a deleted list falls back to common-short and records what ran`() = runTest {
+        val t = DirBruteforceTool({ _, _ -> Exchange { _, _ -> resp(404) } },
+            { LoadedWordlist("builtin:common-short", "common-short", 2) { c -> c("a"); c("b") } }, { "abcdef012345" }, { 0L })
+        val p = CollectingProgress()
+        val r = t.run(target(), options(off.copy(wordlistId = "user:gone")), TestControl(), p)
+        assertEquals(ToolRunStatus.DONE, r.status); assertEquals("Wordlist not found, common-short used, 0 found in 2 paths", r.summary)
+        assertEquals(mapOf("wordlistId" to "builtin:common-short", "wordlistName" to "common-short", "wordlistEntries" to "2"), p.options)
+    }
+    @Test fun `the chosen list records nothing extra`() = runTest {
+        val p = CollectingProgress()
+        val r = tool(Exchange { _, _ -> resp(404) }, listOf("a")).run(target(), options(off), TestControl(), p)
+        assertEquals("0 found in 1 path", r.summary); assertTrue(p.options.isEmpty())
+    }
+    @Test fun `no list at all fails with its own text`() = runTest {
+        val t = DirBruteforceTool({ _, _ -> Exchange { _, _ -> resp(404) } }, { null }, { "abcdef012345" }, { 0L })
+        val r = t.run(target(), options(off), TestControl(), CollectingProgress())
+        assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("Failed: Wordlist not found", r.summary)
+    }
 }

@@ -7,7 +7,8 @@ data class Calibration(val baselines: Map<String, Baseline>, val forceGetOnly: B
 
 /**
  * spec 5.4.1: groups "" (bare) and one per extension; per group, GET 5 random paths; HEAD / and GET /, and HEAD the first bare random
- * path. A HEAD/GET status disagreement forces GET_ONLY. A failed sample is retried once. No response at all is a failed calibration.
+ * path. A HEAD/GET status disagreement forces GET_ONLY. A failed sample is retried once. No response at all is a failed calibration,
+ * and when HEAD / and GET / both fail after their retries the host is taken as dead at once: at most 4 timeouts (ruling R9).
  */
 object Calibrator {
     const val SAMPLES_PER_GROUP = 5
@@ -22,9 +23,9 @@ object Calibrator {
     }
 
     suspend fun calibrate(groups: List<String>, exchange: Exchange, control: RunControl, random: () -> String): Calibration {
-        var anyResponse = false; var forceGetOnly = false
+        var forceGetOnly = false
         val headRoot = request(exchange, control, "HEAD", "/"); val getRoot = request(exchange, control, "GET", "/")
-        if (headRoot is HttpResult.Ok || getRoot is HttpResult.Ok) anyResponse = true
+        if (headRoot !is HttpResult.Ok && getRoot !is HttpResult.Ok) return Calibration(emptyMap(), forceGetOnly = false, anyResponse = false)
         if (headRoot is HttpResult.Ok && getRoot is HttpResult.Ok && headRoot.response.status != getRoot.response.status) forceGetOnly = true
         val baselines = HashMap<String, Baseline>()
         for (group in groups) {
@@ -37,13 +38,12 @@ object Calibrator {
                     if (head is HttpResult.Ok && r is HttpResult.Ok && head.response.status != r.response.status) forceGetOnly = true
                 }
                 if (r !is HttpResult.Ok) continue
-                anyResponse = true
                 val status = r.response.status
                 sizes.getOrPut(status) { mutableListOf() } += NotFoundFilter.normalisedSize(r.response, path)
                 if (status in 300..399) NotFoundFilter.normaliseLocation(r.response.header("Location"), path)?.let { locations.getOrPut(status) { mutableSetOf() } += it }
             }
             if (sizes.isNotEmpty()) baselines[group] = Baseline(sizes.mapValues { NotFoundFilter.bandOf(it.value) }, locations.mapValues { it.value.toSet() })
         }
-        return Calibration(baselines, forceGetOnly, anyResponse)
+        return Calibration(baselines, forceGetOnly, anyResponse = true)   // the root answered
     }
 }
