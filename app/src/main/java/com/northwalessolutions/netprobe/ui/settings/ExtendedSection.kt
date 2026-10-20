@@ -1,6 +1,8 @@
 package com.northwalessolutions.netprobe.ui.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -13,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -98,19 +101,24 @@ private fun ManualEditor(networkName: String?, manual: List<Subnet>, local: Subn
         val result = if (text.isBlank()) null else CidrParser.parse(text, local)
         val error = result?.error
         val helper = (result?.entries?.mapNotNull { it.note }.orEmpty() + notes).joinToString("\n").ifEmpty { null }
+        val messageInView = remember { BringIntoViewRequester() }
+        val imeUp = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+        // The scroll column does not follow supporting text on its own, so pull the message above the keyboard when it appears or the keyboard opens.
+        LaunchedEffect(error ?: helper, imeUp) { if ((error ?: helper) != null) messageInView.bringIntoView() }
         OutlinedTextField(text, { text = it; notes = emptyList() }, Modifier.fillMaxWidth().testTag("addRange"), enabled = enabled,
             label = { Text(ExtendedCopy.ADD) }, placeholder = { Text("10.0.4.0/24") }, isError = error != null, textStyle = NetProbeText.data,
             supportingText = when {
-                error != null -> { { Text(error, color = NetProbeColors.error) } }
-                helper != null -> { { Text(helper, color = NetProbeColors.textMuted) } }
+                error != null -> { { Text(error, color = NetProbeColors.error, modifier = Modifier.bringIntoViewRequester(messageInView)) } }
+                helper != null -> { { Text(helper, color = NetProbeColors.textMuted, modifier = Modifier.bringIntoViewRequester(messageInView)) } }
                 else -> null
             },
             colors = npFieldColors(), shape = RoundedCornerShape(8.dp))
+        val canAdd = enabled && result != null && error == null && result.entries.isNotEmpty()
         TextButton(onClick = {
             val (merged, dupNotes) = CidrParser.merge(manual, result?.subnets.orEmpty())
             onChange(merged); notes = dupNotes; text = ""
-        }, enabled = enabled && result != null && error == null && result.entries.isNotEmpty(), modifier = Modifier.heightIn(min = Dimens.touch).testTag("addRangeButton")) {
-            Text(ExtendedCopy.ADD, style = NetProbeText.action, color = if (enabled) NetProbeColors.signal else NetProbeColors.border)
+        }, enabled = canAdd, modifier = Modifier.heightIn(min = Dimens.touch).testTag("addRangeButton")) {
+            Text(ExtendedCopy.ADD, style = NetProbeText.action, color = if (canAdd) NetProbeColors.signal else NetProbeColors.border)
         }
     }
 }
