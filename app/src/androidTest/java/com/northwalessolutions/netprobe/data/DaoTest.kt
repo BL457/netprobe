@@ -242,6 +242,7 @@ class DaoTest {
         val hosts = HostRepository(db); val ports = PortRepository(db)
         val id = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.71"), mdnsName = "NAS"), 1L)
         hosts.setStatus(id, HostStatus.INTERESTING); hosts.setNote(id, "keep me"); ports.upsertOpen(id, 22, ServiceInfo("SSH", confidence = Confidence.CONFIRMED))
+        hosts.setOverrides(id, DeviceEdits("DiskStation", DeviceType.NAS, "Synology", "DS220+"))
         val snap = hosts.snapshot(id)!!; hosts.delete(snap)
         val stray = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.71")), 2L)        // a radar emission re-inserted the IP under a new id
         ports.upsertOpen(stray, 80, ServiceInfo("HTTP", confidence = Confidence.PORT_TABLE))
@@ -249,6 +250,8 @@ class DaoTest {
         hosts.restore(snap)
         assertEquals(snap, hosts.snapshot(id)); assertNull(hosts.byIdOnce(stray)); assertEquals(emptyMap<Int, ServiceInfo>(), ports.servicesFor(stray))
         assertEquals("keep me", hosts.byIdOnce(id)!!.note); assertEquals(HostStatus.INTERESTING, hosts.byIdOnce(id)!!.status)
+        val back = hosts.byIdOnce(id)!!
+        assertEquals("DiskStation", back.customName); assertEquals(DeviceType.NAS, back.userType); assertEquals("Synology", back.userVendor); assertEquals("DS220+", back.userModel)
     }
     @Test fun purgeForgottenRemovesRowsLeftByAKilledProcess() = runBlocking {
         val repo = NetworkRepository(db); val hosts = HostRepository(db)
@@ -264,11 +267,13 @@ class DaoTest {
         val id = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.70"), mdnsName = "Printer"), 1L)
         hosts.setStatus(id, HostStatus.INVESTIGATED); hosts.setNote(id, "toner low")
         ports.upsertOpen(id, 631, ServiceInfo("IPP", confidence = Confidence.CONFIRMED))
+        hosts.setOverrides(id, DeviceEdits("DiskStation", DeviceType.NAS, "Synology", "DS220+"))
         val snap = hosts.snapshot(id)!!
         hosts.delete(snap)
         assertNull(hosts.byIdOnce(id)); assertEquals(0, count("ports"))
         hosts.restore(snap)
         assertEquals(snap, hosts.snapshot(id))
+        assertEquals("DiskStation", hosts.byIdOnce(id)!!.customName); assertEquals(DeviceType.NAS, hosts.byIdOnce(id)!!.userType)
     }
 
     private companion object { const val GW_MAC = "e0:63:da:26:f1:37" }
