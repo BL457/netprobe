@@ -57,4 +57,20 @@ class UdpSnmpExchangeTest {
     @Test fun `two lost datagrams are a timeout`() = runBlocking {
         assertEquals(SnmpStep.Timeout, UdpSnmpExchange(lo, agent(drop = 2), timeoutMs = 200).getNext(listOf("1.3.6.1.2.1.1.5")))
     }
+    @Test fun `a correct id reply from another source port is ignored`() = runBlocking {
+        val s = DatagramSocket(0, lo); val spoof = DatagramSocket(0, lo); agents += s; agents += spoof
+        val sent = java.util.concurrent.atomic.AtomicInteger()
+        thread(isDaemon = true) {
+            runCatching {
+                while (true) {
+                    val buf = ByteArray(1500); val p = DatagramPacket(buf, buf.size); s.receive(p)
+                    val (id, oid) = request(buf.copyOf(p.length))
+                    val reply = response(id, "$oid.0", "spoofed")
+                    spoof.send(DatagramPacket(reply, reply.size, p.address, p.port)); sent.incrementAndGet()   // right id, wrong source port
+                }
+            }
+        }
+        assertEquals(SnmpStep.Timeout, UdpSnmpExchange(lo, s.localPort, timeoutMs = 200).getNext(listOf("1.3.6.1.2.1.1.5")))
+        assertEquals(2, sent.get())
+    }
 }

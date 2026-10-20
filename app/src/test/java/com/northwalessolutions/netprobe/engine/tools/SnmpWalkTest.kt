@@ -123,4 +123,54 @@ class SnmpWalkTest {
         assertEquals(SnmpWalkTool.SNMP_MAX_INTERFACES, p.of(FindingKind.SNMP_INTERFACE).size)
         assertEquals("gw, ${SnmpWalkTool.SNMP_MAX_INTERFACES} interfaces", r.summary)
     }
+
+    // Fix round 1.
+    @Test fun `a stuck ifDescr column ends the table walk`() = runTest {
+        var requests = 0; val agent = SnmpTestAgent.exchange(system + interfaces + addresses)
+        val ex = object : SnmpExchange {   // the ifDescr column answers its first row again and again
+            override suspend fun getNext(oids: List<String>): SnmpStep {
+                requests++
+                return SnmpStep.Ok(oids.map { q ->
+                    if (q.startsWith("1.3.6.1.2.1.2.2.1.2")) str("1.3.6.1.2.1.2.2.1.2.1", "eth0")
+                    else (agent.getNext(listOf(q)) as SnmpStep.Ok).varbinds.single()
+                })
+            }
+            override suspend fun get(oids: List<String>): SnmpStep { requests++; return agent.get(oids) }
+        }
+        val (r, p) = run(ex)
+        assertEquals(listOf("eth0"), p.of(FindingKind.SNMP_INTERFACE).map { it.value }); assertEquals("gw, 1 interface", r.summary)
+        assertTrue("requests $requests", requests < 20)
+        assertEquals(2, p.of(FindingKind.SNMP_ADDRESS).size)
+    }
+    @Test fun `an excused retry counts against the request cap`() = runTest {
+        val c = ToolTestSupport.EpochControl(); var requests = 0
+        val ex = object : SnmpExchange {   // never leaves the system subtree; the 400th request is lost to a pause
+            override suspend fun getNext(oids: List<String>): SnmpStep {
+                requests++
+                if (requests == SnmpWalkTool.SNMP_MAX_REQUESTS) { c.epoch++; return SnmpStep.Timeout }
+                return SnmpStep.Ok(oids.map { str("1.3.6.1.2.1.1.9.$requests", "x") })
+            }
+            override suspend fun get(oids: List<String>): SnmpStep { requests++; return SnmpStep.Ok(oids.map { end(it) }) }
+        }
+        SnmpWalkTool { ex }.run(target, ToolOptions.None, c, CollectingProgress())
+        assertEquals(SnmpWalkTool.SNMP_MAX_REQUESTS, requests)
+    }
+    @Test fun `a silent ifHighSpeed costs one request, not one per interface`() = runTest {
+        val saturated = (1..3).flatMap { listOf(str("1.3.6.1.2.1.2.2.1.2.$it", "eth$it"), num("1.3.6.1.2.1.2.2.1.5.$it", 4294967295L, 0x42)) }
+        val agent = SnmpTestAgent.exchange(system + saturated); var gets = 0
+        val ex = object : SnmpExchange {
+            override suspend fun getNext(oids: List<String>) = agent.getNext(oids)
+            override suspend fun get(oids: List<String>): SnmpStep { gets++; return SnmpStep.Timeout }
+        }
+        val (r, p) = run(ex)
+        assertEquals(1, gets); assertEquals("gw, 3 interfaces", r.summary)
+        assertEquals(listOf("4294 Mbit/s", "4294 Mbit/s", "4294 Mbit/s"), p.of(FindingKind.SNMP_INTERFACE).map { it.detail })
+    }
+    @Test fun `a hostile ifHighSpeed never overflows the speed`() = runTest {
+        val rows = listOf(str("1.3.6.1.2.1.2.2.1.2.1", "a"), num("1.3.6.1.2.1.2.2.1.5.1", 4294967295L, 0x42), num("1.3.6.1.2.1.31.1.1.1.15.1", Long.MAX_VALUE / 1000, 0x42),
+            str("1.3.6.1.2.1.2.2.1.2.2", "b"), num("1.3.6.1.2.1.2.2.1.5.2", 4294967295L, 0x42), num("1.3.6.1.2.1.31.1.1.1.15.2", 4294967295L, 0x42),
+            str("1.3.6.1.2.1.2.2.1.2.3", "c"), num("1.3.6.1.2.1.2.2.1.5.3", 4294967295L, 0x42), num("1.3.6.1.2.1.31.1.1.1.15.3", -5, 0x02))
+        val (_, p) = run(SnmpTestAgent.exchange(system + rows))
+        assertEquals(listOf("a" to "4294 Mbit/s", "b" to "4294967295 Mbit/s", "c" to "4294 Mbit/s"), p.of(FindingKind.SNMP_INTERFACE).map { it.value to it.detail })
+    }
 }

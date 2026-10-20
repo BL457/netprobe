@@ -28,7 +28,8 @@ class SnmpWalkTool(private val exchangeFor: (ToolTarget) -> SnmpExchange) : Tool
             if (requests >= SNMP_MAX_REQUESTS) return null
             control.gate()
             val step = control.excusedOnce<SnmpStep>({ it !is SnmpStep.Ok }) {                // spec 4.8 (plan review G5)
-                requests++; if (get) ex.get(oids) else ex.getNext(oids)
+                // Re-checked here so the excused retry counts against the cap too: a run never sends more than SNMP_MAX_REQUESTS.
+                if (requests >= SNMP_MAX_REQUESTS) SnmpStep.Timeout else { requests++; if (get) ex.get(oids) else ex.getNext(oids) }
             }
             done++; progress.update(done, null, found)
             return (step as? SnmpStep.Ok)?.varbinds
@@ -61,11 +62,15 @@ class SnmpWalkTool(private val exchangeFor: (ToolTarget) -> SnmpExchange) : Tool
         // 2. Interfaces, lockstep over five columns, rows keyed by index suffix.
         val ifTable = walkTable(w, IF_COLUMNS, IF_DESCR, SNMP_MAX_INTERFACES)
         val rows = ifTable.getValue(IF_DESCR).keys.sortedWith(OID_ORDER)
+        var highSpeedAnswers = true                                   // the first Timeout or Error ends the ifHighSpeed GETs for this step
         for (index in rows) {
             val descr = ifTable.getValue(IF_DESCR).getValue(index).str?.let(::clean) ?: continue
             var speedBits = ifTable.getValue(IF_SPEED)[index]?.long
-            if (speedBits == SATURATED_SPEED) {
-                w.next(listOf("$IF_HIGH_SPEED.$index"), get = true)?.firstOrNull()?.long?.takeIf { it >= 0 }?.let { speedBits = it * BITS_PER_MBIT }
+            if (speedBits == SATURATED_SPEED && highSpeedAnswers) {
+                val reply = w.next(listOf("$IF_HIGH_SPEED.$index"), get = true)
+                if (reply == null) highSpeedAnswers = false
+                // Bounded to Gauge32 before the multiply, so a hostile value can never overflow or go negative.
+                reply?.firstOrNull()?.long?.takeIf { it in 0..MAX_HIGH_SPEED_MBIT }?.let { speedBits = it * BITS_PER_MBIT }
             }
             val mac = ifTable.getValue(IF_MAC)[index]?.raw?.takeIf { it.size == MAC_BYTES }?.joinToString(":") { "%02x".format(it) }
             w.emit(Finding(FindingKind.SNMP_INTERFACE, descr,
@@ -131,6 +136,7 @@ class SnmpWalkTool(private val exchangeFor: (ToolTarget) -> SnmpExchange) : Tool
         private const val ADDR = "1.3.6.1.2.1.4.20.1.1"; private const val MASK = "1.3.6.1.2.1.4.20.1.3"
         private val ADDR_COLUMNS = listOf(ADDR, MASK)
         private const val SATURATED_SPEED = 4_294_967_295L; private const val BITS_PER_MBIT = 1_000_000L
+        private const val MAX_HIGH_SPEED_MBIT = 4_294_967_295L     // Gauge32; times BITS_PER_MBIT stays far below Long.MAX_VALUE
         private const val MAC_BYTES = 6; private const val SUMMARY_DESCR_CHARS = 40
         /** Numeric order of dotted OIDs or index suffixes, arc by arc (so "10" sorts after "2"). */
         private val OID_ORDER = Comparator<String> { a, b ->

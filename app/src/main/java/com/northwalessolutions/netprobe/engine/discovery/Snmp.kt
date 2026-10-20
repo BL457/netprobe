@@ -43,7 +43,7 @@ internal object Ber {
         /** Counter32, Gauge32, TimeTicks: unsigned 32-bit into Long (spec 6.4). The tag has been read; reads the length and content. */
         fun unsigned(): Long { val n = length(); var v = 0L; for (x in bytes(n)) v = (v shl 8) or (x.toLong() and 0xff); return v }
         /** INTEGER content as a sign-extended Long. The tag has been read. */
-        fun signed(): Long { val b = bytes(length()); var v = if (b.isNotEmpty() && b[0] < 0) -1L else 0L; for (x in b) v = (v shl 8) or (x.toLong() and 0xff); return v }
+        fun signed(): Long { val content = bytes(length()); var v = if (content.isNotEmpty() && content[0] < 0) -1L else 0L; for (x in content) v = (v shl 8) or (x.toLong() and 0xff); return v }
         fun int(): Int { require(tag() == 0x02); val n = length(); var v = 0; for (x in bytes(n)) v = (v shl 8) or (x.toInt() and 0xff); return v }
         fun oidString(content: ByteArray): String { val parts = ArrayList<Int>(); parts += (content[0].toInt() and 0xff) / 40; parts += (content[0].toInt() and 0xff) % 40
             var v = 0; for (i in 1 until content.size) { val c = content[i].toInt() and 0xff; v = (v shl 7) or (c and 0x7f); if (c and 0x80 == 0) { parts += v; v = 0 } }
@@ -108,8 +108,9 @@ data class SnmpResponse(val requestId: Int, val errorStatus: Int, val varbinds: 
 /**
  * SNMPv2c GET (0xa0) and GETNEXT (0xa1) requests and their responses (0xa2), with the application types and exceptions (spec 6.4).
  * A reply is hostile input: every length is checked against the bytes left, the structure is a fixed two levels deep (no recursion),
- * an OID is at most [MAX_OID_ARCS] arcs of at most an Int each, numbers are at most [MAX_NUMBER_BYTES] bytes and a reply carries at
- * most [MAX_VARBINDS] varbinds. Text is not cleaned here ([SnmpVarbind.raw] must keep the bytes); the walk cleans it before a finding.
+ * an OID is at most [MAX_OID_ARCS] arcs of at most an Int each, an INTEGER is 1 to [MAX_INTEGER_BYTES] bytes, a Counter32, Gauge32 or
+ * TimeTicks is 1 to [MAX_UNSIGNED_BYTES] bytes and at most [MAX_UNSIGNED32], an IpAddress is exactly 4 bytes, and a reply carries at
+ * most [MAX_VARBINDS] varbinds. The varbind list must end exactly where the PDU does, and each value must fill its varbind exactly. Text is not cleaned here ([SnmpVarbind.raw] must keep the bytes); the walk cleans it before a finding.
  */
 object SnmpPdu {
     const val GET = 0xa0; const val GETNEXT = 0xa1; const val RESPONSE = 0xa2
@@ -120,7 +121,11 @@ object SnmpPdu {
     /** RFC 2578 3.5: an OID has at most 128 sub-identifiers. */
     const val MAX_OID_ARCS = 128
     const val MAX_VARBINDS = 64
-    private const val MAX_NUMBER_BYTES = 9            // Counter64 is 8 content bytes plus a leading zero
+    /** Integer32 is at most 4 content bytes; one more is tolerated for an encoder that pads with a sign byte. */
+    private const val MAX_INTEGER_BYTES = 5
+    /** Counter32, Gauge32 and TimeTicks: 4 bytes, plus the leading zero a value with the top bit set needs (Counter64 is not decoded). */
+    private const val MAX_UNSIGNED_BYTES = 5
+    const val MAX_UNSIGNED32 = 0xFFFF_FFFFL
     private const val MAX_ARC_BYTES = 5               // 35 bits of base-128 digits; the value is then checked against Int.MAX_VALUE
     private const val IPV4_BYTES = 4
 
@@ -138,7 +143,7 @@ object SnmpPdu {
             require(r.tag() == SEQUENCE); fit(r.length())
             r.int()                                                        // version
             require(r.tag() == T_OCTETS); r.bytes(fit(r.length()))         // community
-            require(r.tag() == RESPONSE); fit(r.length())
+            require(r.tag() == RESPONSE); val pduEnd = fit(r.length()).let { r.pos + it }
             val id = r.int(); val errorStatus = r.int(); r.int()
             require(r.tag() == SEQUENCE); val end = fit(r.length()).let { r.pos + it }
             val out = ArrayList<SnmpVarbind>()
@@ -154,13 +159,14 @@ object SnmpPdu {
                     T_OID -> SnmpVarbind(oid, t, oidOf(r.bytes(r.length()), r), null, null, false, false)
                     T_IPADDRESS -> { val b = r.bytes(r.length()); require(b.size == IPV4_BYTES)
                         SnmpVarbind(oid, t, b.joinToString(".") { (it.toInt() and 0xff).toString() }, null, null, false, false) }
-                    T_COUNTER32, T_GAUGE32, T_TIMETICKS -> { require(n in 1..MAX_NUMBER_BYTES); SnmpVarbind(oid, t, null, r.unsigned(), null, false, false) }
-                    T_INTEGER -> { require(n in 1..MAX_NUMBER_BYTES); SnmpVarbind(oid, t, null, r.signed(), null, false, false) }
+                    T_COUNTER32, T_GAUGE32, T_TIMETICKS -> { require(n in 1..MAX_UNSIGNED_BYTES)
+                        val v = r.unsigned(); require(v <= MAX_UNSIGNED32); SnmpVarbind(oid, t, null, v, null, false, false) }
+                    T_INTEGER -> { require(n in 1..MAX_INTEGER_BYTES); SnmpVarbind(oid, t, null, r.signed(), null, false, false) }
                     NO_SUCH_OBJECT, NO_SUCH_INSTANCE, END_OF_MIB_VIEW -> { r.bytes(r.length()); SnmpVarbind(oid, t, null, null, null, t == END_OF_MIB_VIEW, true) }
                     else -> { r.bytes(r.length()); SnmpVarbind(oid, t, null, null, null, false, t == T_NULL) }
                 }
             }
-            require(r.pos == end)
+            require(end == pduEnd)                                            // nothing after the varbind list inside the PDU
             SnmpResponse(id, errorStatus, out)
         } catch (_: Exception) { null }
     }
