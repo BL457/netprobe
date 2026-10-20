@@ -34,4 +34,24 @@ class DeviceIdentifierToolHintTest {
             assertEquals("${r.id} weight", r.weight, got.confidence)
         }
     }
+    @Test fun `two matching hints both contribute and give two toolHint reasons`() {
+        val rules = listOf(
+            rule("hint-pihole", "^http\\.framework=Pi-hole$", model = "Pi-hole", type = "SERVER"),
+            rule("hint-synology-dsm", "^http\\.framework=Synology DSM$", vendor = "Synology", type = "NAS"),
+        )
+        val r = DeviceIdentifier(rules).identify(ev(listOf("http.framework=Pi-hole", "http.framework=Synology DSM")))
+        assertEquals("Pi-hole", r.model); assertEquals("Synology", r.vendor)
+        assertEquals(setOf("toolHint: http.framework=Pi-hole", "toolHint: http.framework=Synology DSM"), r.reasons.toSet())
+        assertEquals(2, r.reasons.size)
+    }
+    @Test fun `a hint only identity at 90 never replaces a stored identity at 95`() {
+        val hintOnly = one(rule("hint-synology-dsm", "^http\\.framework=Synology DSM$", vendor = "Synology", type = "NAS"), listOf("http.framework=Synology DSM"))
+        assertEquals(90, hintOnly.confidence)
+        assertFalse(com.northwalessolutions.netprobe.data.IdentityWrite.replaces(95, hintOnly.confidence))
+        assertTrue(com.northwalessolutions.netprobe.data.IdentityWrite.replaces(90, hintOnly.confidence))
+    }
+    @Test fun `no seeded toolHint rule carries onPorts`() {
+        val rules = IdentifyRules.load(javaClass.classLoader!!.getResource("identify_rules.json")!!.readText()).filter { it.field == "toolHint" }
+        rules.forEach { assertNull("${it.id} has onPorts, which toolHint ignores", it.onPorts) }
+    }
 }

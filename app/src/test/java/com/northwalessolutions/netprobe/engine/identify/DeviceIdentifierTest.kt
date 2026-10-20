@@ -19,7 +19,7 @@ class DeviceIdentifierTest {
         val fields = setOf("mdnsType", "mdnsTxt", "upnpManufacturer", "upnpDeviceType", "snmpSysDescr", "httpTitle", "httpRealm", "httpServer", "hostname",
             "netbiosName", "sshBanner", "ports", "anyPort", "gateway", "oui", "poweredBy", "certName", "certOrg", "portBanner", "service", "toolHint")
         rules.forEach { assertTrue("bad field in ${it.id}", it.field in fields); assertTrue(it.weight in 1..100) }
-        val portFields = setOf("httpTitle", "httpRealm", "httpServer", "sshBanner", "poweredBy", "certName", "certOrg", "portBanner", "service", "toolHint")
+        val portFields = setOf("httpTitle", "httpRealm", "httpServer", "sshBanner", "poweredBy", "certName", "certOrg", "portBanner", "service")
         rules.filter { it.onPorts != null }.forEach { assertTrue("${it.id} has onPorts on a non-port field", it.field in portFields) }
     }
     @Test fun `software rules never set a model and never a type above weight 40`() {   // spec 3.6, 9.1 test 18
