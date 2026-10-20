@@ -453,7 +453,7 @@ Sentence case, active voice, no disclaimers. Plurals: "1 device", "13 devices". 
 | Settings sections | "Discovery", "Speed", "Large networks", "Extended discovery", "Permissions", "Vulnerabilities" |
 | Vulnerability sheet | "No CVEs found for <query>"; "Offline, showing cached results from <time>"; "Offline" |
 
-The extended-discovery end notes (the two above plus the `ExtendedNote` states SKIPPED_BIND_FAILED, PHANTOM, TRUNCATED, CANCELLED and EMPTY, which are given user-facing wording here) are notices (4.4), not part of the done summary: they appear in the notice line after the run ends and stay until dismissed or the next scan starts. The progress and summary strings are produced by pure helpers (`progressLine`, `ScanSummaryText`) whose every state maps to a row of this table (10.1).
+The extended-discovery end notes (the two above plus the `ExtendedNote` states SKIPPED_BIND_FAILED, PHANTOM, CANCELLED and EMPTY, which are given user-facing wording here) are notices (4.4), not part of the done summary: they appear in the notice line after the run ends and stay until dismissed or the next scan starts. The progress and summary strings are produced by pure helpers (`progressLine`, `ScanSummaryText`) whose every state maps to a row of this table (10.1).
 
 ## 9. Scope
 
