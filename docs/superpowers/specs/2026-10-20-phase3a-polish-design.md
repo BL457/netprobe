@@ -205,7 +205,7 @@ The transitions are declared in a stateless `NetProbeNavHost(nav, home, detail, 
 
 - When the Detail scan starts, `DetailContent` captures the set of ports already listed (as Home does with ids).
 - A port row whose port was not in that set gets `Modifier.animateItem(fadeInSpec = tween(PORT_ROW_MS), placementSpec = tween(PORT_ROW_MS, easing = FastOutSlowInEasing), fadeOutSpec = null)` plus a 6 dp rise over `PORT_ROW_MS`. The placement spec matters here: ports are sorted by number, so a new port often lands between two existing rows, and the rows below it slide down instead of jumping.
-- Rows present at scan start, and every row when no scan is running, get no animation.
+- While a scan runs, rows present at scan start get the placement spec only (they slide to make room, no fade or rise). When no scan is running, no row gets any animation.
 
 ### 1.11 Selection cross-fades
 
@@ -850,7 +850,7 @@ Every test that samples an animation, not only the radar tests, sets `mainClock.
 5. Reduced motion radar: arm static, blips at `BLIP_STATIC_ALPHA`, no pulse after a found change, settle completes in one frame, `BreathingKey` false.
 6. Home stagger: three rows added in one emission during SCANNING carry `ArrivalDelayKey` 0, 40, 80; rows present at scan start carry -1; a filter change carries -1 for all.
 7. Screen transition: `NetProbeNavHost` with fake slot screens (tags `fakeHome`, `fakeDetail`); navigate; at 120 ms both exist; at 260 ms only `fakeDetail`; back reverses. With reduced motion, one frame shows only the destination. The real `NetProbeNav` is not used, so no discovery runs.
-8. Detail port rows: while scanning, a new port 8123 between 80 and 443 carries `ArrivalDelayKey` 0 and the 443 row's top moves from its old to its new position over 240 ms (sampled bounds, never a single jump); rows present at scan start carry -1; with no scan running, a new row carries -1.
+8. Detail port rows: while scanning, a new port 8123 between 80 and 8443 carries `ArrivalDelayKey` 0 and the 8443 row's top moves from its old to its new position over 240 ms (sampled bounds, never a single jump); rows present at scan start carry -1; with no scan running, a new row carries -1.
 9. Chip cross-fade: select "Interesting", capture the chip at 0, 80 and 160 ms (`captureToImage`): the centre pixel at 80 ms lies strictly between the unselected and selected fills; at 160 ms it equals `surface`. Same for one status segment and one profile segment. Reduced motion: final colour after one frame.
 10. Scan pill morph: start a scan; at 110 ms the centre pixel lies between `signal` and `background`; the profile control's bounds are identical at 0, 90 and 220 ms (no shift); `detailScanButton` is the same node throughout.
 11. Notice line: message set; at 100 ms the `notice` height is between 0 and its full height; at 200 ms it is full; on dismiss the old text is still shown at 80 ms.
