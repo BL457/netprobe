@@ -2,7 +2,9 @@ package com.northwalessolutions.netprobe.ui.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.northwalessolutions.netprobe.AppContainer
+import com.northwalessolutions.netprobe.AppScopes
 import com.northwalessolutions.netprobe.PendingUndo
 import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.*
@@ -127,15 +129,31 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val name = state.value.displayName
         c.appScope.launch(Dispatchers.Main.immediate) {
             c.removedHostIds.update { it + hostId }
-            scan.stopAndJoin()
-            c.hostScanJobs[hostId]?.cancelAndJoin()
-            val token = c.toolRepo.snapshot(listOf(hostId))     // NEW (3B 7.4): the host's tool rows into TEMP tables before the cascade drops them
-            val snap = c.hostWriteLock.withLock {
-                c.removedHostIds.update { it + hostId }
-                // Any running radar, even one still resolving its network (review M2): the pair is keyed by network, so another network's scan ignores it.
-                if (c.radarScanActive.value) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
-                c.hosts.snapshot(hostId)?.also { c.hosts.delete(it) }
-            } ?: run { c.toolRepo.dropSnapshot(token); return@launch }   // NEW: nothing was deleted, so the snapshot is dropped
+            var removed: Pair<HostSnapshot, String?>? = null
+            try {
+                scan.stopAndJoin()
+                c.hostScanJobs[hostId]?.cancelAndJoin()
+                removed = c.hostWriteLock.withLock {
+                    c.removedHostIds.update { it + hostId }
+                    // Any running radar, even one still resolving its network (review M2): the pair is keyed by network, so another network's scan ignores it.
+                    if (c.radarScanActive.value) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
+                    val hostSnap = c.hosts.snapshot(hostId) ?: return@withLock null
+                    // 3B 7.4: the host's tool rows into TEMP tables in the same critical section, after the host snapshot and before the cascade
+                    // drops them. A failed snapshot never blocks Remove: the host is removed and Undo brings it back without its tool history.
+                    val token = runCatching { c.toolRepo.snapshot(listOf(hostId)) }
+                        .onFailure { Log.w(AppScopes.LOG_TAG, "tool snapshot failed", it) }.getOrNull()
+                    c.hosts.delete(hostSnap)
+                    hostSnap to token
+                }
+            } finally {
+                // Nothing was deleted (host already gone, or a failure): clear the marks so the host is never skipped by every later scan.
+                if (removed == null) {
+                    c.removedHostIds.update { it - hostId }
+                    c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                }
+            }
+            val (snap, token) = removed ?: return@launch
+            // A restore or drop that fails leaves the TEMP tables until process death, which is the Undo's own lifetime (accepted, 3B fix round 0).
             c.undo.post(PendingUndo(HomeCopy.removed(name),
                 // The marks are cleared in finally (the Task 13 pattern), so a failed restore never leaves the host skipped by every later scan,
                 // and inside the lock (review M3), so no radar emission sees the restored row while its ip is still marked and skips its update.
@@ -144,14 +162,16 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
                     c.hostWriteLock.withLock {
                         try {
                             c.hosts.restore(snap)
-                            c.toolRepo.restore(token)                    // NEW: runs and findings back with their original ids, after the host row exists
+                            // Runs and findings back with their original ids, after the host row exists; a failure never undoes the host restore.
+                            if (token != null) runCatching { c.toolRepo.restore(token) }.onFailure { Log.w(AppScopes.LOG_TAG, "tool restore failed", it) }
                         } finally {
                             c.removedHostIds.update { it - hostId }
                             c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
                         }
                     }
                 },
-                commit = { c.toolRepo.dropSnapshot(token) }))           // CHANGED from commit = {}: a lapsed Undo drops the TEMP tables
+                // A lapsed Undo drops the TEMP tables; a failed drop must not break the next Remove's post, which runs this commit.
+                commit = { if (token != null) runCatching { c.toolRepo.dropSnapshot(token) }.onFailure { Log.w(AppScopes.LOG_TAG, "tool snapshot drop failed", it) } }))
         }
     }
     fun setStatus(s: HostStatus) { viewModelScope.launch { c.hosts.setStatus(hostId, s) } }
