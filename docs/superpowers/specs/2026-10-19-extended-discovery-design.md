@@ -227,7 +227,7 @@ val canaryProbe: suspend (ip: Inet4Address, port: Int) -> Outcome   // TEST-NET 
 
 ### 5.3 Enrichment in extra ranges
 
-Reverse DNS, NetBIOS, SNMP and HTTP title run for every live host exactly as for local hosts, subject to the same per-feature settings. Expect NetBIOS (UDP 137) to be filtered by most routers and SNMP to be selective; both fail softly through `softly {}` and cost up to one timeout (1 s) each per host. The HTTP title fetch is TCP and generally works through a router, so it is the most valuable enrichment off-subnet. `isGateway` is set only for the interface gateway, never for hosts in extra ranges (a candidate's `.1` is just a host; the identity rules will call it a router if the evidence supports it).
+NetBIOS, SNMP and HTTP title run for every live host exactly as for local hosts, subject to the same per-feature settings, with their sockets bound to the Wi-Fi network. Reverse DNS is skipped for extra-range hosts: the system resolver cannot be bound to a Network (getnameinfo takes no network id), so a PTR query would go out on the default network and a bypass-allowed VPN could attach foreign names to local hosts. A bound `DnsResolver.rawQuery` PTR lookup (API 29+) is a follow-up. Expect NetBIOS (UDP 137) to be filtered by most routers and SNMP to be selective; both fail softly through `softly {}` and cost up to one timeout (1 s) each per host. The HTTP title fetch is TCP and generally works through a router, so it is the most valuable enrichment off-subnet. `isGateway` is set only for the interface gateway, never for hosts in extra ranges (a candidate's `.1` is just a host; the identity rules will call it a router if the evidence supports it).
 
 ### 5.4 Cancellation
 

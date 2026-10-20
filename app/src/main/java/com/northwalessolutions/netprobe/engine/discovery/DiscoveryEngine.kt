@@ -5,6 +5,7 @@ import com.northwalessolutions.netprobe.engine.common.BindFailedException
 import com.northwalessolutions.netprobe.engine.common.BoundNetwork
 import com.northwalessolutions.netprobe.engine.common.Probe
 import com.northwalessolutions.netprobe.engine.common.SocketBinder
+import com.northwalessolutions.netprobe.engine.common.currentBinder
 import com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry
 import com.northwalessolutions.netprobe.engine.neigh.NeighbourTable
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
@@ -92,7 +93,8 @@ class DiscoveryEngine(
         suspend fun enrichHost(l: Liveness) = enrich.withPermit {
             var h = DiscoveredHost(l.ip)
             if (options.netbios) softly { netbios(l.ip) }?.let { h = h.copy(netbiosName = it.computerName, netbiosWorkgroup = it.workgroup, mac = it.mac, macSource = it.mac?.let { MacSource.NETBIOS }, sources = h.sources + Source.NETBIOS) }
-            if (options.reverseDns) softly { reverseDns(l.ip) }?.let { h = h.copy(reverseDnsName = it) }
+            // The system PTR resolver cannot be bound to the Network, so extra-range hosts (bound context) get no reverse DNS (spec 5.3).
+            if (options.reverseDns && currentBinder() == null) softly { reverseDns(l.ip) }?.let { h = h.copy(reverseDnsName = it) }
             if (options.snmp) softly { snmp(l.ip) }?.let { h = h.copy(snmpSysDescr = it.sysDescr, snmpSysName = it.sysName, snmpSysObjectId = it.sysObjectId, sources = h.sources + Source.SNMP) }
             if (options.httpTitle) {
                 val web = WEB_PORTS.firstOrNull { it in l.openPorts }
@@ -157,13 +159,13 @@ class DiscoveryEngine(
             val b = binder
             if (b == null || !bindWorks(b)) { addNote(ExtendedNote.SKIPPED_BIND_FAILED); return }
             try {
+                val highPort = RandomHighPort.pick(random)   // one per run, for the TEST-NET pre-check and every canary (spec 4.3, 4.7)
                 Evidence.dnsServers(env, local).forEach { noteEvidence(it) }
                 var hits = emptyList<Subnet>()
                 if (ext.gatewayProbe) {
                     _status.update { it.copy(phase = DiscoveryPhase.GATEWAY_PROBE) }
-                    val testPort = RandomHighPort.pick(random)
                     val pre = AnswersForEverything.TEST_NET.flatMap { a ->
-                        listOf(AnswersForEverything.TEST_PORT, testPort).map { p -> softly { canaryProbe(a, p, b) } ?: Probe.Outcome.Timeout }
+                        listOf(AnswersForEverything.TEST_PORT, highPort).map { p -> softly { canaryProbe(a, p, b) } ?: Probe.Outcome.Timeout }
                     }
                     if (AnswersForEverything.of(pre)) addNote(ExtendedNote.GATEWAY_PROBE_SKIPPED_ANSWERS_ALL)
                     else {
@@ -183,8 +185,7 @@ class DiscoveryEngine(
                 _status.update { s -> s.copy(phase = DiscoveryPhase.EXTENDED, truncatedRanges = cand.truncated.size,
                     ranges = s.ranges + cand.ranges.map { RangeProgress(it.subnet.toString(), it.source, RangeState.PENDING, 0, it.subnet.size, 0) } +
                         cand.truncated.map { RangeProgress(it.subnet.toString(), it.source, RangeState.TRUNCATED, 0, it.subnet.size, 0) }) }
-                val canaryPort = RandomHighPort.pick(random)
-                withContext(BoundNetwork(b)) { cand.ranges.forEachIndexed { k, c -> sweepExtra(1 + k, c, canaryPort, b) } }   // one range at a time
+                withContext(BoundNetwork(b)) { cand.ranges.forEachIndexed { k, c -> sweepExtra(1 + k, c, highPort, b) } }   // one range at a time
             } catch (e: BindFailedException) {
                 addNote(ExtendedNote.SKIPPED_BIND_FAILED)
             }

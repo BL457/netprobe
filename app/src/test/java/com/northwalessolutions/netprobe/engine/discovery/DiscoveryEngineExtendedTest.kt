@@ -10,6 +10,7 @@ import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.Transport
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 import java.net.*
@@ -56,6 +57,7 @@ class DiscoveryEngineExtendedTest {
     private val netbiosCalls = Collections.synchronizedList(mutableListOf<String>())
     private val gatewayCalls = Collections.synchronizedList(mutableListOf<GatewayTargets>())
     private val canaryCalls = Collections.synchronizedList(mutableListOf<String>())
+    private val rdnsCalls = Collections.synchronizedList(mutableListOf<String>())
 
     private fun engine(alive: (Inet4Address) -> Boolean = { false }, mdns: List<MdnsRecord> = emptyList(), mdnsDelayMs: Long = 0,
                        gatewayHits: List<String> = emptyList(), gatewayThrows: Boolean = false,
@@ -66,7 +68,7 @@ class DiscoveryEngineExtendedTest {
             sweepFactory = { _, _ -> FakeSweep(alive, log, delayFor, completionOrder) },
             mdns = { _, _ -> flow { if (mdnsDelayMs > 0) delay(mdnsDelayMs); mdns.forEach { emit(it) } } }, ssdp = { emptyFlow() },
             upnpFetch = { _, _ -> null }, netbios = { a -> netbiosCalls += a.hostAddress; onNetbios(a); null }, snmp = { null },
-            httpTitle = { _, _, _ -> null }, reverseDns = { null }, neighbours = { Result.success(emptyList()) }, mdnsTypes = listOf("_http._tcp"),
+            httpTitle = { _, _, _ -> null }, reverseDns = { a -> rdnsCalls += a.hostAddress; null }, neighbours = { Result.success(emptyList()) }, mdnsTypes = listOf("_http._tcp"),
             deviceInfo = { _, _ -> null },
             gatewayProbe = { t, onProgress, _ -> gatewayCalls += t; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2); gatewayHits.map(::net) },
             canaryProbe = { a, port, _ -> canaryCalls += "${a.hostAddress}:$port"; canary(a, port) },
@@ -136,7 +138,7 @@ class DiscoveryEngineExtendedTest {
         assertEquals(RangeState.PHANTOM, e.status.value.ranges[1].state); assertEquals(0, e.status.value.ranges[1].found)
         assertTrue(h.keys.none { it.startsWith("10.0.4.") }); assertTrue(netbiosCalls.none { it.startsWith("10.0.4.") })
     }
-    @Test fun `a busy real range whose live hosts answer first is not mistaken for a phantom`() = runBlocking {   // the guard judges the first 64 ADDRESSES, not the fastest 64 answers
+    @Test fun `a busy real range whose live hosts answer first is not mistaken for a phantom`() = runTest {   // virtual time: the dead hosts' delays cost no wall clock   // the guard judges the first 64 ADDRESSES, not the fastest 64 answers
         val busy = (100..159).map { "10.0.4.$it" }.toSet()   // 60 live hosts, none among the first 64 addresses
         val e = engine(alive = { it.hostAddress in busy }, delayFor = { if (it.hostAddress in busy) 0L else 1L },
             completionOrder = { all -> all.filter { it.hostAddress in busy } + all.filter { it.hostAddress !in busy } })   // live hosts finish first, dead ones time out later
@@ -217,5 +219,10 @@ class DiscoveryEngineExtendedTest {
         c.hosts(opts(manual = listOf("10.0.4.0/24")))
         assertEquals(listOf(ExtendedNote.SKIPPED_BIND_FAILED), c.status.value.notes); assertEquals(listOf("10.0.3.1"), swept())
         assertEquals(listOf(RangeState.DONE, RangeState.CANCELLED), c.states())
+    }
+    @Test fun `reverse dns is skipped for extra-range hosts and still runs for local ones`() = runBlocking {   // the system PTR resolver cannot be bound to the Network (spec 5.3)
+        engine(alive = { it.hostAddress in setOf("10.0.3.5", "10.0.4.7") }).hosts(opts(manual = listOf("10.0.4.0/24")))
+        assertTrue("10.0.3.5" in rdnsCalls); assertFalse("10.0.4.7" in rdnsCalls)
+        assertTrue("10.0.4.7" in netbiosCalls)   // control: the extra-range host was released and the bound enrichment ran
     }
 }
