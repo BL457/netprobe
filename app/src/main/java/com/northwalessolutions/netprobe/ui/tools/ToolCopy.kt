@@ -79,7 +79,11 @@ object ToolCopy {
     /** The reason inside failed(...) when no wordlist resolves at all, not even common-short (spec 5.1). */
     const val BRUTE_NO_WORDLIST = "Wordlist not found"
     /** A run whose chosen list was deleted ran common-short instead; [summary] is the run's own summary. */
-    fun bruteFallback(summary: String) = "Wordlist not found, common-short used, $summary"
+    const val BRUTE_FALLBACK_PREFIX = "Wordlist not found, common-short used"
+    fun bruteFallback(summary: String) = "$BRUTE_FALLBACK_PREFIX, $summary"
+    /** Splits a stored summary into the fallback line (or null) and the rest, for the results header. */
+    fun splitFallback(summary: String): Pair<String?, String> =
+        if (summary.startsWith("$BRUTE_FALLBACK_PREFIX, ")) BRUTE_FALLBACK_PREFIX to summary.removePrefix("$BRUTE_FALLBACK_PREFIX, ") else null to summary
     fun bruteDone(found: Int, paths: Int, errors: Int) = "$found found in ${paths(paths)}${if (errors > 0) ", ${if (errors == 1) "1 error" else "$errors errors"}" else ""}"
     fun bruteStoppedAnswering(paths: Int) = "The server stopped answering after ${paths(paths)}"
 

@@ -155,4 +155,9 @@ class ToolCopyTableTest {
             WordlistCopy.EMPTY_FILE, WordlistCopy.UNREADABLE, WordlistCopy.DEFAULT_NAME, WordlistCopy.recoveredName(1), WordlistCopy.recoveredName(12), WordlistCopy.SETTINGS_SECTION, WordlistCopy.SETTINGS_ROW,
             WordlistCopy.settingsSupport(0), WordlistCopy.settingsSupport(2)))
     }
+
+    @Test fun theFallbackLineSplitsOffTheSummaryAndPlainSummariesPass() {
+        assertEquals("Wordlist not found, common-short used" to "7 found in 312 paths", ToolCopy.splitFallback(ToolCopy.bruteFallback(ToolCopy.bruteDone(7, 312, 0))))
+        assertEquals(null to "7 found in 312 paths", ToolCopy.splitFallback(ToolCopy.bruteDone(7, 312, 0)))
+    }
 }
