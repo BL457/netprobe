@@ -182,9 +182,10 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         lastRunProgress.value = emptyList()   // the range list always describes the latest run only
         val openPorts = HashMap<String, MutableSet<Int>>()   // ports seen open per ip during this run: later emissions for the host carry none
         var completed = false
-        if (ext.enabled) c.extendedRunActive.value = true
         c.locks.acquire()
         try {
+            // Inside the try (Task 19 M1): if anything before here throws, the window is never left holding FLAG_KEEP_SCREEN_ON.
+            if (ext.enabled) c.extendedRunActive.value = true
             c.discoveryEngine.discover(e, opts, binder).collect { h ->
                 val id = c.hosts.upsertDiscovered(net.id, h, runId)
                 val merged = c.hosts.byIdOnce(id) ?: return@collect
