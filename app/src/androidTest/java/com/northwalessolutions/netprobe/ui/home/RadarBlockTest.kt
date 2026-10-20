@@ -118,14 +118,13 @@ class RadarBlockTest {
         rule.mainClock.advanceTimeBy(1_000)
         val full = height()
         assertTrue("full height $full not above the ring row $ring", full > ring + 100.dp)
-        val half = ring + (full - ring) / 2
         mode = RadarMode.SETTLED; rule.mainClock.advanceTimeBy(1_000)
         assertEquals(ring.value, height().value, 0.5f)
 
         mode = RadarMode.SCANNING
         rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeByFrame()
         val start = height()
-        assertTrue("expand stepped: $start after two frames (ring $ring, full $full)", start < half)
+        assertTrue("expand stepped: $start after two frames (ring $ring, full $full)", start - ring < 12.dp)
         rule.mainClock.advanceTimeBy(180)
         val mid = height()
         assertTrue("expand midpoint $mid not between $ring and $full", mid > ring + 1.dp && mid < full - 1.dp)
@@ -135,7 +134,7 @@ class RadarBlockTest {
         mode = RadarMode.SETTLED
         rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeByFrame()
         val settleStart = height()
-        assertTrue("settle stepped: $settleStart after two frames (ring $ring, full $full)", settleStart > half)
+        assertTrue("settle stepped: $settleStart after two frames (ring $ring, full $full)", full - settleStart < 12.dp)
         rule.mainClock.advanceTimeBy(180)
         val settleMid = height()
         assertTrue("settle midpoint $settleMid not between $ring and $full", settleMid > ring + 1.dp && settleMid < full - 1.dp)

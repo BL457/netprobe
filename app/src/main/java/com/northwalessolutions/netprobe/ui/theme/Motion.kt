@@ -13,8 +13,6 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 object Motion {
     const val SIZE_MS = 360
     const val LABEL_FADE_MS = 160
-    const val PILL_FADE_MS = 160
-    const val PILL_DELAY_MS = 120
     const val BLIP_IN_MS = 300
     const val BLIP_OUT_MS = 200
     const val ARM_TURN_MS = 2400
