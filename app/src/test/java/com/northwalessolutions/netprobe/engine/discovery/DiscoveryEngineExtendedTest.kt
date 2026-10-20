@@ -236,11 +236,21 @@ class DiscoveryEngineExtendedTest {
         assertEquals("de:ad:be:ef:00:07", h["10.0.7.9"]!!.mac); assertEquals(MacSource.NEIGH, h["10.0.7.9"]!!.macSource)
         assertFalse("192.168.49.5" in h.keys)
     }
-    @Test fun `a host known only from the neighbour table keeps its row when three ips share its mac`() = runBlocking {
+    @Test fun `toggle on - a host known only from the neighbour table keeps its row when three ips share its mac`() = runBlocking {
         val shared = "aa:bb:cc:dd:ee:ff"
         val neigh = listOf(20, 21, 22).map { com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.$it", shared, "REACHABLE") }
-        val h = engine(neigh = neigh).hosts(opts(enabled = false))
-        assertEquals(setOf("10.0.3.1", "10.0.3.20", "10.0.3.21", "10.0.3.22"), h.keys)
+        val h = engine(neigh = neigh).hosts(opts(enabled = true))
+        assertTrue(listOf("10.0.3.20", "10.0.3.21", "10.0.3.22").all { it in h.keys })
         assertTrue(listOf(20, 21, 22).all { h["10.0.3.$it"]!!.mac == null })   // no MAC claim, but the hosts are still listed
+    }
+    @Test fun `toggle off - the neighbour block is the MVP, every on-link entry keeps its mac`() = runBlocking {   // final review I1
+        val shared = "aa:bb:cc:dd:ee:ff"; val gwMac = "11:22:33:44:55:66"
+        val neigh = listOf(20, 21, 22).map { com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.$it", shared, "REACHABLE") } +
+            listOf(com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.1", gwMac, "REACHABLE"),
+                com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.30", gwMac, "REACHABLE"))   // a range extender answering for 10.0.3.30
+        val h = engine(neigh = neigh).hosts(opts(enabled = false))
+        assertEquals(setOf("10.0.3.1", "10.0.3.20", "10.0.3.21", "10.0.3.22", "10.0.3.30"), h.keys)
+        assertTrue(listOf(20, 21, 22).all { h["10.0.3.$it"]!!.mac == shared && h["10.0.3.$it"]!!.macSource == MacSource.NEIGH })
+        assertEquals(gwMac, h["10.0.3.30"]!!.mac); assertEquals(gwMac, h["10.0.3.1"]!!.mac)
     }
 }

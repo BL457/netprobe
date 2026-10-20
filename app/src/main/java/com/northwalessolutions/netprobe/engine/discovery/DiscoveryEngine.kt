@@ -246,7 +246,12 @@ class DiscoveryEngine(
                         try { neighbours() } catch (e: CancellationException) { throw e } catch (e: Exception) { Result.failure(e) }
                     }
                     _status.update { it.copy(neighbourAvailable = neigh.isSuccess) }
-                    neigh.getOrNull()?.let { entries ->
+                    // Toggle off: the MVP loop exactly, every in-range entry keeps its MAC (final review I1). The extended spec 6.2 rules apply only when on.
+                    if (!options.extended.enabled) neigh.getOrNull()?.forEach { n ->
+                        val ip = runCatching { java.net.InetAddress.getByName(n.ip) as Inet4Address }.getOrNull() ?: return@forEach
+                        if (local.contains(ip)) emit(DiscoveredHost(ip, mac = n.mac, macSource = MacSource.NEIGH, sources = setOf(Source.NEIGH)))
+                    }
+                    else neigh.getOrNull()?.let { entries ->
                         val r = NeighbourRules.apply(entries, SubnetMath.of(env.interfaceIp, env.prefixLength), local, env.gateway)
                         synchronized(neighMacs) { neighMacs.putAll(r.macs) }
                         r.evidence.forEach { noteEvidence(it) }   // evidence contributes ranges, never host rows
