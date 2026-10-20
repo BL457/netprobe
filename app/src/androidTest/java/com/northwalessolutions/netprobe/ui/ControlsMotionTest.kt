@@ -100,7 +100,7 @@ class ControlsMotionTest {
         val pillWidth = rule.onNodeWithTag("detailScanButton").getBoundsInRoot().width
         fun checkPillBounds(at: String) {   // the morph never shrinks the touch target below 48 dp or changes its width
             val bounds = rule.onNodeWithTag("detailScanButton").getBoundsInRoot()
-            assertTrue("pill height ${bounds.height} at $at", bounds.height >= 48.dp)
+            assertTrue("pill height ${bounds.height} at $at", bounds.height >= TOUCH_FLOOR)
             assertEquals("pill width at $at", pillWidth, bounds.width)
         }
         st = st.copy(scanning = true); rule.mainClock.advanceTimeByFrame(); checkPillBounds("start")
@@ -108,13 +108,21 @@ class ControlsMotionTest {
         while (elapsed < 90) { rule.mainClock.advanceTimeBy(FRAME_MS); elapsed += FRAME_MS.toInt(); checkPillBounds("$elapsed ms") }
         assertEquals("moved at 90 ms", at0, profile())
         while (elapsed < 110) { rule.mainClock.advanceTimeBy(FRAME_MS); elapsed += FRAME_MS.toInt(); checkPillBounds("$elapsed ms") }
-        assertBetween(NetProbeColors.signal, NetProbeColors.background, pixel("detailScanButton"), "pill centre at ~110 ms")
+        // Sampled in the fill at FILL_X: the centre pixel sits on the label's glyphs, which cross-fade, so it never measured the fill.
+        assertBetween(NetProbeColors.signal, NetProbeColors.background, pixel("detailScanButton", FILL_X), "pill fill at ~110 ms")
         while (elapsed < 220) { rule.mainClock.advanceTimeBy(FRAME_MS); elapsed += FRAME_MS.toInt(); checkPillBounds("$elapsed ms") }
         assertEquals("moved at 220 ms", at0, profile())
         assertEquals("the pill is one node throughout", nodeId, rule.onNodeWithTag("detailScanButton").fetchSemanticsNode().id)
     }
 
     private companion object {
+        /**
+         * The 48 dp touch floor as this test can see it (QA F3). ForcedSize(412 x 820 dp) does not fit the Pixel 7 Pro's window,
+         * so the override lays the screen out at density 3.41875 (measured on the device), where 48 dp is 164.1 px and
+         * heightIn(min = 48.dp) rounds to 164 px, read back as 47.97 dp. In the app, at the phone's own 3.5, it is exactly 168 px.
+         * The tenth of a dp allows for that sub-pixel rounding only; a real loss of the floor is a whole pixel or more.
+         */
+        val TOUCH_FLOOR = 47.9.dp
         val FILL_X = 8.dp                 // inside the fill, clear of the 1 dp outline and the centred label
         const val CHANNEL_GAP = 0.02f
         const val EPS = 0.004f

@@ -16,12 +16,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
@@ -202,6 +199,11 @@ fun RadarBlock(
         // Read in the live layer's draw, so the expand and settle do not rebuild its cache for the outline (fix round 1).
         val stroke = { lerp(RING_STROKE, DISC_STROKE, fraction) }
         val strokeColor = { lerp(ringColor, NetProbeColors.borderSubtle, fraction.coerceIn(0f, 1f)) }
+        // QA F4 (jank): the three drawn layers are laid out at the full disc size and scaled in their own graphicsLayer, so their
+        // draw caches (64 glow brushes, the sweep brush) survive the expand and settle; only the draw re-records per frame.
+        val discScale = remember { { lerp(Dimens.ringDiameter, Dimens.discDiameter, fraction) / Dimens.discDiameter } }
+        val fillAlpha = remember { { fraction.coerceIn(0f, 1f) } }
+        val fullDisc = Modifier.requiredSize(Dimens.discDiameter)
         val modeModifier = when (mode) {
             RadarMode.SETTLED -> Modifier.clip(CircleShape)
                 .clickable(enabled = actionable && atRest, role = Role.Button, onClick = if (quickScanning) onStopQuick else onScan)   // no tap until at rest
@@ -216,10 +218,10 @@ fun RadarBlock(
             Box(Modifier.fillMaxWidth().heightIn(min = areaHeight)) {
                 Box(Modifier.offset(x = centreX - target / 2, y = (areaHeight - target) / 2).size(target).then(modeModifier), contentAlignment = Alignment.Center) {
                     Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
-                        DiscBackground(f, mode == RadarMode.HERO, onComposed, Modifier.matchParentSize().clearAndSetSemantics { })
-                        if (live) ArmLayer(angle, { liveAlpha }, lastAngle, onComposed, Modifier.matchParentSize())
+                        DiscBackground(fillAlpha, discScale, mode == RadarMode.HERO, onComposed, fullDisc.clearAndSetSemantics { })
+                        if (live) ArmLayer(angle, { liveAlpha }, discScale, lastAngle, onComposed, fullDisc)
                         LiveLayer(stroke, strokeColor, breathingOn, shownBlips, newestFrom, reduced, angle, { pulse.value }, { newest.value }, { liveAlpha },
-                            onComposed, Modifier.matchParentSize().clearAndSetSemantics { })
+                            discScale, onComposed, fullDisc.clearAndSetSemantics { })
                         if (mode == RadarMode.SETTLED && quickScanning) QuickArc(animate = resumed && !reduced, Modifier.matchParentSize())
                         if (mode != RadarMode.HERO && labelAlpha > 0f) Text(if (quickScanning) HomeCopy.STOP else HomeCopy.SCAN, style = NetProbeText.ringLabel,
                             color = if (actionable) NetProbeColors.signal else NetProbeColors.border, modifier = Modifier.alpha(labelAlpha))
@@ -256,52 +258,76 @@ fun RadarBlock(
     }
 }
 
-/** Layer 1 (spec 1.16): fill, inner rings and HERO dots on their own layer, re-recorded only when f or the size changes. */
+/** Scales a fixed full-disc layer to the current disc size about its centre (QA F4). */
+private fun Modifier.discScaled(scale: () -> Float): Modifier = graphicsLayer { val s = scale(); scaleX = s; scaleY = s }
+
+/**
+ * Layer 1 (spec 1.16): fill, inner rings and HERO dots on their own layer. The cache is built once at the full disc size (QA F4);
+ * [fill] and [scale] are read only in the draw, which divides the fixed dp sizes by the scale so they keep their on-screen size.
+ */
 @Composable
-private fun DiscBackground(f: Float, hero: Boolean, onComposed: () -> Unit, modifier: Modifier) {
-    SideEffect { onComposed() }                   // test hook (G6): this body must not recompose per frame either
-    Spacer(modifier.graphicsLayer().drawWithCache {
+private fun DiscBackground(fill: () -> Float, scale: () -> Float, hero: Boolean, onComposed: () -> Unit, modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): never call fill() or scale() in this body
+    Spacer(modifier.discScaled(scale).drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
-        val fill = Brush.radialGradient(0f to NetProbeColors.discCentre, FILL_INNER_STOP to NetProbeColors.discCentre,
+        val brush = Brush.radialGradient(0f to NetProbeColors.discCentre, FILL_INNER_STOP to NetProbeColors.discCentre,
             FILL_OUTER_STOP to NetProbeColors.background, 1f to NetProbeColors.background, center = c, radius = r.coerceAtLeast(1f))
-        val ring1 = r - Dimens.discInnerRing1.toPx(); val ring2 = r - Dimens.discInnerRing2.toPx()
-        val thin = Stroke(INNER_RING_STROKE.toPx())
+        val ring1Px = Dimens.discInnerRing1.toPx(); val ring2Px = Dimens.discInnerRing2.toPx()
+        val thinPx = INNER_RING_STROKE.toPx()
+        var thinLocal = -1f
+        var thin = Stroke(0f)                     // rebuilt only when the scale changes, never per steady frame
         val dotR = Dimens.blip.toPx() / 2
         val dots = HERO_DOTS.map { c + it * r }
         onDrawBehind {
+            val k = 1f / scale()
+            val f = fill()
             if (f > 0f) {
-                drawCircle(fill, r, c, alpha = f)
+                drawCircle(brush, r, c, alpha = f)
+                if (thinPx * k != thinLocal) { thinLocal = thinPx * k; thin = Stroke(thinLocal) }
+                val ring1 = r - ring1Px * k; val ring2 = r - ring2Px * k
                 if (ring1 > 0f) drawCircle(NetProbeColors.borderSubtle, ring1, c, alpha = f, style = thin)
                 if (ring2 > 0f) drawCircle(NetProbeColors.borderSubtle, ring2, c, alpha = f, style = thin)
             }
-            if (hero) dots.forEach { drawCircle(NetProbeColors.textMuted, dotR, it) }
+            if (hero) dots.forEach { drawCircle(NetProbeColors.textMuted, dotR * k, it) }
         }
     })
 }
 
-/** Layer 2: the sweep, rotated in its layer block (a property change per frame, never a re-record); the bright edge leads (spec 1.3). */
+/**
+ * Layer 2: the sweep, rotated and scaled in its layer block (a property change per frame, never a re-record); the bright edge
+ * leads (spec 1.3). Laid out at the full disc size (QA F4): the sweep brush is built once, and the annulus is a stroked circle
+ * whose radii come from the actual disc radius in the draw, so the outline gap and the centre mask keep their dp sizes.
+ */
 @Composable
-private fun ArmLayer(angle: () -> Float, armAlpha: () -> Float, lastAngle: FloatArray, onComposed: () -> Unit, modifier: Modifier) {
-    SideEffect { onComposed() }                   // test hook (G6): never call angle() or armAlpha() in this body
+private fun ArmLayer(angle: () -> Float, armAlpha: () -> Float, scale: () -> Float, lastAngle: FloatArray, onComposed: () -> Unit, modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): never call angle(), armAlpha() or scale() in this body
     Spacer(modifier.clearAndSetSemantics { }.graphicsLayer {
         val a = angle()
         lastAngle[0] = a % FULL_TURN_DEG          // a non-state holder: no recomposition; the arm resumes from here
         rotationZ = a
         alpha = armAlpha()
+        val s = scale(); scaleX = s; scaleY = s
     }.drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
         val sweep = Brush.sweepGradient(*ArmTrail.stops().map { (pos, a) -> pos to NetProbeColors.signal.copy(alpha = a) }.toTypedArray(), center = c)
-        // An annulus inside the outline with the centre cut out (even-odd): the count sits on the disc's plain fill.
-        val outer = (r - DISC_STROKE.toPx()).coerceAtLeast(0f)
-        val inner = RadarGeometry.armMask(Dimens.discCentreMask.toPx(), r)
-        val annulus = Path().apply { fillType = PathFillType.EvenOdd; addOval(Rect(c, outer)); addOval(Rect(c, inner)) }
+        val discStrokePx = DISC_STROKE.toPx(); val maskPx = Dimens.discCentreMask.toPx()
         val head = NetProbeColors.signal.copy(alpha = Motion.HEAD_LINE_ALPHA)
         val headWidth = Motion.HEAD_LINE_WIDTH.toPx()
+        var bandLocal = -1f
+        var band = Stroke(0f)                     // rebuilt only when the scale changes, never per steady frame
         onDrawBehind {
-            drawPath(annulus, sweep)
-            drawLine(head, Offset(c.x + inner, c.y), Offset(c.x + outer, c.y), strokeWidth = headWidth, cap = StrokeCap.Round)
+            // An annulus inside the outline with the centre cut out: the count sits on the disc's plain fill. Radii in local units.
+            val s = scale(); val k = 1f / s
+            val outer = (r * s - discStrokePx).coerceAtLeast(0f) * k
+            val inner = RadarGeometry.armMask(maskPx, r * s) * k
+            val width = outer - inner
+            if (width > 0f) {
+                if (width != bandLocal) { bandLocal = width; band = Stroke(width) }
+                drawCircle(sweep, (outer + inner) / 2, c, style = band)
+            }
+            drawLine(head, Offset(c.x + inner, c.y), Offset(c.x + outer, c.y), strokeWidth = headWidth * k, cap = StrokeCap.Round)
         }
     })
 }
@@ -309,33 +335,40 @@ private fun ArmLayer(angle: () -> Float, armAlpha: () -> Float, lastAngle: Float
 /**
  * Layer 3, the one live layer (spec 1.16): the breathing outline, the pulse ring and the blips with their afterglow, in that order,
  * above the arm. It has its own graphicsLayer, so its per-frame redraw re-records only this layer. Positions, angles and brushes are
- * built in the cache once per blip count or size; the draw allocates nothing and reads the angle only while breathing or blips show.
+ * built in the cache once per blip count; the draw allocates nothing in steady scanning and reads the angle only while breathing
+ * or blips show. The layer is laid out at the full disc size and scaled in its layer block (QA F4), so the expand and settle keep
+ * the cache; the draw divides the fixed dp sizes (outline, pulse stroke, blip and glow radii, centre mask) by the scale.
  */
 @Composable
 private fun LiveLayer(stroke: () -> Dp, strokeColor: () -> Color, breathing: Boolean, blips: Int, newestFrom: Int, reduced: Boolean,
-                      angle: () -> Float, pulse: () -> Float, newestAlpha: () -> Float, blipsAlpha: () -> Float, onComposed: () -> Unit,
-                      modifier: Modifier) {
-    SideEffect { onComposed() }                   // test hook (G6): never call angle(), pulse() or the alphas in this body
-    Spacer(modifier.graphicsLayer().drawWithCache {
+                      angle: () -> Float, pulse: () -> Float, newestAlpha: () -> Float, blipsAlpha: () -> Float, scale: () -> Float,
+                      onComposed: () -> Unit, modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): never call angle(), pulse(), scale() or the alphas in this body
+    Spacer(modifier.discScaled(scale).drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
         var outlinePx = -1f
         var outline = Stroke(0f)                  // rebuilt only when the width changes, never per steady frame
-        val pulseStroke = Stroke(Motion.PULSE_STROKE.toPx())
-        val mask = RadarGeometry.armMask(Dimens.discCentreMask.toPx(), r)
+        val pulsePx = Motion.PULSE_STROKE.toPx()
+        var pulseLocal = -1f
+        var pulseStroke = Stroke(0f)              // likewise, only when the scale changes
+        val maskPx = Dimens.discCentreMask.toPx()
         val blipR = Dimens.blip.toPx() / 2; val glowR = blipR + Dimens.blipGlow.toPx()
         val offsets = List(blips) { blipOffset(it, r) }
         val points = offsets.map { c + it }
         val angles = FloatArray(blips) { blipAngleDeg(offsets[it]) }
         val glows = points.map { p -> Brush.radialGradient(listOf(NetProbeColors.signal, Color.Transparent), center = p, radius = glowR) }
         onDrawBehind {
-            val strokePx = stroke().toPx()
+            val s = scale(); val k = 1f / s
+            val strokePx = stroke().toPx() * k    // local units: on screen it is the spec width at every size
             if (strokePx != outlinePx) { outlinePx = strokePx; outline = Stroke(strokePx) }
             val b = if (breathing) breath(angle()) else 0f
             drawCircle(lerp(strokeColor(), NetProbeColors.signal, b), r - strokePx / 2, c, style = outline)
             val p = pulse()
             if (p < 1f) {
                 val e = LinearOutSlowInEasing.transform(p)
+                if (pulsePx * k != pulseLocal) { pulseLocal = pulsePx * k; pulseStroke = Stroke(pulseLocal) }
+                val mask = RadarGeometry.armMask(maskPx, r * s) * k
                 drawCircle(NetProbeColors.signal, lerp(mask, r * PULSE_END_FRACTION, e), c, alpha = Motion.PULSE_ALPHA * (1f - e), style = pulseStroke)
             }
             val all = blipsAlpha()
@@ -344,8 +377,8 @@ private fun LiveLayer(stroke: () -> Dp, strokeColor: () -> Color, breathing: Boo
                 for (i in 0 until blips) {
                     val g = if (reduced) 0f else afterglow(arm, angles[i])
                     val fade = all * if (i >= newestFrom) newestAlpha() else 1f
-                    scale(blipGlowScale(g, reduced), pivot = points[i]) { drawCircle(glows[i], glowR, points[i], alpha = blipGlowAlpha(g, reduced) * fade) }
-                    drawCircle(NetProbeColors.signal, blipR, points[i], alpha = blipCoreAlpha(g, reduced) * fade)
+                    scale(blipGlowScale(g, reduced) * k, pivot = points[i]) { drawCircle(glows[i], glowR, points[i], alpha = blipGlowAlpha(g, reduced) * fade) }
+                    drawCircle(NetProbeColors.signal, blipR * k, points[i], alpha = blipCoreAlpha(g, reduced) * fade)
                 }
             }
         }

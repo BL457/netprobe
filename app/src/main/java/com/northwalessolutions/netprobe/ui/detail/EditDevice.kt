@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.northwalessolutions.netprobe.data.DeviceEdits
 import com.northwalessolutions.netprobe.data.Detected
 import com.northwalessolutions.netprobe.data.EditDraft
@@ -27,6 +28,11 @@ private val FIELD_RADIUS = 8.dp
  * Edit device (spec 4.3). The body scrolls at large font scales; Save and Cancel are the dialog's own buttons, outside the scroll,
  * so they stay pinned. Each field shows "Detected: ..." and, while it holds an override, "Reset to detected". Nothing is saved
  * until Save, which stores DeviceEdits.of(draft, detected).
+ *
+ * Keyboard (QA F2): the dialog window does not fit system windows, so it spans the screen and never resizes for the IME on
+ * its own. The insets padding (system bars united with the IME, as the screens' Scaffolds do) sits outside the dialog's size
+ * limits, so with the keyboard up the dialog is centred in the space above it and its height is capped to that space: the
+ * scrolling body shrinks and Save and Cancel stay above the keyboard.
  */
 @Composable
 fun EditDeviceDialog(state: EditDraft, detected: Detected, onSave: (DeviceEdits) -> Unit, onCancel: () -> Unit) {
@@ -34,6 +40,8 @@ fun EditDeviceDialog(state: EditDraft, detected: Detected, onSave: (DeviceEdits)
     val edits = DeviceEdits.of(draft, detected)
     AlertDialog(
         onDismissRequest = onCancel, containerColor = NetProbeColors.surface,
+        modifier = Modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime)),
+        properties = DialogProperties(decorFitsSystemWindows = false),
         title = { Text(EditCopy.TITLE, style = NetProbeText.rowName, color = NetProbeColors.text) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()).testTag("editBody")) {
