@@ -63,12 +63,13 @@ class DiscoveryEngineExtendedTest {
                        gatewayHits: List<String> = emptyList(), gatewayThrows: Boolean = false,
                        canary: (Inet4Address, Int) -> Probe.Outcome = { _, _ -> Probe.Outcome.Timeout },
                        delayFor: (Inet4Address) -> Long = { 0 }, onNetbios: suspend (Inet4Address) -> Unit = {},
-                       completionOrder: (List<Inet4Address>) -> List<Inet4Address> = { it }): DiscoveryEngine =
+                       completionOrder: (List<Inet4Address>) -> List<Inet4Address> = { it },
+                       neigh: List<com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry> = emptyList()): DiscoveryEngine =
         DiscoveryEngine(
             sweepFactory = { _, _ -> FakeSweep(alive, log, delayFor, completionOrder) },
             mdns = { _, _ -> flow { if (mdnsDelayMs > 0) delay(mdnsDelayMs); mdns.forEach { emit(it) } } }, ssdp = { emptyFlow() },
             upnpFetch = { _, _ -> null }, netbios = { a -> netbiosCalls += a.hostAddress; onNetbios(a); null }, snmp = { null },
-            httpTitle = { _, _, _ -> null }, reverseDns = { a -> rdnsCalls += a.hostAddress; null }, neighbours = { Result.success(emptyList()) }, mdnsTypes = listOf("_http._tcp"),
+            httpTitle = { _, _, _ -> null }, reverseDns = { a -> rdnsCalls += a.hostAddress; null }, neighbours = { Result.success(neigh) }, mdnsTypes = listOf("_http._tcp"),
             deviceInfo = { _, _ -> null },
             gatewayProbe = { t, onProgress, _ -> gatewayCalls += t; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2); gatewayHits.map(::net) },
             canaryProbe = { a, port, _ -> canaryCalls += "${a.hostAddress}:$port"; canary(a, port) },
@@ -224,5 +225,22 @@ class DiscoveryEngineExtendedTest {
         engine(alive = { it.hostAddress in setOf("10.0.3.5", "10.0.4.7") }).hosts(opts(manual = listOf("10.0.4.0/24")))
         assertTrue("10.0.3.5" in rdnsCalls); assertFalse("10.0.4.7" in rdnsCalls)
         assertTrue("10.0.4.7" in netbiosCalls)   // control: the extra-range host was released and the bound enrichment ran
+    }
+
+    @Test fun `neighbour dump gives evidence and macs only inside the true subnet`() = runBlocking {
+        val env16 = env.copy(prefixLength = 16)   // swept range clamps to 10.0.3.0/24 at maxPrefix 22
+        val neigh = listOf(com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.7.9", "de:ad:be:ef:00:07", "REACHABLE"),
+            com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("192.168.49.5", "02:00:00:00:00:49", "REACHABLE"))
+        val h = engine(alive = { it.hostAddress == "10.0.7.9" }, neigh = neigh).hosts(opts(), e = env16)
+        assertEquals(listOf("10.0.3.1", "10.0.7.1"), swept())                      // the hotspot range is never a candidate
+        assertEquals("de:ad:be:ef:00:07", h["10.0.7.9"]!!.mac); assertEquals(MacSource.NEIGH, h["10.0.7.9"]!!.macSource)
+        assertFalse("192.168.49.5" in h.keys)
+    }
+    @Test fun `a host known only from the neighbour table keeps its row when three ips share its mac`() = runBlocking {
+        val shared = "aa:bb:cc:dd:ee:ff"
+        val neigh = listOf(20, 21, 22).map { com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.$it", shared, "REACHABLE") }
+        val h = engine(neigh = neigh).hosts(opts(enabled = false))
+        assertEquals(setOf("10.0.3.1", "10.0.3.20", "10.0.3.21", "10.0.3.22"), h.keys)
+        assertTrue(listOf(20, 21, 22).all { h["10.0.3.$it"]!!.mac == null })   // no MAC claim, but the hosts are still listed
     }
 }

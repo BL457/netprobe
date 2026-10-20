@@ -80,6 +80,7 @@ class DiscoveryEngine(
         val local = range.subnet
         val found = HashSet<Inet4Address>()
         val evidence = LinkedHashSet<Inet4Address>()
+        val neighMacs = HashMap<String, String>()   // on-link MACs from the one dump, reused for on-link hosts in extra ranges
         fun noteEvidence(ip: Inet4Address) { if (!local.contains(ip)) synchronized(evidence) { evidence.add(ip) } }
         _status.value = DiscoveryStatus(total = local.size, clampedFrom = if (range.clamped) range.originalPrefix else null,
             ranges = listOf(RangeProgress(local.toString(), null, RangeState.RUNNING, 0, local.size, 0)))
@@ -125,7 +126,9 @@ class DiscoveryEngine(
                     val index = HashMap<Inet4Address, Int>(addresses.size).also { m -> addresses.forEachIndexed { n, a -> m[a] = n } }
                     var probed = 0; var sampleDone = 0; var sampleAlive = 0
                     suspend fun release(l: Liveness) {
-                        emit(DiscoveredHost(l.ip, probedOpenPorts = l.openPorts, sources = setOf(Source.SWEEP)))   // never isGateway (spec 5.3)
+                        val mac = synchronized(neighMacs) { neighMacs[l.ip.hostAddress] }
+                        emit(DiscoveredHost(l.ip, probedOpenPorts = l.openPorts, mac = mac, macSource = mac?.let { MacSource.NEIGH },
+                            sources = setOfNotNull(Source.SWEEP, mac?.let { Source.NEIGH })))   // never isGateway (spec 5.3)
                         released.incrementAndGet()
                         launch { enrichHost(l) }
                     }
@@ -243,9 +246,14 @@ class DiscoveryEngine(
                         try { neighbours() } catch (e: CancellationException) { throw e } catch (e: Exception) { Result.failure(e) }
                     }
                     _status.update { it.copy(neighbourAvailable = neigh.isSuccess) }
-                    neigh.getOrNull()?.forEach { n ->
-                        val ip = runCatching { java.net.InetAddress.getByName(n.ip) as Inet4Address }.getOrNull() ?: return@forEach
-                        if (local.contains(ip)) emit(DiscoveredHost(ip, mac = n.mac, macSource = MacSource.NEIGH, sources = setOf(Source.NEIGH)))
+                    neigh.getOrNull()?.let { entries ->
+                        val r = NeighbourRules.apply(entries, SubnetMath.of(env.interfaceIp, env.prefixLength), local, env.gateway)
+                        synchronized(neighMacs) { neighMacs.putAll(r.macs) }
+                        r.evidence.forEach { noteEvidence(it) }   // evidence contributes ranges, never host rows
+                        r.onLinkIps.filter { local.contains(it) }.forEach { ip ->   // outside the swept range an entry is evidence only
+                            val mac = r.macs[ip.hostAddress]                        // null for the gateway's MAC on another IP and for proxy ARP: the row stays, the claim goes
+                            emit(DiscoveredHost(ip, mac = mac, macSource = mac?.let { MacSource.NEIGH }, sources = setOf(Source.NEIGH)))
+                        }
                     }
                 }
             }
