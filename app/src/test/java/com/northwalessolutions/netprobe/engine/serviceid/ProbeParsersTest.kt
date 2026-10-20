@@ -13,6 +13,10 @@ class ProbeParsersTest {
     @Test fun `non rtsp text is not rtsp`() {
         assertNull(BannerParsers.rtspReply("HTTP/1.1 400 Bad Request\r\n\r\n")); assertNull(BannerParsers.rtspReply(""))
     }
+    @Test fun `an rtsp server line without a colon gives no server`() {
+        val r = BannerParsers.rtspReply("RTSP/1.0 200 OK\r\nCSeq: 1\r\nServer\r\n\r\n")!!
+        assertEquals("RTSP", r.name); assertNull(r.server); assertNull(r.product)
+    }
     @Test fun `rtsp options request is exact`() {
         assertEquals("OPTIONS rtsp://10.0.3.40:554/ RTSP/1.0\r\nCSeq: 1\r\n\r\n", String(BannerParsers.rtspOptions("10.0.3.40", 554), Charsets.ISO_8859_1))
     }

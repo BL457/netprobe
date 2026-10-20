@@ -11,6 +11,7 @@ import java.net.Inet4Address
 import java.net.Proxy
 import java.net.URL
 import java.security.cert.X509Certificate
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.*
 
@@ -56,19 +57,24 @@ open class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBy
     open suspend fun fetch(ip: Inet4Address, port: Int, tls: Boolean): HttpPeek? {
         val binder = currentBinder()
         val live = AtomicReference<HttpURLConnection?>(null)
+        val cancelled = AtomicBoolean(false)
         return try {
             // A blocking read ignores interrupts on Android: Stop disconnects the live connection instead (spec 2.2.5).
-            closeOnCancel({ live.get()?.disconnect() }) { fetchBlocking(ip, port, tls, binder, live) }
+            closeOnCancel({ cancelled.set(true); live.get()?.disconnect() }) { fetchBlocking(ip, port, tls, binder, live, cancelled) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     }
 
-    private fun fetchBlocking(ip: Inet4Address, port: Int, tls: Boolean, binder: SocketBinder?, live: AtomicReference<HttpURLConnection?>): HttpPeek {
+    private fun fetchBlocking(ip: Inet4Address, port: Int, tls: Boolean, binder: SocketBinder?, live: AtomicReference<HttpURLConnection?>,
+                              cancelled: AtomicBoolean): HttpPeek {
         var url = URL(if (tls) "https" else "http", ip.hostAddress, port, "/")
         var hops = 0
         while (true) {
+            if (cancelled.get()) throw IOException("cancelled")
             // NO_PROXY: a LAN fetch must never be handed to a Wi-Fi proxy or PAC outside the network; bound to Wi-Fi in the extended phase.
             val c = (binder?.openConnection(url) ?: url.openConnection(Proxy.NO_PROXY)) as HttpURLConnection
             live.set(c)
+            // Stop may have fired before live was set; a connect already under way cannot be closed through HttpURLConnection.
+            if (cancelled.get()) { c.disconnect(); throw IOException("cancelled") }
             try {
                 if (c is HttpsURLConnection) { c.sslSocketFactory = trustAll; c.hostnameVerifier = HostnameVerifier { _, _ -> true } }
                 c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false

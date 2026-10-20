@@ -66,7 +66,7 @@ object BannerParsers {
         if (lines.firstOrNull()?.startsWith("RTSP/1.0") != true) return null
         val server = lines.drop(1).takeWhile { it.isNotBlank() }
             .firstOrNull { it.substringBefore(':').trim().equals("server", ignoreCase = true) }
-            ?.substringAfter(':')?.trim()?.take(MAX_HEADER)?.ifEmpty { null }
+            ?.substringAfter(':', "")?.trim()?.take(MAX_HEADER)?.ifEmpty { null }
         val (product, version) = server?.let { serverHeader(it) } ?: (null to null)
         return ServiceInfo("RTSP", product, version, null, Confidence.CONFIRMED, server = server)
     }
