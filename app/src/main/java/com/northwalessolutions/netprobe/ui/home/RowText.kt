@@ -2,6 +2,7 @@ package com.northwalessolutions.netprobe.ui.home
 
 import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.netenv.SubnetMath
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 
 data class HostGroup(val subnet: String, val local: Boolean, val rows: List<HostRow>)
 
@@ -31,6 +32,7 @@ object RowText {
         if (r.openPorts > 0) add(if (r.openPorts == 1) "1 open port" else "${r.openPorts} open ports")
         if (r.status != HostStatus.UNMARKED) add("marked ${r.status.label()}")
         if (r.stale) add("not seen in the last scan")
+        if (r.running) add(ToolCopy.rowSuffix(r.runningIsScan))
     }.joinToString(", ")
 }
 

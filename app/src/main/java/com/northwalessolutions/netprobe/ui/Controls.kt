@@ -169,3 +169,14 @@ fun BackToHome(onBack: () -> Unit, trailing: @Composable () -> Unit = {}) {
         trailing()
     }
 }
+
+/** A back row with its own label, for screens whose way back is not Home (spec 8.6: the Wordlists screen's "Back"). */
+@Composable
+fun BackRow(label: String, onBack: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button, onClick = onBack).padding(horizontal = Dimens.gutter),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, tint = NetProbeColors.textMuted, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(label, style = NetProbeText.data, color = NetProbeColors.textMuted)
+    }
+}

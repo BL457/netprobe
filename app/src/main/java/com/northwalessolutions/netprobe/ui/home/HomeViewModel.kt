@@ -18,6 +18,8 @@ import com.northwalessolutions.netprobe.engine.portscan.PortState
 import com.northwalessolutions.netprobe.engine.serviceid.Evidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
+import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.SubnetMath
@@ -33,12 +35,13 @@ private const val EXT_LOG_TAG = "NetProbeExt"
 
 enum class StatusFilter(val label: String) { ALL("All"), INTERESTING("Interesting"), INVESTIGATED("Investigated"), IGNORED("Ignored"), UNMARKED("Unmarked") }
 data class HostRow(val id: Long, val ip: String, val displayName: String, val identityLine: String, val type: DeviceType, val openPorts: Int, val status: HostStatus, val isGateway: Boolean, val stale: Boolean, val mac: String?,
-                   val subnet: String = "", val offSubnet: Boolean = false)
+                   val subnet: String = "", val offSubnet: Boolean = false, val running: Boolean = false, val runningIsScan: Boolean = false)
 data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = false, val status: DiscoveryStatus? = null, val rows: List<HostRow> = emptyList(),
                        val filter: StatusFilter = StatusFilter.ALL, val query: String = "", val message: String? = null, val networkName: String? = null, val quickScanning: Boolean = false,
                        val lastScanAt: Long? = null, val totalHosts: Int = 0, val otherSubnetHosts: Int = 0, val scanStartedAt: Long? = null, val scanFinishedAt: Long? = null,
                        val groups: List<HostGroup> = emptyList(), val lastRunRanges: List<RangeProgress> = emptyList(),
-                       val scanCompleted: Boolean = true, val networkId: Long? = null, val undoText: String? = null)
+                       val scanCompleted: Boolean = true, val networkId: Long? = null, val undoText: String? = null,
+                       val appMessage: String? = null, val appMessageId: Long? = null, val toolRunningOnNetwork: Boolean = false)
 
 object IdentityLine {
     val DeviceType.label: String get() = when (this) { DeviceType.ROUTER -> "Router"; DeviceType.PHONE -> "Phone"; DeviceType.COMPUTER -> "Computer"; DeviceType.PRINTER -> "Printer"
@@ -119,7 +122,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val hosts: Flow<List<HostEntity>> = combine(networkId, c.forgottenNetworkId) { id, gone -> id?.takeIf { it != gone } }
         .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
 
-    val state: StateFlow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts,
+    private val baseState: Flow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts,
         finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress, lastRunCompleted, networkId, c.undo.pending) { arr ->
         @Suppress("UNCHECKED_CAST")
         val hs = arr[3] as List<HostEntity>
@@ -142,7 +145,18 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             scanStartedAt = run.takeIf { it > 0 }, scanFinishedAt = done, groups = HomeGroups.of(shown),
             lastRunRanges = lastRun, scanCompleted = arr[14] as Boolean,
             networkId = arr[15] as Long?, undoText = (arr[16] as PendingUndo?)?.text)
+    }
+
+    /** Rows held by a port scan or a tool show "running"; the newest end-of-run message is offered to the notice line (spec 4.3, 8.8).
+     *  [HomeUiState.toolRunningOnNetwork] reads the `hosts` flow (every host of the shown network, not only the filtered rows), so
+     *  Forget this network stays disabled while a tool holds any of them (plan review G9). */
+    val state: StateFlow<HomeUiState> = combine(baseState, c.hostBusy.busy, c.appMessages.current, hosts) { s, busy, message, hs ->
+        val rows = s.rows.map { r -> busy[r.id]?.let { w -> r.copy(running = true, runningIsScan = w == HostBusyRegistry.Work.PORT_SCAN) } ?: r }
+        s.copy(rows = rows, groups = HomeGroups.of(rows), appMessage = message?.text, appMessageId = message?.id,
+            toolRunningOnNetwork = hs.any { busy[it.id] == HostBusyRegistry.Work.TOOL })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
+
+    fun dismissAppMessage() { state.value.appMessageId?.let { c.appMessages.dismiss(it) } }
 
     init {
         viewModelScope.launch {
@@ -233,7 +247,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
 
     /** Home overflow "Forget this network": a soft delete until the Undo ends; the UI disables it while a scan or the settle runs (spec 5.3). */
     fun forgetNetwork() {
-        if (controller.isRunning || quick.isRunning) return
+        if (controller.isRunning || quick.isRunning || state.value.toolRunningOnNetwork) return
         val net = c.currentNetwork.value ?: return
         if (c.forgottenNetworkId.value == net.id) return   // a double tap never posts twice
         // Set before launching: Home hides the rows and discoverOn refuses this network from this line on, so no Scan can start on it.
@@ -269,16 +283,23 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun stopQuickScan() = quick.stop()
 
     private suspend fun quickScanAllBody(e: NetworkEnv) {
-        var failed = 0; var unbound = 0
+        var failed = 0; var unbound = 0; var skipped = 0
         try {
             val net = networkId.value ?: return
             QuickScanAllLoop.run(c.hosts.hostsForNetwork(net).first(), { it.id },
-                { RemovedHosts.skipQuickScan(c.removedHostIds.value, c.removedDuringScan.value, net, it.id, it.ip) }, c.hostScanJobs) { h ->
-                // One unreachable or odd host must not end the sweep for the rest; an off-subnet host that cannot be bound is skipped and said so.
-                try { quickScanHost(h, e) } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
+                { RemovedHosts.skipQuickScan(c.removedHostIds.value, c.removedDuringScan.value, net, it.id, it.ip) }, c.hostScanJobs) scanOne@{ h ->
+                // A host a tool holds is skipped and counted (spec 4.3); a host another port scan holds is skipped silently.
+                if (!c.hostBusy.tryClaim(h.id, HostBusyRegistry.Work.PORT_SCAN)) {
+                    if (c.hostBusy.busy.value[h.id] == HostBusyRegistry.Work.TOOL) skipped++
+                    return@scanOne
+                }
+                try {
+                    // One unreachable or odd host must not end the sweep for the rest; an off-subnet host that cannot be bound is skipped and said so.
+                    try { quickScanHost(h, e) } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
+                } finally { c.hostBusy.release(h.id, HostBusyRegistry.Work.PORT_SCAN) }
             }
         } finally {
-            val parts = listOfNotNull(if (failed > 0) "Quick scan finished, $failed device(s) could not be scanned" else null, if (unbound > 0) HomeCopy.BIND_FAILED else null)
+            val parts = listOfNotNull(ToolCopy.quickEnd(failed, skipped), if (unbound > 0) HomeCopy.BIND_FAILED else null)
             if (parts.isNotEmpty()) extraMessage.value = parts.joinToString(". ")
         }
     }

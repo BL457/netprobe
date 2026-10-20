@@ -1,0 +1,172 @@
+package com.northwalessolutions.netprobe.ui.wordlists
+
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.northwalessolutions.netprobe.AppContainer
+import com.northwalessolutions.netprobe.ui.BackRow
+import com.northwalessolutions.netprobe.ui.home.RelativeTime
+import com.northwalessolutions.netprobe.ui.theme.*
+import com.northwalessolutions.netprobe.ui.tools.ActionPill
+import com.northwalessolutions.netprobe.wordlists.ImportResult
+import com.northwalessolutions.netprobe.wordlists.WordlistMeta
+import com.northwalessolutions.netprobe.wordlists.WordlistStore
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+data class WordlistsActions(val onBack: () -> Unit = {}, val onImport: () -> Unit = {}, val onDelete: (WordlistMeta) -> Unit = {})
+
+/** The snackbar text for an import (spec 9). */
+object WordlistImport {
+    fun message(result: ImportResult): String = when (result) {
+        is ImportResult.Imported -> WordlistCopy.imported(result.meta.name, result.meta.entries, result.skipped)
+        ImportResult.TooLarge -> WordlistCopy.TOO_LARGE
+        ImportResult.TooMany -> WordlistCopy.TOO_MANY
+        ImportResult.Empty -> WordlistCopy.EMPTY_FILE
+        ImportResult.Unreadable -> WordlistCopy.UNREADABLE
+    }
+}
+
+private val SECTION_PAD = 10.dp
+private val ROW_VERTICAL = 8.dp
+private val ROW_END = 6.dp
+private val DELETE_PAD = 12.dp
+private val NO_LISTS: StateFlow<List<WordlistMeta>> = MutableStateFlow(emptyList())
+private const val PICKER_MIME = "text/plain"
+
+/**
+ * The store, resolved off the main thread: its first access scans the built-in resources, so it never happens during composition.
+ * Null until it is ready.
+ */
+@Composable
+internal fun rememberWordlistStore(container: AppContainer): State<WordlistStore?> =
+    produceState<WordlistStore?>(null, container) { value = withContext(Dispatchers.IO) { container.wordlistStore } }
+
+/** The wordlist metadata, empty until the store has loaded. */
+@Composable
+internal fun rememberWordlists(container: AppContainer): State<List<WordlistMeta>> {
+    val store by rememberWordlistStore(container)
+    return (store?.lists ?: NO_LISTS).collectAsStateWithLifecycle()
+}
+
+/**
+ * The Wordlists screen (spec 8.6), stateless: a pinned top block (back row, title, the Import pill) and a scrolling list of built-in
+ * then imported lists. Delete confirms in an AlertDialog. The Import pill is never inside the list.
+ */
+@Composable
+fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: String?, onMessageShown: () -> Unit, actions: WordlistsActions,
+                     formatDate: (Long) -> String = RelativeTime::defaultDate) {
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); onMessageShown() } }
+    var confirm by remember { mutableStateOf<WordlistMeta?>(null) }
+    Scaffold(containerColor = NetProbeColors.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+        Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)) {
+            BackRow(WordlistCopy.BACK, actions.onBack)
+            Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
+                Text(WordlistCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.weight(1f))
+                ActionPill(if (importing) WordlistCopy.IMPORTING else WordlistCopy.IMPORT, enabled = !importing, onClick = actions.onImport, tag = "importWordlist")
+            }
+        }
+    }) { pad ->
+        val builtIn = lists.filter { it.builtIn }; val imported = lists.filter { !it.builtIn }
+        LazyColumn(Modifier.padding(pad).fillMaxSize().testTag("wordlistList")) {
+            item(key = "builtInHeader") { SectionHeader(WordlistCopy.BUILT_IN) }
+            items(builtIn, key = { it.id }) { WordlistRow(it.name, WordlistCopy.entriesBuiltIn(it.entries), null) }
+            item(key = "importedHeader") { SectionHeader(WordlistCopy.IMPORTED) }
+            if (imported.isEmpty()) item(key = "empty") {
+                Text(WordlistCopy.NO_IMPORTED, style = NetProbeText.secondary, color = NetProbeColors.textMuted, modifier = Modifier.padding(horizontal = Dimens.gutter, vertical = SECTION_PAD))
+            }
+            items(imported, key = { it.id }) { meta ->
+                WordlistRow(meta.name, WordlistCopy.entriesImported(meta.entries, formatDate(meta.importedAt ?: 0L)), meta.id) { confirm = meta }
+            }
+        }
+    }
+    confirm?.let { meta ->
+        AlertDialog(onDismissRequest = { confirm = null }, containerColor = NetProbeColors.surface,
+            title = { Text(WordlistCopy.deletePrompt(meta.name), style = NetProbeText.rowName, color = NetProbeColors.text) },
+            confirmButton = { TextButton({ confirm = null; actions.onDelete(meta) }, modifier = Modifier.testTag("confirmDelete")) { Text(WordlistCopy.DELETE, color = NetProbeColors.signal) } },
+            dismissButton = { TextButton({ confirm = null }) { Text(WordlistCopy.CANCEL, color = NetProbeColors.textSecondary) } })
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Column(Modifier.fillMaxWidth().padding(top = SECTION_PAD)) {
+        HorizontalDivider(thickness = 1.dp, color = NetProbeColors.surface)
+        Text(title, style = NetProbeText.groupHeader, color = NetProbeColors.textMuted,
+            modifier = Modifier.padding(start = Dimens.gutter, top = SECTION_PAD, bottom = 4.dp).semantics { heading() })
+    }
+}
+
+@Composable
+private fun WordlistRow(name: String, line: String, deleteId: String?, onDelete: () -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).padding(start = Dimens.gutter, end = ROW_END, top = ROW_VERTICAL, bottom = ROW_VERTICAL),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(name, style = NetProbeText.secondary, color = NetProbeColors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(line, style = NetProbeText.data, color = NetProbeColors.textMuted)
+        }
+        if (deleteId != null) {
+            Box(Modifier.heightIn(min = Dimens.touch).widthIn(min = Dimens.touch).clickable(role = Role.Button, onClick = onDelete)
+                .semantics { contentDescription = WordlistCopy.deleteDescription(name) }.testTag("delete:$deleteId"), contentAlignment = Alignment.Center) {
+                Text(WordlistCopy.DELETE, style = NetProbeText.action, color = NetProbeColors.signal, modifier = Modifier.padding(horizontal = DELETE_PAD))
+            }
+        }
+    }
+}
+
+/** Route "wordlists": SAF import (ACTION_OPEN_DOCUMENT, text/plain, no permission), import on Dispatchers.IO, delete through the store. */
+@Composable
+fun WordlistsScreen(container: AppContainer, onBack: () -> Unit) {
+    val store by rememberWordlistStore(container)
+    val lists by rememberWordlists(container)
+    val scope = rememberCoroutineScope(); val ctx = LocalContext.current
+    var importing by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val target = store
+        if (uri == null || target == null) return@rememberLauncherForActivityResult
+        importing = true
+        scope.launch {
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    ctx.contentResolver.openInputStream(uri)?.use { target.import(displayName(ctx, uri), it) } ?: ImportResult.Unreadable
+                }
+            } catch (ce: CancellationException) { throw ce } catch (_: Exception) { ImportResult.Unreadable }
+            importing = false
+            message = WordlistImport.message(result)
+        }
+    }
+    WordlistsContent(lists, importing, message, { message = null },
+        WordlistsActions(onBack = onBack, onImport = { launcher.launch(arrayOf(PICKER_MIME)) },
+            onDelete = { meta -> scope.launch { store?.delete(meta.id) } }))
+}
+
+private fun displayName(ctx: Context, uri: Uri): String? =
+    try {
+        ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    } catch (_: Exception) { null }

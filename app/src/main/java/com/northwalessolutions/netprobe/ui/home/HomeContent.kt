@@ -25,7 +25,7 @@ data class HomeActions(
     val onScan: () -> Unit = {}, val onStop: () -> Unit = {}, val onOpenHost: (Long) -> Unit = {}, val onDismissMessage: () -> Unit = {},
     val onFilter: (StatusFilter) -> Unit = {}, val onQuery: (String) -> Unit = {}, val onQuickScanAll: () -> Unit = {},
     val onStopQuickScan: () -> Unit = {}, val onOpenSettings: () -> Unit = {}, val onRequestLocation: () -> Unit = {},
-    val onForget: () -> Unit = {}, val onUndo: () -> Unit = {}, val onDismissUndo: () -> Unit = {},
+    val onForget: () -> Unit = {}, val onUndo: () -> Unit = {}, val onDismissUndo: () -> Unit = {}, val onDismissApp: () -> Unit = {},
 )
 
 private const val MS_PER_S = 1000L
@@ -58,7 +58,7 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
                 HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && !radarBusy && state.totalHosts > 0 && state.env != null),
                     quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan, onSettings = actions.onOpenSettings,
-                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy, onForget = actions.onForget)
+                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.toolRunningOnNetwork, onForget = actions.onForget)
             }
             RadarBlock(mode, progress?.found ?: 0, ProgressLine.of(progress, elapsedS), summary, canScan = state.env != null,
                 onScan = { actions.onDismissMessage(); actions.onScan() }, onStop = actions.onStop, modifier = Modifier.padding(top = 12.dp),
@@ -67,10 +67,11 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             // While an Undo is pending it takes the notice line; an earlier notice was not dismissed and shows again afterwards (spec 5.3).
             val notice = when {
                 state.undoText != null -> Notice(state.undoText, undo = true)
+                state.appMessage != null -> Notice(state.appMessage, undo = false, app = true)
                 state.message != null -> Notice(state.message, undo = false)
                 else -> null
             }
-            NoticeArea(notice, actions.onDismissMessage, actions.onUndo, actions.onDismissUndo)
+            NoticeArea(notice, actions.onDismissMessage, actions.onUndo, actions.onDismissUndo, onDismissApp = actions.onDismissApp)
             if (HeaderRules.showFilters(mode, state.filter, state.query)) {
                 FilterRow(state.filter, actions.onFilter)
                 SearchField(state.query, actions.onQuery)

@@ -29,6 +29,7 @@ import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.theme.*
+import com.northwalessolutions.netprobe.ui.wordlists.rememberWordlists
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -40,7 +41,7 @@ private val SWITCH_ROW_MIN = 56.dp
 
 // The IME joins the content insets, as on Home and Detail; a separate imePadding would count the navigation bar twice.
 @Composable
-fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
+fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists: () -> Unit = {}) {
     val s by container.settings.state.collectAsStateWithLifecycle()
     val update: ((SettingsState) -> SettingsState) -> Unit = { container.settings.update(it) }
     val snackbar = remember { SnackbarHostState() }
@@ -90,6 +91,8 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
                     snackbar.showSnackbar(msg)
                 }
             }, modifier = Modifier.heightIn(min = Dimens.touch)) { Text("Clear vulnerability cache", style = NetProbeText.action, color = NetProbeColors.signal) }
+            val wordlists by rememberWordlists(container)
+            ToolsSection(imported = wordlists.count { !it.builtIn }, onOpenWordlists = onOpenWordlists)
             Spacer(Modifier.height(24.dp))
         }
     }

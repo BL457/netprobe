@@ -19,6 +19,7 @@ import com.northwalessolutions.netprobe.ui.home.HomeScreen
 import com.northwalessolutions.netprobe.ui.settings.SettingsScreen
 import com.northwalessolutions.netprobe.ui.theme.LocalReducedMotion
 import com.northwalessolutions.netprobe.ui.theme.Motion
+import com.northwalessolutions.netprobe.ui.wordlists.WordlistsScreen
 
 @Composable
 fun NetProbeNav(container: AppContainer) {
@@ -28,17 +29,19 @@ fun NetProbeNav(container: AppContainer) {
     val nav = rememberNavController()
     NetProbeNavHost(nav,
         home = { HomeScreen(container, onOpenHost = { nav.navigate("host/$it") }, onOpenSettings = { nav.navigate("settings") }) },
-        detail = { id -> DetailScreen(container, id, onBack = { nav.popBackStack() }) },
-        settings = { SettingsScreen(container, onBack = { nav.popBackStack() }) })
+        detail = { id -> DetailScreen(container, id, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate("wordlists") }) },
+        settings = { SettingsScreen(container, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate("wordlists") }) },
+        wordlists = { WordlistsScreen(container, onBack = { nav.popBackStack() }) })
 }
 
 /**
  * The routes with their transitions (spec 1.9): the entering screen slides in from a quarter of the width and fades in, the leaving
- * one slides a tenth and fades out, 240 ms FastOutSlowIn; none under reduced motion. Stateless over its three destinations, so the
+ * one slides a tenth and fades out, 240 ms FastOutSlowIn; none under reduced motion. Stateless over its destinations, so the
  * Compose test passes fakes and no test runs a real discovery.
  */
 @Composable
-fun NetProbeNavHost(nav: NavHostController, home: @Composable () -> Unit, detail: @Composable (Long) -> Unit, settings: @Composable () -> Unit) {
+fun NetProbeNavHost(nav: NavHostController, home: @Composable () -> Unit, detail: @Composable (Long) -> Unit, settings: @Composable () -> Unit,
+                   wordlists: @Composable () -> Unit = {}) {
     val reduced = LocalReducedMotion.current
     val slide = tween<IntOffset>(Motion.NAV_MS, easing = FastOutSlowInEasing)
     val fade = tween<Float>(Motion.NAV_MS, easing = FastOutSlowInEasing)
@@ -51,5 +54,6 @@ fun NetProbeNavHost(nav: NavHostController, home: @Composable () -> Unit, detail
         composable("home") { home() }
         composable("host/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { detail(it.arguments!!.getLong("id")) }
         composable("settings") { settings() }
+        composable("wordlists") { wordlists() }
     }
 }

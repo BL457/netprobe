@@ -38,6 +38,7 @@ import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.netenv.Transport
 import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.theme.*
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 
 /** Test hooks: the edge colour of a row and the alpha a text is drawn with. Not announced by TalkBack. */
 val EdgeColorKey = SemanticsPropertyKey<Color>("EdgeColor")
@@ -164,14 +165,14 @@ fun NoticeLine(text: String, onDismiss: () -> Unit, onUndo: (() -> Unit)? = null
     }
 }
 
-data class Notice(val text: String, val undo: Boolean)
+data class Notice(val text: String, val undo: Boolean, val app: Boolean = false)
 
 /**
  * The notice line expands and fades in over 200 ms and shrinks and fades out over 160 ms (spec 1.13); the last notice is latched so
  * the exit animates the old words, not a blank line. A late notice therefore slides the list down instead of jumping it.
  */
 @Composable
-fun NoticeArea(notice: Notice?, onDismiss: () -> Unit, onUndo: () -> Unit, onDismissUndo: () -> Unit) {
+fun NoticeArea(notice: Notice?, onDismiss: () -> Unit, onUndo: () -> Unit, onDismissUndo: () -> Unit, onDismissApp: () -> Unit = {}) {
     val reduced = LocalReducedMotion.current
     var last by remember { mutableStateOf(notice) }
     LaunchedEffect(notice) { if (notice != null) last = notice }
@@ -179,7 +180,7 @@ fun NoticeArea(notice: Notice?, onDismiss: () -> Unit, onUndo: () -> Unit, onDis
     AnimatedVisibility(visible = notice != null, modifier = Modifier.testTag("noticeArea"),
         enter = if (reduced) EnterTransition.None else expandVertically(tween(Motion.NOTICE_IN_MS)) + fadeIn(tween(Motion.NOTICE_IN_MS)),
         exit = if (reduced) ExitTransition.None else shrinkVertically(tween(Motion.NOTICE_OUT_MS)) + fadeOut(tween(Motion.NOTICE_OUT_MS))) {
-        shown?.let { n -> if (n.undo) NoticeLine(n.text, onDismissUndo, onUndo = onUndo) else NoticeLine(n.text, onDismiss) }
+        shown?.let { n -> when { n.undo -> NoticeLine(n.text, onDismissUndo, onUndo = onUndo); n.app -> NoticeLine(n.text, onDismissApp); else -> NoticeLine(n.text, onDismiss) } }
     }
 }
 
@@ -233,7 +234,9 @@ fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit,
                     modifier = Modifier.drawnAlpha(1f).testTag("rowData"))
             }
         }
-        if (r.openPorts > 0) Text("${r.openPorts} open", style = NetProbeText.count, color = NetProbeColors.signal, textAlign = TextAlign.End,
+        if (r.running) Text(ToolCopy.RUNNING_MARKER, style = NetProbeText.caption, color = NetProbeColors.signal, textAlign = TextAlign.End,
+            modifier = Modifier.padding(start = 12.dp).testTag("rowRunning"))
+        else if (r.openPorts > 0) Text("${r.openPorts} open", style = NetProbeText.count, color = NetProbeColors.signal, textAlign = TextAlign.End,
             modifier = Modifier.padding(start = 12.dp))
     }
 }

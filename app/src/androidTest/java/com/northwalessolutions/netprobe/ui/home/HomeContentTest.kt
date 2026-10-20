@@ -230,4 +230,30 @@ class HomeContentTest {
         rule.mainClock.advanceTimeBy(1_000)
         rule.onNodeWithText("Quick scan all").assertIsEnabled(); rule.onNodeWithText("Forget this network").assertIsEnabled()
     }
+    @Test fun aHeldHostShowsRunningInPlaceOfItsPortCount() {
+        val base = HomeFakes.settled()
+        val rows = base.rows.mapIndexed { i, r -> if (i == 0) r.copy(openPorts = 3, running = true) else r }
+        show(base.copy(rows = rows, groups = HomeGroups.of(rows)))
+        rule.onNodeWithTag("rowRunning").assertTextEquals("running")
+        rule.onAllNodesWithTag("hostRow")[0].assert(hasContentDescription("tool running", substring = true))
+        rule.onNodeWithText("3 open").assertDoesNotExist()
+    }
+    @Test fun forgetThisNetworkIsDisabledWhileAToolRunsOnIt() {
+        var st by mutableStateOf(HomeFakes.settled().copy(networkId = 1, toolRunningOnNetwork = true))
+        rule.setContent { NetProbeTheme { HomeContent(st, rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro") } }
+        rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithText("Forget this network").assertIsNotEnabled()
+        st = st.copy(toolRunningOnNetwork = false); rule.waitForIdle()
+        rule.onNodeWithText("Forget this network").assertIsEnabled()
+    }
+    @Test fun anAppMessageShowsBelowAnUndoAndIsDismissedThroughItsOwnAction() {
+        var dismissed = 0
+        var st by mutableStateOf(HomeFakes.settled().copy(appMessage = "HTTP fingerprint finished: Pi-hole, 6 findings", appMessageId = 5, undoText = "Removed DiskStation"))
+        rule.setContent { NetProbeTheme { HomeContent(st, HomeActions(onDismissApp = { dismissed++ }), now = 121_000L, ownModel = "Pixel 7 Pro") } }
+        rule.onNodeWithText("Removed DiskStation").assertIsDisplayed()                       // Undo wins
+        rule.onNodeWithText("HTTP fingerprint finished: Pi-hole, 6 findings").assertDoesNotExist()
+        st = st.copy(undoText = null); rule.waitForIdle()
+        rule.onNodeWithText("HTTP fingerprint finished: Pi-hole, 6 findings").assertIsDisplayed()
+        rule.onNodeWithContentDescription("Dismiss notice").performClick()
+        assertEquals(1, dismissed)
+    }
 }
