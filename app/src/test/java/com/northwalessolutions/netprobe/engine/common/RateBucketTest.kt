@@ -10,7 +10,13 @@ class RateBucketTest {
 
     @Test fun `the burst grants ten at once, then a wait`() {
         repeat(10) { assertEquals("token $it", 0L, bucket.acquireDelayMs()) }
-        assertTrue("the eleventh must wait", bucket.acquireDelayMs() > 0)
+        assertEquals("the eleventh waits exactly one token's time at 100 per second", 10L, bucket.acquireDelayMs())
+    }
+    @Test fun `a clock that steps backwards never removes tokens`() {
+        now = 5_000
+        val stepped = RateBucket(ratePerSecond = 100, burst = 10) { now }
+        now = 0
+        repeat(10) { assertEquals("token $it after the clock stepped back", 0L, stepped.acquireDelayMs()) }
     }
     @Test fun `no more than one hundred are granted in any one second window`() {
         var granted = 0
