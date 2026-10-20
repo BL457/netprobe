@@ -189,7 +189,7 @@ class DiscoveryEngineExtendedTest {
         withTimeout(5_000) { while (e.status.value.ranges.getOrNull(1)?.let { it.state == RangeState.RUNNING && it.probed >= 5 } != true) delay(10) }
         val t0 = System.nanoTime(); job.cancelAndJoin(); val ms = (System.nanoTime() - t0) / 1_000_000
         assertTrue("took $ms ms", ms < 1_000)
-        assertEquals(listOf(RangeState.DONE, RangeState.CANCELLED, RangeState.CANCELLED), e.states())
+        assertEquals(listOf(RangeState.DONE, RangeState.CANCELLED, RangeState.PENDING), e.states())   // a range that never started stays PENDING (M4)
         assertTrue(got.none { it.ip.hostAddress.startsWith("10.0.4.") })   // held by the undecided guard, never emitted
         assertEquals(DiscoveryPhase.DONE, e.status.value.phase)
     }
@@ -228,7 +228,7 @@ class DiscoveryEngineExtendedTest {
             onNetbios = { a -> if (a.hostAddress == "10.0.4.7") throw BindFailedException(SocketException("EPERM")) })
         val h = e.hosts(opts(manual = listOf("10.0.4.0/24", "10.0.5.0/24")))
         assertEquals(listOf(ExtendedNote.SKIPPED_BIND_FAILED), e.status.value.notes); assertEquals(listOf("10.0.3.1", "10.0.4.1"), swept())
-        assertEquals(listOf(RangeState.DONE, RangeState.CANCELLED, RangeState.CANCELLED), e.states()); assertEquals(DiscoveryPhase.DONE, e.status.value.phase)
+        assertEquals(listOf(RangeState.DONE, RangeState.CANCELLED, RangeState.PENDING), e.states()); assertEquals(DiscoveryPhase.DONE, e.status.value.phase)
         assertTrue("10.0.4.7" in h.keys)   // released before its enrichment failed: partial results stay
         log.clear()
         val c = engine(canary = { _, _ -> throw BindFailedException(SocketException("EPERM")) })

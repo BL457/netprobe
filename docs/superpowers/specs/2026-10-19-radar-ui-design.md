@@ -404,6 +404,8 @@ Sentence case, active voice, no disclaimers. Plurals: "1 device", "13 devices". 
 | Done | "13 devices" / "Scanned in 12 s, 1 on another subnet" |
 | Done, single subnet | "13 devices" / "Scanned in 12 s" |
 | Done, nothing found | "No devices found" / "Scanned in 12 s" |
+| Done, range summary headline (extended run; only when at least one other range was swept, otherwise the row is omitted) | "2 other ranges checked" ("1 other range checked") |
+| Done, range summary line | "10.0.4.0/24  evidence  swept, 3 found"; outcomes: "swept, N found", "swept, nothing reachable", "skipped, every address answered", "not swept, scan limit reached", "stopped" (the range that was running at Stop), "not started" (a range the run never reached); sources: "manual", "evidence", "gateway probe" |
 | Hero | "Nothing scanned yet" / "Tap to find what is on 10.0.3.0/24" |
 | Hero, no network | "No network" / "Connect to Wi-Fi or Ethernet to scan" |
 | Disc centre | count, "found" beneath |

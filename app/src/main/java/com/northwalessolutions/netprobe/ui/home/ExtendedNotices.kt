@@ -39,8 +39,8 @@ object ExtendedNotices {
 object RangeSummaryText {
     fun headline(otherRanges: Int): String = HomeCopy.rangesChecked(otherRanges)
 
-    /** The headline counts ranges actually swept; skipped, capped and stopped ranges appear only in the expanded lines. */
-    fun checked(ranges: List<RangeProgress>): String = headline(ranges.drop(1).count { it.state == RangeState.DONE })
+    /** The headline counts ranges actually swept; skipped, capped and stopped ranges appear only in the expanded lines. Null when none was swept (M4). */
+    fun checked(ranges: List<RangeProgress>): String? = ranges.drop(1).count { it.state == RangeState.DONE }.takeIf { it > 0 }?.let(::headline)
 
     /** [ranges] is the status list with the local range first; the local range is not listed. */
     fun lines(ranges: List<RangeProgress>): List<String> = ranges.drop(1).map { r ->
@@ -54,8 +54,8 @@ object RangeSummaryText {
             RangeState.DONE -> HomeCopy.outcomeSwept(r.found)
             RangeState.PHANTOM -> HomeCopy.OUTCOME_PHANTOM
             RangeState.TRUNCATED -> HomeCopy.OUTCOME_CAPPED
-            RangeState.CANCELLED -> HomeCopy.OUTCOME_STOPPED
-            RangeState.PENDING, RangeState.RUNNING -> HomeCopy.OUTCOME_NOT_SWEPT
+            RangeState.CANCELLED, RangeState.RUNNING -> HomeCopy.OUTCOME_STOPPED   // RUNNING never survives the engine's finally
+            RangeState.PENDING -> HomeCopy.OUTCOME_NOT_STARTED
         }
         HomeCopy.rangeLine(r.subnet, source, outcome)
     }

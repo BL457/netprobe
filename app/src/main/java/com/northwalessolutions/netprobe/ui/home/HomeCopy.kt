@@ -31,7 +31,7 @@ object HomeCopy {
     const val OUTCOME_PHANTOM = "skipped, every address answered"
     const val OUTCOME_CAPPED = "not swept, scan limit reached"
     const val OUTCOME_STOPPED = "stopped"
-    const val OUTCOME_NOT_SWEPT = "not swept"
+    const val OUTCOME_NOT_STARTED = "not started"
     fun rangesChecked(n: Int) = if (n == 1) "1 other range checked" else "$n other ranges checked"
     fun outcomeSwept(found: Int) = if (found == 0) "swept, nothing reachable" else "swept, $found found"
     fun rangeLine(subnet: String, source: String, outcome: String) = "$subnet  $source  $outcome"

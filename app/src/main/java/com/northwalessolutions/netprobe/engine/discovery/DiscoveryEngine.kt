@@ -277,9 +277,10 @@ class DiscoveryEngine(
 
             if (options.extended.enabled) extendedPhase()
         } finally {
-            // Stop, a network change or a failure: whatever had not finished is CANCELLED; partial results stay (spec 5.4).
+            // Stop, a network change or a failure: the range that was running is CANCELLED; partial results stay (spec 5.4).
+            // A range that never started stays PENDING, so the summary says "not started", not "stopped" (final review M4).
             _status.update { s -> s.copy(phase = DiscoveryPhase.DONE, ranges = s.ranges.map { r ->
-                if (r.state == RangeState.RUNNING || r.state == RangeState.PENDING) r.copy(state = RangeState.CANCELLED) else r }) }
+                if (r.state == RangeState.RUNNING) r.copy(state = RangeState.CANCELLED) else r }) }
         }
     }
 

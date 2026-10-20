@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.ui.home
 
 import com.northwalessolutions.netprobe.engine.discovery.*
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,7 +24,7 @@ class CopyTableTest {
         "\\d+ more ranges? found, raise the cap in Settings", "Extended discovery: no extra ranges to sweep", "Gateway probe found no other ranges",
         "Gateway probe skipped: every address answered", "Other ranges skipped: could not bind to Wi-Fi", "\\S+ skipped: every address answered",
         "Stopped at \\S+", "\\d+ other ranges?: nothing found", "\\d+ other ranges? answered for everything", "\\S+: nothing found", "\\d+ other ranges? checked",
-        "\\S+  (manual|evidence|gateway probe|local)  (swept, nothing reachable|swept, \\d+ found|skipped, every address answered|not swept, scan limit reached|stopped|not swept)",
+        "\\S+  (manual|evidence|gateway probe|local)  (swept, nothing reachable|swept, \\d+ found|skipped, every address answered|not swept, scan limit reached|stopped|not started)",
     ).map { Regex(it) }
     /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
     private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", templates.any { it.matches(s) })
@@ -73,6 +74,7 @@ class CopyTableTest {
             ExtendedNotices.of(st).forEach { inTable(it) }
             RangeSummaryText.lines(st.ranges).forEach { inTable(it) }
             inTable(RangeSummaryText.headline(st.ranges.size - 1))
+            RangeSummaryText.checked(st.ranges)?.let { inTable(it); assertFalse("headline with nothing swept: '$it'", it.startsWith("0 ")) }
         }
         inTable(HomeCopy.rangesChecked(5)); inTable(HomeCopy.capDropped(1)); inTable(HomeCopy.capDropped(2))
     }

@@ -2,6 +2,7 @@ package com.northwalessolutions.netprobe.ui.home
 
 import com.northwalessolutions.netprobe.engine.discovery.*
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ExtendedNoticesTest {
@@ -32,7 +33,7 @@ class ExtendedNoticesTest {
             r("10.0.6.0/24", RangeState.TRUNCATED), r("10.0.8.0/24", RangeState.CANCELLED), r("10.0.9.0/24", RangeState.PENDING))
         assertEquals(listOf("10.0.4.0/24  evidence  swept, 3 found", "10.0.7.0/24  manual  swept, nothing reachable",
             "10.0.5.0/24  gateway probe  skipped, every address answered", "10.0.6.0/24  manual  not swept, scan limit reached",
-            "10.0.8.0/24  manual  stopped", "10.0.9.0/24  manual  not swept"), RangeSummaryText.lines(ranges))
+            "10.0.8.0/24  manual  stopped", "10.0.9.0/24  manual  not started"), RangeSummaryText.lines(ranges))
         assertEquals("1 other range checked", RangeSummaryText.headline(1)); assertEquals("6 other ranges checked", RangeSummaryText.headline(6))
     }
     @Test fun `last run keeps only swept ranges`() {
@@ -47,5 +48,9 @@ class ExtendedNoticesTest {
     @Test fun `the done headline counts swept ranges only`() {
         val ranges = listOf(local, r("10.0.4.0/24", RangeState.DONE, 3), r("10.0.5.0/24", RangeState.PHANTOM), r("10.0.6.0/24", RangeState.TRUNCATED), r("10.0.7.0/24", RangeState.DONE))
         assertEquals("2 other ranges checked", RangeSummaryText.checked(ranges))
+    }
+    @Test fun `no headline when no range was swept`() {   // M4: never "0 other ranges checked" after an early Stop
+        val ranges = listOf(local, r("10.0.4.0/24", RangeState.CANCELLED), r("10.0.5.0/24", RangeState.PENDING), r("10.0.6.0/24", RangeState.TRUNCATED))
+        assertNull(RangeSummaryText.checked(ranges))
     }
 }

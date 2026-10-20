@@ -46,6 +46,12 @@ class HomeContentTest {
         show(HomeFakes.scanning().copy(lastRunRanges = lastRun)); rule.mainClock.advanceTimeBy(1_000)
         rule.onNodeWithTag("rangeSummary").assertDoesNotExist()
     }
+    @Test fun rangeSummaryIsAbsentWhenNoRangeWasSwept() {   // M4: no "0 other ranges checked" after an early Stop; the notice line says "Stopped at"
+        show(HomeFakes.settled().copy(lastRunRanges = listOf(lastRun[0], RangeProgress("10.0.4.0/24", RangeSource.EVIDENCE, RangeState.CANCELLED, 12, 254, 0),
+            RangeProgress("10.0.7.0/24", RangeSource.MANUAL, RangeState.PENDING, 0, 254, 0))))
+        rule.onNodeWithTag("rangeSummary").assertDoesNotExist()
+        rule.onNodeWithText("0 other ranges checked").assertDoesNotExist()
+    }
     @Test fun rangeSummaryIsAbsentWithoutAnExtendedRun() {
         show(HomeFakes.settled())
         rule.onNodeWithTag("rangeSummary").assertDoesNotExist()

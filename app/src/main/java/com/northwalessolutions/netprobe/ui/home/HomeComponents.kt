@@ -214,11 +214,12 @@ private val RANGE_LIST_MAX = 160.dp
 @Composable
 fun RangeSummary(ranges: List<RangeProgress>) {
     if (ranges.size < 2) return
+    val headline = RangeSummaryText.checked(ranges) ?: return   // nothing swept (an early Stop): the notice line says what happened (M4)
     var open by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().testTag("rangeSummary")) {
         Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClickLabel = if (open) "Hide ranges" else "Show ranges", role = Role.Button) { open = !open }
             .padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
-            Text(RangeSummaryText.checked(ranges), style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.weight(1f))
+            Text(headline, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.weight(1f))
             Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = NetProbeColors.textMuted)
         }
         if (open) Column(Modifier.heightIn(max = RANGE_LIST_MAX).verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter).testTag("rangeLines")) {
