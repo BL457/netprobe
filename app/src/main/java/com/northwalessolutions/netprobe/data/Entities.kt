@@ -12,6 +12,10 @@ enum class HostStatus { UNMARKED, INTERESTING, INVESTIGATED, IGNORED }
 data class NetworkEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0, val signature: String, val displayName: String,
     val gatewayIp: String?, val prefixLength: Int, val ssid: String?, val lastSeen: Long,
+    /** Run id (start time) of the last completed discovery run; seeds stale dimming after a restart (Phase 3A spec 5.5). */
+    val lastRunAt: Long? = null,
+    /** Time of a pending "Forget this network": ensure() never adopts or matches the row until Undo or the commit (spec 5.3). */
+    val forgotten: Long? = null,
 )
 
 @Entity(tableName = "hosts", indices = [Index("networkId", "ip", unique = true)])
@@ -23,12 +27,19 @@ data class HostEntity(
     val firstSeen: Long, val lastSeen: Long, val lastPortScan: Long?, val lastDiscoveryRun: Long,
     /** MacSource.rank of the stored mac, 0 = none. */
     val macSource: Int = 0, val upnpDeviceType: String? = null, val upnpServer: String? = null, val httpServer: String? = null, val httpAuthRealm: String? = null,
+    /** The Director's own type, vendor and model (spec 4.1); no scan writes these. The name override stays in customName. */
+    val userType: DeviceType? = null, val userVendor: String? = null, val userModel: String? = null,
+    /** Software names joined by a newline, written with the identity (spec 3.6). */
+    val identSoftware: String? = null,
 )
 
 @Entity(tableName = "ports", indices = [Index("hostId", "port", unique = true)])
 data class PortEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0, val hostId: Long, val port: Int,
     val serviceName: String, val product: String?, val version: String?, val detail: String?, val confidence: Confidence, val lastSeen: Long,
+    /** Port evidence (spec 3.1): page title, full Server header, auth realm, X-Powered-By, certificate subject CN and O. */
+    val title: String? = null, val server: String? = null, val realm: String? = null, val poweredBy: String? = null,
+    val certCn: String? = null, val certOrg: String? = null,
 )
 
 @Entity(tableName = "vuln_cache")

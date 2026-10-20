@@ -37,7 +37,11 @@ android {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
     }
-    sourceSets { getByName("test") { resources.srcDirs("src/main/res/raw") } }
+    sourceSets {
+        getByName("test") { resources.srcDirs("src/main/res/raw") }
+        // MigrationTestHelper reads the exported schemas from the test APK's assets (spec 6).
+        getByName("androidTest") { assets.srcDirs("$projectDir/schemas") }
+    }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
