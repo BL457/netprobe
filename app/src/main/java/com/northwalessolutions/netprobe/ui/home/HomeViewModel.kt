@@ -179,13 +179,21 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun dismissMessage() { controller.dismissMessage(); quick.dismissMessage(); extraMessage.value = null }
 
     /** A pending Undo is final before the scan's first lookup (spec 5.3, Review Focus 4). */
-    private suspend fun discover(e: NetworkEnv) { c.undo.committedBefore { discoverOn(e) } }
+    private suspend fun discover(e: NetworkEnv) {
+        c.undo.committedBefore {
+            // No suspension between the commit and these lines (review M2): from here a Remove is marked for this scan (spec 5.3 step 2).
+            c.removedDuringScan.value = emptySet()          // a new radar scan starts with nothing removed
+            c.radarScanActive.value = true
+            try { discoverOn(e) } finally { c.radarScanActive.value = false; c.radarScanNetworkId.value = null }
+        }
+    }
     private suspend fun quickScanAllOn(e: NetworkEnv) { c.undo.committedBefore { quickScanAllBody(e) } }
 
     private suspend fun discoverOn(e: NetworkEnv) {
         // null only while this network's Forget is pending, which committedBefore has already ended; the guard stays for a Forget racing in.
         val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return
         if (net.id == c.forgottenNetworkId.value) return   // a Forget on this network is in flight: it is unavailable
+        c.radarScanNetworkId.value = net.id
         networkId.value = net.id; c.currentNetwork.value = net
         val runId = System.currentTimeMillis(); latestRun.value = runId
         lastRunCompleted.value = false
@@ -202,13 +210,10 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         try {
             // Inside the try (Task 19 M1): if anything before here throws, the window is never left holding FLAG_KEEP_SCREEN_ON.
             if (ext.enabled) c.extendedRunActive.value = true
-            c.removedDuringScan.value = emptySet()          // a new radar scan starts with nothing removed (spec 5.3 step 2)
-            c.radarScanNetworkId.value = net.id
             val collector = RadarCollector(c.hosts, c.ports, c.deviceIdentifier, c.ouiLookup, c.hostWriteLock) { c.removedDuringScan.value }
             c.discoveryEngine.discover(e, opts, binder).collect { h -> collector.store(net.id, h, runId) }
             completed = true; lastRunCompleted.value = true
         } finally {
-            c.radarScanNetworkId.value = null
             c.extendedRunActive.value = false
             c.locks.release()
             // runCatching: a database error here must not skip the RunEnd publication below.

@@ -39,8 +39,13 @@ class AppContainer(val context: Context) {
     val removedDuringScan = MutableStateFlow<Set<Pair<Long, String>>>(emptySet())
     /** Host ids removed in this process; Quick scan all skips them radar or not (plan review G2). Ids are AUTOINCREMENT, never reused. */
     val removedHostIds = MutableStateFlow<Set<Long>>(emptySet())
-    /** The network a radar scan is running on, or null. */
+    /** The network a radar scan is running on, or null; set once the scan has resolved its network row. */
     val radarScanNetworkId = MutableStateFlow<Long?>(null)
+    /**
+     * True from the very start of a radar scan body (straight after its Undo commit, before any suspension) until it ends, so a Remove
+     * during the scan's start-up window, before [radarScanNetworkId] is known, is still kept out of that scan (review M2).
+     */
+    val radarScanActive = MutableStateFlow(false)
     /** Held by each radar emission's check and write and by Remove's mark and delete, so the two never interleave (G2). */
     val hostWriteLock = Mutex()
     val settings by lazy { AppSettings(context) }

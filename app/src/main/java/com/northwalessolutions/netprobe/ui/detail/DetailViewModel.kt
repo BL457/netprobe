@@ -116,30 +116,36 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     fun stopScan() = scan.stop()
 
     /**
-     * Detail overflow "Remove device" (spec 5.3): stop every scan of this host and wait for it; under the radar collector's lock, record
-     * the host id (Quick scan all skips it) and, when a radar scan runs on its network, its IP, then delete the host and its ports in one
-     * transaction; offer Undo on Home. Runs on appScope (on Main first, so the scan controller is touched on its own thread), so leaving
+     * Detail overflow "Remove device" (spec 5.3): record the host id at once, before any suspension, so Quick scan all can never start it
+     * while Remove waits (review M1); stop every scan of this host and wait for it; under the radar collector's lock, record the id again
+     * (idempotent) and, when a radar scan is running, the (network, ip) pair, then delete the host and its ports in one transaction;
+     * offer Undo on Home. Runs on appScope (on Main first, so the scan controller is touched on its own thread), so leaving
      * the screen never cancels it. Undo restores under the same lock, through a restore that clears anything a late scan wrote.
      */
     fun removeDevice() {
         val h = state.value.host ?: return
         val name = state.value.displayName
         c.appScope.launch(Dispatchers.Main.immediate) {
+            c.removedHostIds.update { it + hostId }
             scan.stopAndJoin()
             c.hostScanJobs[hostId]?.cancelAndJoin()
             val snap = c.hostWriteLock.withLock {
                 c.removedHostIds.update { it + hostId }
-                if (c.radarScanNetworkId.value == h.networkId) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
+                // Any running radar, even one still resolving its network (review M2): the pair is keyed by network, so another network's scan ignores it.
+                if (c.radarScanActive.value) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
                 c.hosts.snapshot(hostId)?.also { c.hosts.delete(it) }
             } ?: return@launch
             c.undo.post(PendingUndo(HomeCopy.removed(name),
-                // The marks are cleared in finally (the Task 13 pattern): a failed restore never leaves the host skipped by every later scan.
+                // The marks are cleared in finally (the Task 13 pattern), so a failed restore never leaves the host skipped by every later scan,
+                // and inside the lock (review M3), so no radar emission sees the restored row while its ip is still marked and skips its update.
                 // update {} is an atomic read-modify-write that touches only this host's id and pair, so a second Remove's marks are kept.
                 restore = {
-                    try { c.hostWriteLock.withLock { c.hosts.restore(snap) } }
-                    finally {
-                        c.removedHostIds.update { it - hostId }
-                        c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                    c.hostWriteLock.withLock {
+                        try { c.hosts.restore(snap) }
+                        finally {
+                            c.removedHostIds.update { it - hostId }
+                            c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                        }
                     }
                 },
                 commit = {}))
