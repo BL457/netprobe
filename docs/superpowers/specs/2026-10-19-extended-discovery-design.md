@@ -299,7 +299,7 @@ The done summary (Radar spec 3.4) is to draw on the last-run range list (5.6): a
 In this order:
 
 1. Switch "Extended discovery" with supporting text "Sweep other ranges your phone can reach." Off by default, global. The remaining rows are disabled (visibly, not hidden) while it is off.
-2. Stepper "Maximum extra ranges", 1 to 16, default 4, with a live line "At most N extra /24 networks (about M minutes)" using 25 s per range.
+2. Stepper "Maximum extra ranges", 1 to 16, default 4, with a live line "At most N extra /24 networks (about M minutes)" using 16 s per range (measured on the Director's LAN, Task 20: 13.7 to 16.2 s per /24).
 3. Switch "Probe for gateways" with supporting text "Checks common gateway addresses on every /24 in your /16 (about 1,600 connection attempts, about 13 s). Noisy on networks you do not own." Off by default, global.
 4. "Manual ranges for <network name>" editor: the current network's list of CIDRs, each with a delete control, and an "Add range" text field with inline validation using the messages in 4.4. Invalid text shows its error under the field and Add stays disabled; normalisation notes show as helper text. Entries beyond the cap are marked "Beyond cap, will be skipped". With no current network the editor is disabled with "Connect to a network to edit its ranges".
 
