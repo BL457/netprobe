@@ -56,7 +56,18 @@ object SoftwareColumn {
     fun decode(column: String?): List<String> = column?.split(SEPARATOR)?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
 }
 
-/** After a port scan the stored identity is replaced only by one at least as confident (spec 3.3); the DAO query is the atomic form. */
+/** After a port scan or a radar run the stored identity is replaced only by one at least as confident (spec 3.3, F1); the DAO query is the atomic form. */
 object IdentityWrite {
     fun replaces(storedConfidence: Int, newConfidence: Int): Boolean = newConfidence >= storedConfidence
+    /**
+     * Radar discovery (F1, Review Focus 3): a re-identification of the same device follows the port-scan rule, so it never lowers the stored
+     * identity. A different MAC on the IP is a different device (the re-used IP of spec 3.3), so its identity is always written.
+     */
+    fun radarReplaces(storedConfidence: Int, newConfidence: Int, previousMac: String?, currentMac: String?): Boolean {
+        return !sameDevice(previousMac, currentMac) || replaces(storedConfidence, newConfidence)
+    }
+    /** False only when both MACs are known and differ; an unknown MAC on either side is not contrary evidence. */
+    fun sameDevice(previousMac: String?, currentMac: String?): Boolean {
+        return previousMac == null || currentMac == null || previousMac.equals(currentMac, ignoreCase = true)
+    }
 }

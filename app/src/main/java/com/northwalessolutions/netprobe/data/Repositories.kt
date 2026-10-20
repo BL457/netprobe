@@ -92,6 +92,7 @@ class HostRepository(private val db: NetProbeDb) {
     fun hostsForNetwork(networkId: Long): Flow<List<HostEntity>> = db.hosts().forNetwork(networkId)
     fun host(hostId: Long): Flow<HostEntity?> = db.hosts().byId(hostId)
     suspend fun byIdOnce(id: Long): HostEntity? = db.hosts().byIdOnce(id)
+    suspend fun findOnce(networkId: Long, ip: String): HostEntity? = db.hosts().find(networkId, ip)
     suspend fun mdnsTypesFor(id: Long): Set<String> = byIdOnce(id)?.let { parseTxt(it.mdnsTxtJson).keys } ?: emptySet()
 
     /** Identification input rebuilt from the stored columns, so each new emission is judged on the merged picture. */

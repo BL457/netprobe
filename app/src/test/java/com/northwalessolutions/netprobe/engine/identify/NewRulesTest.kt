@@ -26,6 +26,8 @@ class NewRulesTest {
         "p-srm-title" to Expect(vendor = "Synology", model = "Synology Router", type = ROUTER),
         "p-unifi-os" to Expect(vendor = "Ubiquiti", model = "UniFi OS console"),
         "p-unifi-cert" to Expect(software = listOf("UniFi Network")),
+        "p-unifi-usg" to Expect(vendor = "Ubiquiti", model = "UniFi Security Gateway", type = ROUTER),   // F1
+        "p-ubnt-router-cert" to Expect(vendor = "Ubiquiti", type = ROUTER),   // F1
         "p-hue-title" to Expect(vendor = "Philips Hue", model = "Hue Bridge", type = IOT),
         "p-hue-cert" to Expect(vendor = "Philips Hue", model = "Hue Bridge", type = IOT),
         "p-plex-http" to Expect(type = SERVER, software = listOf("Plex Media Server")),
@@ -80,7 +82,7 @@ class NewRulesTest {
     )
 
     @Test fun `every new or replaced rule yields exactly its own values on its own sample`() {
-        assertEquals(64, expected.size)
+        assertEquals(66, expected.size)
         for ((ruleId, want) in expected) {
             val r = rules.single { it.id == ruleId }
             val got = DeviceIdentifier(listOf(r)).identify(SyntheticEvidence.forRule(r, ip))

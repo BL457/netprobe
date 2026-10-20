@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.ui.home
 
 import com.northwalessolutions.netprobe.data.HostRepository
+import com.northwalessolutions.netprobe.data.IdentityWrite
 import com.northwalessolutions.netprobe.data.PortRepository
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
@@ -24,12 +25,15 @@ class RadarCollector(
     suspend fun store(networkId: Long, h: DiscoveredHost, runId: Long): Boolean = lock.withLock {
         val ip = h.ip.hostAddress ?: return@withLock false
         if (RemovedHosts.skip(removed(), networkId, ip)) return@withLock false
+        val previousMac = hosts.findOnce(networkId, ip)?.mac
         val id = hosts.upsertDiscovered(networkId, h, runId)
         val merged = hosts.byIdOnce(id) ?: return@withLock true
         val seen = openPorts.getOrPut(ip) { HashSet() }.also { it += h.probedOpenPorts }.toSet()
         // Stored port findings are part of the evidence, so a rediscovery never downgrades an identity a port scan established.
         val ev = HostEvidenceBuilder.build(hosts.toDiscovered(merged), ports.servicesFor(id), seen, emptyMap(), merged.mac?.let(ouiLookup))
-        hosts.setIdentity(id, identifier.identify(ev))
+        val identity = identifier.identify(ev)
+        // F1: the same device never loses identity to a radar run (a rule change or thinner evidence); a new MAC on the IP is a new device.
+        if (IdentityWrite.sameDevice(previousMac, merged.mac)) hosts.setIdentityIfNotWeaker(id, identity) else hosts.setIdentity(id, identity)
         true
     }
 }

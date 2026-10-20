@@ -15,7 +15,7 @@ class DeviceIdentifierTest {
     private fun ev(h: DiscoveredHost = DiscoveredHost(ip), ports: Set<Int> = emptySet(), services: Map<Int, ServiceInfo> = emptyMap(), oui: String? = null) = HostEvidence(h, ports, services, oui)
 
     @Test fun `rules file loads with unique ids and valid fields`() {
-        assertEquals(118, rules.size); assertEquals(rules.size, rules.map { it.id }.toSet().size)
+        assertEquals(120, rules.size); assertEquals(rules.size, rules.map { it.id }.toSet().size)
         val fields = setOf("mdnsType", "mdnsTxt", "upnpManufacturer", "upnpDeviceType", "snmpSysDescr", "httpTitle", "httpRealm", "httpServer", "hostname",
             "netbiosName", "sshBanner", "ports", "anyPort", "gateway", "oui", "poweredBy", "certName", "certOrg", "portBanner", "service")
         rules.forEach { assertTrue("bad field in ${it.id}", it.field in fields); assertTrue(it.weight in 1..100) }
@@ -32,7 +32,7 @@ class DeviceIdentifierTest {
         val ids = rules.map { it.id }
         assertEquals(ids.indexOf("ssh-dropbear") + 1, ids.indexOf("p-dsm-title"))
         assertEquals(ids.indexOf("p-airplay") + 1, ids.indexOf("gateway"))
-        assertEquals(57, ids.indexOf("gateway") - ids.indexOf("p-dsm-title"))
+        assertEquals(59, ids.indexOf("gateway") - ids.indexOf("p-dsm-title"))
     }
     @Test fun `every rule is well formed`() {
         for (r in rules) {
