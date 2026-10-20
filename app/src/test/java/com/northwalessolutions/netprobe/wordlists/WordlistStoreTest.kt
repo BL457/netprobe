@@ -148,6 +148,16 @@ class WordlistStoreTest {
         assertEquals(3, reloaded.size)
         assertTrue(File(dir, "$idA.txt").exists() && File(dir, "$idB.txt").exists())
     }
+    @Test fun `a file that fails to read is kept and logged while the others are recovered`() = runTest {
+        val dir = tmp.newFolder("unreadable")
+        val bad = File(dir, "$idB.txt"); bad.mkdir()                     // opening a directory throws on read
+        File(dir, "$idA.txt").writeText("a\nb")
+        val logged = mutableListOf<Throwable>()
+        val s = WordlistStore(dir, emptyList()) { logged.add(it) }
+        assertEquals(listOf(2), s.lists.first().map { it.entries })
+        assertTrue("the unreadable file stays on disk", bad.exists())
+        assertEquals(1, logged.size)
+    }
     @Test fun `a missing index with user files adopts them`() = runTest {
         val dir = tmp.newFolder("noindex")
         File(dir, "$idA.txt").writeText("a\nb")

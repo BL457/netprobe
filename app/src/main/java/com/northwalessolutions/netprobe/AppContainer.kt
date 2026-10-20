@@ -118,7 +118,7 @@ class AppContainer(val context: Context) {
             BuiltInList("builtin:common-short", "common-short") { context.resources.openRawResource(R.raw.wordlist_common_short) },
             BuiltInList("builtin:admin-panels", "admin-panels") { context.resources.openRawResource(R.raw.wordlist_admin_panels) },
             BuiltInList("builtin:api-paths", "api-paths") { context.resources.openRawResource(R.raw.wordlist_api_paths) },
-        ))
+        ), log = { Log.e(AppScopes.LOG_TAG, "wordlist recovery", it) })
     }
     val serviceIdentifier by lazy { ServiceIdentifier(portTable) }
     val deviceIdentifier by lazy { DeviceIdentifier(identifyRules) }

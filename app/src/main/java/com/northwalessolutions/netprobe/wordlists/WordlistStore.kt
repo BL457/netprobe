@@ -30,7 +30,7 @@ sealed interface ImportResult {
  * Wordlists as files (spec 5.6.3): built-ins read from their raw resources, imports normalised into [dir] as <uuid>.txt with
  * metadata in index.json. [lists] is built-ins first (table order), then imported newest first. withEntries streams and always closes.
  */
-class WordlistStore(private val dir: File, private val builtIns: List<BuiltInList>) {
+class WordlistStore(private val dir: File, private val builtIns: List<BuiltInList>, private val log: (Throwable) -> Unit = {}) {
     private val index = File(dir, "index.json")
     /** Guards every read-modify-write of index.json and [_lists] (plan review G23); withEntries never takes it. */
     private val indexLock = Mutex()
@@ -56,10 +56,12 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
     /** Rebuilds the index from `<uuid>.txt` files: named by [WordlistCopy.recoveredName], dated by last-modified. Unparseable files are deleted. */
     private fun recover(): List<WordlistMeta> {
         val recovered = ArrayList<WordlistMeta>()
-        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".txt") }?.sortedBy { it.name } ?: emptyList()
+        val files = dir.listFiles { f -> f.name.endsWith(".txt") }?.sortedBy { it.name } ?: emptyList()
         for (f in files) {
             val id = "user:" + f.name.removeSuffix(".txt")
-            val count = if (fileName(id) == null) 0 else runCatching { f.inputStream().use { WordlistParser.parse(it).entries.size } }.getOrDefault(0)
+            if (fileName(id) == null) { f.delete(); continue }
+            // A file that fails to READ is kept for a later load; only one that parses to zero entries is deleted.
+            val count = try { f.inputStream().use { WordlistParser.parse(it).entries.size } } catch (e: IOException) { log(e); continue }
             if (count == 0) { f.delete(); continue }
             recovered.add(WordlistMeta(id, WordlistCopy.recoveredName(recovered.size + 1), count, f.lastModified(), false))
         }
