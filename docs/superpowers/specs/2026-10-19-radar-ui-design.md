@@ -184,7 +184,7 @@ data class RadarSummary(val headline: String, val detail: String)
 - Disc 172 dp, centred in the pinned header, 2 dp `borderSubtle` outline, radial background (`#1B2836` to 30 percent, `background` from 70 percent). Inner rings at 28 dp and 58 dp inset, 1 dp `borderSubtle`.
 - Arm: a sweep gradient, `signal` at alpha .55 at 0 deg, alpha .08 at 70 deg, transparent from 110 deg to 360 deg, clipped to the disc and masked out of the centre 40 dp radius, so the "found" label and the count always sit on the plain `#1B2836` fill (contrast in 7.1). One turn per 2400 ms, linear.
 - Blips: one per newly found host. A 6 dp `signal` dot with an 8 dp glow (drawn radial alpha, not a shadow). Position is pseudo-random but stable: `blipOffset(index: Int, radiusPx: Float): Offset` hashes the index (a fixed 32-bit integer hash) to an angle in [0, 360) and a radius fraction in [0.5, 0.88] of the disc radius (0.22 was contradicted by the centre count, which the blips must never cover). Blips fade in over 300 ms and stay until the scan ends. At most 64 are drawn; the centre count is exact regardless.
-- Centre: found count in `radarCount` / `text`, `maxLines = 1`, auto-sized down (Compose `BasicText` `autoSize`, or a measure-and-shrink fallback if the BOM's API is not stable) so the text never exceeds 96 dp width at any font scale (a /22 sweep can reach 1022 hosts and 39 sp digits would otherwise cross the inner ring). "found" in `radarLabel` / `textMuted` below it.
+- Centre: found count in `radarCount` / `text`, `maxLines = 1`, auto-sized down (Compose `BasicText` `autoSize`, or a measure-and-shrink fallback if the BOM's API is not stable) so the text never exceeds 80 dp width at any font scale (the arm cut-out diameter, so the count always sits on plain fill) (a /22 sweep can reach 1022 hosts and 39 sp digits would otherwise cross the inner ring). "found" in `radarLabel` / `textMuted` below it.
 - Below the disc, 8 dp gap: Stop pill, "Stop" in `action` / `signal`, 1.5 dp `signal` outline, fully round, 4 dp / 14 dp visual padding, 48 dp minimum touch height. Then, 6 dp gap: the progress line in `data` / `textMuted`, centred. The progress strings are in section 8; the drawn form uses two spaces before the elapsed time: "probing 171 of 254  7 s".
 - With extended discovery on the progress line shows the active phase instead (strings in section 8). The feature being absent is not an error: the range text is simply never produced.
 - Tapping the disc does nothing: the disc has no click handler and no ripple. Only Stop is actionable and calls `vm.stopScan()` exactly as the current Stop button does.
@@ -224,7 +224,7 @@ One `updateTransition(targetState = mode)` drives everything, so the states cann
 |-------|------|
 | Scan label to count | cross-fade 160 ms |
 | Ring text column (headline and detail) | fade out on expand, fade in on settle; composed only while `fraction < 1`, so hidden text is never laid out and there is no interpolating layout |
-| Stop pill and progress line | alpha, 160 ms, delayed 120 ms on expand; composed only when the mode is not SETTLED |
+| Stop pill and progress line | height lerps from 0 to the natural height with the same fraction as the disc, alpha follows the fraction (so the list never jumps); composed only when the mode is not SETTLED |
 | Blip fade in / out | 300 ms / 200 ms |
 | Arm | `rememberInfiniteTransition().animateFloat(0f, 360f, infiniteRepeatable(tween(2400, easing = LinearEasing)))` |
 | Row arrival | 600 ms, `CubicBezierEasing(0f, 0f, 0.58f, 1f)`, alpha 0 to 1 and 6 dp rise |

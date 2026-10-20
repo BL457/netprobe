@@ -69,7 +69,8 @@ object Dimens {
     val discInnerRing1 = 28.dp
     val discInnerRing2 = 58.dp
     val discCentreMask = 40.dp
-    val countMaxWidth = 96.dp
+    /** The arm cut-out diameter (2 x 40 dp), so the count always sits on plain fill (spec 3.3). */
+    val countMaxWidth = 80.dp
     val blip = 6.dp
     val blipGlow = 8.dp
 }

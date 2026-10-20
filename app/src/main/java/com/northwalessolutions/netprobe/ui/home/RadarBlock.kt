@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -23,6 +24,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -38,6 +40,7 @@ import androidx.lifecycle.compose.currentStateAsState
 import com.northwalessolutions.netprobe.ui.StopPill
 import com.northwalessolutions.netprobe.ui.theme.*
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** Test hook: true only while the arm is turning (SCANNING, resumed, motion allowed). */
 val ArmSpinningKey = SemanticsPropertyKey<Boolean>("ArmSpinning")
@@ -87,8 +90,12 @@ fun RadarBlock(
     val newest = remember { Animatable(1f) }
     var shownBlips by remember { mutableIntStateOf(0) }
     var newestFrom by remember { mutableIntStateOf(0) }
+    var blipMode by remember { mutableStateOf<RadarMode?>(null) }
     LaunchedEffect(found, mode) {
+        val entering = mode == RadarMode.SCANNING && blipMode != RadarMode.SCANNING
+        blipMode = mode
         if (mode != RadarMode.SCANNING) return@LaunchedEffect
+        if (entering) { shownBlips = 0; newestFrom = 0 }   // a new scan never fades the previous scan's blips back in
         val n = found.coerceAtMost(RadarGeometry.MAX_BLIPS)
         if (n < shownBlips) { shownBlips = n; newestFrom = n; return@LaunchedEffect }
         if (n > shownBlips) {
@@ -110,6 +117,9 @@ fun RadarBlock(
     }
 
     val live = canScan || quickScanning
+    val resumed = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    // The Stop pill and progress line belong to a scan: kept while it runs and while the disc settles back to the ring.
+    val pillShown = mode == RadarMode.SCANNING || (transition.currentState == RadarMode.SCANNING && transition.targetState == RadarMode.SETTLED)
     BoxWithConstraints(modifier.fillMaxWidth().testTag("radarBlock")) {
         val width = maxWidth
         val diameter = lerp(Dimens.ringDiameter, Dimens.discDiameter, fraction)
@@ -122,7 +132,7 @@ fun RadarBlock(
         val strokeColor = lerp(ringColor, NetProbeColors.borderSubtle, fraction)
         val modeModifier = when (mode) {
             RadarMode.SETTLED -> Modifier.clip(CircleShape)
-                .clickable(enabled = live, role = Role.Button, onClick = if (quickScanning) onStopQuick else onScan)
+                .clickable(enabled = live && fraction == 0f, role = Role.Button, onClick = if (quickScanning) onStopQuick else onScan)   // no tap until settled
                 .semantics { contentDescription = when { quickScanning -> RadarText.STOP_QUICK; canScan -> RadarText.ringDescription(summary); else -> RadarText.RING_DISABLED } }
                 .testTag("radarRing")
             RadarMode.SCANNING -> Modifier
@@ -136,8 +146,8 @@ fun RadarBlock(
                     Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
                         DiscBackground(fraction, stroke, strokeColor, mode == RadarMode.HERO, Modifier.matchParentSize().clearAndSetSemantics { })
                         if (mode == RadarMode.SCANNING) Arm(spinning, Modifier.matchParentSize())
-                        if (shownBlips > 0) Blips(shownBlips, newestFrom, { newest.value }, blipsAlpha, Modifier.matchParentSize().clearAndSetSemantics { })
-                        if (mode == RadarMode.SETTLED && quickScanning) QuickArc(reduced, Modifier.matchParentSize())
+                        if (shownBlips > 0) Blips(shownBlips, newestFrom, { newest.value }, { blipsAlpha }, Modifier.matchParentSize().clearAndSetSemantics { })
+                        if (mode == RadarMode.SETTLED && quickScanning) QuickArc(animate = resumed && !reduced, Modifier.matchParentSize())
                         if (mode != RadarMode.HERO && labelAlpha > 0f) Text(if (quickScanning) HomeCopy.STOP else HomeCopy.SCAN, style = NetProbeText.ringLabel,
                             color = if (live) NetProbeColors.signal else NetProbeColors.border, modifier = Modifier.alpha(labelAlpha))
                         if (mode == RadarMode.SCANNING || (mode == RadarMode.SETTLED && labelAlpha < 1f))
@@ -157,13 +167,13 @@ fun RadarBlock(
                 Text(if (canScan && heroSubnet != null) HomeCopy.heroSubtitle(heroSubnet) else HomeCopy.HERO_NO_NETWORK_SUB,
                     style = NetProbeText.secondary, color = NetProbeColors.textMuted, textAlign = TextAlign.Center)
             }
-            if (mode == RadarMode.SCANNING) {
-                val pillAlpha = remember { Animatable(0f) }
-                LaunchedEffect(Unit) {
-                    pillAlpha.animateTo(1f, tween(if (reduced) 0 else Motion.PILL_FADE_MS, delayMillis = if (reduced) 0 else Motion.PILL_DELAY_MS))
-                }
-                Column(Modifier.fillMaxWidth().padding(top = 8.dp).graphicsLayer { alpha = pillAlpha.value }, horizontalAlignment = Alignment.CenterHorizontally) {
-                    StopPill(onStop, description = RadarText.STOP_SCAN, tag = "radarStop")
+            if (pillShown) {
+                // Height and alpha follow the same fraction as the disc, so the list below slides and never steps (spec 3.6).
+                Column(Modifier.fillMaxWidth().clipToBounds().layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    layout(placeable.width, (placeable.height * fraction).roundToInt()) { placeable.place(0, 0) }
+                }.graphicsLayer { alpha = fraction }.padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    StopPill(if (mode == RadarMode.SCANNING) onStop else ({}), description = RadarText.STOP_SCAN, tag = "radarStop")
                     Spacer(Modifier.height(6.dp))
                     Text(progressLine.orEmpty(), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = Dimens.gutter).testTag("radarProgress"))
@@ -202,15 +212,16 @@ private fun DiscBackground(fraction: Float, stroke: Dp, strokeColor: Color, hero
  * re-recorded only when the blip count or the size changes; the newest batch's fade is read in the draw phase only.
  */
 @Composable
-private fun Blips(blips: Int, newestFrom: Int, newestAlpha: () -> Float, blipsAlpha: Float, modifier: Modifier) {
+private fun Blips(blips: Int, newestFrom: Int, newestAlpha: () -> Float, blipsAlpha: () -> Float, modifier: Modifier) {
     Spacer(modifier.drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
         val blipR = Dimens.blip.toPx() / 2; val glowR = blipR + Dimens.blipGlow.toPx()
         val points = (0 until blips).map { i -> (c + blipOffset(i, r)).let { p -> p to Brush.radialGradient(listOf(NetProbeColors.signal.copy(alpha = GLOW_ALPHA), Color.Transparent), center = p, radius = glowR) } }
         onDrawBehind {
+            val all = blipsAlpha()
             points.forEachIndexed { i, (p, glow) ->
-                val a = blipsAlpha * if (i >= newestFrom) newestAlpha() else 1f
+                val a = all * if (i >= newestFrom) newestAlpha() else 1f
                 drawCircle(glow, glowR, p, alpha = a); drawCircle(NetProbeColors.signal, blipR, p, alpha = a)
             }
         }
@@ -248,8 +259,9 @@ private fun ArmLayer(angle: () -> Float, spinning: Boolean, modifier: Modifier) 
 
 /** Quick scan all: an indeterminate teal arc on the ring; the disc never grows for it (spec 3.3). */
 @Composable
-private fun QuickArc(reduced: Boolean, modifier: Modifier) {
-    if (reduced) QuickArcLayer({ Motion.STATIC_ARM_DEG }, modifier)
+private fun QuickArc(animate: Boolean, modifier: Modifier) {
+    // Like the arm: the infinite transition exists only while resumed and motion is allowed (spec 3.6, D11).
+    if (!animate) QuickArcLayer({ Motion.STATIC_ARM_DEG }, modifier)
     else {
         val angle = rememberInfiniteTransition(label = "quick")
             .animateFloat(0f, 360f, infiniteRepeatable(tween(Motion.ARM_TURN_MS / 2, easing = LinearEasing)), label = "quickAngle")

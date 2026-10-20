@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.ui.theme.Dimens
@@ -102,5 +103,44 @@ class RadarBlockTest {
         assertTrue("disc already full size after two frames: $early", early < Dimens.discDiameter - 1.dp)
         rule.mainClock.advanceTimeBy(500)
         rule.onNodeWithTag("radarDisc").assertWidthIsEqualTo(Dimens.discDiameter)
+    }
+    @Test fun blockHeightSlidesWithoutAStepBothWays() {   // fix round 1, I1: pill area height and alpha follow the disc fraction
+        rule.mainClock.autoAdvance = false
+        var mode by mutableStateOf(RadarMode.SETTLED)
+        rule.setContent { NetProbeTheme { CompositionLocalProvider(LocalReducedMotion provides false) {
+            RadarBlock(mode, 3, "probing 3 of 254  1 s", summary, true, {}, {})
+        } } }
+        rule.mainClock.advanceTimeByFrame()
+        fun height() = rule.onNodeWithTag("radarBlock").getBoundsInRoot().height
+        val ring = height()
+        assertEquals(Dimens.ringTarget.value, ring.value, 0.5f)
+        mode = RadarMode.SCANNING
+        rule.mainClock.advanceTimeBy(1_000)
+        val full = height()
+        assertTrue("full height $full not above the ring row $ring", full > ring + 100.dp)
+        val half = ring + (full - ring) / 2
+        mode = RadarMode.SETTLED; rule.mainClock.advanceTimeBy(1_000)
+        assertEquals(ring.value, height().value, 0.5f)
+
+        mode = RadarMode.SCANNING
+        rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeByFrame()
+        val start = height()
+        assertTrue("expand stepped: $start after two frames (ring $ring, full $full)", start < half)
+        rule.mainClock.advanceTimeBy(180)
+        val mid = height()
+        assertTrue("expand midpoint $mid not between $ring and $full", mid > ring + 1.dp && mid < full - 1.dp)
+        rule.mainClock.advanceTimeBy(1_000)
+        assertEquals(full.value, height().value, 0.5f)
+
+        mode = RadarMode.SETTLED
+        rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeByFrame()
+        val settleStart = height()
+        assertTrue("settle stepped: $settleStart after two frames (ring $ring, full $full)", settleStart > half)
+        rule.mainClock.advanceTimeBy(180)
+        val settleMid = height()
+        assertTrue("settle midpoint $settleMid not between $ring and $full", settleMid > ring + 1.dp && settleMid < full - 1.dp)
+        rule.mainClock.advanceTimeBy(1_000)
+        assertEquals(ring.value, height().value, 0.5f)
+        rule.onNodeWithTag("radarStop").assertDoesNotExist()
     }
 }

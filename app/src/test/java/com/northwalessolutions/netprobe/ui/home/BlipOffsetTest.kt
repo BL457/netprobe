@@ -14,6 +14,7 @@ class BlipOffsetTest {
             assertTrue("blip $i at $d", d >= RadarGeometry.MIN_RADIUS_FRACTION * r - 0.01f && d <= RadarGeometry.MAX_RADIUS_FRACTION * r + 0.01f && d < r)
         }
     }
+    @Test fun `negative index stays finite and in the band`() { val o = blipOffset(-1, r); val d = hypot(o.x, o.y); assertTrue("blip -1 at $d", d >= RadarGeometry.MIN_RADIUS_FRACTION * r - 0.01f && d <= RadarGeometry.MAX_RADIUS_FRACTION * r + 0.01f) }
     @Test fun `first 64 blips are at least 4 dp apart`() {
         val pts = (0 until 64).map { blipOffset(it, r) }
         for (i in pts.indices) for (j in 0 until i) {

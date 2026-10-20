@@ -34,7 +34,7 @@ object RadarGeometry {
 
     internal fun jitterDeg(i: Int): Float = ((mix(i) and BYTE_MASK) / BYTE_MAX - HALF) * JITTER_DEG
     internal fun radiusFraction(i: Int): Float =
-        MIN_RADIUS_FRACTION + (MAX_RADIUS_FRACTION - MIN_RADIUS_FRACTION) * sqrt(((i % MAX_BLIPS) + HALF) / MAX_BLIPS)
+        MIN_RADIUS_FRACTION + (MAX_RADIUS_FRACTION - MIN_RADIUS_FRACTION) * sqrt((Math.floorMod(i, MAX_BLIPS) + HALF) / MAX_BLIPS)
 }
 
 /** Stable, scattered blip position relative to the disc centre: a golden-angle spiral with a hashed jitter (see the Task 4 note). */
