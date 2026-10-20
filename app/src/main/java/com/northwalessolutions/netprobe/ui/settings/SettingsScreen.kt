@@ -6,20 +6,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.data.SettingsState
+import com.northwalessolutions.netprobe.ui.BackToHome
+import com.northwalessolutions.netprobe.ui.PinnedSegmented
+import com.northwalessolutions.netprobe.ui.npFieldColors
+import com.northwalessolutions.netprobe.ui.theme.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -27,19 +35,18 @@ import kotlin.math.roundToInt
 private const val CONC_MIN = 32; private const val CONC_MAX = 512; private const val CONC_STEP = 32
 private const val TIMEOUT_MIN = 200; private const val TIMEOUT_MAX = 2000; private const val TIMEOUT_STEP = 100
 private val PREFIX_OPTIONS = listOf(20, 22, 24)
+private val SWITCH_ROW_MIN = 56.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
+// The IME joins the content insets, as on Home and Detail; a separate imePadding would count the navigation bar twice.
 @Composable
 fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val s by container.settings.state.collectAsStateWithLifecycle()
     val update: ((SettingsState) -> SettingsState) -> Unit = { container.settings.update(it) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { TopAppBar(title = { Text("Settings") }, navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }) },
-    ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) },
+        topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) { BackToHome(onBack) } }) { pad ->
+        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter)) {
             Section("Discovery")
             SwitchRow("mDNS (Bonjour)", s.mdns) { v -> update { it.copy(mdns = v) } }
             SwitchRow("SSDP / UPnP", s.ssdp) { v -> update { it.copy(ssdp = v) } }
@@ -55,12 +62,9 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             StepSlider("Port scan timeout", s.scanTimeoutMs, TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_STEP, " ms") { v -> update { it.copy(scanTimeoutMs = v) } }
 
             Section("Large networks")
-            Text("Largest network to sweep. Bigger networks are cut down to your own /24 unless widened here.", style = MaterialTheme.typography.bodySmall)
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                PREFIX_OPTIONS.forEachIndexed { i, p ->
-                    SegmentedButton(selected = s.maxPrefix == p, onClick = { update { it.copy(maxPrefix = p) } }, shape = SegmentedButtonDefaults.itemShape(i, PREFIX_OPTIONS.size)) { Text("/$p") }
-                }
-            }
+            Text("Largest network to sweep. Bigger networks are cut down to your own /24 unless widened here.", style = NetProbeText.data, color = NetProbeColors.textMuted)
+            PinnedSegmented(PREFIX_OPTIONS.map { "/$it" }, PREFIX_OPTIONS.indexOf(s.maxPrefix), { i -> update { it.copy(maxPrefix = PREFIX_OPTIONS[i]) } },
+                activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, modifier = Modifier.fillMaxWidth())
 
             Section("Permissions")
             LocationPermissionRow()
@@ -68,39 +72,60 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             Section("Vulnerabilities")
             var key by remember { mutableStateOf(s.nvdApiKey) }
             OutlinedTextField(key, { key = it; update { st -> st.copy(nvdApiKey = it.trim()) } }, Modifier.fillMaxWidth(), label = { Text("NVD API key (optional)") },
-                singleLine = true, visualTransformation = PasswordVisualTransformation())
-            Button(onClick = {
+                singleLine = true, visualTransformation = PasswordVisualTransformation(), colors = npFieldColors(), shape = RoundedCornerShape(8.dp))
+            TextButton(onClick = {
                 scope.launch {
                     val msg = try { container.vulnCache.clear(); "Vulnerability cache cleared" } catch (ce: CancellationException) { throw ce } catch (e: Exception) { "Could not clear cache: ${e.message}" }
                     snackbar.showSnackbar(msg)
                 }
-            }) { Text("Clear vulnerability cache") }
+            }, modifier = Modifier.heightIn(min = Dimens.touch)) { Text("Clear vulnerability cache", style = NetProbeText.action, color = NetProbeColors.signal) }
             Spacer(Modifier.height(24.dp))
         }
     }
 }
 
+/** Caption in textMuted over a 1 dp surface rule, the Home group-header pattern; never teal (spec section 6). */
 @Composable
-private fun Section(title: String) {
-    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+internal fun Section(title: String) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+        HorizontalDivider(thickness = 1.dp, color = NetProbeColors.surface)
+        Text(title, style = NetProbeText.groupHeader, color = NetProbeColors.textMuted, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp).semantics { heading() })
+    }
 }
 
 @Composable
-private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f)); Switch(checked, onChange)
+internal fun npSwitchColors(): SwitchColors = SwitchDefaults.colors(
+    checkedTrackColor = NetProbeColors.signal, checkedThumbColor = NetProbeColors.background, checkedBorderColor = NetProbeColors.signal,
+    uncheckedTrackColor = NetProbeColors.surface, uncheckedThumbColor = NetProbeColors.textMuted, uncheckedBorderColor = NetProbeColors.border,
+)
+
+/** Label, optional supporting text, a switch; the whole row toggles; 56 dp minimum (spec section 6). */
+@Composable
+internal fun SwitchRow(label: String, checked: Boolean, supporting: String? = null, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = SWITCH_ROW_MIN).alpha(if (enabled) 1f else DISABLED_ALPHA)
+        .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(label, style = NetProbeText.secondary, color = NetProbeColors.text)
+            supporting?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted) }
+        }
+        Switch(checked, onCheckedChange = null, enabled = enabled, colors = npSwitchColors())
     }
 }
 
 /** Moves locally while dragging and saves once on release, so preferences are not rewritten on every drag frame. */
 @Composable
-private fun StepSlider(label: String, value: Int, min: Int, max: Int, step: Int, unit: String, onCommit: (Int) -> Unit) {
+internal fun StepSlider(label: String, value: Int, min: Int, max: Int, step: Int, unit: String, enabled: Boolean = true, onCommit: (Int) -> Unit) {
     var v by remember(value) { mutableFloatStateOf(value.toFloat()) }
     val snapped = ((v / step).roundToInt() * step).coerceIn(min, max)
-    Column {
-        Row { Text(label, Modifier.weight(1f)); Text("$snapped$unit", style = MaterialTheme.typography.labelLarge) }
-        Slider(value = v, onValueChange = { v = it }, valueRange = min.toFloat()..max.toFloat(), steps = (max - min) / step - 1,
-            onValueChangeFinished = { if (snapped != value) onCommit(snapped) })
+    Column(Modifier.heightIn(min = Dimens.touch).alpha(if (enabled) 1f else DISABLED_ALPHA)) {
+        Row(Modifier.padding(top = 6.dp)) {
+            Text(label, style = NetProbeText.secondary, color = NetProbeColors.text, modifier = Modifier.weight(1f))
+            Text("$snapped$unit", style = NetProbeText.data, color = NetProbeColors.signal)
+        }
+        Slider(value = v, onValueChange = { v = it }, valueRange = min.toFloat()..max.toFloat(), steps = (max - min) / step - 1, enabled = enabled,
+            onValueChangeFinished = { if (snapped != value) onCommit(snapped) },
+            colors = SliderDefaults.colors(thumbColor = NetProbeColors.signal, activeTrackColor = NetProbeColors.signal, inactiveTrackColor = NetProbeColors.surface,
+                activeTickColor = NetProbeColors.background, inactiveTickColor = NetProbeColors.border))
     }
 }
 
@@ -110,7 +135,9 @@ private fun LocationPermissionRow() {
     var granted by remember { mutableStateOf(ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     Text("Android only reveals the Wi-Fi name with location permission. It is shown for display only: NetProbe tells networks apart by their gateway.",
-        style = MaterialTheme.typography.bodySmall)
-    if (granted) Text("Location permission granted", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-    else Button(onClick = { launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }) { Text("Allow location for Wi-Fi name") }
+        style = NetProbeText.data, color = NetProbeColors.textMuted)
+    if (granted) Text("Location permission granted", style = NetProbeText.secondary, color = NetProbeColors.textSecondary, modifier = Modifier.padding(vertical = 12.dp))
+    else TextButton(onClick = { launcher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }, modifier = Modifier.heightIn(min = Dimens.touch)) {
+        Text("Allow location for Wi-Fi name", style = NetProbeText.action, color = NetProbeColors.signal)
+    }
 }
