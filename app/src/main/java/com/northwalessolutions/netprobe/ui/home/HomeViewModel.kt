@@ -197,22 +197,18 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val binder = if (ext.enabled) c.networkEnvMonitor.binderFor(e) else null   // null skips the extended phase with its notice
         if (ext.enabled) lastRunRanges.value = emptyList()
         lastRunProgress.value = emptyList()   // the range list always describes the latest run only
-        val openPorts = HashMap<String, MutableSet<Int>>()   // ports seen open per ip during this run: later emissions for the host carry none
         var completed = false
         c.locks.acquire()
         try {
             // Inside the try (Task 19 M1): if anything before here throws, the window is never left holding FLAG_KEEP_SCREEN_ON.
             if (ext.enabled) c.extendedRunActive.value = true
-            c.discoveryEngine.discover(e, opts, binder).collect { h ->
-                val id = c.hosts.upsertDiscovered(net.id, h, runId)
-                val merged = c.hosts.byIdOnce(id) ?: return@collect
-                val ports = openPorts.getOrPut(h.ip.hostAddress) { HashSet() }.also { it += h.probedOpenPorts }.toSet()
-                // Stored port findings are part of the evidence, so a rediscovery never downgrades an identity a port scan established.
-                val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(merged), c.ports.servicesFor(id), ports, emptyMap(), merged.mac?.let(c.ouiLookup))
-                c.hosts.setIdentity(id, c.deviceIdentifier.identify(ev))
-            }
+            c.removedDuringScan.value = emptySet()          // a new radar scan starts with nothing removed (spec 5.3 step 2)
+            c.radarScanNetworkId.value = net.id
+            val collector = RadarCollector(c.hosts, c.ports, c.deviceIdentifier, c.ouiLookup, c.hostWriteLock) { c.removedDuringScan.value }
+            c.discoveryEngine.discover(e, opts, binder).collect { h -> collector.store(net.id, h, runId) }
             completed = true; lastRunCompleted.value = true
         } finally {
+            c.radarScanNetworkId.value = null
             c.extendedRunActive.value = false
             c.locks.release()
             // runCatching: a database error here must not skip the RunEnd publication below.
@@ -269,7 +265,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         var failed = 0; var unbound = 0
         try {
             val net = networkId.value ?: return
-            for (h in c.hosts.hostsForNetwork(net).first()) {
+            QuickScanAllLoop.run(c.hosts.hostsForNetwork(net).first(), { it.id },
+                { RemovedHosts.skipQuickScan(c.removedHostIds.value, c.removedDuringScan.value, net, it.id, it.ip) }, c.hostScanJobs) { h ->
                 // One unreachable or odd host must not end the sweep for the rest; an off-subnet host that cannot be bound is skipped and said so.
                 try { quickScanHost(h, e) } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
             }
@@ -295,7 +292,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 launch { sem.withPermit {
                     val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), QuickScanAllPolicy.mode())
                     synchronized(found) { found[r.port] = info }
-                    c.ports.upsertOpen(h.id, r.port, info)
+                    c.ports.upsertOpenIfHostExists(h.id, r.port, info)
                 } }
             }
         }

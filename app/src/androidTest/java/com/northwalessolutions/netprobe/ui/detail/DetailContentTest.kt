@@ -221,4 +221,14 @@ class DetailContentTest {
         rule.onNodeWithText("8090").performTouchInput { longClick() }
         rule.onNodeWithText("Open with...").assertIsDisplayed(); rule.onNodeWithText("Try as").assertDoesNotExist()
     }
+    @Test fun overflowRemoveStopsTheScanFirstThenRemovesAndGoesBack() {
+        val events = mutableListOf<String>()
+        rule.setContent { NetProbeTheme { DeviceConfigurationOverride(phone) {
+            DetailContent(DetailFakes.state(scanning = true), DetailActions(onStop = { events += "stop" }, onRemove = { events += "remove" }, onBack = { events += "back" }))
+        } } }
+        rule.onNodeWithTag("detailMenu").performClick()
+        rule.onNodeWithText("Edit device").assertIsEnabled()
+        rule.onNodeWithText("Remove device").assertIsEnabled().performClick()
+        assertEquals(listOf("stop", "remove", "back"), events)
+    }
 }

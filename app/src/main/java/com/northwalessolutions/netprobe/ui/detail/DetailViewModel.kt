@@ -3,6 +3,7 @@ package com.northwalessolutions.netprobe.ui.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.northwalessolutions.netprobe.AppContainer
+import com.northwalessolutions.netprobe.PendingUndo
 import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentity
@@ -16,12 +17,15 @@ import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.engine.common.BindFailedException
+import com.northwalessolutions.netprobe.ui.home.HomeCopy
+import com.northwalessolutions.netprobe.ui.home.RemovedHosts
 import com.northwalessolutions.netprobe.ui.home.RowRules
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.home.ScanController
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.net.Inet4Address
 import java.net.InetAddress
@@ -94,7 +98,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
                         sem.withPermit {
                             val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), mode)
                             synchronized(found) { found[r.port] = info }
-                            c.ports.upsertOpen(hostId, r.port, info)
+                            c.ports.upsertOpenIfHostExists(hostId, r.port, info)
                         }
                     } finally { identify.update { IdentifyCount(it.pending - 1, it.done + 1) } }
                 }
@@ -110,6 +114,37 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     }
 
     fun stopScan() = scan.stop()
+
+    /**
+     * Detail overflow "Remove device" (spec 5.3): stop every scan of this host and wait for it; under the radar collector's lock, record
+     * the host id (Quick scan all skips it) and, when a radar scan runs on its network, its IP, then delete the host and its ports in one
+     * transaction; offer Undo on Home. Runs on appScope (on Main first, so the scan controller is touched on its own thread), so leaving
+     * the screen never cancels it. Undo restores under the same lock, through a restore that clears anything a late scan wrote.
+     */
+    fun removeDevice() {
+        val h = state.value.host ?: return
+        val name = state.value.displayName
+        c.appScope.launch(Dispatchers.Main.immediate) {
+            scan.stopAndJoin()
+            c.hostScanJobs[hostId]?.cancelAndJoin()
+            val snap = c.hostWriteLock.withLock {
+                c.removedHostIds.update { it + hostId }
+                if (c.radarScanNetworkId.value == h.networkId) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
+                c.hosts.snapshot(hostId)?.also { c.hosts.delete(it) }
+            } ?: return@launch
+            c.undo.post(PendingUndo(HomeCopy.removed(name),
+                // The marks are cleared in finally (the Task 13 pattern): a failed restore never leaves the host skipped by every later scan.
+                // update {} is an atomic read-modify-write that touches only this host's id and pair, so a second Remove's marks are kept.
+                restore = {
+                    try { c.hostWriteLock.withLock { c.hosts.restore(snap) } }
+                    finally {
+                        c.removedHostIds.update { it - hostId }
+                        c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                    }
+                },
+                commit = {}))
+        }
+    }
     fun setStatus(s: HostStatus) { viewModelScope.launch { c.hosts.setStatus(hostId, s) } }
     /** NonCancellable job: the last save fires as the screen leaves, when viewModelScope is about to be (or already is) cancelled. */
     fun setNote(n: String) { viewModelScope.launch(NonCancellable) { c.hosts.setNote(hostId, n) } }

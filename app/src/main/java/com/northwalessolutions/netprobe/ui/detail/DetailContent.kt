@@ -28,6 +28,7 @@ data class DetailActions(
     val onProfile: (ScanProfile) -> Unit = {}, val onCustom: (String) -> Unit = {}, val onScan: () -> Unit = {}, val onStop: () -> Unit = {},
     val onAction: (DeviceAction) -> Unit = {}, val onPortVulns: (Int) -> Unit = {}, val onDeviceVulns: () -> Unit = {}, val onCloseVulns: () -> Unit = {},
     val onRerunVulns: (String) -> Unit = {}, val onOpenLink: (String) -> Unit = {}, val onDismissMessage: () -> Unit = {},
+    val onRemove: () -> Unit = {},
 )
 
 /** All Detail layout (Radar spec section 5). PINNED: the topBar column; only `portList` scrolls. */
@@ -44,7 +45,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     // on the list counted the navigation bar twice and left a 48 dp gap above the keyboard on the Pixel.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("detailHeader")) {
-            BackToHome(actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }) }
+            BackToHome(actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, onRemove = { if (state.scanning) actions.onStop(); actions.onRemove(); actions.onBack() }) }
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
                     DetailName(state.displayName) { editing = true }

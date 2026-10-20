@@ -48,6 +48,12 @@ class ScanController(private val scope: CoroutineScope, private val env: StateFl
         job = j; watcher = w
         w.start(); j.start()
     }
+    /** Stop, then wait until the cancelled job (and its finally) has finished: Remove device must not race a port write (spec 5.3 step 1). */
+    suspend fun stopAndJoin() {
+        val running = job
+        stop()
+        running?.join()
+    }
     val isRunning: Boolean get() = job?.isActive == true
     fun stop() { generation++; job?.cancel(); watcher?.cancel(); _state.value = State(false, null) }
     fun dismissMessage() = _state.update { it.copy(message = null) }

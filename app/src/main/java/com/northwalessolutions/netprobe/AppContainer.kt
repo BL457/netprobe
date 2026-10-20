@@ -15,6 +15,9 @@ import com.northwalessolutions.netprobe.engine.vulns.*
 import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.sync.Mutex
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Manual dependency container of lazily-created singletons. */
@@ -30,6 +33,16 @@ class AppContainer(val context: Context) {
     val forgottenNetworkId = MutableStateFlow<Long?>(null)
     /** Bumped after Forget, Undo or the commit so Home resolves the network row again, whichever HomeViewModel is alive (G4). */
     val networkEpoch = MutableStateFlow(0)
+    /** Each host's Quick scan all child job, so Remove device cancels exactly that host's scan (spec 5.3 step 1). */
+    val hostScanJobs = ConcurrentHashMap<Long, Job>()
+    /** (network, ip) removed while a radar scan runs; that scan and Quick scan all skip them; cleared at the next radar scan start. */
+    val removedDuringScan = MutableStateFlow<Set<Pair<Long, String>>>(emptySet())
+    /** Host ids removed in this process; Quick scan all skips them radar or not (plan review G2). Ids are AUTOINCREMENT, never reused. */
+    val removedHostIds = MutableStateFlow<Set<Long>>(emptySet())
+    /** The network a radar scan is running on, or null. */
+    val radarScanNetworkId = MutableStateFlow<Long?>(null)
+    /** Held by each radar emission's check and write and by Remove's mark and delete, so the two never interleave (G2). */
+    val hostWriteLock = Mutex()
     val settings by lazy { AppSettings(context) }
     val db by lazy { NetProbeDb.open(context) }
     val networks by lazy { NetworkRepository(db) { settings.manual.set(it, emptyList()) } }

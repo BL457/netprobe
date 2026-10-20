@@ -16,5 +16,5 @@ fun DetailScreen(container: AppContainer, hostId: Long, onBack: () -> Unit) {
     DetailContent(s, DetailActions(onBack = onBack, onEdit = vm::setOverrides, onStatus = vm::setStatus, onNote = vm::setNote,
         onProfile = vm::setProfile, onCustom = vm::setCustomPorts, onScan = vm::startScan, onStop = vm::stopScan, onAction = vm::runAction,
         onPortVulns = vm::lookupVulnsForService, onDeviceVulns = vm::lookupVulnsForDevice, onCloseVulns = vm::closeVulns,
-        onRerunVulns = vm::rerunVulnQuery, onOpenLink = vm::openLink, onDismissMessage = vm::dismissMessage))
+        onRerunVulns = vm::rerunVulnQuery, onOpenLink = vm::openLink, onDismissMessage = vm::dismissMessage, onRemove = vm::removeDevice))
 }

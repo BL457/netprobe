@@ -185,6 +185,12 @@ class PortRepository(private val db: NetProbeDb) {
             }
         } else db.ports().update(PortMapping.merge(e, info, now))
     }
+    /** Scan paths write through this: the row lands only while its host row exists, checked in the same transaction, so a host removed mid-scan never gets orphan ports (G2). */
+    suspend fun upsertOpenIfHostExists(hostId: Long, port: Int, info: ServiceInfo): Boolean = db.withTransaction {
+        if (db.hosts().byIdOnce(hostId) == null) return@withTransaction false
+        upsertOpen(hostId, port, info)
+        true
+    }
     /** Stored open ports of a host as identification input, all eleven fields, so a rediscovery never forgets earlier findings. */
     suspend fun servicesFor(hostId: Long): Map<Int, ServiceInfo> = db.ports().forHostOnce(hostId).associate { it.port to it.toServiceInfo() }
     suspend fun markScanned(hostId: Long) = db.hosts().markScanned(hostId, System.currentTimeMillis())
