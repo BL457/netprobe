@@ -35,23 +35,36 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
     /** Guards every read-modify-write of index.json and [_lists] (plan review G23); withEntries never takes it. */
     private val indexLock = Mutex()
     internal val dirForTest: File get() = dir
+    internal val indexLockForTest: Mutex get() = indexLock
     private val builtInMeta: List<WordlistMeta> = builtIns.map { b -> WordlistMeta(b.id, b.name, countOf(b.open()), null, true) }
     private val _lists = MutableStateFlow(load())
     val lists: StateFlow<List<WordlistMeta>> = _lists
 
     private fun load(): List<WordlistMeta> {
         dir.mkdirs()
-        val parsedIndex = runCatching { Json.decodeFromString<List<WordlistMeta>>(index.takeIf { it.exists() }?.readText() ?: "[]") }.getOrNull()
-        val imported = parsedIndex ?: emptyList()
-        // Drop index entries whose file is gone. Orphan .txt files are swept only when the index parsed: a truncated index must not cost the user's imports.
-        val present = imported.filter { fileName(it.id)?.let { n -> File(dir, n).exists() } == true }
+        dir.listFiles()?.forEach { if (it.name.endsWith(TMP)) it.delete() }   // half imports and half index writes
+        val parsedIndex = if (index.exists()) runCatching { Json.decodeFromString<List<WordlistMeta>>(index.readText()) }.getOrNull() else null
+        // A corrupt or missing index must not cost the user's imports: adopt the surviving files into a fresh one.
+        if (parsedIndex == null) return builtInMeta + recover().sortedByDescending { it.importedAt ?: 0 }
+        // Drop index entries whose file is gone and sweep .txt files with no index entry.
+        val present = parsedIndex.filter { fileName(it.id)?.let { n -> File(dir, n).exists() } == true }
         val known = present.mapNotNull { fileName(it.id) }.toSet()
-        dir.listFiles()?.forEach {
-            val orphan = parsedIndex != null && it.name !in known && it.name.endsWith(".txt")
-            if (orphan || it.name.endsWith(TMP)) it.delete()   // orphans and half imports
-        }
-        if (parsedIndex != null && present.size != imported.size) runCatching { writeIndex(present) }
+        dir.listFiles()?.forEach { if (it.name !in known && it.name.endsWith(".txt")) it.delete() }
+        if (present.size != parsedIndex.size) runCatching { writeIndex(present) }
         return builtInMeta + present.sortedByDescending { it.importedAt ?: 0 }
+    }
+    /** Rebuilds the index from `<uuid>.txt` files: named by [WordlistCopy.recoveredName], dated by last-modified. Unparseable files are deleted. */
+    private fun recover(): List<WordlistMeta> {
+        val recovered = ArrayList<WordlistMeta>()
+        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".txt") }?.sortedBy { it.name } ?: emptyList()
+        for (f in files) {
+            val id = "user:" + f.name.removeSuffix(".txt")
+            val count = if (fileName(id) == null) 0 else runCatching { f.inputStream().use { WordlistParser.parse(it).entries.size } }.getOrDefault(0)
+            if (count == 0) { f.delete(); continue }
+            recovered.add(WordlistMeta(id, WordlistCopy.recoveredName(recovered.size + 1), count, f.lastModified(), false))
+        }
+        if (recovered.isNotEmpty()) runCatching { writeIndex(recovered) }
+        return recovered
     }
     /** The file for a user id, or null for any id that is not `user:<uuid>`, so no id can resolve outside [dir]. */
     private fun fileName(id: String): String? = if (USER_ID.matches(id)) id.removePrefix("user:") + ".txt" else null

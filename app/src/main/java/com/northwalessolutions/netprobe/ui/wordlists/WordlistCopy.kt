@@ -21,6 +21,7 @@ object WordlistCopy {
     private fun entries(n: Int) = if (n == 1) "1 entry" else "$n entries"
     fun entriesBuiltIn(n: Int) = "${entries(n)}, built in"
     fun entriesImported(n: Int, date: String) = "${entries(n)}, imported $date"
+    fun recoveredName(n: Int) = "Recovered list $n"
     fun deletePrompt(name: String) = "Delete $name?"
     fun deleteDescription(name: String) = "Delete $name"
     fun imported(name: String, n: Int, skipped: Int) = "Imported $name, ${entries(n)}${if (skipped > 0) " ($skipped skipped)" else ""}"

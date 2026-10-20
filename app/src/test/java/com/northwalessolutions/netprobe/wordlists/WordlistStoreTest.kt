@@ -128,13 +128,48 @@ class WordlistStoreTest {
         s.delete("user:../x")
         assertTrue(File(s.dirForTest.parentFile, "x.txt").exists())
     }
-    @Test fun `a truncated index loads empty and keeps the user files`() = runTest {
+    private val idA = "11111111-1111-1111-1111-111111111111"
+    private val idB = "22222222-2222-2222-2222-222222222222"
+    @Test fun `a corrupt index adopts the user files as recovered lists and a later import keeps them`() = runTest {
         val dir = tmp.newFolder("corrupt")
-        File(dir, "index.json").writeText("{ not json"); File(dir, "orphan.txt").writeText("x"); File(dir, "half.txt.tmp").writeText("x")
+        File(dir, "index.json").writeText("{ not json"); File(dir, "half.txt.tmp").writeText("x")
+        File(dir, "$idA.txt").writeText("a\nb\nc"); File(dir, "$idB.txt").writeText("x\ny")
+        File(dir, "junk.txt").writeText("\n\n# nothing")
         val s = WordlistStore(dir, listOf(commons))
-        assertEquals(listOf("builtin:common-short"), s.lists.first().map { it.id })
-        assertTrue("user files survive a corrupt index", File(dir, "orphan.txt").exists())
-        assertEquals("{ not json", File(dir, "index.json").readText())
+        val lists = s.lists.first()
+        assertEquals(listOf("builtin:common-short"), lists.filter { it.builtIn }.map { it.id })
+        val rec = lists.filter { !it.builtIn }
+        assertEquals(setOf(3, 2), rec.map { it.entries }.toSet())
+        assertEquals(setOf("Recovered list 1", "Recovered list 2"), rec.map { it.name }.toSet())
+        assertTrue(File(dir, "$idA.txt").exists() && File(dir, "$idB.txt").exists())
+        assertFalse("unparseable file swept", File(dir, "junk.txt").exists())
+        s.import("new", "q".byteInputStream())
+        val reloaded = WordlistStore(dir, listOf(commons)).lists.first().filter { !it.builtIn }
+        assertEquals(3, reloaded.size)
+        assertTrue(File(dir, "$idA.txt").exists() && File(dir, "$idB.txt").exists())
+    }
+    @Test fun `a missing index with user files adopts them`() = runTest {
+        val dir = tmp.newFolder("noindex")
+        File(dir, "$idA.txt").writeText("a\nb")
+        assertEquals(listOf(2), WordlistStore(dir, emptyList()).lists.first().map { it.entries })
+    }
+    @Test fun `cancelling an import while it waits for the index lock removes its file`() = runBlocking {
+        val s = store()
+        s.indexLockForTest.lock()
+        try {
+            val job = launch(Dispatchers.Default) { s.import("blocked", "a\nb".byteInputStream()) }
+            val deadline = System.currentTimeMillis() + 10_000
+            while (s.dirForTest.listFiles()!!.none { it.name.endsWith(".txt") } && System.currentTimeMillis() < deadline) delay(5)
+            assertTrue("the import reached the lock", s.dirForTest.listFiles()!!.any { it.name.endsWith(".txt") })
+            job.cancelAndJoin()
+        } finally { s.indexLockForTest.unlock() }
+        assertTrue(s.dirForTest.listFiles()!!.none { it.name.endsWith(".txt") })
+        assertTrue(s.lists.first().isEmpty())
+    }
+    @Test fun `an interrupted temp file is removed on load`() = runTest {
+        val dir = tmp.newFolder("tmpfile")
+        File(dir, "index.json").writeText("[]"); File(dir, "half.txt.tmp").writeText("x")
+        WordlistStore(dir, listOf(commons))
         assertFalse("an interrupted import's temp file is removed (plan review G23)", File(dir, "half.txt.tmp").exists())
     }
 }
