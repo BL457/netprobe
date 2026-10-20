@@ -90,7 +90,7 @@ Type edge colours (4 dp wide, 34 dp tall, 2 dp radius). A row whose type is unkn
 
 The four chosen values are from the same pastel family as the drawn ones (similar lightness, so none outshouts another) and are distinct from teal, blue and violet. A non-gateway ROUTER (an access point, for example) also gets teal (D15). If the Director wants teal on edges for the gateway alone, use #5FB8B0 for non-gateway routers: a one-line change in `edgeColor`. The four chosen colours are reviewed by the Director on device screenshots (open item 11.4).
 
-Stale hosts (not seen in the latest run): the type edge is drawn at 0.5 alpha and the device name at 0.6 alpha. The data line, mark chip and open-port count stay at full strength, so a stale host's IP stays readable. The name alpha is the highest value that keeps the contrast test (7.1) at or above 4.5:1; if a token change breaks it the test fails.
+Stale hosts (not seen in the latest run): the type edge is drawn at 0.6 alpha (0.5 fails the 3:1 floor for the NAS, media, phone and camera edges) and the device name at 0.6 alpha. The data line, mark chip and open-port count stay at full strength, so a stale host's IP stays readable. The name alpha is the highest value that keeps the contrast test (7.1) at or above 4.5:1; if a token change breaks it the test fails.
 
 ### 2.2 Typography
 
@@ -279,7 +279,7 @@ Columns: 4 dp type edge, content, right column; 12 dp gap. The whole row is the 
 - Line 1: display name in `rowName` / `text`, one line, ellipsised; if status is not Unmarked, a mark chip: `caption`, `background` text on `mark`, 4 dp radius, 1 dp / 6 dp padding, 6 dp left margin; text is the status label.
 - Line 2: `data` / `textMuted`: "10.0.3.59  Synology DS220+" (IP, two spaces, identity). Rule: identity when known (not blank and not the "Unknown device" fallback), else the MAC, else the IP alone. When the name equals the IP, line 2 is the identity or MAC only. `rowDataLine` replaces `rowSecondaryLine`: same logic, two spaces instead of the middle dot, and the "other subnet" suffix is gone (the group header carries it). For the "This phone" row the identity is `Build.MODEL` (for example "Pixel 7 Pro"), substituted in the UI; `RowRules` is untouched and its "Android device" line is not shown.
 - Right column: open-port count in `data` / `signal`, tabular, right-aligned: "9 open". Nothing when zero. The old "Gateway" text label and the status chip are removed: the gateway is the teal edge and status is the mark chip.
-- Stale: edge at 0.5 alpha and name at 0.6 alpha only (2.1), plus a semantics suffix "not seen in the last scan". The data line, chip and open count are not dimmed. This is the one intentional reduction.
+- Stale: edge at 0.6 alpha and name at 0.6 alpha only (2.1), plus a semantics suffix "not seen in the last scan". The data line, chip and open count are not dimmed. This is the one intentional reduction.
 - No divider between rows; rhythm comes from the 9 dp padding. Group headers carry the only rule.
 
 ### 4.4 Empty states and messages
@@ -358,7 +358,7 @@ Computed with the WCAG relative-luminance formula. A contrast test utility (sect
 | borderSubtle | #2A3E54 | 1.50 | n/a | Decorative only (radar rings) |
 | surface | #233447 | 1.30 | n/a | Fill only |
 | stale name (text at 0.6 alpha) | blended over #16202B | at least 4.5 | n/a | Row name of a stale host |
-| stale edge (type edge at 0.5 alpha) | blended over #16202B | at least 3.0 | n/a | Non-text; checked for every edge colour except UNKNOWN |
+| stale edge (type edge at 0.6 alpha) | blended over #16202B | at least 3.0 | n/a | Non-text; checked for every edge colour except UNKNOWN |
 | radar count on disc centre | #E6EDF3 on #1B2836 | at least 4.5 | n/a | The arm is masked out of the centre 40 dp radius, so the count never sits under it |
 | radar "found" label on disc centre | #8FA3B5 on #1B2836 | at least 4.5 (about 5.75) | n/a | Same mask |
 
@@ -566,6 +566,6 @@ Every deliberate difference from the agreed mockups, so the Director is never su
 | 8 | "This phone" line drawn "10.0.3.242  Pixel 7 Pro" | Shows `Build.MODEL` (for example "Pixel 7 Pro") | `RowRules.OWN_LINE` gives "Android device"; the UI substitutes the model, `RowRules` untouched |
 | 9 | Quick scan all not drawn | Ring with an indeterminate teal arc and "Stop" inside, detail "Quick scanning" | Reuses the scanning-ring look; reviewed on device |
 | 10 | COMPUTER, SERVER, CAMERA, PRINTER edges and teal "on" switches not drawn | Chosen values in 2.1, teal switches in section 6 | Reviewed on device screenshots, open items 11.4 and 11.5 |
-| 11 | Stale rows not drawn | Edge at 0.5 alpha and name at 0.6 alpha only | Keeps stale IPs readable (7.1) |
+| 11 | Stale rows not drawn | Edge at 0.6 alpha and name at 0.6 alpha only | Keeps stale IPs readable (7.1) |
 | 12 | Arm drawn across the whole disc | Arm masked out of the centre 40 dp radius | Keeps the count and "found" readable (7.1) |
 | 13 | HERO placeholder drawn as a group-header line | Same | As drawn; included here so it is not read as a deviation |
