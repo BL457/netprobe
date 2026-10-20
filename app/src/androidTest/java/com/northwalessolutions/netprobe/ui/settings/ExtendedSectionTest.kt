@@ -31,6 +31,24 @@ class ExtendedSectionTest {
         } }
     }
 
+    @Test fun editorNotesResetWhenTheNetworkChanges() {   // Task 17 M2
+        var id by mutableStateOf<Long?>(1)
+        rule.setContent {
+            var s by remember { mutableStateOf(SettingsState(extEnabled = true, extMax = 4)) }
+            val rev by store.revision.collectAsState()
+            val manual = remember(id, rev) { store.forNetwork(id) }
+            NetProbeTheme { Column {
+                ExtendedSection(s, { f -> s = f(s) }, if (id == 1L) "Home" else "Office", manual, local, networkId = id) { list -> id?.let { store.set(it, list) } }
+            } }
+        }
+        repeat(2) {
+            rule.onNodeWithTag("addRange").performTextInput("10.0.4.0/24")
+            rule.onNodeWithTag("addRangeButton").performClick()
+        }
+        rule.onNodeWithText("Duplicate removed: 10.0.4.0/24").assertIsDisplayed()
+        id = 2; rule.waitForIdle()
+        rule.onNodeWithText("Duplicate removed: 10.0.4.0/24").assertDoesNotExist()
+    }
     @Test fun rejectsABadCidrInlineAndKeepsAddDisabled() {
         show()
         rule.onNodeWithTag("addRange").performTextInput("8.8.8.0/24")

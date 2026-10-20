@@ -57,12 +57,12 @@ object ManualCap {
 
 @Composable
 fun ExtendedSection(state: SettingsState, update: ((SettingsState) -> SettingsState) -> Unit, networkName: String?,
-                    manual: List<Subnet>, local: Subnet?, onManualChange: (List<Subnet>) -> Unit) {
+                    manual: List<Subnet>, local: Subnet?, networkId: Long? = null, onManualChange: (List<Subnet>) -> Unit) {
     val on = state.extEnabled
     SwitchRow(ExtendedCopy.TITLE, state.extEnabled, supporting = ExtendedCopy.SUPPORT) { v -> update { it.copy(extEnabled = v) } }
     Stepper(ExtendedCopy.MAX_LABEL, state.extMax, AppSettings.EXT_MAX_MIN, AppSettings.EXT_MAX_MAX, ExtendedCopy.capLine(state.extMax), on) { v -> update { it.copy(extMax = v) } }
     SwitchRow(ExtendedCopy.PROBE_LABEL, state.extGatewayProbe, supporting = ExtendedCopy.PROBE_SUPPORT, enabled = on) { v -> update { it.copy(extGatewayProbe = v) } }
-    ManualEditor(networkName, manual, local, state.extMax, enabled = on && networkName != null, onManualChange)
+    ManualEditor(networkName, networkId, manual, local, state.extMax, enabled = on && networkName != null, onManualChange)
 }
 
 @Composable
@@ -84,7 +84,7 @@ private fun StepButton(icon: ImageVector, description: String, enabled: Boolean,
 }
 
 @Composable
-private fun ManualEditor(networkName: String?, manual: List<Subnet>, local: Subnet?, cap: Int, enabled: Boolean, onChange: (List<Subnet>) -> Unit) {
+private fun ManualEditor(networkName: String?, networkId: Long?, manual: List<Subnet>, local: Subnet?, cap: Int, enabled: Boolean, onChange: (List<Subnet>) -> Unit) {
     Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else DISABLED_ALPHA)) {
         Text(networkName?.let { ExtendedCopy.manualTitle(it) } ?: ExtendedCopy.NO_NETWORK, style = NetProbeText.secondary, color = NetProbeColors.text,
             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
@@ -97,7 +97,7 @@ private fun ManualEditor(networkName: String?, manual: List<Subnet>, local: Subn
             }
         }
         var text by rememberSaveable(networkName) { mutableStateOf("") }
-        var notes by remember { mutableStateOf(emptyList<String>()) }
+        var notes by remember(networkId) { mutableStateOf(emptyList<String>()) }   // one network's notes never show for the next (Task 17 M2)
         val result = if (text.isBlank()) null else CidrParser.parse(text, local)
         val error = result?.error
         val helper = (result?.entries?.mapNotNull { it.note }.orEmpty() + notes).joinToString("\n").ifEmpty { null }

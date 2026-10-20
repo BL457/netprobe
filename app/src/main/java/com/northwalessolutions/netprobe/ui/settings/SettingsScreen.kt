@@ -71,8 +71,9 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             val network by container.currentNetwork.collectAsStateWithLifecycle()
             val revision by container.settings.manual.revision.collectAsStateWithLifecycle()
             val manual = remember(network?.id, revision) { container.settings.manual.forNetwork(network?.id) }
-            val local = remember(s.maxPrefix) { container.networkEnvMonitor.current()?.let { SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, s.maxPrefix).subnet } }
-            ExtendedSection(s, update, networkName = network?.displayName, manual = manual, local = local) { list ->
+            val local = remember(network?.id, s.maxPrefix) {   // re-read on a network switch (Task 17 M2)
+                container.networkEnvMonitor.current()?.let { SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, s.maxPrefix).subnet } }
+            ExtendedSection(s, update, networkName = network?.displayName, manual = manual, local = local, networkId = network?.id) { list ->
                 network?.id?.let { container.settings.manual.set(it, list) }
             }
 
