@@ -17,4 +17,14 @@ class SweepTest {
         assertEquals(listOf(lo), out.map { it.ip })
         assertEquals(3 to 3, sweep.progress.value)
     }
+    @Test fun `runAll emits every result including dead hosts`() = runBlocking {
+        val lo = InetAddress.getLoopbackAddress() as Inet4Address
+        val dead = InetAddress.getByName("192.0.2.1") as Inet4Address
+        ServerSocket(0).use { server ->
+            val sweep = Sweep(HostProber(ports = listOf(server.localPort), timeoutMs = 300), concurrency = 8)
+            val out = sweep.runAll(sequenceOf(lo, dead)).toList()
+            assertEquals(setOf(lo to true, dead to false), out.map { it.ip to it.alive }.toSet())
+            assertEquals(2 to 2, sweep.progress.value)
+        }
+    }
 }
