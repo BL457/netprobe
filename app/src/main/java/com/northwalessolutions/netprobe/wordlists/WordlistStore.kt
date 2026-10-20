@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.wordlists
 
 import com.northwalessolutions.netprobe.ui.wordlists.WordlistCopy
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 @Serializable data class WordlistMeta(val id: String, val name: String, val entries: Int, val importedAt: Long?, val builtIn: Boolean)
@@ -38,16 +41,30 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
 
     private fun load(): List<WordlistMeta> {
         dir.mkdirs()
-        val imported = runCatching { Json.decodeFromString<List<WordlistMeta>>(index.takeIf { it.exists() }?.readText() ?: "[]") }.getOrElse { emptyList() }
-        // Drop index entries whose file is gone, and delete .txt files with no index entry.
-        val present = imported.filter { File(dir, fileName(it.id)).exists() }
-        val known = present.map { fileName(it.id) }.toSet() + "index.json"
-        dir.listFiles()?.forEach { if ((it.name !in known && it.name.endsWith(".txt")) || it.name.endsWith(TMP)) it.delete() }   // orphans and half imports
-        if (present.size != imported.size) writeIndex(present)
+        val parsedIndex = runCatching { Json.decodeFromString<List<WordlistMeta>>(index.takeIf { it.exists() }?.readText() ?: "[]") }.getOrNull()
+        val imported = parsedIndex ?: emptyList()
+        // Drop index entries whose file is gone. Orphan .txt files are swept only when the index parsed: a truncated index must not cost the user's imports.
+        val present = imported.filter { fileName(it.id)?.let { n -> File(dir, n).exists() } == true }
+        val known = present.mapNotNull { fileName(it.id) }.toSet()
+        dir.listFiles()?.forEach {
+            val orphan = parsedIndex != null && it.name !in known && it.name.endsWith(".txt")
+            if (orphan || it.name.endsWith(TMP)) it.delete()   // orphans and half imports
+        }
+        if (parsedIndex != null && present.size != imported.size) runCatching { writeIndex(present) }
         return builtInMeta + present.sortedByDescending { it.importedAt ?: 0 }
     }
-    private fun fileName(id: String) = id.removePrefix("user:") + ".txt"
-    private fun writeIndex(imported: List<WordlistMeta>) { index.writeText(Json.encodeToString(imported)) }
+    /** The file for a user id, or null for any id that is not `user:<uuid>`, so no id can resolve outside [dir]. */
+    private fun fileName(id: String): String? = if (USER_ID.matches(id)) id.removePrefix("user:") + ".txt" else null
+    /** Writes index.json.tmp then moves it over index.json, so a kill mid-write never leaves a truncated index. */
+    private fun writeIndex(imported: List<WordlistMeta>) {
+        val tmpIndex = File(dir, index.name + TMP)
+        tmpIndex.writeText(Json.encodeToString(imported))
+        try {
+            Files.move(tmpIndex.toPath(), index.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } catch (e: IOException) {
+            if (!tmpIndex.renameTo(index)) { tmpIndex.delete(); throw e }
+        }
+    }
     private fun countOf(stream: InputStream): Int = stream.use { WordlistParser.parse(it).entries.size }
 
     suspend fun import(displayName: String?, source: InputStream): ImportResult = withContext(Dispatchers.IO) {
@@ -57,25 +74,33 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
         if (parsed.entries.isEmpty()) return@withContext ImportResult.Empty
         val baseName = cleanName(displayName)
         val id = "user:" + UUID.randomUUID().toString()
-        val target = File(dir, fileName(id))
-        val temp = File(dir, fileName(id) + TMP)
+        val name = fileName(id) ?: return@withContext ImportResult.Unreadable
+        val target = File(dir, name)
+        val temp = File(dir, name + TMP)
         try {
             dir.mkdirs()
             temp.writeText(parsed.entries.joinToString("\n"))
         } catch (e: IOException) { temp.delete(); return@withContext ImportResult.Unreadable }
         if (!temp.renameTo(target)) { temp.delete(); return@withContext ImportResult.Unreadable }
-        indexLock.withLock {
-            val meta = WordlistMeta(id, uniqueName(baseName), parsed.entries.size, System.currentTimeMillis(), false)
-            val imported = currentImported() + meta
-            writeIndex(imported); _lists.value = builtInMeta + imported.sortedByDescending { it.importedAt ?: 0 }
-            ImportResult.Imported(meta, parsed.skipped)
+        try {
+            indexLock.withLock {
+                val meta = WordlistMeta(id, uniqueName(baseName), parsed.entries.size, System.currentTimeMillis(), false)
+                val imported = currentImported() + meta
+                writeIndex(imported); _lists.value = builtInMeta + imported.sortedByDescending { it.importedAt ?: 0 }
+                ImportResult.Imported(meta, parsed.skipped)
+            }
+        } catch (e: IOException) {
+            target.delete(); ImportResult.Unreadable
+        } catch (e: CancellationException) {
+            target.delete(); throw e
         }
     }
 
     suspend fun delete(id: String): Unit = withContext(Dispatchers.IO) {
         if (id.startsWith("builtin:")) return@withContext
         indexLock.withLock {
-            File(dir, fileName(id)).delete()                       // a run reading it keeps its open reader (spec 5.6.3)
+            val name = fileName(id) ?: return@withLock
+            File(dir, name).delete()                     // a run reading it keeps its open reader (spec 5.6.3)
             val imported = currentImported().filterNot { it.id == id }
             writeIndex(imported); _lists.value = builtInMeta + imported.sortedByDescending { it.importedAt ?: 0 }
         }
@@ -84,7 +109,7 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
     suspend fun <T> withEntries(id: String, block: suspend (Sequence<String>) -> T): T? = withContext(Dispatchers.IO) {
         val reader: BufferedReader = when {
             id.startsWith("builtin:") -> builtIns.firstOrNull { it.id == id }?.open()?.bufferedReader() ?: return@withContext null
-            else -> File(dir, fileName(id)).takeIf { it.exists() }?.bufferedReader() ?: return@withContext null
+            else -> fileName(id)?.let { File(dir, it) }?.takeIf { it.exists() }?.bufferedReader() ?: return@withContext null
         }
         try { block(reader.lineSequence().mapNotNull { normalise(it) }) } finally { reader.close() }
     }
@@ -121,6 +146,7 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
         const val MAX_IMPORT_BYTES = 10_485_760
         const val MAX_ENTRIES = 200_000
         private const val TMP = ".tmp"
+        private val USER_ID = Regex("user:[0-9a-f-]{36}")
         private const val MAX_NAME_CHARS = 80
         private const val READ_CHUNK = 8192
     }

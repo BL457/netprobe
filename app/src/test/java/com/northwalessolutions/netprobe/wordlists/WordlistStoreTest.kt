@@ -100,12 +100,41 @@ class WordlistStoreTest {
         assertEquals(8, s.lists.first().size)
         assertEquals(8, WordlistStore(s.dirForTest, emptyList()).lists.first().size)        // the index on disk has all eight
     }
-    @Test fun `a corrupt index loads empty and orphan files are removed`() = runTest {
+    @Test fun `with a valid index orphan files are removed`() = runTest {
+        val dir = tmp.newFolder("orphans")
+        File(dir, "index.json").writeText("[]"); File(dir, "orphan.txt").writeText("x")
+        val s = WordlistStore(dir, listOf(commons))
+        assertEquals(listOf("builtin:common-short"), s.lists.first().map { it.id })
+        assertFalse(File(dir, "orphan.txt").exists())
+    }
+    @Test fun `writing the index leaves no temp file behind`() = runTest {
+        val s = store(); s.import("a", "x".byteInputStream())
+        assertTrue(s.dirForTest.listFiles()!!.none { it.name.endsWith(".tmp") })
+        assertTrue(File(s.dirForTest, "index.json").exists())
+    }
+    @Test fun `a failure before the index move leaves the old index intact and removes the import file`() = runTest {
+        val s = store(); s.import("keep", "x".byteInputStream())
+        val before = File(s.dirForTest, "index.json").readText()
+        File(s.dirForTest, "index.json.tmp").mkdir()                 // the temp write now fails with an IOException
+        assertEquals(ImportResult.Unreadable, s.import("fail", "y".byteInputStream()))
+        assertEquals(before, File(s.dirForTest, "index.json").readText())
+        assertEquals(1, s.lists.first().size)
+        assertEquals(1, s.dirForTest.listFiles()!!.count { it.name.endsWith(".txt") })
+    }
+    @Test fun `an id that is not a user uuid never resolves to a path`() = runTest {
+        val s = store()
+        File(s.dirForTest.parentFile, "x.txt").writeText("secret")
+        assertNull(s.withEntries("user:../x") { it.toList() })
+        s.delete("user:../x")
+        assertTrue(File(s.dirForTest.parentFile, "x.txt").exists())
+    }
+    @Test fun `a truncated index loads empty and keeps the user files`() = runTest {
         val dir = tmp.newFolder("corrupt")
         File(dir, "index.json").writeText("{ not json"); File(dir, "orphan.txt").writeText("x"); File(dir, "half.txt.tmp").writeText("x")
         val s = WordlistStore(dir, listOf(commons))
         assertEquals(listOf("builtin:common-short"), s.lists.first().map { it.id })
-        assertFalse(File(dir, "orphan.txt").exists())
+        assertTrue("user files survive a corrupt index", File(dir, "orphan.txt").exists())
+        assertEquals("{ not json", File(dir, "index.json").readText())
         assertFalse("an interrupted import's temp file is removed (plan review G23)", File(dir, "half.txt.tmp").exists())
     }
 }
