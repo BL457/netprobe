@@ -5,9 +5,11 @@ import com.northwalessolutions.netprobe.actions.ActionProvider
 import com.northwalessolutions.netprobe.actions.AndroidActionRunner
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.common.HttpClient
+import com.northwalessolutions.netprobe.engine.serviceid.TlsPeek
 import com.northwalessolutions.netprobe.engine.tools.FingerprintRules
 import com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTool
 import com.northwalessolutions.netprobe.engine.tools.HttpGet
+import com.northwalessolutions.netprobe.engine.tools.TlsCertificateTool
 import com.northwalessolutions.netprobe.engine.tools.namedThenIp
 import com.northwalessolutions.netprobe.engine.common.Locks
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
@@ -112,6 +114,7 @@ class AppContainer(val context: Context) {
                 }
             },
             rules = FingerprintRules.load(RawResources.read(context, R.raw.http_fingerprints))))
+        put(ToolId.TLS_CERTIFICATE, TlsCertificateTool(peek = { t, name -> TlsPeek().details(t.ip, t.port, name) }))
     }
     /** The chosen list, else common-short (spec 5.1, 11.10); streams through withEntries, so a list is never loaded whole. */
     private fun resolveWordlist(id: String): LoadedWordlist? {
