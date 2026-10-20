@@ -36,6 +36,7 @@ import com.northwalessolutions.netprobe.engine.tools.dirbrute.Exchange
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.LoadedWordlist
 import com.northwalessolutions.netprobe.engine.tools.smb.SmbSessionTool
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
+import com.northwalessolutions.netprobe.ui.tools.DirBruteOptionsStore
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.wordlists.BuiltInList
 import com.northwalessolutions.netprobe.wordlists.WordlistStore
@@ -160,6 +161,11 @@ class AppContainer(val context: Context) {
             BuiltInList("builtin:admin-panels", "admin-panels") { context.resources.openRawResource(R.raw.wordlist_admin_panels) },
             BuiltInList("builtin:api-paths", "api-paths") { context.resources.openRawResource(R.raw.wordlist_api_paths) },
         ), log = { Log.e(AppScopes.LOG_TAG, "wordlist recovery", it) })
+    }
+    /** Last-used brute-force options, saved globally (spec 5.1). */
+    val dirBruteOptions by lazy {
+        val prefs = context.getSharedPreferences("netprobe", Context.MODE_PRIVATE)
+        DirBruteOptionsStore({ prefs.getString(DirBruteOptionsStore.KEY, null) }, { prefs.edit().putString(DirBruteOptionsStore.KEY, it).apply() })
     }
     val serviceIdentifier by lazy { ServiceIdentifier(portTable) }
     val deviceIdentifier by lazy { DeviceIdentifier(identifyRules) }

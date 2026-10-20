@@ -2,6 +2,7 @@ package com.northwalessolutions.netprobe.ui.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.os.Build
 import android.util.Log
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.AppScopes
@@ -15,6 +16,14 @@ import com.northwalessolutions.netprobe.engine.serviceid.Evidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ProbeModes
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
+import com.northwalessolutions.netprobe.engine.tools.AppMessage
+import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
+import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
+import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolOptions
+import com.northwalessolutions.netprobe.engine.tools.ToolRunner
+import com.northwalessolutions.netprobe.engine.tools.ToolTarget
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
@@ -24,6 +33,14 @@ import com.northwalessolutions.netprobe.ui.home.RemovedHosts
 import com.northwalessolutions.netprobe.ui.home.RowRules
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.home.ScanController
+import com.northwalessolutions.netprobe.ui.tools.DetailToolsState
+import com.northwalessolutions.netprobe.ui.tools.DirBruteSheetState
+import com.northwalessolutions.netprobe.ui.tools.FindingRow
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolExport
+import com.northwalessolutions.netprobe.ui.tools.ToolResultsModel
+import com.northwalessolutions.netprobe.ui.tools.ToolsUiModel
+import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
@@ -65,6 +82,137 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             identifying = (arr[10] as IdentifyCount).pending, identified = (arr[10] as IdentifyCount).done)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailUiState())
 
+    private val resultsRunId = MutableStateFlow<Long?>(null)
+    private val dirBrutePort = MutableStateFlow<Int?>(null)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val resultsSource: Flow<Pair<ToolRunEntity, List<ToolFindingEntity>>?> = resultsRunId.flatMapLatest { id ->
+        if (id == null) flowOf(null) else combine(c.toolRepo.run(id), c.toolRepo.findings(id)) { r, f -> r?.let { it to f } }
+    }
+    /** The wordlist store does resource I/O on first use, so it is first touched inside this flow, which runs on Dispatchers.Default (toolState's flowOn). */
+    private val wordlists: Flow<List<WordlistMeta>> = flow { emitAll(c.wordlistStore.lists) }
+
+    /** Tools block, pinned bar, busy state, both sheets and the app message for this host (spec 8.1 to 8.5, 4.3). */
+    val toolState: StateFlow<DetailToolsState> = combine(listOf(c.hosts.host(hostId), c.ports.portsForHost(hostId), c.toolRepo.runsForHost(hostId),
+        c.toolRunner.active, c.hostBusy.busy, resultsSource, dirBrutePort, wordlists, c.appMessages.current)) { arr ->
+        @Suppress("UNCHECKED_CAST") val ports = arr[1] as List<PortEntity>
+        @Suppress("UNCHECKED_CAST") val runs = arr[2] as List<ToolRunEntity>
+        @Suppress("UNCHECKED_CAST") val activeMap = arr[3] as Map<Long, ToolRunner.Active>
+        @Suppress("UNCHECKED_CAST") val busyMap = arr[4] as Map<Long, HostBusyRegistry.Work>
+        @Suppress("UNCHECKED_CAST") val results = arr[5] as Pair<ToolRunEntity, List<ToolFindingEntity>>?
+        @Suppress("UNCHECKED_CAST") val lists = arr[7] as List<WordlistMeta>
+        val h = arr[0] as HostEntity?; val sheetPort = arr[6] as Int?; val appMessage = arr[8] as AppMessage?
+        val active = activeMap[hostId]
+        val now = System.currentTimeMillis()
+        val busy = busyMap[hostId]
+        DetailToolsState(
+            tools = h?.let { ToolsUiModel.of(it, ports.map { p -> p.port to p.toServiceInfo() }, runs, now) },
+            bar = active?.let(ToolsUiModel::bar),
+            busy = busy,
+            results = if (h == null) null else results?.let { (run, findings) ->
+                ToolResultsModel.of(run, runs.filter { it.toolId == run.toolId }, h.ip, findings, active, now)
+            },
+            dirBrute = if (h == null) null else sheetPort?.let { port -> dirBruteSheet(h, port, ports, lists, busy, activeMap.size) },
+            appMessage = appMessage,
+        )
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailToolsState())
+
+    init {
+        // The results sheet closes when its run disappears (pruned by a new run, or its host removed) (spec 8.5, 11.15).
+        viewModelScope.launch {
+            resultsRunId.flatMapLatest { id -> if (id == null) flowOf(Unit) else c.toolRepo.run(id).filter { it == null }.map { } }
+                .collect { if (resultsRunId.value != null) resultsRunId.value = null }
+        }
+    }
+
+    private fun dirBruteSheet(h: HostEntity, port: Int, ports: List<PortEntity>, lists: List<WordlistMeta>, busy: HostBusyRegistry.Work?, runningHosts: Int): DirBruteSheetState {
+        val service = ports.firstOrNull { it.port == port }?.toServiceInfo()
+        val tls = service?.let { ToolApplicability.targetTls(ToolId.DIR_BRUTEFORCE, port, it) } ?: false
+        val saved = c.dirBruteOptions.load()
+        val initial = if (lists.any { it.id == saved.wordlistId }) saved else saved.copy(wordlistId = DirBruteOptions.DEFAULT_WORDLIST)
+        val reason = busy?.let(ToolsUiModel::busyMessage) ?: ToolCopy.BUSY_TOO_MANY.takeIf { runningHosts >= ToolRunner.MAX_ACTIVE_RUNS }
+        return DirBruteSheetState(port, ToolExport.target(ToolId.DIR_BRUTEFORCE, h.ip, port, tls), lists, initial, reason)
+    }
+
+    /** A chip or port-sheet row (spec 8.1, 8.3): brute-force opens its sheet, the others start at once; a held host shows its reason. */
+    fun runTool(toolId: ToolId, port: Int) {
+        val busy = c.hostBusy.busy.value[hostId]
+        if (busy != null) { message.value = ToolsUiModel.busyMessage(busy); return }
+        if (toolId == ToolId.DIR_BRUTEFORCE) {
+            // Off the main thread: the first wordlistStore access reads the built-in lists.
+            viewModelScope.launch(Dispatchers.Default) {
+                val saved = c.dirBruteOptions.load()
+                if (c.wordlistStore.lists.value.none { it.id == saved.wordlistId }) message.value = ToolCopy.WORDLIST_FALLBACK
+                dirBrutePort.value = port
+            }
+            return
+        }
+        start(toolId, port, ToolOptions.None)
+    }
+    /** Run in the options sheet: save the options, close the sheet, start the run (spec 8.4). */
+    fun startDirBrute(o: DirBruteOptions) {
+        val port = dirBrutePort.value ?: return
+        val options = o.coerced()
+        dirBrutePort.value = null
+        viewModelScope.launch(Dispatchers.Default) {
+            c.dirBruteOptions.save(options)
+            val meta = c.wordlistStore.lists.value.firstOrNull { it.id == options.wordlistId }
+            start(ToolId.DIR_BRUTEFORCE, port, ToolOptions.DirBrute(options, meta?.name ?: "", meta?.entries ?: 0))
+        }
+    }
+    fun closeDirBrute() { dirBrutePort.value = null }
+
+    private fun start(toolId: ToolId, port: Int, options: ToolOptions) {
+        c.appScope.launch {
+            val h = c.hosts.byIdOnce(hostId) ?: return@launch
+            val ip = RowRules.parseIpv4(h.ip) ?: return@launch
+            val service = c.ports.servicesFor(hostId)[port]
+            val tls = service?.let { ToolApplicability.targetTls(toolId, port, it) } ?: (toolId == ToolId.TLS_CERTIFICATE)
+            // Brute-force always sends the IP; the fingerprint and TLS tools send the known name (spec 4.9).
+            val name = if (toolId == ToolId.DIR_BRUTEFORCE) null else ToolApplicability.serverName(h)
+            when (c.toolRunner.start(ToolTarget(hostId, ip, port, tls, name), toolId, options)) {
+                ToolRunner.Start.HostBusy -> message.value = ToolsUiModel.busyMessage(c.hostBusy.busy.value[hostId] ?: HostBusyRegistry.Work.TOOL)
+                ToolRunner.Start.TooMany -> message.value = ToolCopy.BUSY_TOO_MANY
+                ToolRunner.Start.NoNetwork -> message.value = ScanController.NO_NETWORK
+                is ToolRunner.Start.Started -> Unit
+            }
+        }
+    }
+    fun stopTool() { c.toolRunner.stop(hostId) }
+
+    /** "Results" opens the newest run of that tool (spec 8.1); the switcher moves through this tool's runs. */
+    fun openResults(toolId: ToolId) {
+        viewModelScope.launch { resultsRunId.value = c.toolRepo.runsForHost(hostId).first().firstOrNull { it.toolId == toolId.key }?.id }
+    }
+    fun olderRun() { stepRun(+1) }
+    fun newerRun() { stepRun(-1) }
+    private fun stepRun(delta: Int) {
+        viewModelScope.launch {
+            val current = resultsRunId.value ?: return@launch
+            val runs = c.toolRepo.runsForHost(hostId).first()
+            val tool = runs.firstOrNull { it.id == current }?.toolId ?: return@launch
+            val same = runs.filter { it.toolId == tool }
+            same.getOrNull(same.indexOfFirst { it.id == current } + delta)?.let { resultsRunId.value = it.id }
+        }
+    }
+    fun closeResults() { resultsRunId.value = null }
+    fun shareRun() {
+        viewModelScope.launch {
+            val id = resultsRunId.value ?: return@launch
+            val run = c.toolRepo.run(id).first() ?: return@launch
+            val h = c.hosts.byIdOnce(hostId) ?: return@launch
+            val export = ToolExport.of(run, h.ip, c.toolRepo.findingsOnce(id))
+            c.actionRunner.share(ToolExport.subject(export.toolName, h.ip, run.port), ToolExport.text(export))
+        }
+    }
+    /** "Copy" copies the URL when there is one, else the value; below API 33 a snackbar confirms (spec 8.5). */
+    fun copyFinding(row: FindingRow) {
+        c.actionRunner.run(DeviceAction.Copy(ToolCopy.COPY, row.url ?: row.value))
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) message.value = ToolCopy.COPIED
+    }
+    fun openFinding(row: FindingRow) { row.url?.let { runAction(DeviceAction.OpenWith(it)) } }
+    fun dismissAppMessage(id: Long) { c.appMessages.dismiss(id) }
+
     fun setProfile(p: ScanProfile) { profile.value = p; customError.value = null }
     fun setCustomPorts(t: String) { customText.value = t; customError.value = null }
 
@@ -73,9 +221,17 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val h = state.value.host ?: return
         val prof = profile.value
         val resolved = if (prof is ScanProfile.Custom) ProfileParser.parse(customText.value).getOrElse { customError.value = it.message; return } else prof
+        if (c.hostBusy.busy.value[hostId] == HostBusyRegistry.Work.TOOL) { message.value = ToolCopy.SCAN_REFUSED; return }
         scan.start { e ->
-            // An off-subnet row that cannot be bound to Wi-Fi is not scanned at all (final review I2): say so, never scan it unbound.
-            c.undo.committedBefore { try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = DetailCopy.SCAN_BIND_FAILED } }
+            // One run per host across port scans and tools (spec 4.3): claim before scanning, release whatever happens.
+            if (!c.hostBusy.tryClaim(hostId, HostBusyRegistry.Work.PORT_SCAN)) {
+                message.value = c.hostBusy.busy.value[hostId]?.let(ToolsUiModel::busyMessage) ?: ToolCopy.SCAN_REFUSED
+                return@start
+            }
+            try {
+                // An off-subnet row that cannot be bound to Wi-Fi is not scanned at all (final review I2): say so, never scan it unbound.
+                c.undo.committedBefore { try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = DetailCopy.SCAN_BIND_FAILED } }
+            } finally { c.hostBusy.release(hostId, HostBusyRegistry.Work.PORT_SCAN) }
         }
     }
 
@@ -125,6 +281,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
      * the screen never cancels it. Undo restores under the same lock, through a restore that clears anything a late scan wrote.
      */
     fun removeDevice() {
+        if (c.hostBusy.busy.value[hostId] == HostBusyRegistry.Work.TOOL) return   // spec 4.3: a running tool run keeps the device
         val h = state.value.host ?: return
         val name = state.value.displayName
         c.appScope.launch(Dispatchers.Main.immediate) {
