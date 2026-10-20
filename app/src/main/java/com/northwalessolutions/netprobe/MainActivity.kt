@@ -8,6 +8,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import com.northwalessolutions.netprobe.ui.NetProbeNav
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
 
@@ -19,6 +21,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(BAR_COLOUR), navigationBarStyle = SystemBarStyle.dark(BAR_COLOUR))
         super.onCreate(savedInstanceState)
         val container = (application as NetProbeApp).container
+        // NetProbe is single-activity, so this activity's own lifecycle is the app's foreground state (spec 4.8). No new dependency.
+        lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) { container.foreground.value = true }
+            override fun onStop(owner: LifecycleOwner) { container.foreground.value = false }
+        })
         setContent { NetProbeTheme { Surface(Modifier.fillMaxSize()) { NetProbeNav(container) } } }
     }
 }

@@ -14,7 +14,12 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.vulns.*
 import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
 import android.util.Log
+import com.northwalessolutions.netprobe.engine.tools.AppMessages
+import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
+import com.northwalessolutions.netprobe.engine.tools.TOOL_THREADS
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Mutex
 import java.util.concurrent.ConcurrentHashMap
@@ -48,6 +53,15 @@ class AppContainer(val context: Context) {
     val radarScanActive = MutableStateFlow(false)
     /** Held by each radar emission's check and write and by Remove's mark and delete, so the two never interleave (G2). */
     val hostWriteLock = Mutex()
+    /** One run at a time per host, across Quick scan all, Detail scans and the tool runner (spec 4.3). */
+    val hostBusy = HostBusyRegistry()
+    /** End-of-run messages for whichever screen is visible (spec 4.3). */
+    val appMessages = AppMessages()
+    /** NetProbe's foreground state; MainActivity's lifecycle sets it. Runs pause while false (spec 4.8). */
+    val foreground = MutableStateFlow(true)
+    /** Every tool coroutine and blocking call runs here, so tool I/O never holds more than TOOL_THREADS threads total (spec 4.4, Gruff M7). */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val toolDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(TOOL_THREADS)
     val settings by lazy { AppSettings(context) }
     val db by lazy { NetProbeDb.open(context) }
     val networks by lazy { NetworkRepository(db) { settings.manual.set(it, emptyList()) } }
