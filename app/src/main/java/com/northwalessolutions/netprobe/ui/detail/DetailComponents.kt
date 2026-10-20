@@ -8,6 +8,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -194,7 +195,7 @@ fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLong
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(p.service.name, style = NetProbeText.secondary, color = NetProbeColors.text)
-            versionLine(p.service)?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            portSubLine(p.service)?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
         Spacer(Modifier.width(10.dp))
         // The word is its own target (not merged into the row) and long-presses exactly like the row body: a long press never runs the action.
@@ -208,13 +209,37 @@ fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLong
     HorizontalDivider(thickness = 1.dp, color = NetProbeColors.rowDivider)
 }
 
+private val TRY_AS_CHIP_HEIGHT = 32.dp
+
+/** "Try as": a caption, then one scrolling row of chips, one per scheme with an installed handler (spec 2.4 item 4). */
+@Composable
+private fun TryAsRow(ip: String, port: Int, pairs: List<Pair<String, String>>, onPick: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(DetailCopy.TRY_AS, style = NetProbeText.caption, color = NetProbeColors.textMuted)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            pairs.forEach { (scheme, uri) ->
+                Box(Modifier.heightIn(min = Dimens.touch).clickable(role = Role.Button) { onPick(uri) }
+                    .semantics { contentDescription = DetailCopy.tryAsDescription(ip, port, scheme) }.testTag("tryAs:$scheme"), contentAlignment = Alignment.Center) {
+                    Box(Modifier.heightIn(min = TRY_AS_CHIP_HEIGHT).clip(CircleShape).border(1.dp, NetProbeColors.border, CircleShape).padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center) {
+                        Text(scheme, style = NetProbeText.chip, color = NetProbeColors.textSecondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortSheet(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onVulns: () -> Unit, onClose: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onClose, containerColor = NetProbeColors.surface, shape = SHEET_SHAPE) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).padding(bottom = 16.dp)) {
             Text("$ip:${p.port} ${p.service.name}", style = NetProbeText.rowName, color = NetProbeColors.text, modifier = Modifier.padding(bottom = 8.dp))
-            sheetActions(p).forEach { (label, a) -> SheetRow(label, if (a is DeviceAction.OpenWith) NetProbeColors.signal else NetProbeColors.text) { onAction(a); onClose() } }
+            val (head, tail) = sheetSplit(p)
+            head.forEach { (label, a) -> SheetRow(label, if (a is DeviceAction.OpenWith) NetProbeColors.signal else NetProbeColors.text) { onAction(a); onClose() } }
+            if (p.tryAs.isNotEmpty()) TryAsRow(ip, p.port, p.tryAs) { uri -> onAction(DeviceAction.OpenWith(uri)); onClose() }
+            tail.forEach { (label, a) -> SheetRow(label, NetProbeColors.text) { onAction(a); onClose() } }
             SheetRow("Look up vulnerabilities for this service", NetProbeColors.signal) { onVulns(); onClose() }
         }
     }

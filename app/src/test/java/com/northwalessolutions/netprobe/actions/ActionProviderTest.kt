@@ -2,6 +2,7 @@ package com.northwalessolutions.netprobe.actions
 
 import com.northwalessolutions.netprobe.engine.serviceid.Confidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
+import com.northwalessolutions.netprobe.ui.detail.sheetLabel
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -43,5 +44,34 @@ class ActionProviderTest {
     @Test fun `copy actions exist even for ports with no mapping`() {
         val list = all.actionsFor("10.0.0.2", 31337, svc("Unknown"))
         assertEquals(2, list.filterIsInstance<DeviceAction.Copy>().size); assertTrue(list.none { it is DeviceAction.OpenUri })
+    }
+    private val confirmed = { name: String -> ServiceInfo(name, confidence = Confidence.CONFIRMED) }
+    @Test fun `an http banner on any port gives an open primary`() {
+        assertEquals("http://10.0.3.59:8123/", (all.primary("10.0.3.59", 8123, confirmed("HTTP")) as DeviceAction.OpenUri).uri)
+        assertEquals("http://10.0.3.59:8090/", (all.primary("10.0.3.59", 8090, confirmed("HTTP")) as DeviceAction.OpenUri).uri)
+        assertEquals("https://10.0.3.59:9443/", (all.primary("10.0.3.59", 9443, confirmed("HTTPS")) as DeviceAction.OpenUri).uri)
+    }
+    @Test fun `a bare tls port gets no primary and open with defaults to https`() {
+        val tls = ServiceInfo("TLS", confidence = Confidence.CONFIRMED, certCn = "imap.lan")
+        assertNull(all.primary("10.0.3.59", 993, tls))
+        assertEquals(listOf(DeviceAction.OpenWith("https://10.0.3.59:993/")), all.actionsFor("10.0.3.59", 993, tls).filterIsInstance<DeviceAction.OpenWith>())
+    }
+    @Test fun `an unknown port gets no primary and open with defaults to http`() {
+        assertNull(all.primary("10.0.3.59", 7000, svc("Unknown")))
+        assertEquals(listOf(DeviceAction.OpenWith("http://10.0.3.59:7000/")), all.actionsFor("10.0.3.59", 7000, svc("Unknown")).filterIsInstance<DeviceAction.OpenWith>())
+    }
+    @Test fun `every port has exactly one open with`() {
+        for ((port, name) in listOf(80 to "HTTP", 22 to "SSH", 445 to "SMB", 993 to "TLS", 7000 to "Unknown", 3389 to "RDP", 8090 to "HTTP"))
+            for (p in listOf(all, none, onlyHttp)) assertEquals("$name on $port", 1, p.actionsFor("10.0.3.59", port, svc(name)).count { it is DeviceAction.OpenWith })
+    }
+    @Test fun `no app installed is still produced and still filtered by the sheet`() {
+        val open = none.actionsFor("10.0.3.59", 8090, confirmed("HTTP")).filterIsInstance<DeviceAction.OpenUri>().single()
+        assertEquals("No app installed for http://", open.label); assertFalse(open.hasHandler); assertNull(sheetLabel(open))
+    }
+    @Test fun `try as offers only schemes with a handler, in order`() {
+        val some = ActionProvider { it.startsWith("ssh") || it.startsWith("http") }
+        assertEquals(listOf("http" to "http://10.0.3.59:8090/", "https" to "https://10.0.3.59:8090/", "ssh" to "ssh://10.0.3.59:8090"), some.tryAs("10.0.3.59", 8090))
+        assertEquals(emptyList<Pair<String, String>>(), none.tryAs("10.0.3.59", 8090))
+        assertEquals(PortUris.TRY_AS, all.tryAs("10.0.3.59", 445).map { it.first })
     }
 }

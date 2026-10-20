@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.DpSize
@@ -202,5 +203,22 @@ class DetailContentTest {
         show(DetailFakes.state().copy(host = DetailFakes.host().copy(userType = DeviceType.NAS, userModel = "DS220+")))
         rule.onNodeWithText("Why this identity").performClick()
         rule.onNodeWithText("Set by you: type NAS, model DS220+").assertIsDisplayed()
+    }
+    private val tryAsChip = SemanticsMatcher("a Try as chip") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("tryAs:") == true }
+    @Test fun portSheetOffersOpenWithAndTryAsChips() {
+        show(DetailFakes.state(listOf(DetailFakes.port(8090, "http", tryAs = listOf("http", "https", "ssh")))))
+        rule.onNodeWithTag("portAction").assertTextEquals("Open")
+        rule.onNodeWithText("8090").performTouchInput { longClick() }
+        rule.onNodeWithText("Open with...").assertIsDisplayed(); rule.onNodeWithText("Try as").assertIsDisplayed()
+        rule.onAllNodes(tryAsChip).assertCountEquals(3)
+        rule.onAllNodesWithText("No app installed", substring = true).assertCountEquals(0)
+        rule.onNodeWithTag("tryAs:ssh").assert(hasContentDescription("Open 10.0.3.59:8090 as ssh")).performClick()
+        assertEquals(DeviceAction.OpenWith("ssh://10.0.3.59:8090"), actions.last())
+        rule.onNodeWithText("Open with...").assertDoesNotExist()
+    }
+    @Test fun noHandlersMeansNoTryAsRow() {
+        show(DetailFakes.state(listOf(DetailFakes.port(8090, "http"))))
+        rule.onNodeWithText("8090").performTouchInput { longClick() }
+        rule.onNodeWithText("Open with...").assertIsDisplayed(); rule.onNodeWithText("Try as").assertDoesNotExist()
     }
 }

@@ -1,5 +1,7 @@
 package com.northwalessolutions.netprobe.ui.home
 
+import com.northwalessolutions.netprobe.actions.DeviceAction
+import com.northwalessolutions.netprobe.actions.PortUris
 import com.northwalessolutions.netprobe.engine.discovery.*
 import com.northwalessolutions.netprobe.data.TestHosts
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
@@ -35,6 +37,8 @@ class CopyTableTest {
         "Set by you: (type (Router|Phone|Computer|Printer|Media|IoT|NAS|Camera|Server)(, vendor .+)?(, model .+)?|vendor .+(, model .+)?|model .+)",
         "Edit device, .+", "More options", "Edit device", "Remove device", "Name", "Type", "Vendor", "Model", "Detected: .+", "Reset to detected",
         "Router", "Phone", "Computer", "Printer", "Media", "IoT", "NAS", "Camera", "Server", "Not set", "Save", "Cancel",
+        "Open with\\.\\.\\.", "Try as", "(http|https|ssh|vnc|rdp|ftp|telnet|smb)",
+        "Open \\d+\\.\\d+\\.\\d+\\.\\d+:\\d+ as (http|https|ssh|vnc|rdp|ftp|telnet|smb)",
     ).map { Regex(it) }
     /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
     private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", templates.any { it.matches(s) })
@@ -101,5 +105,10 @@ class CopyTableTest {
         val h = TestHosts.host()
         for (t in listOf(null, DeviceType.NAS)) for (v in listOf(null, "Synology")) for (m in listOf(null, "DS220+"))
             setByYouLine(h.copy(userType = t, userVendor = v, userModel = m))?.let { inTable(it) }
+    }
+    @Test fun `port sheet strings`() {
+        inTable(DeviceAction.OpenWith("http://10.0.3.59:8090/").label); inTable(DetailCopy.TRY_AS)
+        PortUris.TRY_AS.forEach { inTable(it); inTable(DetailCopy.tryAsDescription("10.0.3.59", 8123, it)) }
+        assertEquals("Open 10.0.3.59:8123 as ssh", DetailCopy.tryAsDescription("10.0.3.59", 8123, "ssh"))
     }
 }

@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.ui.detail
 
 import com.northwalessolutions.netprobe.actions.DeviceAction
+import com.northwalessolutions.netprobe.actions.PortUris
 import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
@@ -17,11 +18,12 @@ object DetailFakes {
         isGateway = false, firstSeen = 0, lastSeen = 0, lastPortScan = null, lastDiscoveryRun = 1)
 
     /** A port whose primary action uses [scheme]; [has] false models "no app installed" (no primary). */
-    fun port(n: Int, scheme: String?, has: Boolean = true, name: String = "HTTP", product: String? = null, version: String? = null): PortRow {
+    fun port(n: Int, scheme: String?, has: Boolean = true, name: String = "HTTP", product: String? = null, version: String? = null,
+             tryAs: List<String> = emptyList()): PortRow {
         val uri = scheme?.let { if (it == "smb") "smb://$IP/" else "$it://$IP:$n/" }
         val open = uri?.let { DeviceAction.OpenUri(if (has) "Open in browser" else "No app installed for $scheme://", it, has) }
         val actions = listOfNotNull(open, uri?.let { DeviceAction.OpenWith(it) }, DeviceAction.Copy("Copy IP", IP), DeviceAction.Copy("Copy IP:port", "$IP:$n"))
-        return PortRow(n, ServiceInfo(name, product, version, null, Confidence.CONFIRMED), open?.takeIf { has }, actions)
+        return PortRow(n, ServiceInfo(name, product, version, null, Confidence.CONFIRMED), open?.takeIf { has }, actions, tryAs.map { it to PortUris.uri(it, IP, n) })
     }
     fun ports(n: Int) = (1..n).map { port(8000 + it, "http") }
 

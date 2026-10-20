@@ -75,4 +75,14 @@ class DetailTextTest {
         assertEquals("Set by you: vendor Synology", setByYouLine(h.copy(userVendor = "Synology")))
         assertEquals("Set by you: type IoT, model Hue", setByYouLine(h.copy(userType = DeviceType.IOT, userModel = "Hue")))
     }
+    @Test fun `port sub line puts the title before the version line`() {
+        assertEquals("Synology DiskStation  nginx 200 OK", portSubLine(ServiceInfo("HTTP", "nginx", null, "200 OK", Confidence.CONFIRMED, title = "Synology DiskStation")))
+        assertEquals("Synology DiskStation", portSubLine(ServiceInfo("HTTP", confidence = Confidence.CONFIRMED, title = "Synology DiskStation")))
+        assertEquals("OpenSSH 8.2p1", portSubLine(ServiceInfo("SSH", "OpenSSH", "8.2p1", null, Confidence.CONFIRMED)))
+        assertNull(portSubLine(http))
+    }
+    @Test fun `the sheet always has open with and splits around the try as row`() {
+        val (head, tail) = sheetSplit(port(8090, "http://10.0.3.59:8090/"))
+        assertEquals(listOf("Open with..."), head.map { it.first }); assertEquals(listOf("Copy IP", "Copy IP and port"), tail.map { it.first })
+    }
 }

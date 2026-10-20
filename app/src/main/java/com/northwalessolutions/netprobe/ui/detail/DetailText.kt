@@ -54,6 +54,16 @@ fun sheetActions(p: PortRow): List<Pair<String, DeviceAction>> =
 
 fun versionLine(s: ServiceInfo): String? = listOfNotNull(s.product, s.version, s.detail).joinToString(" ").trim().ifEmpty { null }
 
+/** Port row sub-line: the page title, two spaces, then the version line; either alone when the other is missing (spec 7). */
+fun portSubLine(s: ServiceInfo): String? = listOfNotNull(s.title, versionLine(s)).joinToString("  ").ifEmpty { null }
+
+/** Sheet rows split around the Try as chips: the other opens and "Open with..." above, the copy rows below (spec 2.4). */
+fun sheetSplit(p: PortRow): Pair<List<Pair<String, DeviceAction>>, List<Pair<String, DeviceAction>>> {
+    val rows = sheetActions(p)
+    val cut = rows.indexOfFirst { it.second is DeviceAction.OpenWith } + 1
+    return rows.take(cut) to rows.drop(cut)
+}
+
 /** "Synology DS220+  NAS"; the label is skipped when the identity already ends with it or the type is UNKNOWN (spec 5.1). */
 fun identityWithType(identity: String, type: DeviceType): String? {
     val label = with(IdentityLine) { type.label }
