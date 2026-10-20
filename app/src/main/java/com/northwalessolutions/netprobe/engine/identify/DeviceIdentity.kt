@@ -5,7 +5,9 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 
 enum class DeviceType { ROUTER, PHONE, COMPUTER, PRINTER, MEDIA, IOT, NAS, CAMERA, SERVER, UNKNOWN }
 data class HostEvidence(val host: DiscoveredHost, val openPorts: Set<Int>, val services: Map<Int, ServiceInfo>, val ouiVendor: String?)
-data class DeviceIdentity(val vendor: String?, val model: String?, val os: String?, val type: DeviceType, val confidence: Int, val reasons: List<String>) {
+/** [software] is what the box runs ("Runs Home Assistant"), distinct and in rule-file order; never a weighted slot (spec 3.6). */
+data class DeviceIdentity(val vendor: String?, val model: String?, val os: String?, val type: DeviceType, val confidence: Int, val reasons: List<String>,
+                          val software: List<String> = emptyList()) {
     companion object { val UNKNOWN = DeviceIdentity(null, null, null, DeviceType.UNKNOWN, 0, emptyList()) }
 }
 

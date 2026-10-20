@@ -170,7 +170,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun dismissMessage() { controller.dismissMessage(); quick.dismissMessage(); extraMessage.value = null }
 
     private suspend fun discover(e: NetworkEnv) {
-        val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)); networkId.value = net.id; c.currentNetwork.value = net
+        // null only while this network's Forget is pending; Task 13 commits a pending Undo before this line.
+        val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return
+        networkId.value = net.id; c.currentNetwork.value = net
         val runId = System.currentTimeMillis(); latestRun.value = runId
         val s = c.settings.state.value
         val ext = if (!s.extEnabled) ExtendedOptions() else ExtendedOptions(enabled = true, maxRanges = s.extMax, gatewayProbe = s.extGatewayProbe,

@@ -24,20 +24,40 @@ private fun macSourceOf(rank: Int): MacSource? = when (rank) {
     1 -> MacSource.NAME; 2 -> MacSource.UPNP_UDN; 3 -> MacSource.NETBIOS; 4 -> MacSource.NEIGH; else -> null
 }
 
-class NetworkRepository(private val db: NetProbeDb) {
+/** A host row and its port rows, read together, for Remove device and its Undo (spec 5.3). */
+data class HostSnapshot(val host: HostEntity, val ports: List<PortEntity>)
+
+class NetworkRepository(private val db: NetProbeDb, private val onPurged: (Long) -> Unit = {}) {
+    private val purge = PurgeOnce()
+
     /**
      * Finds or creates the row for [env]. Identity is gateway MAC + gateway IP + prefix ([NetworkSignature]).
      * On a signature miss, a single row with the same gateway IP and prefix is adopted (rows keyed by the old BSSID rule,
      * rows recorded while the MAC was unreadable, and the location-granted case), unless its stored gateway host has a
      * different MAC: that is another site on the same addressing, and its inventory must not be merged.
+     * A row with a pending Forget is never matched or adopted: while any row on this gateway and prefix is forgotten, null is
+     * returned and nothing is inserted, so the forgotten row and its id stay untouched and no second row appears for the same
+     * network (spec 5.3, Gruff plan review G14). Before the first lookup of the process, a Forget left pending by a killed process
+     * is purged once (spec 5.3, G1): the purge happens here, never when the container is built.
      */
-    suspend fun ensure(env: NetworkEnv, gatewayMac: String?): NetworkEntity = db.withTransaction {
+    suspend fun ensure(env: NetworkEnv, gatewayMac: String?): NetworkEntity? {
+        purge.run { purgeForgotten(onPurged) }
+        return resolve(env, gatewayMac)
+    }
+
+    private suspend fun resolve(env: NetworkEnv, gatewayMac: String?): NetworkEntity? = db.withTransaction {
         val sig = NetworkSignature.of(env, gatewayMac); val now = System.currentTimeMillis()
         val gw = env.gateway?.hostAddress
         val found = db.networks().bySignature(sig)
-        if (found != null) { db.networks().touch(found.id, now, env.ssid); return@withTransaction found.copy(lastSeen = now, ssid = env.ssid ?: found.ssid) }
+        if (found != null) {
+            if (found.forgotten != null) return@withTransaction null
+            db.networks().touch(found.id, now, env.ssid)
+            return@withTransaction found.copy(lastSeen = now, ssid = env.ssid ?: found.ssid)
+        }
+        val sameAddressing = db.networks().byGateway(gw, env.prefixLength)
+        if (sameAddressing.any { it.forgotten != null }) return@withTransaction null
         val mac = gatewayMac?.lowercase()
-        val adoptable = db.networks().byGateway(gw, env.prefixLength).filter { row ->
+        val adoptable = sameAddressing.filter { row ->
             val stored = if (mac != null && gw != null) db.networks().gatewayHostMac(row.id, gw)?.lowercase() else null
             stored == null || stored == mac
         }
@@ -51,9 +71,20 @@ class NetworkRepository(private val db: NetProbeDb) {
             n.copy(id = db.networks().insert(n))
         } catch (e: SQLiteConstraintException) {
             val raced = db.networks().bySignature(sig) ?: throw e
-            db.networks().touch(raced.id, now, env.ssid)
-            raced.copy(lastSeen = now)
+            if (raced.forgotten != null) null else { db.networks().touch(raced.id, now, env.ssid); raced.copy(lastSeen = now) }
         }
+    }
+    suspend fun byId(id: Long): NetworkEntity? = db.networks().byId(id)
+    /** Only completed runs are persisted (spec 5.5, Gruff Q1); the caller decides. */
+    suspend fun markRun(networkId: Long, runId: Long) = db.networks().markRun(networkId, runId)
+    suspend fun setForgotten(networkId: Long, at: Long?) = db.networks().setForgotten(networkId, at)
+    /** Ports of the network's hosts, then the hosts, then the network, in one transaction; nothing from another network. */
+    suspend fun deleteNetworkCascade(networkId: Long) = db.withTransaction {
+        db.networks().deletePortsOfNetwork(networkId); db.networks().deleteHostsOfNetwork(networkId); db.networks().deleteNetwork(networkId)
+    }
+    /** A Forget left pending by a killed process is final (spec 5.3); ensure() runs this once. [onDeleted] clears that network's manual ranges. */
+    suspend fun purgeForgotten(onDeleted: (Long) -> Unit) {
+        for (id in db.networks().forgottenIds()) { deleteNetworkCascade(id); onDeleted(id) }
     }
 }
 
@@ -114,10 +145,31 @@ class HostRepository(private val db: NetProbeDb) {
     }
 
     suspend fun setIdentity(hostId: Long, identity: DeviceIdentity) {
-        db.hosts().updateIdentity(hostId, identity.vendor, identity.model, identity.os, identity.type, identity.confidence, identity.reasons)
+        db.hosts().updateIdentity(hostId, identity.vendor, identity.model, identity.os, identity.type, identity.confidence, identity.reasons,
+            SoftwareColumn.encode(identity.software))
     }
+    /** After a port scan (spec 3.3): true when the identity was written, false when the stored one is more confident. */
+    suspend fun setIdentityIfNotWeaker(hostId: Long, identity: DeviceIdentity): Boolean =
+        db.hosts().updateIdentityIfNotWeaker(hostId, identity.vendor, identity.model, identity.os, identity.type, identity.confidence, identity.reasons,
+            SoftwareColumn.encode(identity.software)) > 0
     suspend fun setStatus(hostId: Long, status: HostStatus) = db.hosts().setStatus(hostId, status)
     suspend fun setNote(hostId: Long, note: String) = db.hosts().setNote(hostId, note)
+    suspend fun setOverrides(hostId: Long, edits: DeviceEdits) = db.hosts().setOverrides(hostId, edits.name, edits.type, edits.vendor, edits.model)
+    suspend fun snapshot(hostId: Long): HostSnapshot? = db.withTransaction {
+        db.hosts().byIdOnce(hostId)?.let { HostSnapshot(it, db.ports().forHostOnce(hostId)) }
+    }
+    suspend fun delete(s: HostSnapshot) = db.withTransaction { db.ports().deletePortsForHost(s.host.id); db.hosts().deleteHost(s.host.id) }
+    /**
+     * Undo of Remove device (spec 5.3 step 4, Gruff plan review G2): the same rows with the same ids, and nothing a late scan wrote
+     * can block it. In one transaction: a row a scan re-inserted at the same (networkId, ip) goes with its ports (scan-derived only),
+     * any rows under the snapshot's id go, then the snapshot host and ports are inserted. The Director's mark, note and overrides
+     * come back exactly; ABORT stays only as a backstop.
+     */
+    suspend fun restore(s: HostSnapshot) = db.withTransaction {
+        db.hosts().find(s.host.networkId, s.host.ip)?.let { stray -> db.ports().deletePortsForHost(stray.id); db.hosts().deleteHost(stray.id) }
+        db.ports().deletePortsForHost(s.host.id); db.hosts().deleteHost(s.host.id)
+        db.hosts().insertAll(listOf(s.host)); db.ports().insertAll(s.ports)
+    }
     suspend fun setCustomName(hostId: Long, name: String?) = db.hosts().setCustomName(hostId, name?.trim()?.takeIf { it.isNotEmpty() })
 }
 
