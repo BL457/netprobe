@@ -3,7 +3,7 @@ package com.northwalessolutions.netprobe.data
 import org.junit.Assert.*
 import org.junit.Test
 
-/** spec 4.7, Review Focus 4: one run per (tool, port), newest DONE preferred, else newest STOPPED or INTERRUPTED; never FAILED or RUNNING. */
+/** spec 4.7, Review Focus 4: one run per (host, tool, port), newest DONE preferred, else newest STOPPED or INTERRUPTED; never FAILED or RUNNING. */
 class ToolHintsRuleTest {
     private var seq = 0L
     private fun run(tool: String, port: Int, status: ToolRunStatus, startedAt: Long) =

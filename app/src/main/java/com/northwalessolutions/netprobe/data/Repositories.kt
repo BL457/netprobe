@@ -205,11 +205,11 @@ class VulnCacheRepository(private val db: NetProbeDb) {
     suspend fun clear() = db.vulnCache().clear()
 }
 
-/** Pure (tool, port) selection for hints (spec 4.7, Review Focus 4): newest DONE per group, else the newest STOPPED or INTERRUPTED. */
+/** Pure (host, tool, port) selection for hints (spec 4.7, Review Focus 4): newest DONE per group, else the newest STOPPED or INTERRUPTED. */
 object ToolHintsRule {
     fun pick(finished: List<ToolRunEntity>): List<Long> {
         // [finished] is already newest-first (startedAt DESC, id DESC).
-        val byGroup = finished.groupBy { it.toolId to it.port }
+        val byGroup = finished.groupBy { Triple(it.hostId, it.toolId, it.port) }
         return byGroup.values.mapNotNull { runs -> (runs.firstOrNull { it.status == ToolRunStatus.DONE } ?: runs.firstOrNull())?.id }
     }
 }
@@ -223,7 +223,7 @@ class ToolRepository(private val db: NetProbeDb) {
     suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String): Long = db.withTransaction {
         val id = dao.insertRun(ToolRunEntity(hostId = hostId, toolId = toolId, port = port, startedAt = startedAt,
             finishedAt = null, status = ToolRunStatus.RUNNING, optionsJson = optionsJson, summary = ""))
-        dao.prune(hostId, toolId, KEEP_RUNS_PER_TOOL)
+        dao.prune(hostId, toolId, port, KEEP_RUNS_PER_TOOL)   // per (host, tool, port), ruling R5: port 80's runs never prune port 5000's
         id
     }
     suspend fun finish(runId: Long, finishedAt: Long?, status: ToolRunStatus, summary: String) = dao.finish(runId, finishedAt, status, summary)
@@ -246,6 +246,7 @@ class ToolRepository(private val db: NetProbeDb) {
     suspend fun setOptions(runId: Long, json: String) = dao.setOptions(runId, json)
     /** Hosts with any tool run: the radar asks hintsFor only for these, so an emission adds no query for the rest (plan review G13). */
     suspend fun hostsWithRuns(): Set<Long> = dao.hostsWithRuns().toSet()
+    /** Hints of one run per (host, tool, port) by [ToolHintsRule]. */
     suspend fun hintsFor(hostId: Long): List<String> {
         val ids = ToolHintsRule.pick(dao.finishedRunsOnce(hostId))
         return if (ids.isEmpty()) emptyList() else dao.hintsOf(ids)
@@ -272,5 +273,6 @@ class ToolRepository(private val db: NetProbeDb) {
     private fun drop(token: String) { exec("DROP TABLE IF EXISTS undo_findings_$token"); exec("DROP TABLE IF EXISTS undo_runs_$token") }
     private fun exec(sql: String) = db.openHelper.writableDatabase.execSQL(sql)
 
+    /** [KEEP_RUNS_PER_TOOL] is kept per (host, tool, port) (ruling R5); the name is the plan's. */
     companion object { const val KEEP_RUNS_PER_TOOL = 10; private val tokenSeq = java.util.concurrent.atomic.AtomicLong(0) }
 }

@@ -128,28 +128,33 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val h = state.value.host ?: return
         val name = state.value.displayName
         c.appScope.launch(Dispatchers.Main.immediate) {
-            c.removedHostIds.update { it + hostId }
+            // Track only the marks this call adds, so a failed second Remove of the same host never clears the first Remove's marks while its Undo is pending.
+            var addedId = hostId !in c.removedHostIds.getAndUpdate { it + hostId }
+            var addedPair = false
             var removed: Pair<HostSnapshot, String?>? = null
             try {
                 scan.stopAndJoin()
                 c.hostScanJobs[hostId]?.cancelAndJoin()
                 removed = c.hostWriteLock.withLock {
-                    c.removedHostIds.update { it + hostId }
+                    if (hostId !in c.removedHostIds.getAndUpdate { it + hostId }) addedId = true
                     // Any running radar, even one still resolving its network (review M2): the pair is keyed by network, so another network's scan ignores it.
-                    if (c.radarScanActive.value) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
+                    if (c.radarScanActive.value) addedPair = (h.networkId to h.ip) !in c.removedDuringScan.getAndUpdate { RemovedHosts.added(it, h.networkId, h.ip) }
                     val hostSnap = c.hosts.snapshot(hostId) ?: return@withLock null
                     // 3B 7.4: the host's tool rows into TEMP tables in the same critical section, after the host snapshot and before the cascade
                     // drops them. A failed snapshot never blocks Remove: the host is removed and Undo brings it back without its tool history.
                     val token = runCatching { c.toolRepo.snapshot(listOf(hostId)) }
                         .onFailure { Log.w(AppScopes.LOG_TAG, "tool snapshot failed", it) }.getOrNull()
-                    c.hosts.delete(hostSnap)
+                    try { c.hosts.delete(hostSnap) } catch (e: Throwable) {
+                        if (token != null) runCatching { c.toolRepo.dropSnapshot(token) }   // nothing was deleted, so the TEMP tables must not leak
+                        throw e
+                    }
                     hostSnap to token
                 }
             } finally {
-                // Nothing was deleted (host already gone, or a failure): clear the marks so the host is never skipped by every later scan.
+                // Nothing was deleted (host already gone, or a failure): clear the marks this call added so the host is never skipped by every later scan.
                 if (removed == null) {
-                    c.removedHostIds.update { it - hostId }
-                    c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                    if (addedId) c.removedHostIds.update { it - hostId }
+                    if (addedPair) c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
                 }
             }
             val (snap, token) = removed ?: return@launch

@@ -68,14 +68,15 @@ data class PortCount(val hostId: Long, val n: Int)
     @Query("DELETE FROM vuln_cache") suspend fun clear()
 }
 
-/** Minimal stub so NetProbeDb.tools() compiles and KSP exports the tool tables; replaced wholesale in Task 2. */
+/** Tool runs and findings (spec 7.2). History is kept per (host, tool, port); HINT findings are hidden from the finding lists and counts. */
 @Dao interface ToolDao {
     @Insert suspend fun insertRun(r: ToolRunEntity): Long
     @Query("UPDATE tool_runs SET finishedAt = :at, status = :status, summary = :summary WHERE id = :id")
     suspend fun finish(id: Long, at: Long?, status: ToolRunStatus, summary: String)
-    @Query("DELETE FROM tool_runs WHERE hostId = :hostId AND toolId = :toolId AND id NOT IN " +
-        "(SELECT id FROM tool_runs WHERE hostId = :hostId AND toolId = :toolId ORDER BY startedAt DESC, id DESC LIMIT :keep)")
-    suspend fun prune(hostId: Long, toolId: String, keep: Int)
+    /** Keeps the newest [keep] runs of one (host, tool, port), newest by id: AUTOINCREMENT ids only grow, so a clock that goes back never prunes the new run (ruling R5). */
+    @Query("DELETE FROM tool_runs WHERE hostId = :hostId AND toolId = :toolId AND port = :port AND id NOT IN " +
+        "(SELECT id FROM tool_runs WHERE hostId = :hostId AND toolId = :toolId AND port = :port ORDER BY id DESC LIMIT :keep)")
+    suspend fun prune(hostId: Long, toolId: String, port: Int, keep: Int)
     @Query("SELECT * FROM tool_runs WHERE status = 'RUNNING'") suspend fun runningOnce(): List<ToolRunEntity>
     @Insert suspend fun insertFinding(f: ToolFindingEntity): Long
     @Query("SELECT * FROM tool_runs WHERE hostId = :hostId ORDER BY startedAt DESC, id DESC") fun runsForHost(hostId: Long): Flow<List<ToolRunEntity>>
