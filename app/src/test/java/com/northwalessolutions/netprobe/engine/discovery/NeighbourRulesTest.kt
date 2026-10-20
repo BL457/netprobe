@@ -45,4 +45,10 @@ class NeighbourRulesTest {
         val r = NeighbourRules.apply(listOf(n("10.0.4.20", "de:ad:be:ef:04:20")), net("10.0.3.0/24"), swept, gw)
         assertEquals(emptyMap<String, String>(), r.macs)
     }
+    @Test fun `the gateway keeps its own mac when it proxy arps for other ips`() {
+        val g = "aa:bb:cc:00:00:01"
+        val r = NeighbourRules.apply(listOf(n("10.0.3.1", g), n("10.0.3.50", g), n("10.0.3.51", g)), trueSubnet, swept, gw)
+        assertEquals(mapOf("10.0.3.1" to g), r.macs)
+        assertEquals(listOf("10.0.3.1", "10.0.3.50", "10.0.3.51"), r.onLinkIps.map { it.hostAddress })
+    }
 }

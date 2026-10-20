@@ -16,7 +16,7 @@ object NeighbourRules {
         val onLink = entries.mapNotNull { e -> Ipv4.parse(e.ip)?.let { it to e.mac.lowercase() } }.filter { (ip, _) -> trueSubnet.contains(ip) }
         val ipsPerMac = onLink.groupBy({ it.second }, { it.first }).mapValues { (_, ips) -> ips.distinct().size }
         val gatewayMac = gateway?.let { g -> onLink.firstOrNull { it.first == g }?.second }
-        val usable = onLink.filter { (ip, mac) -> (ipsPerMac[mac] ?: 0) < PROXY_ARP_MIN_IPS && (ip == gateway || mac != gatewayMac) }
+        val usable = onLink.filter { (ip, mac) -> ip == gateway || ((ipsPerMac[mac] ?: 0) < PROXY_ARP_MIN_IPS && mac != gatewayMac) }
         return Outcome(usable.associate { (ip, mac) -> ip.hostAddress to mac }, usable.map { it.first }.filter { !swept.contains(it) }, onLink.map { it.first }.distinct())
     }
 }
