@@ -9,7 +9,9 @@ import com.northwalessolutions.netprobe.engine.serviceid.TlsPeek
 import com.northwalessolutions.netprobe.engine.tools.FingerprintRules
 import com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTool
 import com.northwalessolutions.netprobe.engine.tools.HttpGet
+import com.northwalessolutions.netprobe.engine.tools.SnmpWalkTool
 import com.northwalessolutions.netprobe.engine.tools.TlsCertificateTool
+import com.northwalessolutions.netprobe.engine.tools.UdpSnmpExchange
 import com.northwalessolutions.netprobe.engine.tools.namedThenIp
 import com.northwalessolutions.netprobe.engine.common.Locks
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
@@ -115,6 +117,7 @@ class AppContainer(val context: Context) {
             },
             rules = FingerprintRules.load(RawResources.read(context, R.raw.http_fingerprints))))
         put(ToolId.TLS_CERTIFICATE, TlsCertificateTool(peek = { t, name -> TlsPeek().details(t.ip, t.port, name) }))
+        put(ToolId.SNMP_WALK, SnmpWalkTool(exchangeFor = { t -> UdpSnmpExchange(t.ip) }))
     }
     /** The chosen list, else common-short (spec 5.1, 11.10); streams through withEntries, so a list is never loaded whole. */
     private fun resolveWordlist(id: String): LoadedWordlist? {
