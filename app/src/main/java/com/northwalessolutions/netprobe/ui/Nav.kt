@@ -29,8 +29,8 @@ fun NetProbeNav(container: AppContainer) {
     val nav = rememberNavController()
     NetProbeNavHost(nav,
         home = { HomeScreen(container, onOpenHost = { nav.navigate("host/$it") }, onOpenSettings = { nav.navigate("settings") }) },
-        detail = { id -> DetailScreen(container, id, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate("wordlists") }) },
-        settings = { SettingsScreen(container, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate("wordlists") }) },
+        detail = { id -> DetailScreen(container, id, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate("wordlists") { launchSingleTop = true } }) },
+        settings = { SettingsScreen(container, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate("wordlists") { launchSingleTop = true } }) },
         wordlists = { WordlistsScreen(container, onBack = { nav.popBackStack() }) })
 }
 

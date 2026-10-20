@@ -68,7 +68,7 @@ class ToolCopyTableTest {
         "Back", "Wordlists", "Import wordlist", "Importing", "Built in", "Imported", "\\d+ entr(y|ies), built in", "\\d+ entr(y|ies), imported $date",
         "Delete", "Delete .+\\?", "Cancel", "No imported wordlists yet", "Delete .+", "Imported .+, \\d+ entr(y|ies)( \\(\\d+ skipped\\))?",
         "That file is too large \\(limit 10 MB\\)", "That file has more than 200000 entries", "That file has no entries", "Could not read that file",
-        "Expand", " s", "Wordlist not found, common-short used", "Imported list", "Recovered list \\d+", "3 built in, \\d+ imported",
+        "Expand", " s", "Wordlist not found, common-short used", "Imported list", "Recovered list \\d+", "3 built in, \\d+ imported", "Loading wordlists", "3 built in",
     ).map { Regex(it) }
     private fun inTable(s: String) = assertTrue("not in the tool copy table: '$s'", templates.any { it.matches(s) })
 
@@ -153,7 +153,7 @@ class ToolCopyTableTest {
             WordlistCopy.deletePrompt("my list"), WordlistCopy.CANCEL, WordlistCopy.NO_IMPORTED, WordlistCopy.deleteDescription("my list"),
             WordlistCopy.imported("my list", 1, 0), WordlistCopy.imported("my list", 4614, 3), WordlistCopy.TOO_LARGE, WordlistCopy.TOO_MANY,
             WordlistCopy.EMPTY_FILE, WordlistCopy.UNREADABLE, WordlistCopy.DEFAULT_NAME, WordlistCopy.recoveredName(1), WordlistCopy.recoveredName(12), WordlistCopy.SETTINGS_SECTION, WordlistCopy.SETTINGS_ROW,
-            WordlistCopy.settingsSupport(0), WordlistCopy.settingsSupport(2)))
+            WordlistCopy.settingsSupport(0), WordlistCopy.settingsSupport(2), WordlistCopy.settingsSupport(null), WordlistCopy.LOADING))
     }
 
     @Test fun theFallbackLineSplitsOffTheSummaryAndPlainSummariesPass() {

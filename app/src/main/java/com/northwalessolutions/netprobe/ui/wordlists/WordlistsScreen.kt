@@ -79,7 +79,7 @@ internal fun rememberWordlists(container: AppContainer): State<List<WordlistMeta
  */
 @Composable
 fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: String?, onMessageShown: () -> Unit, actions: WordlistsActions,
-                     formatDate: (Long) -> String = RelativeTime::defaultDate) {
+                     formatDate: (Long) -> String = RelativeTime::defaultDate, loading: Boolean = false) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); onMessageShown() } }
     var confirm by remember { mutableStateOf<WordlistMeta?>(null) }
@@ -88,16 +88,20 @@ fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: Str
             BackRow(WordlistCopy.BACK, actions.onBack)
             Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
                 Text(WordlistCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.weight(1f))
-                ActionPill(if (importing) WordlistCopy.IMPORTING else WordlistCopy.IMPORT, enabled = !importing, onClick = actions.onImport, tag = "importWordlist")
+                ActionPill(if (importing) WordlistCopy.IMPORTING else WordlistCopy.IMPORT, enabled = !importing && !loading, onClick = actions.onImport, tag = "importWordlist")
             }
         }
     }) { pad ->
         val builtIn = lists.filter { it.builtIn }; val imported = lists.filter { !it.builtIn }
         LazyColumn(Modifier.padding(pad).fillMaxSize().testTag("wordlistList")) {
+            if (loading) item(key = "loading") {
+                Text(WordlistCopy.LOADING, style = NetProbeText.secondary, color = NetProbeColors.textMuted, modifier = Modifier.padding(horizontal = Dimens.gutter, vertical = SECTION_PAD).testTag("wordlistsLoading"))
+            } else {
             item(key = "builtInHeader") { SectionHeader(WordlistCopy.BUILT_IN) }
             items(builtIn, key = { it.id }) { WordlistRow(it.name, WordlistCopy.entriesBuiltIn(it.entries), null) }
             item(key = "importedHeader") { SectionHeader(WordlistCopy.IMPORTED) }
-            if (imported.isEmpty()) item(key = "empty") {
+            }
+            if (!loading && imported.isEmpty()) item(key = "empty") {
                 Text(WordlistCopy.NO_IMPORTED, style = NetProbeText.secondary, color = NetProbeColors.textMuted, modifier = Modifier.padding(horizontal = Dimens.gutter, vertical = SECTION_PAD))
             }
             items(imported, key = { it.id }) { meta ->
@@ -147,23 +151,26 @@ fun WordlistsScreen(container: AppContainer, onBack: () -> Unit) {
     val scope = rememberCoroutineScope(); val ctx = LocalContext.current
     var importing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    val visible = remember { java.util.concurrent.atomic.AtomicBoolean(true) }
+    DisposableEffect(Unit) { onDispose { visible.set(false) } }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val target = store
         if (uri == null || target == null) return@rememberLauncherForActivityResult
         importing = true
-        scope.launch {
+        // On the app scope: leaving the screen mid-import must not cancel it; the result then goes to AppMessages (Home notice line).
+        container.appScope.launch {
             val result = try {
                 withContext(Dispatchers.IO) {
                     ctx.contentResolver.openInputStream(uri)?.use { target.import(displayName(ctx, uri), it) } ?: ImportResult.Unreadable
                 }
             } catch (ce: CancellationException) { throw ce } catch (_: Exception) { ImportResult.Unreadable }
-            importing = false
-            message = WordlistImport.message(result)
+            val text = WordlistImport.message(result)
+            if (visible.get()) { importing = false; message = text } else container.appMessages.post(text)
         }
     }
     WordlistsContent(lists, importing, message, { message = null },
         WordlistsActions(onBack = onBack, onImport = { launcher.launch(arrayOf(PICKER_MIME)) },
-            onDelete = { meta -> scope.launch { store?.delete(meta.id) } }))
+            onDelete = { meta -> scope.launch { store?.delete(meta.id) } }), loading = store == null)
 }
 
 private fun displayName(ctx: Context, uri: Uri): String? =

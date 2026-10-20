@@ -21,7 +21,7 @@ private val CHEVRON_SIZE = 20.dp
 
 /** Settings > Tools (spec 8.7): one row that opens the Wordlists screen; tool defaults live in the options sheet. */
 @Composable
-internal fun ToolsSection(imported: Int, onOpenWordlists: () -> Unit) {
+internal fun ToolsSection(imported: Int?, onOpenWordlists: () -> Unit) {
     Section(WordlistCopy.SETTINGS_SECTION)
     Row(Modifier.fillMaxWidth().heightIn(min = ROW_MIN).clickable(role = Role.Button, onClick = onOpenWordlists).testTag("wordlistsRow"),
         verticalAlignment = Alignment.CenterVertically) {

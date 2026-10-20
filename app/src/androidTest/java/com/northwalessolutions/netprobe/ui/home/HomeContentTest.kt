@@ -245,7 +245,7 @@ class HomeContentTest {
         st = st.copy(toolRunningOnNetwork = false); rule.waitForIdle()
         rule.onNodeWithText("Forget this network").assertIsEnabled()
     }
-    @Test fun anAppMessageShowsBelowAnUndoAndIsDismissedThroughItsOwnAction() {
+    @Test fun anAppMessageWaitsUntilTheUndoEndsThenIsDismissedThroughItsOwnAction() {
         var dismissed = 0
         var st by mutableStateOf(HomeFakes.settled().copy(appMessage = "HTTP fingerprint finished: Pi-hole, 6 findings", appMessageId = 5, undoText = "Removed DiskStation"))
         rule.setContent { NetProbeTheme { HomeContent(st, HomeActions(onDismissApp = { dismissed++ }), now = 121_000L, ownModel = "Pixel 7 Pro") } }

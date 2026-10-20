@@ -15,6 +15,7 @@ object WordlistCopy {
     const val TOO_MANY = "That file has more than 200000 entries"
     const val EMPTY_FILE = "That file has no entries"
     const val UNREADABLE = "Could not read that file"
+    const val LOADING = "Loading wordlists"
     const val DEFAULT_NAME = "Imported list"
     const val SETTINGS_SECTION = "Tools"
     const val SETTINGS_ROW = "Wordlists"
@@ -25,5 +26,5 @@ object WordlistCopy {
     fun deletePrompt(name: String) = "Delete $name?"
     fun deleteDescription(name: String) = "Delete $name"
     fun imported(name: String, n: Int, skipped: Int) = "Imported $name, ${entries(n)}${if (skipped > 0) " ($skipped skipped)" else ""}"
-    fun settingsSupport(imported: Int) = "3 built in, $imported imported"
+    fun settingsSupport(imported: Int?) = if (imported == null) "3 built in" else "3 built in, $imported imported"
 }

@@ -20,4 +20,8 @@ class SettingsToolsTest {
         rule.onNodeWithTag("wordlistsRow").assertHeightIsAtLeast(androidx.compose.ui.unit.Dp(56f)).performClick()
         assertEquals(1, opened)
     }
+    @Test fun whileTheStoreLoadsItNeverClaimsZeroImported() {
+        rule.setContent { NetProbeTheme { ToolsSection(imported = null, onOpenWordlists = {}) } }
+        rule.onNodeWithText("3 built in").assertIsDisplayed(); rule.onNodeWithText("0 imported", substring = true).assertDoesNotExist()
+    }
 }

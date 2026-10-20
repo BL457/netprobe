@@ -29,6 +29,7 @@ import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.theme.*
+import com.northwalessolutions.netprobe.ui.wordlists.rememberWordlistStore
 import com.northwalessolutions.netprobe.ui.wordlists.rememberWordlists
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -92,7 +93,8 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists:
                 }
             }, modifier = Modifier.heightIn(min = Dimens.touch)) { Text("Clear vulnerability cache", style = NetProbeText.action, color = NetProbeColors.signal) }
             val wordlists by rememberWordlists(container)
-            ToolsSection(imported = wordlists.count { !it.builtIn }, onOpenWordlists = onOpenWordlists)
+            val wordlistsLoaded = rememberWordlistStore(container).value != null
+            ToolsSection(imported = if (wordlistsLoaded) wordlists.count { !it.builtIn } else null, onOpenWordlists = onOpenWordlists)
             Spacer(Modifier.height(24.dp))
         }
     }

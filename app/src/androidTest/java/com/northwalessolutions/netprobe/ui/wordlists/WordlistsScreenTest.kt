@@ -17,8 +17,8 @@ class WordlistsScreenTest {
     private val builtIns = listOf(WordlistMeta("builtin:common-short", "common-short", 298, null, true), WordlistMeta("builtin:admin-panels", "admin-panels", 153, null, true))
     private val mine = WordlistMeta("user:1", "my list", 4614, 0L, false)
     private val deleted = mutableListOf<WordlistMeta>(); private var imports = 0
-    private fun show(lists: List<WordlistMeta>, importing: Boolean = false) = rule.setContent {
-        NetProbeTheme { WordlistsContent(lists, importing, null, {}, WordlistsActions(onImport = { imports++ }, onDelete = { deleted += it }), formatDate = { "3 Jan 2026" }) }
+    private fun show(lists: List<WordlistMeta>, importing: Boolean = false, loading: Boolean = false) = rule.setContent {
+        NetProbeTheme { WordlistsContent(lists, importing, null, {}, WordlistsActions(onImport = { imports++ }, onDelete = { deleted += it }), formatDate = { "3 Jan 2026" }, loading = loading) }
     }
 
     @Test fun builtInRowsHaveNoDelete() {
@@ -47,5 +47,11 @@ class WordlistsScreenTest {
     @Test fun whileImportingThePillReadsImportingAndIsDisabled() {
         show(builtIns, importing = true)
         rule.onNodeWithText("Importing").assertIsDisplayed(); rule.onNodeWithTag("importWordlist").assertIsNotEnabled()
+    }
+    @Test fun whileLoadingItShowsAPlaceholderNotTheEmptyStateAndImportIsDisabled() {
+        show(emptyList(), loading = true)
+        rule.onNodeWithText("Loading wordlists").assertIsDisplayed()
+        rule.onAllNodesWithText("No imported wordlists yet").assertCountEquals(0)
+        rule.onNodeWithTag("importWordlist").assertIsNotEnabled()
     }
 }
