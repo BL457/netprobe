@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.width
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.ui.theme.Dimens
 import com.northwalessolutions.netprobe.ui.theme.LocalReducedMotion
+import com.northwalessolutions.netprobe.ui.theme.Motion
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,6 +26,11 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class RadarBlockTest {
+    private companion object {
+        const val FRAME_MS = 16L
+        const val FRAMES = 60                                               // 960 ms of finds
+        const val FIND_EVERY_FRAMES = 3
+    }
     @get:Rule val rule = createComposeRule()
     private val summary = RadarSummary("13 devices", "Last scan 2 minutes ago")
 
@@ -135,10 +141,12 @@ class RadarBlockTest {
         rule.mainClock.advanceTimeBy(1_000)
         assertEquals(full.value, height().value, 0.5f)
 
+        // The settle is a spring, not a tween: it covers about 27 dp by 32 ms, so the no-step check samples one frame (16 ms).
+        // The expand above is still a tween, so its two-frame check stands (fix round 1).
         mode = RadarMode.SETTLED
-        rule.mainClock.advanceTimeByFrame(); rule.mainClock.advanceTimeByFrame()
+        rule.mainClock.advanceTimeByFrame()
         val settleStart = height()
-        assertTrue("settle stepped: $settleStart after two frames (ring $ring, full $full)", full - settleStart < 12.dp)
+        assertTrue("settle stepped: $settleStart after one frame (ring $ring, full $full)", full - settleStart < 12.dp)
         rule.mainClock.advanceTimeBy(48)
         val settleMid = height()
         assertTrue("settle midpoint $settleMid not between $ring and $full", settleMid > ring + 1.dp && settleMid < full - 1.dp)
@@ -160,17 +168,31 @@ class RadarBlockTest {
         mode = RadarMode.SETTLED; rule.mainClock.advanceTimeBy(1_000)
         assertFalse(value(ArmSpinningKey)); assertFalse(value(BreathingKey))
     }
+    // Controller ruling, fix round 1: advanceTimeBy rounds up to whole 16 ms frames, so advanceTimeBy(50) moves 64 ms and the
+    // brief's 50 ms steps could not hold. The test steps one frame at a time and checks the gate on the recorded start times.
     @Test fun ringPulsesAreGatedByTimeAndEveryPulseFinishes() {
         rule.mainClock.autoAdvance = false
         var mode by mutableStateOf(RadarMode.SCANNING); var found by mutableIntStateOf(0)
         hosted { RadarBlock(mode, found, null, summary, true, {}, {}) }
         rule.mainClock.advanceTimeBy(500)                                   // the expand is done
-        val counts = (1..20).map { i -> found = i; rule.mainClock.advanceTimeBy(50); value(PulseCountKey) }   // counts[k] is at (k + 1) * 50 ms
-        // The contract, not the frame (plan review G5): a pulse starts two or three frames after its find, so the spec's
-        // 100 / 300 / 400 ms marks are checked with that lag allowed: 1 by 150 ms, still 1 at 300 ms, 2 by 450 ms.
-        assertEquals("by 150 ms", 1, counts[2]); assertEquals("at 300 ms", 1, counts[5]); assertEquals("by 450 ms", 2, counts[8])
-        for (k in 7 until counts.size) assertTrue("two starts inside one 350 ms window ending at ${(k + 1) * 50} ms", counts[k] - counts[k - 7] <= 1)
-        rule.mainClock.advanceTimeBy(700)
+        val t0 = rule.mainClock.currentTime                                 // the first find is at 0 ms
+        val counts = mutableListOf<Int>()                                   // counts[k] is at (k + 1) * FRAME_MS
+        val rises = mutableListOf<Long>()                                   // ms after the first find at which the count rose
+        var last = value(PulseCountKey)
+        for (frame in 0 until FRAMES) {
+            if (frame % FIND_EVERY_FRAMES == 0) found++                     // a find every 48 ms, faster than the gate
+            rule.mainClock.advanceTimeBy(FRAME_MS)
+            val c = value(PulseCountKey)
+            if (c > last) rises += rule.mainClock.currentTime - t0
+            last = c; counts += c
+        }
+        assertTrue("first pulse at ${rises.firstOrNull()} ms, not by 150 ms", rises.isNotEmpty() && rises.first() <= 150L)
+        rises.zipWithNext().forEach { (a, b) ->
+            assertTrue("pulses started $a and $b ms apart, under the gate", b - a >= Motion.PULSE_MIN_GAP_MS - FRAME_MS)
+        }
+        assertEquals("at 288 ms", 1, counts[(288 / FRAME_MS - 1).toInt()])
+        assertEquals("by about 450 ms (the 464 ms frame)", 2, counts[(464 / FRAME_MS - 1).toInt()])
+        rule.mainClock.advanceTimeBy(Motion.PULSE_MS + 100L)                // the last pulse runs out, with a few frames of start lag
         assertFalse("a pulse froze on the disc", value(PulseActiveKey))
         mode = RadarMode.SETTLED; rule.mainClock.advanceTimeBy(1_000)
         found = 0; mode = RadarMode.SCANNING; rule.mainClock.advanceTimeBy(100)   // a new scan resets found: no pulse, count reset

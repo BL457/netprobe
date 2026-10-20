@@ -106,11 +106,11 @@ fun RadarBlock(
     val latestBusy by rememberUpdatedState(onBusyChange)
     LaunchedEffect(live) { latestBusy(live) }
 
-    val labelAlpha by animateFloatAsState(if (mode == RadarMode.SETTLED) 1f else 0f, tween(if (reduced) 0 else Motion.LABEL_FADE_MS), label = "label")
-    val heroAlpha by animateFloatAsState(if (mode == RadarMode.HERO) 1f else 0f, tween(if (reduced) 0 else Motion.LABEL_FADE_MS), label = "hero")
+    val labelAlpha by animateFloatAsState(if (mode == RadarMode.SETTLED) 1f else 0f, if (reduced) snap() else tween(Motion.LABEL_FADE_MS), label = "label")
+    val heroAlpha by animateFloatAsState(if (mode == RadarMode.HERO) 1f else 0f, if (reduced) snap() else tween(Motion.LABEL_FADE_MS), label = "hero")
     // The arm and blips fade in with the scan and out over ARM_FADE_MS when the settle starts (spec 1.7).
     val liveAlpha by animateFloatAsState(if (mode == RadarMode.SCANNING) 1f else 0f,
-        tween(if (reduced) 0 else if (mode == RadarMode.SCANNING) Motion.BLIP_IN_MS else Motion.ARM_FADE_MS), label = "live")
+        if (reduced) snap() else tween(if (mode == RadarMode.SCANNING) Motion.BLIP_IN_MS else Motion.ARM_FADE_MS), label = "live")
 
     // One angle for the arm, the afterglow and the breathing, hoisted here (spec 1.3). Not resumed: frozen where it stopped and
     // resumed from there, through a non-state holder written in the arm's layer block (spec 1.9, Gruff m2).
@@ -190,16 +190,18 @@ fun RadarBlock(
     BoxWithConstraints(modifier.fillMaxWidth().testTag("radarBlock").semantics {
         armSpinning = turning; radarFraction = fraction; pulseCount = pulsesNow; pulseActive = pulseActiveNow; breathing = breathingOn
     }) {
+        SideEffect { onComposed() }               // test hook (G6): the content scope is its own subcomposition
         val width = maxWidth
         // Unclamped: the ring's own size is the visible bounce. Everything else reads f (spec 1.7 table).
         val diameter = lerp(Dimens.ringDiameter, Dimens.discDiameter, fraction)
         val target = diameter + (Dimens.ringTarget - Dimens.ringDiameter) * (1f - fraction)
-        val stroke = lerp(RING_STROKE, DISC_STROKE, fraction)
         val centreX = lerp(Dimens.gutter + Dimens.ringTarget / 2, width / 2, f)
         val areaHeight = lerp(Dimens.ringTarget, Dimens.discDiameter, f)
         // Quick scan dims the ring's base stroke to `border` so the indeterminate `signal` arc reads over it (spec 3.3, 12.9).
         val ringColor = if (actionable && !quickScanning) NetProbeColors.signal else NetProbeColors.border
-        val strokeColor = lerp(ringColor, NetProbeColors.borderSubtle, f)
+        // Read in the live layer's draw, so the expand and settle do not rebuild its cache for the outline (fix round 1).
+        val stroke = { lerp(RING_STROKE, DISC_STROKE, fraction) }
+        val strokeColor = { lerp(ringColor, NetProbeColors.borderSubtle, fraction.coerceIn(0f, 1f)) }
         val modeModifier = when (mode) {
             RadarMode.SETTLED -> Modifier.clip(CircleShape)
                 .clickable(enabled = actionable && atRest, role = Role.Button, onClick = if (quickScanning) onStopQuick else onScan)   // no tap until at rest
@@ -310,15 +312,15 @@ private fun ArmLayer(angle: () -> Float, armAlpha: () -> Float, lastAngle: Float
  * built in the cache once per blip count or size; the draw allocates nothing and reads the angle only while breathing or blips show.
  */
 @Composable
-private fun LiveLayer(stroke: Dp, strokeColor: Color, breathing: Boolean, blips: Int, newestFrom: Int, reduced: Boolean,
+private fun LiveLayer(stroke: () -> Dp, strokeColor: () -> Color, breathing: Boolean, blips: Int, newestFrom: Int, reduced: Boolean,
                       angle: () -> Float, pulse: () -> Float, newestAlpha: () -> Float, blipsAlpha: () -> Float, onComposed: () -> Unit,
                       modifier: Modifier) {
     SideEffect { onComposed() }                   // test hook (G6): never call angle(), pulse() or the alphas in this body
     Spacer(modifier.graphicsLayer().drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
-        val strokePx = stroke.toPx()
-        val outline = Stroke(strokePx)
+        var outlinePx = -1f
+        var outline = Stroke(0f)                  // rebuilt only when the width changes, never per steady frame
         val pulseStroke = Stroke(Motion.PULSE_STROKE.toPx())
         val mask = RadarGeometry.armMask(Dimens.discCentreMask.toPx(), r)
         val blipR = Dimens.blip.toPx() / 2; val glowR = blipR + Dimens.blipGlow.toPx()
@@ -327,8 +329,10 @@ private fun LiveLayer(stroke: Dp, strokeColor: Color, breathing: Boolean, blips:
         val angles = FloatArray(blips) { blipAngleDeg(offsets[it]) }
         val glows = points.map { p -> Brush.radialGradient(listOf(NetProbeColors.signal, Color.Transparent), center = p, radius = glowR) }
         onDrawBehind {
+            val strokePx = stroke().toPx()
+            if (strokePx != outlinePx) { outlinePx = strokePx; outline = Stroke(strokePx) }
             val b = if (breathing) breath(angle()) else 0f
-            drawCircle(lerp(strokeColor, NetProbeColors.signal, b), r - strokePx / 2, c, style = outline)
+            drawCircle(lerp(strokeColor(), NetProbeColors.signal, b), r - strokePx / 2, c, style = outline)
             val p = pulse()
             if (p < 1f) {
                 val e = LinearOutSlowInEasing.transform(p)
