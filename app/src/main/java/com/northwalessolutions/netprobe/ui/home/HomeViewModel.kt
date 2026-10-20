@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.data.*
 import android.util.Log
+import com.northwalessolutions.netprobe.engine.common.BindFailedException
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryOptions
 import com.northwalessolutions.netprobe.engine.discovery.ExtendedOptions
 import com.northwalessolutions.netprobe.engine.discovery.RangeProgress
@@ -106,7 +107,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val lastRunProgress = MutableStateFlow<List<RangeProgress>>(emptyList())
     private val controller = ScanController(viewModelScope, env) { e -> discover(e) }
     /** Quick scan all is network-bound like discovery: a Wi-Fi switch or loss cancels it, and Stop cancels it. */
-    private val quick = ScanController(viewModelScope, env) { quickScanAllOn() }
+    private val quick = ScanController(viewModelScope, env) { e -> quickScanAllOn(e) }
     private val portCounts: Flow<Map<Long, Int>> = c.ports.counts()
 
     private val hosts: Flow<List<HostEntity>> = networkId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
@@ -210,21 +211,27 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun quickScanAll() { if (!quick.isRunning) quick.start() }
     fun stopQuickScan() = quick.stop()
 
-    private suspend fun quickScanAllOn() {
-        var failed = 0
+    private suspend fun quickScanAllOn(e: NetworkEnv) {
+        var failed = 0; var unbound = 0
         try {
             val net = networkId.value ?: return
             for (h in c.hosts.hostsForNetwork(net).first()) {
-                // One unreachable or odd host must not end the sweep for the rest.
-                try { quickScanHost(h) } catch (ce: CancellationException) { throw ce } catch (_: Exception) { failed++ }
+                // One unreachable or odd host must not end the sweep for the rest; an off-subnet host that cannot be bound is skipped and said so.
+                try { quickScanHost(h, e) } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
             }
         } finally {
-            if (failed > 0) extraMessage.value = "Quick scan finished, $failed device(s) could not be scanned"
+            val parts = listOfNotNull(if (failed > 0) "Quick scan finished, $failed device(s) could not be scanned" else null, if (unbound > 0) HomeCopy.BIND_FAILED else null)
+            if (parts.isNotEmpty()) extraMessage.value = parts.joinToString(". ")
         }
     }
 
-    private suspend fun quickScanHost(h: HostEntity) {
+    private suspend fun quickScanHost(h: HostEntity, e: NetworkEnv) {
         val ip = InetAddress.getByName(h.ip) as Inet4Address
+        val s = c.settings.state.value
+        ScanBinding.run(ip, e, s.maxPrefix, s.extEnabled, c.networkEnvMonitor::binderFor) { quickScanHostOn(h, ip) }
+    }
+
+    private suspend fun quickScanHostOn(h: HostEntity, ip: Inet4Address) {
         val types = c.hosts.mdnsTypesFor(h.id)                 // once per host, not per port
         val found = HashMap<Int, ServiceInfo>()
         // Identify off the collector so a slow banner never back-pressures the scan; coroutineScope waits for every identify.

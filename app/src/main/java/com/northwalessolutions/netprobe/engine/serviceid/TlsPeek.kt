@@ -1,5 +1,7 @@
 package com.northwalessolutions.netprobe.engine.serviceid
 
+import com.northwalessolutions.netprobe.engine.common.bindOrFail
+import com.northwalessolutions.netprobe.engine.common.currentBinder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import java.net.InetAddress
@@ -10,6 +12,7 @@ import javax.net.ssl.*
 /** Reads certificate names for identification only. Trust-all is never used for the browser launch. */
 open class TlsPeek {
     open suspend fun certNames(ip: InetAddress, port: Int, timeoutMs: Int = 1500): List<String>? = try {
+        val route = currentBinder()   // an off-subnet port scan's bound network (final review I2); a failed bind fails closed (null)
         runInterruptible(Dispatchers.IO) {
             val ctx = SSLContext.getInstance("TLS")
             ctx.init(null, arrayOf<TrustManager>(object : X509TrustManager {
@@ -18,6 +21,7 @@ open class TlsPeek {
                 override fun getAcceptedIssuers() = arrayOf<X509Certificate>()
             }), null)
             (ctx.socketFactory.createSocket() as SSLSocket).use { s ->
+                route?.bindOrFail(s)
                 s.connect(InetSocketAddress(ip, port), timeoutMs); s.soTimeout = timeoutMs
                 s.startHandshake()
                 val cert = s.session.peerCertificates.firstOrNull() as? X509Certificate ?: return@runInterruptible emptyList()

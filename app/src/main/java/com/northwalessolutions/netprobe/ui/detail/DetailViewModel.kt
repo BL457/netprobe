@@ -14,7 +14,10 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
+import com.northwalessolutions.netprobe.engine.common.BindFailedException
+import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.home.RowRules
+import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.home.ScanController
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -54,11 +57,19 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val h = state.value.host ?: return
         val prof = profile.value
         val resolved = if (prof is ScanProfile.Custom) ProfileParser.parse(customText.value).getOrElse { customError.value = it.message; return } else prof
-        scan.start { scanHost(h, resolved) }
+        scan.start { e ->
+            // An off-subnet row that cannot be bound to Wi-Fi is not scanned at all (final review I2): say so, never scan it unbound.
+            try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = HomeCopy.BIND_FAILED }
+        }
     }
 
-    private suspend fun scanHost(h: HostEntity, profile: ScanProfile) {
+    private suspend fun scanHost(h: HostEntity, profile: ScanProfile, e: NetworkEnv) {
         val ip = InetAddress.getByName(h.ip) as Inet4Address
+        val s = c.settings.state.value
+        ScanBinding.run(ip, e, s.maxPrefix, s.extEnabled, c.networkEnvMonitor::binderFor) { scanHostOn(h, profile, ip) }
+    }
+
+    private suspend fun scanHostOn(h: HostEntity, profile: ScanProfile, ip: Inet4Address) {
         val types = c.hosts.mdnsTypesFor(hostId)                  // once per scan, not per port
         val found = HashMap<Int, ServiceInfo>()
         // Identify off the collector so a slow banner never back-pressures the scan; coroutineScope waits for every identify.
