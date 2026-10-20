@@ -4,11 +4,15 @@ import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.northwalessolutions.netprobe.R
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
 import com.northwalessolutions.netprobe.engine.discovery.MacSource
 import com.northwalessolutions.netprobe.engine.discovery.Source
+import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentity
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
+import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
+import com.northwalessolutions.netprobe.engine.identify.IdentifyRules
 import com.northwalessolutions.netprobe.engine.serviceid.Confidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
@@ -274,6 +278,28 @@ class DaoTest {
         hosts.restore(snap)
         assertEquals(snap, hosts.snapshot(id))
         assertEquals("DiskStation", hosts.byIdOnce(id)!!.customName); assertEquals(DeviceType.NAS, hosts.byIdOnce(id)!!.userType)
+    }
+
+    @Test fun portEvidenceSurvivesRediscoveryAndATimedOutRescan() = runBlocking {
+        val hosts = HostRepository(db); val ports = PortRepository(db)
+        val identifier = DeviceIdentifier(IdentifyRules.load(RawResources.read(ApplicationProvider.getApplicationContext(), R.raw.identify_rules)))
+        val addr = ip("10.0.3.59")
+        val id = hosts.upsertDiscovered(1, DiscoveredHost(addr), runId = 1)
+        // A Full scan finds the DSM page on 5000 and identifies the host.
+        val scanned = ServiceInfo("HTTP", "nginx", null, "200 OK", Confidence.CONFIRMED, title = "DiskStation - Synology DiskStation")
+        ports.upsertOpen(id, 5000, scanned)
+        val afterScan = identifier.identify(HostEvidenceBuilder.build(hosts.toDiscovered(hosts.byIdOnce(id)!!), ports.servicesFor(id), setOf(5000), mapOf(5000 to scanned), null))
+        assertTrue(hosts.setIdentityIfNotWeaker(id, afterScan))
+        assertEquals(DeviceType.NAS, hosts.byIdOnce(id)!!.deviceType)
+        // A radar run re-identifies from stored evidence only: discovery saw no title.
+        hosts.upsertDiscovered(1, DiscoveredHost(addr), runId = 2)
+        val radar = identifier.identify(HostEvidenceBuilder.build(hosts.toDiscovered(hosts.byIdOnce(id)!!), ports.servicesFor(id), emptySet(), emptyMap(), null))
+        hosts.setIdentity(id, radar)
+        assertEquals("Synology", hosts.byIdOnce(id)!!.identVendor); assertEquals(DeviceType.NAS, hosts.byIdOnce(id)!!.deviceType)
+        // A rescan whose HEAD timed out stores only the port-table guess: the confirmed name and title stay.
+        ports.upsertOpen(id, 5000, ServiceInfo("UPnP", confidence = Confidence.PORT_TABLE))
+        val stored = ports.servicesFor(id).getValue(5000)
+        assertEquals("HTTP", stored.name); assertEquals(Confidence.CONFIRMED, stored.confidence); assertEquals("DiskStation - Synology DiskStation", stored.title)
     }
 
     private companion object { const val GW_MAC = "e0:63:da:26:f1:37" }

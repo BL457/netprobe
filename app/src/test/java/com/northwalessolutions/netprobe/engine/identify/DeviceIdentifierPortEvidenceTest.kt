@@ -84,4 +84,16 @@ class DeviceIdentifierPortEvidenceTest {
         assertEquals(listOf("httpTitle: pfSense - Login"),
             one(rule("t", "httpTitle", "pfSense", os = "pfSense"), ev(emptyMap(), host.copy(httpTitle = "pfSense - Login"))).reasons)
     }
+
+    @Test fun `a software-only app rule beside a platform rule leaves the platform type and vendor and still lists the software`() {
+        val rules = listOf(rule("app", "httpTitle", "Plex", software = "Plex Media Server", weight = 40),
+            rule("platform", "httpTitle", "DiskStation", vendor = "Synology", type = "NAS", weight = 80))
+        val r = DeviceIdentifier(rules).identify(ev(mapOf(5000 to http(title = "DiskStation"), 32400 to http(title = "Plex"))))
+        assertEquals("Synology", r.vendor); assertEquals(DeviceType.NAS, r.type); assertEquals(listOf("Plex Media Server"), r.software); assertEquals(80, r.confidence)
+    }
+    @Test fun `port evidence never lowers a higher host confidence`() {
+        val rules = listOf(rule("upnp", "upnpManufacturer", "Acme", vendor = "Acme", weight = 100), rule("port", "httpTitle", "Widget", model = "Widget", weight = 60))
+        val r = DeviceIdentifier(rules).identify(ev(mapOf(80 to http(title = "Widget")), host.copy(upnpManufacturer = "Acme")))
+        assertEquals("Acme", r.vendor); assertEquals("Widget", r.model); assertEquals(100, r.confidence)
+    }
 }

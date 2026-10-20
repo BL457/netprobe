@@ -15,9 +15,24 @@ class DeviceIdentifierTest {
     private fun ev(h: DiscoveredHost = DiscoveredHost(ip), ports: Set<Int> = emptySet(), services: Map<Int, ServiceInfo> = emptyMap(), oui: String? = null) = HostEvidence(h, ports, services, oui)
 
     @Test fun `rules file loads with unique ids and valid fields`() {
-        assertTrue(rules.size >= 45); assertEquals(rules.size, rules.map { it.id }.toSet().size)
-        val fields = setOf("mdnsType", "mdnsTxt", "upnpManufacturer", "upnpDeviceType", "snmpSysDescr", "httpTitle", "httpRealm", "httpServer", "hostname", "netbiosName", "sshBanner", "ports", "anyPort", "gateway", "oui")
+        assertEquals(118, rules.size); assertEquals(rules.size, rules.map { it.id }.toSet().size)
+        val fields = setOf("mdnsType", "mdnsTxt", "upnpManufacturer", "upnpDeviceType", "snmpSysDescr", "httpTitle", "httpRealm", "httpServer", "hostname",
+            "netbiosName", "sshBanner", "ports", "anyPort", "gateway", "oui", "poweredBy", "certName", "certOrg", "portBanner", "service")
         rules.forEach { assertTrue("bad field in ${it.id}", it.field in fields); assertTrue(it.weight in 1..100) }
+        val portFields = setOf("httpTitle", "httpRealm", "httpServer", "sshBanner", "poweredBy", "certName", "certOrg", "portBanner", "service")
+        rules.filter { it.onPorts != null }.forEach { assertTrue("${it.id} has onPorts on a non-port field", it.field in portFields) }
+    }
+    @Test fun `software rules never set a model and never a type above weight 40`() {   // spec 3.6, 9.1 test 18
+        for (r in rules.filter { it.software != null }) {
+            assertNull("${r.id} sets a model", r.model)
+            assertTrue("${r.id} sets a type at weight ${r.weight}", r.type == null || r.weight <= 40)
+        }
+    }
+    @Test fun `new rules sit between ssh-dropbear and gateway in spec order`() {
+        val ids = rules.map { it.id }
+        assertEquals(ids.indexOf("ssh-dropbear") + 1, ids.indexOf("p-dsm-title"))
+        assertEquals(ids.indexOf("p-airplay") + 1, ids.indexOf("gateway"))
+        assertEquals(57, ids.indexOf("gateway") - ids.indexOf("p-dsm-title"))
     }
     @Test fun `every rule is well formed`() {
         for (r in rules) {
@@ -66,8 +81,9 @@ class DeviceIdentifierTest {
         val r = id.identify(ev(DiscoveredHost(ip, mdnsServiceTypes = setOf("_ipp._tcp"), mdnsTxt = mapOf("_ipp._tcp" to mapOf("ty" to "HP OfficeJet Pro 9010")))))
         assertEquals(DeviceType.PRINTER, r.type); assertEquals("HP OfficeJet Pro 9010", r.model)
     }
-    @Test fun `home assistant and proxmox by title or port`() {
-        assertEquals("Home Assistant", id.identify(ev(ports = setOf(8123))).model)
+    @Test fun `home assistant is software and proxmox stays a platform`() {
+        val hass = id.identify(ev(ports = setOf(8123)))
+        assertEquals(listOf("Home Assistant"), hass.software); assertNull(hass.model); assertEquals(DeviceType.SERVER, hass.type); assertEquals(40, hass.confidence)
         assertEquals("Proxmox VE", id.identify(ev(DiscoveredHost(ip, httpTitle = "pve - Proxmox Virtual Environment"))).model)
     }
     @Test fun `ssh-windows fires on a parsed windows banner`() {
@@ -112,7 +128,7 @@ class DeviceIdentifierTest {
         assertEquals(DeviceType.ROUTER, id.identify(ev(DiscoveredHost(ip, isGateway = true, mdnsServiceTypes = setOf("_ipp._tcp")))).type)
     }
     @Test fun `false positives are avoided - plex and asustor`() {
-        assertNotEquals("Plex Media Server", id.identify(ev(DiscoveredHost(ip, httpTitle = "Complex Systems Login"))).model)
+        assertFalse("Plex Media Server" in id.identify(ev(DiscoveredHost(ip, httpTitle = "Complex Systems Login"))).software)
         assertNotEquals(DeviceType.ROUTER, id.identify(ev(DiscoveredHost(ip, httpAuthRealm = "ASUSTOR"))).type)
     }
     @Test fun `false positives are avoided - hp host that is not a printer`() {
