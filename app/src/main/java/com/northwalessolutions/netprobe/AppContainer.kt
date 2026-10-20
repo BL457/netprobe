@@ -23,6 +23,8 @@ import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.wordlists.BuiltInList
+import com.northwalessolutions.netprobe.wordlists.WordlistStore
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -110,6 +112,14 @@ class AppContainer(val context: Context) {
     val cpeMap by lazy { Cpe.load(RawResources.read(context, R.raw.cpe_map)) }
     val discoveryEngine by lazy { DiscoveryEngine.production(context, mdnsTypes) }
     val portScanEngine by lazy { PortScanEngine() }
+    /** Built-in lists from raw resources and user imports under filesDir/wordlists; lazy, so no file work until first use. */
+    val wordlistStore by lazy {
+        WordlistStore(java.io.File(context.filesDir, "wordlists"), listOf(
+            BuiltInList("builtin:common-short", "common-short") { context.resources.openRawResource(R.raw.wordlist_common_short) },
+            BuiltInList("builtin:admin-panels", "admin-panels") { context.resources.openRawResource(R.raw.wordlist_admin_panels) },
+            BuiltInList("builtin:api-paths", "api-paths") { context.resources.openRawResource(R.raw.wordlist_api_paths) },
+        ))
+    }
     val serviceIdentifier by lazy { ServiceIdentifier(portTable) }
     val deviceIdentifier by lazy { DeviceIdentifier(identifyRules) }
     val actionRunner by lazy { AndroidActionRunner(context) }
