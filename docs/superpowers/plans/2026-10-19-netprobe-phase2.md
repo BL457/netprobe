@@ -559,12 +559,15 @@ mkdir -p docs/qa/shots/phase2
 "$ADB" -s 28221FDH300AP9 shell am force-stop com.northwalessolutions.netprobe
 "$ADB" -s 28221FDH300AP9 shell am start -W -n com.northwalessolutions.netprobe/.MainActivity
 "$ADB" -s 28221FDH300AP9 exec-out screencap -p > docs/qa/shots/phase2/t01-cold-start.png
+ROT=$("$ADB" -s 28221FDH300AP9 shell settings get system accelerometer_rotation | tr -d '')
+"$ADB" -s 28221FDH300AP9 shell content insert --uri content://settings/system --bind name:s:accelerometer_rotation --bind value:i:0
 "$ADB" -s 28221FDH300AP9 shell content insert --uri content://settings/system --bind name:s:user_rotation --bind value:i:1
 "$ADB" -s 28221FDH300AP9 exec-out screencap -p > docs/qa/shots/phase2/t01-rotation-locked.png
 "$ADB" -s 28221FDH300AP9 shell content insert --uri content://settings/system --bind name:s:user_rotation --bind value:i:0
+"$ADB" -s 28221FDH300AP9 shell content insert --uri content://settings/system --bind name:s:accelerometer_rotation --bind value:i:$ROT
 "$ADB" -s 28221FDH300AP9 logcat -d | grep -E "AndroidRuntime|FATAL" | tail -5
 ```
-Expected: `t01-cold-start.png` shows dark status and navigation bars and the Plex font; `t01-rotation-locked.png` is still portrait; no `AndroidRuntime` lines.
+Expected: `t01-cold-start.png` shows dark status and navigation bars and the Plex font; `t01-rotation-locked.png` is still portrait (auto-rotate is switched off first because Android ignores `user_rotation` while `accelerometer_rotation` is 1; both settings are restored afterwards, auto-rotate to its original value); no `AndroidRuntime` lines.
 
 - [ ] **Step 6: Commit**
 
@@ -733,7 +736,7 @@ class HeaderRulesTest {
 }
 ```
 
-`app/src/test/java/com/northwalessolutions/netprobe/ui/home/CopyTableTest.kt`:
+`app/src/test/java/com/northwalessolutions/netprobe/ui/home/CopyTableTest.kt` (spec 10.1: every state a helper can reach must produce text that belongs to the Radar spec section 8 copy table, not just one hand-picked example per branch):
 ```kotlin
 package com.northwalessolutions.netprobe.ui.home
 
@@ -741,33 +744,50 @@ import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Every state a helper can produce must equal a row of the Radar spec section 8 copy table (held here verbatim). */
+/**
+ * The Radar spec section 8 copy table held as regex templates. Each test generates a matrix of reachable states and asserts every
+ * produced string matches a template, so a state that yields wording outside the table fails here. Task 16 appends its own templates.
+ */
 class CopyTableTest {
-    private val table = setOf(
-        "Scan", "13 devices", "Last scan 2 minutes ago", "No devices found", "Scanned in 12 s, 1 on another subnet", "Scanned in 12 s",
-        "Nothing scanned yet", "Tap to find what is on 10.0.3.0/24", "No network", "Connect to Wi-Fi or Ethernet to scan", "found", "Stop",
-        "starting", "probing 171 of 254  7 s", "identifying 14 devices  9 s", "Quick scanning", "Search name, IP, vendor or MAC",
-        "Devices appear here as they are found", "Looking for devices", "No devices found. Check the network and scan again.",
-        "No devices match \"nas\"", "No devices marked Interesting", "Network changed, scan stopped",
-        "Large network (/16). Scanned your /24 only. Widen in Settings.",
-    )
-    private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", s in table)
+    private val date = "3 Jan 2026"
+    private val templates: List<Regex> = listOf(
+        "Scan", "Stop", "found", "No devices found", "\d+ devices?",
+        "Last scan (just now|\d+ seconds ago|\d+ minutes? ago|\d+ hours? ago|yesterday|$date)",
+        "Scanned in \d+ s(, \d+ on another subnet)?",
+        "Nothing scanned yet", "Tap to find what is on \d+\.\d+\.\d+\.\d+/\d+", "No network", "Connect to Wi-Fi or Ethernet to scan",
+        "starting", "probing \d+ of \d+  \d+ s", "identifying \d+ devices?  \d+ s", "Quick scanning", "Search name, IP, vendor or MAC",
+        "Devices appear here as they are found", "Looking for devices", "No devices found\. Check the network and scan again\.",
+        "No devices match \".+\"", "No devices marked \w+", "Network changed, scan stopped",
+        "Large network \(/\d+\)\. Scanned your /24 only\. Widen in Settings\.",
+    ).map { Regex(it) }
+    /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
+    private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", templates.any { it.matches(s) })
+    private fun detailOk(s: String, blankAllowed: Boolean) = if (s.isEmpty()) assertTrue("blank detail where text is expected", blankAllowed) else inTable(s)
 
     @Test fun `progress states`() {
-        inTable(ProgressLine.of(null, 0))
-        inTable(ProgressLine.of(DiscoveryStatus(probed = 171, total = 254, found = 9), 7))
-        inTable(ProgressLine.of(DiscoveryStatus(probed = 254, total = 254, found = 14), 9))
+        val statuses = listOf(null, DiscoveryStatus(), DiscoveryStatus(probed = 0, total = 254), DiscoveryStatus(probed = 171, total = 254, found = 9),
+            DiscoveryStatus(probed = 254, total = 254, found = 0), DiscoveryStatus(probed = 254, total = 254, found = 1), DiscoveryStatus(probed = 254, total = 254, found = 14))
+        for (st in statuses) for (elapsed in listOf(0L, 7L, 125L)) inTable(ProgressLine.of(st, elapsed))
     }
-    @Test fun `summary states`() {
-        listOf(ScanSummaryText.of(13, 1, 12_000), ScanSummaryText.of(13, 0, 12_000), ScanSummaryText.of(0, 0, 12_000)).forEach { inTable(it.headline); inTable(it.detail) }
+    @Test fun `every summary state matches the table`() {
         val now = 10_000_000L
-        RadarSummaries.settled(13, 0, now - 120_000, null, null, now) { "d" }.let { inTable(it.headline); inTable(it.detail) }
+        val lastScans = listOf<Long?>(null, now, now - 30_000, now - 120_000, now - 7_200_000, now - 100_000_000L, now - 300_000_000L)
+        val finishes = listOf<Pair<Long, Long>?>(null, 1_000_000L to 1_012_000L, 1_000_000L to 1_000_100L)
+        for (hosts in listOf(0, 1, 13)) for (other in listOf(0, 1)) for (finish in finishes) for (last in lastScans) {
+            val mode = RadarModes.of(false, hosts, last ?: finish?.second)
+            if (mode == RadarMode.HERO) continue   // HERO shows the hero strings, checked below
+            val s = RadarSummaries.settled(hosts, other, last, finish?.first, finish?.second, now) { date }
+            inTable(s.headline)
+            detailOk(s.detail, blankAllowed = hosts > 0 && last == null && finish == null)   // the one reachable blank
+        }
+        for (hosts in listOf(0, 1, 13)) for (other in listOf(0, 1)) ScanSummaryText.of(hosts, other, 12_000).let { inTable(it.headline); inTable(it.detail) }
     }
     @Test fun `hero, empty and notice strings`() {
         listOf(HomeCopy.SCAN, HomeCopy.STOP, HomeCopy.FOUND, HomeCopy.HERO_TITLE, HomeCopy.heroSubtitle("10.0.3.0/24"), HomeCopy.HERO_NO_NETWORK,
             HomeCopy.HERO_NO_NETWORK_SUB, HomeCopy.QUICK_SCANNING, HomeCopy.SEARCH_PLACEHOLDER, HomeCopy.EMPTY_HERO, HomeCopy.EMPTY_SCANNING,
             HomeCopy.EMPTY_NONE, HomeCopy.emptySearch("nas"), HomeCopy.emptyFilter("Interesting"), HomeCopy.NETWORK_CHANGED,
             HomeCopy.largeNetwork(16)).forEach { inTable(it) }
+        StatusFilter.entries.filter { it != StatusFilter.ALL }.forEach { inTable(HomeCopy.emptyFilter(it.label)) }
     }
 }
 ```
@@ -1261,7 +1281,8 @@ git add -A && git commit -m "Add row, group header and Detail text helpers"
 - Consumes: `RadarMode`, `RadarSummary`, `RadarText`, `HomeCopy` (Task 2); `NetProbeColors`, `NetProbeText`, `Dimens`, `Motion`, `LocalReducedMotion`, `NetProbeTheme` (Task 1).
 - Produces:
 ```kotlin
-object RadarGeometry { const val MAX_BLIPS = 64; const val MIN_RADIUS_FRACTION = 0.22f; const val MAX_RADIUS_FRACTION = 0.88f; fun mix(i: Int): Int }
+object RadarGeometry { const val MAX_BLIPS = 64; const val MIN_RADIUS_FRACTION = 0.22f; const val MAX_RADIUS_FRACTION = 0.88f; fun mix(i: Int): Int
+                       fun armMask(maskPx: Float, discRadiusPx: Float): Float }
 fun blipOffset(index: Int, radiusPx: Float): Offset   // relative to the disc centre
 val ArmSpinningKey: SemanticsPropertyKey<Boolean>      // test hook: true only while the arm turns
 @Composable fun RadarBlock(mode: RadarMode, found: Int, progressLine: String?, summary: RadarSummary, canScan: Boolean,
@@ -1300,6 +1321,12 @@ class BlipOffsetTest {
             val d = hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y)
             assertTrue("blips $i and $j are $d apart", d >= 4f)
         }
+    }
+    @Test fun `centre mask never outgrows the disc while it grows`() {
+        val mask = 40f
+        assertEquals(40f, RadarGeometry.armMask(mask, 86f), 0.01f)         // full disc: the 40 dp mask as specified
+        assertEquals(26.32f, RadarGeometry.armMask(mask, 56f), 0.01f)      // ring size at the first scanning frame
+        for (r in listOf(28f, 40f, 56f, 70f, 86f)) assertTrue("mask ${RadarGeometry.armMask(mask, r)} at radius $r", RadarGeometry.armMask(mask, r) < r)
     }
 }
 ```
@@ -1438,9 +1465,13 @@ object RadarGeometry {
     const val MAX_RADIUS_FRACTION = 0.88f
     const val GOLDEN_ANGLE_DEG = 137.50776f
     const val JITTER_DEG = 16f
+    const val ARM_MASK_FRACTION = 0.47f   // 40 dp of the 86 dp full radius
     private const val BYTE_MASK = 0xFF
     private const val BYTE_MAX = 255f
     private const val HALF = 0.5f
+
+    /** The plain-fill centre behind the count never exceeds [ARM_MASK_FRACTION] of the disc radius, so it stays inside the disc while the disc grows. */
+    fun armMask(maskPx: Float, discRadiusPx: Float): Float = minOf(maskPx, discRadiusPx * ARM_MASK_FRACTION)
 
     /** Fixed 32-bit integer hash (murmur3 finaliser); Int overflow wraps exactly as the unsigned arithmetic. */
     fun mix(i: Int): Int {
@@ -1733,7 +1764,7 @@ private fun ArmLayer(angle: () -> Float, spinning: Boolean, modifier: Modifier) 
         val sweep = Brush.sweepGradient(0f to NetProbeColors.signal.copy(alpha = ARM_HEAD_ALPHA), ARM_TAIL_STOP to NetProbeColors.signal.copy(alpha = ARM_TAIL_ALPHA),
             ARM_CLEAR_STOP to Color.Transparent, 1f to Color.Transparent, center = center)
         val mask = Dimens.discCentreMask.toPx()
-        onDrawBehind { drawCircle(sweep, r, center); drawCircle(NetProbeColors.discCentre, mask, center) }   // count sits on plain fill
+        onDrawBehind { drawCircle(sweep, r, center); drawCircle(NetProbeColors.discCentre, RadarGeometry.armMask(mask, r), center) }   // count sits on plain fill; the mask never outgrows the disc
     })
 }
 
@@ -1788,7 +1819,7 @@ private fun HeroButton(enabled: Boolean, canScan: Boolean, subnet: String?, onSc
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.class=com.northwalessolutions.netprobe.ui.home.RadarBlockTest --console=plain 2>&1 | tail -8
 ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -5
 ```
-Expected: `BlipOffsetTest` 3 passed; `RadarBlockTest` 8 passed on `28221FDH300AP9`; `BUILD SUCCESSFUL`. If `TextAutoSize.StepBased` or `BasicText(autoSize = ...)` does not resolve, it is the same API `DetailComponents.kt` already compiles against; check the import, do not add a dependency.
+Expected: `BlipOffsetTest` 4 passed; `RadarBlockTest` 8 passed on `28221FDH300AP9`; `BUILD SUCCESSFUL`. If `TextAutoSize.StepBased` or `BasicText(autoSize = ...)` does not resolve, it is the same API `DetailComponents.kt` already compiles against; check the import, do not add a dependency.
 
 - [ ] **Step 5: Install and capture**
 
@@ -1822,7 +1853,8 @@ The Radar spec section 9 allows exactly five read-only fields, exposing data the
 - Produces:
 ```kotlin
 data class HomeStats(val lastScanAt: Long?, val totalHosts: Int, val otherSubnetHosts: Int) { companion object { fun of(hosts: List<HostEntity>, rows: List<HostRow>): HomeStats } }
-object ScanFinish { fun next(wasScanning: Boolean, scanning: Boolean, previous: Long?, now: Long): Long? }
+object ScanFinish { fun next(wasScanning: Boolean, scanning: Boolean, previous: Long?, now: Long): Long?
+                    fun afterNetworkChange(previousNetworkId: Long?, networkId: Long?, finishedAt: Long?): Long? }
 // HomeUiState gains (all read-only, defaults keep every existing constructor call compiling):
 val lastScanAt: Long? = null; val totalHosts: Int = 0; val otherSubnetHosts: Int = 0; val scanStartedAt: Long? = null; val scanFinishedAt: Long? = null
 ```
@@ -1860,6 +1892,11 @@ class HomeStatsTest {
         assertEquals(10L, ScanFinish.next(wasScanning = true, scanning = false, previous = null, now = 10L))
         assertEquals(5L, ScanFinish.next(wasScanning = false, scanning = false, previous = 5L, now = 10L))
     }
+    @Test fun `a network change drops the finish time so the old duration never sits against the new network's count`() {
+        assertEquals(5L, ScanFinish.afterNetworkChange(previousNetworkId = 1L, networkId = 1L, finishedAt = 5L))
+        assertNull(ScanFinish.afterNetworkChange(previousNetworkId = 1L, networkId = 2L, finishedAt = 5L))
+        assertNull(ScanFinish.afterNetworkChange(previousNetworkId = 1L, networkId = null, finishedAt = 5L))
+    }
 }
 ```
 
@@ -1896,6 +1933,10 @@ object ScanFinish {
         wasScanning -> now
         else -> previous
     }
+
+    /** "Scanned in N s" belongs to one network: when the resolved network id changes, the finish time goes (Task 16 calls this). */
+    fun afterNetworkChange(previousNetworkId: Long?, networkId: Long?, finishedAt: Long?): Long? =
+        if (previousNetworkId == networkId) finishedAt else null
 }
 ```
 
@@ -1949,7 +1990,7 @@ No other behaviour changes: `rows` stays filtered and searched, `status` stays n
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.ui.home.HomeStatsTest" --console=plain 2>&1 | tail -8
 ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -5
 ```
-Expected: 3 passed; every existing test still passes; `BUILD SUCCESSFUL`.
+Expected: 4 passed; every existing test still passes; `BUILD SUCCESSFUL`.
 
 - [ ] **Step 5: Commit**
 
@@ -2035,6 +2076,11 @@ class RecordingHomeActions {
 ```kotlin
 package com.northwalessolutions.netprobe.ui.home
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.DpSize
@@ -2088,6 +2134,18 @@ class HomeContentTest {
         show(HomeFakes.hero(env = null))
         rule.onNodeWithTag("scanButton").assertIsNotEnabled()
         rule.onAllNodesWithText("Connect to Wi-Fi or Ethernet to scan").assertCountEquals(1)
+        rule.onAllNodesWithText("No network").assertCountEquals(1)   // the network line stays silent in HERO
+    }
+    @Test fun settledWithNoNetworkSaysSoOnTheNetworkLine() {   // the ring's reason must be visible, not only in its content description
+        show(HomeFakes.settled().copy(env = null, networkName = null))
+        rule.onAllNodesWithText("No network").assertCountEquals(1)
+        rule.onNodeWithTag("radarRing").assertExists()
+    }
+    @Test fun aFinishedScanThatFoundNothingStaysSettled() {   // spec 3.1: SETTLED includes a finished scan with zero devices; lastScanAt is null because nothing was stored
+        show(HomeFakes.hero().copy(scanStartedAt = 1_000L, scanFinishedAt = 13_000L))
+        rule.onNodeWithTag("scanButton").assertDoesNotExist()
+        rule.onNodeWithTag("radarRing").assertIsDisplayed()
+        rule.onNodeWithText("No devices found").assertIsDisplayed(); rule.onNodeWithText("Scanned in 12 s").assertIsDisplayed()
     }
     @Test fun scanningWithAllAndBlankQueryCollapsesChipsAndSearch() {   // spec 10.2 test 3, SCANNING
         rule.mainClock.autoAdvance = false
@@ -2128,7 +2186,22 @@ class HomeContentTest {
         rule.onNodeWithText("9 open", useUnmergedTree = true).assertIsDisplayed()
         rule.onNode(hasContentDescription("not seen in the last scan", substring = true)).assertExists()
         rule.onAllNodes(hasTestTag("rowData") and SemanticsMatcher.expectValue(TextAlphaKey, 1f), useUnmergedTree = true).assertCountEquals(4)   // data line never dimmed
+        rule.onAllNodes(hasTestTag("hostRow") and SemanticsMatcher.expectValue(TextAlphaKey, 1f), useUnmergedTree = true).assertCountEquals(4)   // no row-wide alpha, stale or not
         rule.onNode(hasTestTag("rowName") and SemanticsMatcher.expectValue(TextAlphaKey, STALE_NAME_ALPHA), useUnmergedTree = true).assertExists()
+    }
+    @Test fun staleDataLineIsDrawnAtFullStrength() {   // the MVP dimmed the whole row; pixels, not a semantics constant, prove the data line is not dimmed
+        var st by mutableStateOf(HomeFakes.settled(listOf(HomeFakes.row(1, "10.0.3.50", name = "Old box", identity = "Unknown device"))))
+        rule.setContent { NetProbeTheme { HomeContent(st, rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro") } }
+        fun brightest(): Float {
+            val img = rule.onNode(hasTestTag("rowData"), useUnmergedTree = true).captureToImage().toPixelMap()
+            var best = 0f
+            for (x in 0 until img.width) for (y in 0 until img.height) best = maxOf(best, img[x, y].luminance())
+            return best
+        }
+        val fresh = brightest()
+        st = st.copy(rows = st.rows.map { it.copy(stale = true) }); rule.waitForIdle()
+        val stale = brightest()
+        assertTrue("fresh $fresh, stale $stale", stale >= fresh - 0.02f)
     }
     @Test fun otherSubnetGetsItsOwnStickyHeader() {
         show(HomeFakes.settled(HomeFakes.rows(3, other = 2)))
@@ -2177,12 +2250,13 @@ import org.junit.runner.RunWith
 class RadarStateTest {
     @get:Rule val rule = createComposeRule()
 
-    @Test fun doneSummarySurvivesRecreationAndClearsWhenANewScanStarts() {
+    /** The summary is a pure function of the view-model state passed in; that it survives a Detail round trip is checked on the device (Task 9, a05). */
+    @Test fun doneSummaryFollowsTheViewModelStateAndClearsWhenANewScanStarts() {
         val restore = StateRestorationTester(rule)
         var state by mutableStateOf(HomeFakes.settled().copy(scanStartedAt = 1_000L, scanFinishedAt = 13_000L))
         restore.setContent { NetProbeTheme { HomeContent(state, HomeActions(), now = 20_000L, ownModel = "Pixel 7 Pro") } }
         rule.onNodeWithText("Scanned in 12 s").assertIsDisplayed()
-        restore.emulateSavedInstanceStateRestore()   // the Navigation back stack restoring Home after Detail
+        restore.emulateSavedInstanceStateRestore()   // recomposes from the same state: no local copy is needed or kept
         rule.onNodeWithText("Scanned in 12 s").assertIsDisplayed()
         rule.mainClock.autoAdvance = false
         state = state.copy(scanning = true, scanStartedAt = 30_000L, scanFinishedAt = null, status = DiscoveryStatus(total = 254))
@@ -2324,6 +2398,9 @@ private var SemanticsPropertyReceiver.edgeColor by EdgeColorKey
 val TextAlphaKey = SemanticsPropertyKey<Float>("TextAlpha")
 private var SemanticsPropertyReceiver.textAlpha by TextAlphaKey
 
+/** Draws at alpha [a] and publishes the same value to tests, so a test reads what is drawn and a hard-coded constant cannot pass it (spec 10.2 test 6). */
+fun Modifier.drawnAlpha(a: Float): Modifier = alpha(a).semantics { textAlpha = a }
+
 private const val DNS_SHOWN = 2
 private val CHIP_HEIGHT = 32.dp
 private val SEGMENT_RADIUS = 8.dp
@@ -2353,7 +2430,7 @@ fun networkLine(env: NetworkEnv): String =
 
 /** The only place the network name appears; the overflow menu sits at its right end (spec 4.1 item 1). */
 @Composable
-fun NetworkLine(env: NetworkEnv?, networkName: String?, onRequestLocation: () -> Unit, menu: @Composable () -> Unit) {
+fun NetworkLine(env: NetworkEnv?, networkName: String?, onRequestLocation: () -> Unit, offlineText: String? = null, menu: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             if (env != null) {
@@ -2364,6 +2441,8 @@ fun NetworkLine(env: NetworkEnv?, networkName: String?, onRequestLocation: () ->
                     Text(networkTitle(env, networkName), style = NetProbeText.rowName, color = NetProbeColors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text(networkLine(env), style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else if (offlineText != null) {   // settled with no live network: say why the ring is grey (HERO owns its own wording)
+                Text(offlineText, style = NetProbeText.rowName, color = NetProbeColors.textMuted, maxLines = 1)
             }
         }
         menu()
@@ -2452,7 +2531,7 @@ fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit,
     val edge = if (own) EdgeColors.phone else r.type.edgeColor(r.isGateway)
     val description = RowText.description(r, if (own) ownModel else null)
     val nameAlpha = if (r.stale) STALE_NAME_ALPHA else 1f
-    Row(modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClick = onClick)
+    Row(modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClick = onClick).drawnAlpha(1f)   // the row itself is never dimmed: only edge and name are (spec 4.3)
         .semantics(mergeDescendants = true) { contentDescription = description; edgeColor = edge }.testTag("hostRow")
         .padding(start = Dimens.rowStart, end = Dimens.gutter, top = Dimens.rowVertical, bottom = Dimens.rowVertical),
         verticalAlignment = Alignment.CenterVertically) {
@@ -2461,11 +2540,11 @@ fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit,
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(r.displayName, style = NetProbeText.rowName, color = NetProbeColors.text, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false).alpha(nameAlpha).semantics { textAlpha = nameAlpha }.testTag("rowName"))
+                    modifier = Modifier.weight(1f, fill = false).drawnAlpha(nameAlpha).testTag("rowName"))
                 if (r.status != HostStatus.UNMARKED) MarkChip(r.status.label(), Modifier.padding(start = 6.dp))
             }
             Text(RowText.dataLine(r, if (own) ownModel else null), style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 2,
-                overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { textAlpha = 1f }.testTag("rowData"))
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.drawnAlpha(1f).testTag("rowData"))
         }
         if (r.openPorts > 0) Text("${r.openPorts} open", style = NetProbeText.count, color = NetProbeColors.signal, textAlign = TextAlign.End,
             modifier = Modifier.padding(start = 12.dp))
@@ -2529,14 +2608,15 @@ private fun emptyText(s: HomeUiState): String = when {
 @Composable
 fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoveryStatus? = state.status,
                 now: Long = System.currentTimeMillis(), ownModel: String = Build.MODEL) {
-    val mode = RadarModes.of(state.scanning, state.totalHosts, state.lastScanAt)
+    // lastScanAt is null when a finished scan stored no host; the in-memory finish time keeps that case SETTLED (spec 3.1), not HERO.
+    val mode = RadarModes.of(state.scanning, state.totalHosts, state.lastScanAt ?: state.scanFinishedAt)
     val localSubnet = state.env?.let { SubnetMath.of(it.interfaceIp, it.prefixLength).toString() }
     val elapsedS = state.scanStartedAt?.let { ((now - it) / MS_PER_S).coerceAtLeast(0) } ?: 0L
     val summary = RadarSummaries.settled(state.totalHosts, state.otherSubnetHosts, state.lastScanAt, state.scanStartedAt, state.scanFinishedAt, now)
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)
             .padding(top = Dimens.gutter, bottom = 10.dp)) {
-            NetworkLine(state.env, state.networkName, actions.onRequestLocation) {
+            NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
                 HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && state.totalHosts > 0 && state.env != null),
                     quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan, onSettings = actions.onOpenSettings)
             }
@@ -2647,7 +2727,7 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettin
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.class=com.northwalessolutions.netprobe.ui.HomeScreenTest --console=plain 2>&1 | tail -8
 ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -5
 ```
-Expected: `HomeContentTest` 13 passed; `RadarStateTest` 2 passed; `HomeScreenTest` 2 passed and 1 skipped by assumption; `BUILD SUCCESSFUL`. If `stickyHeader` asks for `@OptIn(ExperimentalFoundationApi::class)`, add it to `DeviceList` only (the spec expects it to be stable in foundation 1.8.2; the compiler decides).
+Expected: `HomeContentTest` 16 passed; `RadarStateTest` 2 passed; `HomeScreenTest` 2 passed and 1 skipped by assumption; `BUILD SUCCESSFUL`. If `stickyHeader` asks for `@OptIn(ExperimentalFoundationApi::class)`, add it to `DeviceList` only (the spec expects it to be stable in foundation 1.8.2; the compiler decides). `HomeContentTest` uses `DeviceConfigurationOverride.FontScale` and `ForcedSize`: if the compiler requires an opt-in for them (for example `@OptIn(ExperimentalTestApi::class)`), add it to the test class only.
 
 - [ ] **Step 5: Install and capture**
 
@@ -2744,6 +2824,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -2835,6 +2916,14 @@ class DetailContentTest {
         rule.onNodeWithText("312 of 65535, found 4").assertIsDisplayed()
         rule.onNodeWithTag("detailScanButton").performClick(); assertEquals(1, stops)
     }
+    @Test fun tappingTheListCollapsesTheExpandedNote() {   // spec 5.1 item 7: Compose does not clear focus on a tap elsewhere by itself
+        show(DetailFakes.state(ports = DetailFakes.ports(2), note = longNote), noteExpanded = true)
+        rule.onNode(hasTestTag("note") and hasSetTextAction()).assertIsDisplayed()
+        rule.onNodeWithTag("portList").performTouchInput { click(Offset(width / 2f, height - 10f)) }   // blank space under the two rows
+        rule.waitForIdle()
+        rule.onNode(hasTestTag("note") and hasSetTextAction()).assertDoesNotExist()   // the collapsed box has no text-entry action
+        rule.onNodeWithTag("note").assertIsDisplayed()
+    }
 }
 ```
 
@@ -2924,7 +3013,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -3013,8 +3106,10 @@ fun NoteField(hostId: Long, note: String, onSave: (String) -> Unit, modifier: Mo
     val latestText by rememberUpdatedState(text); val latestNote by rememberUpdatedState(note); val save by rememberUpdatedState(onSave)
     LaunchedEffect(text) { if (text != note) { delay(NOTE_DEBOUNCE_MS); onSave(text) } }
     DisposableEffect(hostId) { onDispose { if (latestText != latestNote) save(latestText) } }
+    val focusManager = LocalFocusManager.current   // Done clears focus, which collapses the note (NoteLine); tapping the list does the same (DetailContent)
     OutlinedTextField(text, { text = it }, modifier.fillMaxWidth().testTag("note"), textStyle = NetProbeText.secondaryItalic,
-        minLines = NOTE_MIN_LINES, maxLines = NOTE_MAX_LINES, colors = npFieldColors(), shape = RoundedCornerShape(BOX_RADIUS))
+        minLines = NOTE_MIN_LINES, maxLines = NOTE_MAX_LINES, colors = npFieldColors(), shape = RoundedCornerShape(BOX_RADIUS),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }))
 }
 
 /** Collapsed: a two-line box ("Add a note" when empty). Tap swaps in the field; losing focus collapses it (spec 5.1 item 7). */
@@ -3140,7 +3235,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import com.northwalessolutions.netprobe.actions.DeviceAction
@@ -3169,6 +3267,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     var why by rememberSaveable { mutableStateOf(false) }
     var sheetPort by rememberSaveable { mutableStateOf<Int?>(null) }
     val ip = state.host?.ip.orEmpty()
+    val focusManager = LocalFocusManager.current
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("detailHeader")) {
             BackToHome(actions.onBack)
@@ -3189,7 +3288,9 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
         }
     }) { pad ->
         if (state.ports.isEmpty()) EmptyState(if (state.scanning) "Scanning ports" else "No open ports yet, run a scan", pad)
-        else LazyColumn(Modifier.padding(pad).fillMaxSize().testTag("portList")) {
+        else LazyColumn(Modifier.padding(pad).imePadding().fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }   // a tap outside the note field collapses the note; rows consume their own taps
+            .testTag("portList")) {
             items(state.ports, key = { it.port }) { p -> PortRowItem(ip, p, onAction = actions.onAction, onLongPress = { sheetPort = p.port }) }
         }
     }
@@ -3340,7 +3441,7 @@ private fun VulnRow(v: Vuln, onOpen: (String) -> Unit) {
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.class=com.northwalessolutions.netprobe.ui.detail.DetailContentTest --console=plain 2>&1 | tail -8
 ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -5
 ```
-Expected: `DetailContentTest` 8 passed; `BUILD SUCCESSFUL`. If `worstCaseAtFontScale13LeavesThreePortRows` fails on row count, do not shrink the touch targets: report the measured pinned-block height to the Director (spec 7.5 budget) before changing any spacing.
+Expected: `DetailContentTest` 9 passed; `BUILD SUCCESSFUL`. If `worstCaseAtFontScale13LeavesThreePortRows` fails on row count, do not shrink the touch targets: report the measured pinned-block height to the Director (spec 7.5 budget) before changing any spacing. `DetailContentTest` also uses `DeviceConfigurationOverride`: if the compiler requires an opt-in for it (for example `@OptIn(ExperimentalTestApi::class)`), add it to the test class only.
 
 - [ ] **Step 5: Install and capture**
 
@@ -3484,7 +3585,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars, snackbarHost = { SnackbarHost(snackbar) },
         topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) { BackToHome(onBack) } }) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter)) {
+        Column(Modifier.padding(pad).imePadding().fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter)) {
             Section("Discovery")
             SwitchRow("mDNS (Bonjour)", s.mdns) { v -> update { it.copy(mdns = v) } }
             SwitchRow("SSDP / UPnP", s.ssdp) { v -> update { it.copy(ssdp = v) } }
@@ -3640,7 +3741,7 @@ For each font scale (`fs 1.0`, then `fs 1.3`; suffix `-100` or `-130` on every n
 | 2 | `a02-hero` | The Director clears app data only if he agrees (it deletes his marks): `pm clear com.northwalessolutions.netprobe`; otherwise capture HERO with Wi-Fi off and on a network never scanned |
 | 3 | `a03-scanning-early`, `a03-scanning-late` | 2 s and 12 s into a scan: blips visible, rows arriving |
 | 4 | `a04-scanning-filter`, `a04-quick-scan` | Interesting filter on, then Scan: chips stay; overflow, Quick scan all: ring arc with "Stop" |
-| 5 | `a05-settled`, `a05-settled-after-detail`, `a05-after-restart` | Done summary; open a device and come back; `am force-stop` and relaunch: idle text |
+| 5 | `a05-settled`, `a05-settled-after-detail`, `a05-after-restart` | Done summary; open a device and come back (the "Scanned in N s" summary must still show: this is the only persistence evidence, `RadarStateTest` covers the state-to-text mapping only); `am force-stop` and relaunch: idle text |
 | 6 | `a06-search-none`, `a06-filter-none`, `a06-no-network` | Search "zzzz"; Ignored filter with nothing ignored; Wi-Fi off |
 | 7 | `a07-notice` | Any notice showing (for example Wi-Fi toggled mid-scan: "Network changed, scan stopped") |
 | 8 | `a08-other-subnet-sticky` | Hue Bridge group (10.0.4.0/24) scrolled to mid-list, header pinned |
@@ -3680,7 +3781,7 @@ Create `docs/qa/phase2-radar-ui-on-device.md`:
 | 10 | Detail states | Pinned block intact; at 1.3 worst case at least three port rows | | | a10-* |
 | 11 | Vulnerability sheet | Results; offline with cache line | | | a11-* |
 | 12 | Settings | Section rules, teal switches, Back to Home | | | a12-* |
-| 13 | Grow and settle recording | One continuous size change, no jump | | | a13-radar-grow-settle.mp4 |
+| 13 | Grow and settle recording | One continuous size change, no jump; the dark centre circle never shows outside the ring while the disc grows | | | a13-radar-grow-settle.mp4 |
 
 | Behaviour check | Result |
 |---|---|
@@ -4544,8 +4645,8 @@ object AnswersForEverything { val TEST_NET: List<Inet4Address>; const val TEST_P
 object RandomHighPort { const val MIN = 49152; const val MAX_EXCLUSIVE = 65536; fun pick(random: Random): Int }
 object GatewayProbe {
     const val TIMEOUT_MS = 400; const val CONCURRENCY = 64; val PORTS: List<Int>   // 80 then 443
-    suspend fun run(targets: GatewayTargets, connect: suspend (Inet4Address, Int) -> Probe.Outcome, onProgress: (Int, Int) -> Unit = { _, _ -> },
-                    dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(CONCURRENCY)): List<Subnet>
+    suspend fun run(targets: GatewayTargets, connect: suspend (Inet4Address, Int) -> Probe.Outcome, onProgress: (Int, Int, Int) -> Unit = { _, _, _ -> },
+                    dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(CONCURRENCY)): List<Subnet>   // onProgress(unitsDone, units, connectAttempts)
 }
 ```
 - Production `connect` (wired in Task 15) is `Probe.connect(ip, port, GatewayProbe.TIMEOUT_MS, binder = b)`, so every attempt is cancellable through the MVP watcher and bound to Wi-Fi (extended spec 4.3 step 7). No payload is sent and no banner read.
@@ -4614,13 +4715,19 @@ class GatewayProbeTest {
         assertFalse("10.0.4.254:80" in calls)                 // a hit ends the unit
         assertTrue("10.0.6.1:443" in calls)                   // a timeout tries the next port
     }
-    @Test fun `progress reaches every unit and concurrency stays at 64`() = runBlocking {
-        val inFlight = AtomicInteger(); val peak = AtomicInteger(); var last = 0 to 0
+    @Test fun `progress reaches every unit, never steps back, counts attempts and concurrency stays at 64`() = runBlocking {
+        val inFlight = AtomicInteger(); val peak = AtomicInteger()
+        var last = Triple(0, 0, 0); var steppedBack = false
         val t = GatewayTargets.of(env("10.0.3.242", "10.0.3.1"), net("10.0.3.0/24"))
         GatewayProbe.run(t, connect = { _, _ ->
             val n = inFlight.incrementAndGet(); peak.accumulateAndGet(n) { a, b -> maxOf(a, b) }; delay(2); inFlight.decrementAndGet(); Probe.Outcome.Timeout
-        }, onProgress = { d, total -> synchronized(this) { last = d to total } }, dispatcher = Dispatchers.Default)
-        assertEquals(t.byUnit().size to t.byUnit().size, last)
+        }, onProgress = { d, total, attempts ->
+            // Reports arrive from many threads; keep the maximum so the assertion never depends on which thread called last, and flag any step back.
+            synchronized(this) { if (d < last.first) steppedBack = true; last = Triple(maxOf(last.first, d), total, maxOf(last.third, attempts)) }
+        }, dispatcher = Dispatchers.Default)
+        val units = t.byUnit()
+        assertEquals(Triple(units.size, units.size, units.values.sumOf { it.size } * GatewayProbe.PORTS.size), last)   // every address timed out on both ports
+        assertFalse("progress stepped backwards", steppedBack)
         assertTrue("peak ${peak.get()}", peak.get() <= GatewayProbe.CONCURRENCY)
     }
     @Test fun `test-net pre-check reads any answer as answers for everything`() {
@@ -4720,23 +4827,29 @@ object GatewayProbe {
         val units = targets.byUnit()
         val sem = Semaphore(CONCURRENCY)
         val hits = ConcurrentHashMap.newKeySet<Subnet>()
-        val done = AtomicInteger()
-        onProgress(0, units.size)
+        val attempts = AtomicInteger()
+        val lock = Any()
+        var done = 0
+        onProgress(0, units.size, 0)
         coroutineScope {
             for ((unit, addresses) in units) launch(dispatcher) {
-                for (a in addresses) if (sem.withPermit { answers(a, connect) }) { hits += unit; break }
-                onProgress(done.incrementAndGet(), units.size)
+                for (a in addresses) if (sem.withPermit { answers(a, connect, attempts) }) { hits += unit; break }
+                // Counter and callback under one lock: two units finishing together can never report 272 before 271, so the status never steps back.
+                synchronized(lock) { done++; onProgress(done, units.size, attempts.get()) }
             }
         }
         return hits.sortedBy { it.start() }
     }
 
-    /** Ports in order, stopping at the first definitive answer: a connect or refusal is yes, unreachable is no, a timeout tries the next. */
-    private suspend fun answers(a: Inet4Address, connect: suspend (Inet4Address, Int) -> Probe.Outcome): Boolean {
-        for (port in PORTS) when (connect(a, port)) {
-            is Probe.Outcome.Connected, Probe.Outcome.Refused -> return true
-            Probe.Outcome.Unreachable -> return false
-            Probe.Outcome.Timeout -> Unit
+    /** Ports in order, stopping at the first definitive answer: a connect or refusal is yes, unreachable is no, a timeout tries the next. Each connect is one counted attempt. */
+    private suspend fun answers(a: Inet4Address, connect: suspend (Inet4Address, Int) -> Probe.Outcome, attempts: AtomicInteger): Boolean {
+        for (port in PORTS) {
+            attempts.incrementAndGet()
+            when (connect(a, port)) {
+                is Probe.Outcome.Connected, Probe.Outcome.Refused -> return true
+                Probe.Outcome.Unreachable -> return false
+                Probe.Outcome.Timeout -> Unit
+            }
         }
         return false
     }
@@ -4777,7 +4890,7 @@ data class RangeProgress(val subnet: String, val source: RangeSource?, val state
 enum class RangeState { PENDING, RUNNING, DONE, CANCELLED, PHANTOM, TRUNCATED }
 enum class DiscoveryPhase { LOCAL, GATEWAY_PROBE, EXTENDED, DONE }
 enum class ExtendedNote { GATEWAY_PROBE_SKIPPED_ANSWERS_ALL, GATEWAY_PROBE_FOUND_NONE, NO_EXTRA_RANGES, SKIPPED_BIND_FAILED }
-data class GatewayProbeProgress(val label: String, val done: Int, val total: Int)
+data class GatewayProbeProgress(val label: String, val done: Int, val total: Int, val attempts: Int = 0)   // attempts = connects tried so far
 data class DiscoveryStatus(/* existing fields */, val phase: DiscoveryPhase = DiscoveryPhase.LOCAL, val ranges: List<RangeProgress> = emptyList(),
                            val truncatedRanges: Int = 0, val notes: List<ExtendedNote> = emptyList(), val gatewayProbe: GatewayProbeProgress? = null)
 object PhantomGuard { const val SAMPLE = 64; const val MIN_PROBES = 16; const val ALIVE_RATIO = 0.9; const val CANARY_MIN_UNKNOWN = 4
@@ -4877,8 +4990,8 @@ enum class ExtendedNote { GATEWAY_PROBE_SKIPPED_ANSWERS_ALL, GATEWAY_PROBE_FOUND
 
 /** Per-range progress; probed and total are this range's own and are not monotonic across ranges. [source] null is the local range. */
 data class RangeProgress(val subnet: String, val source: RangeSource?, val state: RangeState, val probed: Int, val total: Int, val found: Int)
-/** [label] is the walked /16 (for example "10.0.0.0/16"); done and total count /24 units. */
-data class GatewayProbeProgress(val label: String, val done: Int, val total: Int)
+/** [label] is the walked /16 (for example "10.0.0.0/16"); done and total count /24 units; [attempts] counts connects tried, for the device check. */
+data class GatewayProbeProgress(val label: String, val done: Int, val total: Int, val attempts: Int = 0)
 
 /** Top-level probed, total and found keep their MVP meaning (local sweep, monotonic total). */
 data class DiscoveryStatus(
@@ -4985,7 +5098,7 @@ git add -A && git commit -m "Add extended discovery options and status types, th
 - Produces:
 ```kotlin
 class DiscoveryEngine(/* the eleven MVP parameters, unchanged */,
-    val gatewayProbe: suspend (GatewayTargets, (Int, Int) -> Unit, SocketBinder?) -> List<Subnet> = { _, _, _ -> emptyList() },
+    val gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?) -> List<Subnet> = { _, _, _ -> emptyList() },
     val canaryProbe: suspend (Inet4Address, Int, SocketBinder?) -> Probe.Outcome = { _, _, _ -> Probe.Outcome.Timeout },
     val random: Random = Random.Default,
 ) {
@@ -4997,6 +5110,7 @@ class DiscoveryEngine(/* the eleven MVP parameters, unchanged */,
 - Deviation from extended spec 5.2, recorded: the spec writes `gatewayProbe: suspend (targets, timeoutMs, concurrency) -> List<Subnet>` and `canaryProbe: suspend (ip, port) -> Outcome`. Timeout and concurrency are `GatewayProbe` constants (Task 13); the probe instead receives a progress callback (for the Radar progress line) and both receive the run's binder, because the binder is per run and the engine is a singleton.
 - Flow, exactly as extended spec 5.2: gateway emitted first; mDNS, SSDP and the local sweep with enrichment and the neighbour dump inside one `coroutineScope` (unchanged); only after it returns: if the toggle is off, done; bind check on a throwaway socket (null binder or a failing bind gives `SKIPPED_BIND_FAILED`); DNS evidence; optional gateway probe with the TEST-NET pre-check; `CandidateRanges.derive`; then each candidate in order inside `withContext(BoundNetwork(binder))`: canary, sweep with the guard, enrichment; a range is `DONE` only after its enrichment jobs finish. Every unfinished range becomes `CANCELLED` in a `finally`, and `phase` ends `DONE`.
 - Cancellation: Stop cancels the collector; the range's `coroutineScope` cancels its sweep and enrichment; `Probe.connect`'s watcher closes blocking sockets. Hosts held by an undecided guard are never emitted.
+- Sweep-guard sample: extended spec 4.7 says "the first 64 probed addresses", a fixed address sample. `sweepExtra` indexes the range's address list and counts only results whose index is below `PhantomGuard.SAMPLE` towards the verdict, so a dense real range (live hosts answer in milliseconds, dead routed ones time out) is not flagged by completion order. Every live host is still held until the verdict, sample or not.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5035,15 +5149,19 @@ class DiscoveryEngineExtendedTest {
         override fun openConnection(url: URL): URLConnection = throw SocketException("EPERM")
     }
 
-    /** Answers by address in order; logs "<first address> bound=<BoundNetwork present>" for every range it sweeps. */
-    private class FakeSweep(private val alive: (Inet4Address) -> Boolean, private val log: MutableList<String>, private val delayFor: (Inet4Address) -> Long) :
+    /**
+     * Answers in [completionOrder] (default: address order); logs "<first address> bound=<BoundNetwork present>" for every range it sweeps.
+     * The real Sweep delivers results in completion order, so a test can put live hosts first the way a busy range does.
+     */
+    private class FakeSweep(private val alive: (Inet4Address) -> Boolean, private val log: MutableList<String>, private val delayFor: (Inet4Address) -> Long,
+                            private val completionOrder: (List<Inet4Address>) -> List<Inet4Address> = { it }) :
         Sweep(HostProber(), 8) {
         private val p = MutableStateFlow(0 to 0)
         override val progress: StateFlow<Pair<Int, Int>> get() = p
         override fun runAll(hosts: Sequence<Inet4Address>): Flow<Liveness> = flow {
             val list = hosts.toList(); p.value = 0 to list.size
             log += "${list.first().hostAddress} bound=${currentCoroutineContext()[BoundNetwork] != null}"
-            list.forEachIndexed { i, a ->
+            completionOrder(list).forEachIndexed { i, a ->
                 delayFor(a).takeIf { it > 0 }?.let { delay(it) }
                 p.value = i + 1 to list.size
                 emit(if (alive(a)) Liveness(a, true, setOf(80), 2) else Liveness(a, false, emptySet(), null))
@@ -5059,14 +5177,15 @@ class DiscoveryEngineExtendedTest {
     private fun engine(alive: (Inet4Address) -> Boolean = { false }, mdns: List<MdnsRecord> = emptyList(), mdnsDelayMs: Long = 0,
                        gatewayHits: List<String> = emptyList(), gatewayThrows: Boolean = false,
                        canary: (Inet4Address, Int) -> Probe.Outcome = { _, _ -> Probe.Outcome.Timeout },
-                       delayFor: (Inet4Address) -> Long = { 0 }, onNetbios: suspend (Inet4Address) -> Unit = {}): DiscoveryEngine =
+                       delayFor: (Inet4Address) -> Long = { 0 }, onNetbios: suspend (Inet4Address) -> Unit = {},
+                       completionOrder: (List<Inet4Address>) -> List<Inet4Address> = { it }): DiscoveryEngine =
         DiscoveryEngine(
-            sweepFactory = { _, _ -> FakeSweep(alive, log, delayFor) },
+            sweepFactory = { _, _ -> FakeSweep(alive, log, delayFor, completionOrder) },
             mdns = { _, _ -> flow { if (mdnsDelayMs > 0) delay(mdnsDelayMs); mdns.forEach { emit(it) } } }, ssdp = { emptyFlow() },
             upnpFetch = { _, _ -> null }, netbios = { a -> netbiosCalls += a.hostAddress; onNetbios(a); null }, snmp = { null },
             httpTitle = { _, _, _ -> null }, reverseDns = { null }, neighbours = { Result.success(emptyList()) }, mdnsTypes = listOf("_http._tcp"),
             deviceInfo = { _, _ -> null },
-            gatewayProbe = { t, onProgress, _ -> gatewayCalls += t; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1); gatewayHits.map(::net) },
+            gatewayProbe = { t, onProgress, _ -> gatewayCalls += t; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2); gatewayHits.map(::net) },
             canaryProbe = { a, port, _ -> canaryCalls += "${a.hostAddress}:$port"; canary(a, port) },
             random = Random(1),
         )
@@ -5113,7 +5232,7 @@ class DiscoveryEngineExtendedTest {
         e.hosts(opts(manual = listOf("10.0.4.0/24"), probe = true))
         assertEquals(listOf("10.0.3.1", "10.0.4.1", "10.0.6.1", "10.0.10.1"), swept())
         assertEquals("10.0.0.0/16", gatewayCalls.single().enclosing.toString()); assertEquals("10.0.3.0/24", gatewayCalls.single().exclude.toString())
-        assertEquals(GatewayProbeProgress("10.0.0.0/16", 1, 1), e.status.value.gatewayProbe)
+        assertEquals(GatewayProbeProgress("10.0.0.0/16", 1, 1, 2), e.status.value.gatewayProbe)
         canaryCalls.filter { it.startsWith("192.0.2.1") || it.startsWith("198.51.100.1") }.let { assertEquals(4, it.size) }   // pre-check: 2 addresses x (80 + high port)
     }
     @Test fun `gateway probe off is never called and an empty probe is noted`() = runBlocking {
@@ -5133,6 +5252,14 @@ class DiscoveryEngineExtendedTest {
         val h = e.hosts(opts(manual = listOf("10.0.4.0/24")))
         assertEquals(RangeState.PHANTOM, e.status.value.ranges[1].state); assertEquals(0, e.status.value.ranges[1].found)
         assertTrue(h.keys.none { it.startsWith("10.0.4.") }); assertTrue(netbiosCalls.none { it.startsWith("10.0.4.") })
+    }
+    @Test fun `a busy real range whose live hosts answer first is not mistaken for a phantom`() = runBlocking {   // the guard judges the first 64 ADDRESSES, not the fastest 64 answers
+        val busy = (100..159).map { "10.0.4.$it" }.toSet()   // 60 live hosts, none among the first 64 addresses
+        val e = engine(alive = { it.hostAddress in busy }, delayFor = { if (it.hostAddress in busy) 0L else 1L },
+            completionOrder = { all -> all.filter { it.hostAddress in busy } + all.filter { it.hostAddress !in busy } })   // live hosts finish first, dead ones time out later
+        val h = e.hosts(opts(manual = listOf("10.0.4.0/24")))
+        assertEquals(RangeState.DONE, e.status.value.ranges[1].state)
+        assertEquals(60, h.keys.count { it.startsWith("10.0.4.") }); assertEquals(60, e.status.value.ranges[1].found)
     }
     @Test fun `the phantom guard never discards an mdns sighting`() = runBlocking {
         val hue = MdnsRecord(ip("10.0.4.20"), "Hue Bridge", "_hue._tcp", 443, emptyMap(), emptyList())
@@ -5269,7 +5396,7 @@ class DiscoveryEngine(
     val neighbours: () -> Result<List<NeighbourEntry>>,
     val mdnsTypes: List<String>,
     val deviceInfo: suspend (String, Inet4Address) -> Map<String, String>?,
-    val gatewayProbe: suspend (GatewayTargets, (Int, Int) -> Unit, SocketBinder?) -> List<Subnet> = { _, _, _ -> emptyList() },
+    val gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?) -> List<Subnet> = { _, _, _ -> emptyList() },
     val canaryProbe: suspend (Inet4Address, Int, SocketBinder?) -> Probe.Outcome = { _, _, _ -> Probe.Outcome.Timeout },
     val random: Random = Random.Default,
 ) {
@@ -5327,17 +5454,23 @@ class DiscoveryEngine(
                 coroutineScope {
                     val held = ArrayList<Liveness>()
                     var verdict = PhantomGuard.Verdict.HOLD
-                    var probed = 0; var alive = 0
+                    // The guard judges a fixed sample, the first SAMPLE addresses in address order, never "whichever 64 answered first":
+                    // live hosts answer in milliseconds and dead routed ones time out, so completion order would flag any busy real range.
+                    val addresses = c.subnet.hosts().filter { it != env.interfaceIp }.toList()
+                    val sampleSize = minOf(PhantomGuard.SAMPLE, addresses.size)
+                    val index = HashMap<Inet4Address, Int>(addresses.size).also { m -> addresses.forEachIndexed { n, a -> m[a] = n } }
+                    var probed = 0; var sampleDone = 0; var sampleAlive = 0
                     suspend fun release(l: Liveness) {
                         emit(DiscoveredHost(l.ip, probedOpenPorts = l.openPorts, sources = setOf(Source.SWEEP)))   // never isGateway (spec 5.3)
                         released.incrementAndGet()
                         launch { enrichHost(l) }
                     }
-                    sweep.runAll(c.subnet.hosts().filter { it != env.interfaceIp }).collect { l ->
+                    sweep.runAll(addresses.asSequence()).collect { l ->
                         probed++
-                        if (l.alive) { alive++; if (verdict == PhantomGuard.Verdict.RELEASE) release(l) else held += l }
+                        if ((index[l.ip] ?: Int.MAX_VALUE) < sampleSize) { sampleDone++; if (l.alive) sampleAlive++ }
+                        if (l.alive) { if (verdict == PhantomGuard.Verdict.RELEASE) release(l) else held += l }   // every live host is held until the verdict, sample or not
                         if (verdict == PhantomGuard.Verdict.HOLD) {
-                            verdict = PhantomGuard.decide(probed, alive, finished = false)
+                            verdict = PhantomGuard.decide(sampleDone, sampleAlive, finished = sampleDone == sampleSize)
                             when (verdict) {
                                 PhantomGuard.Verdict.RELEASE -> { held.forEach { release(it) }; held.clear() }
                                 PhantomGuard.Verdict.PHANTOM -> throw PhantomStop()
@@ -5347,8 +5480,8 @@ class DiscoveryEngine(
                         val p = probed
                         updateRange(i) { it.copy(probed = p) }
                     }
-                    if (verdict == PhantomGuard.Verdict.HOLD) {
-                        verdict = PhantomGuard.decide(probed, alive, finished = true)
+                    if (verdict == PhantomGuard.Verdict.HOLD) {   // a sample that never completed (a probe that threw): judge what there is
+                        verdict = PhantomGuard.decide(sampleDone, sampleAlive, finished = true)
                         if (verdict == PhantomGuard.Verdict.RELEASE) { held.forEach { release(it) }; held.clear() }
                     }
                     verdict == PhantomGuard.Verdict.PHANTOM
@@ -5376,7 +5509,7 @@ class DiscoveryEngine(
                         val label = targets.enclosing?.toString() ?: OTHER_RANGES_LABEL
                         var ran = false
                         isolated {
-                            hits = gatewayProbe(targets, { d, t -> _status.update { it.copy(gatewayProbe = GatewayProbeProgress(label, d, t)) } }, b)
+                            hits = gatewayProbe(targets, { d, t, n -> _status.update { it.copy(gatewayProbe = GatewayProbeProgress(label, d, t, n)) } }, b)
                             ran = true
                         }
                         if (ran && hits.isEmpty()) addNote(ExtendedNote.GATEWAY_PROBE_FOUND_NONE)
@@ -5501,7 +5634,7 @@ class DiscoveryEngine(
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngineExtendedTest" --tests "com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngineTest" --console=plain 2>&1 | tail -10
 ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -5
 ```
-Expected: `DiscoveryEngineExtendedTest` 19 passed and every `DiscoveryEngineTest` case still passes (toggle off); `BUILD SUCCESSFUL`. A failure of `stop mid range cancels within a second` means a blocking call outside `Probe.connect` or a missing cancellation check: fix the engine, never widen the 1 s bound.
+Expected: `DiscoveryEngineExtendedTest` 19 passed (the 18 cases that were already in the file plus `a busy real range whose live hosts answer first is not mistaken for a phantom`) and every `DiscoveryEngineTest` case still passes (toggle off); `BUILD SUCCESSFUL`. A failure of `stop mid range cancels within a second` means a blocking call outside `Probe.connect` or a missing cancellation check: fix the engine, never widen the 1 s bound.
 
 - [ ] **Step 5: Commit**
 
@@ -5515,8 +5648,8 @@ git add -A && git commit -m "Run the extended phase: bind check, gateway probe, 
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/ExtendedNotices.kt`
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt` (`HostRow`, `HomeUiState.groups`, `RowRules.row`, the `state` combine, `init`, `discover`), `ui/home/RowText.kt` (`HomeGroups.of` keys on `HostRow.subnet`), `ui/home/HomeContent.kt` (list from `state.groups`), `ui/home/HomeCopy.kt` (extended strings), `ui/home/ProgressLine.kt` (extended phases), `AppContainer.kt` (`currentNetwork`)
-- Modify tests: `app/src/test/java/com/northwalessolutions/netprobe/ui/home/RowRulesTest.kt`, `ProgressLineTest.kt`, `CopyTableTest.kt`, `RowTextTest.kt`, `HomeStatsTest.kt`; `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeFakes.kt`
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt` (`HostRow`, `HomeUiState.groups`, `RowRules.row`, the `state` combine, `init`, `discover`), `ui/home/RowText.kt` (`HomeGroups.of` keys on `HostRow.subnet`), `ui/home/HomeContent.kt` (list from `state.groups`; the range summary above the list), `ui/home/HomeComponents.kt` (`RangeSummary`), `ui/home/HomeCopy.kt` (extended strings), `ui/home/ProgressLine.kt` (extended phases), `AppContainer.kt` (`currentNetwork`)
+- Modify tests: `app/src/test/java/com/northwalessolutions/netprobe/ui/home/RowRulesTest.kt`, `ProgressLineTest.kt`, `CopyTableTest.kt`, `RowTextTest.kt`, `HomeStatsTest.kt`; `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeFakes.kt`, `HomeContentTest.kt`
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/home/ExtendedNoticesTest.kt`
 
 **Interfaces:**
@@ -5527,12 +5660,17 @@ data class HostRow(/* id .. mac unchanged */, val subnet: String = "", val offSu
 fun RowRules.row(h: HostEntity, env: NetworkEnv?, maxPrefix: Int, openPorts: Int, stale: Boolean,
                  extraRanges: List<Subnet> = emptyList(), manualRanges: List<Subnet> = emptyList()): HostRow   // RowRules.otherSubnet is removed
 // HomeUiState gains: val groups: List<HostGroup> = emptyList()   (grouping after the filter, in the view model: extended spec 9 step 4)
+//                    val lastRunRanges: List<RangeProgress> = emptyList()   (the last extended run's range list, memory only: extended spec 5.6 and 8.2)
 object HomeGroups { fun of(rows: List<HostRow>): List<HostGroup> }        // the Task 3 localSubnet parameter is dropped
 object ExtendedNotices { fun of(status: DiscoveryStatus): List<String> }
 object LastRun { fun sweptRanges(status: DiscoveryStatus): List<Subnet> }
+object RangeSummaryText { fun headline(otherRanges: Int): String; fun lines(ranges: List<RangeProgress>): List<String> }
+@Composable fun RangeSummary(ranges: List<RangeProgress>)     // ui/home/HomeComponents.kt: "3 other ranges checked", expandable to one line per range
 // AppContainer gains: val currentNetwork: MutableStateFlow<NetworkEntity?>   (set by HomeViewModel; read by Settings in Task 17)
 ```
-- Notice wording is the Radar spec section 8 table. Two gaps, flagged for the Director: `GATEWAY_PROBE_SKIPPED_ANSWERS_ALL` has no row, so it reads "Gateway probe skipped: every address answered" (the PHANTOM row's form); and ranges dropped by the cap are reported once by the cap row ("2 more ranges found, raise the cap in Settings"), not also by the per-range TRUNCATED row ("cut short: scan limit reached"), whose wording describes a range stopped mid-sweep, which this design never does.
+- Notice wording is the Radar spec section 8 table, with two Controller rulings. `GATEWAY_PROBE_SKIPPED_ANSWERS_ALL` reads "Gateway probe skipped: every address answered" (the PHANTOM row's form) and is part of the copy-table test. Ranges dropped by the cap are reported once, by the cap row ("2 more ranges found, raise the cap in Settings"); the table's per-range TRUNCATED row ("cut short: scan limit reached") is deleted as unused, because its wording describes a range stopped mid-sweep, which this design never does.
+- Per-range done summary (extended spec 8.2, kept as the spec requires): the view model keeps the last extended run's `ranges` in memory (`HomeUiState.lastRunRanges`, cleared at the start of every scan and on a network change, so it is never shown against a different network). `RangeSummary` sits above the device list while the radar is SETTLED: "N other ranges checked", tap to expand to one line per range, "10.0.4.0/24  evidence  swept, 3 found". It is the only place a swept-but-empty range or a PHANTOM, capped or stopped range stays visible after the notice is dismissed. The Radar spec fixes no wording for these lines (it defers the done summary's range list to this data); the strings below are this plan's own and are covered by `CopyTableTest`.
+- Network change: "Scanned in N s" and the range list belong to one network, so `ScanFinish.afterNetworkChange` (Task 5) clears the finish time when the resolved network id changes.
 - A Stop or a network change still produces the extended notices: they are computed in `discover`'s `finally`, and the engine has already marked the unfinished ranges `CANCELLED` in its own `finally`.
 
 - [ ] **Step 1: Write the failing tests and update the helpers**
@@ -5568,6 +5706,14 @@ class ExtendedNoticesTest {
         assertEquals(listOf("2 more ranges found, raise the cap in Settings"), ExtendedNotices.of(st))
         assertEquals(listOf("1 more range found, raise the cap in Settings"), ExtendedNotices.of(st.copy(truncatedRanges = 1)))
     }
+    @Test fun `range summary lines carry source, outcome and count`() {
+        val ranges = listOf(local, r("10.0.4.0/24", RangeState.DONE, 3, RangeSource.EVIDENCE), r("10.0.7.0/24", RangeState.DONE), r("10.0.5.0/24", RangeState.PHANTOM, source = RangeSource.GATEWAY_PROBE),
+            r("10.0.6.0/24", RangeState.TRUNCATED), r("10.0.8.0/24", RangeState.CANCELLED), r("10.0.9.0/24", RangeState.PENDING))
+        assertEquals(listOf("10.0.4.0/24  evidence  swept, 3 found", "10.0.7.0/24  manual  swept, nothing reachable",
+            "10.0.5.0/24  gateway probe  skipped, every address answered", "10.0.6.0/24  manual  not swept, scan limit reached",
+            "10.0.8.0/24  manual  stopped", "10.0.9.0/24  manual  not swept"), RangeSummaryText.lines(ranges))
+        assertEquals("1 other range checked", RangeSummaryText.headline(1)); assertEquals("6 other ranges checked", RangeSummaryText.headline(6))
+    }
     @Test fun `last run keeps only swept ranges`() {
         val st = DiscoveryStatus(ranges = listOf(local, r("10.0.4.0/24", RangeState.DONE, 2), r("10.0.5.0/24", RangeState.PHANTOM), r("10.0.4.16/28", RangeState.DONE)))
         assertEquals(listOf("10.0.4.0/24", "10.0.4.16/28"), LastRun.sweptRanges(st).map { it.toString() })
@@ -5595,22 +5741,35 @@ Add to `app/src/test/java/com/northwalessolutions/netprobe/ui/home/ProgressLineT
     }
 ```
 
-In `CopyTableTest.kt`, add these rows to the `table` set:
+In `CopyTableTest.kt`, replace the import `com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus` with `com.northwalessolutions.netprobe.engine.discovery.*`, and append these templates to the `templates` list (before `).map { Regex(it) }`): the extended wording of Radar spec section 8, plus the two copy rulings and the range list recorded above.
 ```kotlin
-        "probing 10.0.0.0/16 for gateways, 112 of 256  9 s", "10.0.4.0/24 (2 of 4), probing 171 of 254", "preparing next range  31 s",
-        "2 more ranges found, raise the cap in Settings", "Extended discovery: no extra ranges to sweep", "Gateway probe found no other ranges",
-        "Other ranges skipped: could not bind to Wi-Fi", "10.0.5.0/24 skipped: every address answered", "Stopped at 10.0.6.0/24", "10.0.4.0/24: nothing found",
+        "probing \S+ for gateways, \d+ of \d+  \d+ s", "\S+ \(\d+ of \d+\), probing \d+ of \d+", "preparing next range  \d+ s",
+        "\d+ more ranges? found, raise the cap in Settings", "Extended discovery: no extra ranges to sweep", "Gateway probe found no other ranges",
+        "Gateway probe skipped: every address answered", "Other ranges skipped: could not bind to Wi-Fi", "\S+ skipped: every address answered",
+        "Stopped at \S+", "\S+: nothing found", "\d+ other ranges? checked",
+        "\S+  (manual|evidence|gateway probe|local)  (swept, nothing reachable|swept, \d+ found|skipped, every address answered|not swept, scan limit reached|stopped|not swept)",
 ```
-and this test:
+and these tests (they enumerate every phase, range state, note and source, so a reachable state that produces wording outside the table fails here):
 ```kotlin
-    @Test fun `extended progress and notices`() {
-        val local = com.northwalessolutions.netprobe.engine.discovery.RangeProgress("10.0.3.0/24", null,
-            com.northwalessolutions.netprobe.engine.discovery.RangeState.DONE, 254, 254, 12)
-        inTable(HomeCopy.gatewayProbing("10.0.0.0/16", 112, 256, 9)); inTable(HomeCopy.extendedRange("10.0.4.0/24", 2, 4, 171, 254)); inTable(HomeCopy.preparing(31))
-        listOf(HomeCopy.capDropped(2), HomeCopy.NO_EXTRA_RANGES, HomeCopy.GATEWAY_FOUND_NONE, HomeCopy.BIND_FAILED, HomeCopy.phantom("10.0.5.0/24"),
-            HomeCopy.cancelled("10.0.6.0/24"), HomeCopy.nothingFound("10.0.4.0/24")).forEach { inTable(it) }
-        // The one notice the copy table lacks; worded like the PHANTOM row and flagged for the Director.
-        assertTrue(HomeCopy.GATEWAY_ANSWERS_ALL !in table)
+    private val localRange = RangeProgress("10.0.3.0/24", null, RangeState.DONE, 254, 254, 12)
+
+    @Test fun `every extended progress state matches the table`() {
+        val probe = GatewayProbeProgress("10.0.0.0/16", 112, 256, 224)
+        for (phase in DiscoveryPhase.entries) for (gateway in listOf<GatewayProbeProgress?>(null, probe)) for (state in RangeState.entries) for (elapsed in listOf(0L, 31L)) {
+            val st = DiscoveryStatus(probed = 254, total = 254, found = 9, phase = phase, gatewayProbe = gateway, ranges = listOf(localRange,
+                RangeProgress("10.0.4.0/24", RangeSource.EVIDENCE, state, 171, 254, 0), RangeProgress("10.0.6.0/24", RangeSource.MANUAL, RangeState.PENDING, 0, 254, 0)))
+            inTable(ProgressLine.of(st, elapsed))   // includes GATEWAY_PROBE with no progress yet ("preparing next range") and EXTENDED with nothing running
+        }
+    }
+    @Test fun `every notice and range summary state matches the table`() {
+        for (note in ExtendedNote.entries) inTable(ExtendedNotices.of(DiscoveryStatus(notes = listOf(note))).single())
+        for (state in RangeState.entries) for (found in listOf(0, 2)) for (source in RangeSource.entries) for (dropped in listOf(0, 1, 2)) {
+            val st = DiscoveryStatus(truncatedRanges = dropped, ranges = listOf(localRange, RangeProgress("10.0.5.0/24", source, state, 254, 254, found)))
+            ExtendedNotices.of(st).forEach { inTable(it) }
+            RangeSummaryText.lines(st.ranges).forEach { inTable(it) }
+            inTable(RangeSummaryText.headline(st.ranges.size - 1))
+        }
+        inTable(HomeCopy.rangesChecked(5)); inTable(HomeCopy.capDropped(1)); inTable(HomeCopy.capDropped(2))
     }
 ```
 
@@ -5633,6 +5792,32 @@ In `RowRulesTest.kt`: delete the `scanned` field and the three tests `host insid
     }
 ```
 
+Add to `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeContentTest.kt` (add the import `com.northwalessolutions.netprobe.engine.discovery.*`):
+```kotlin
+    private val lastRun = listOf(RangeProgress("10.0.3.0/24", null, RangeState.DONE, 254, 254, 12),
+        RangeProgress("10.0.4.0/24", RangeSource.EVIDENCE, RangeState.DONE, 254, 254, 3),
+        RangeProgress("10.0.7.0/24", RangeSource.MANUAL, RangeState.DONE, 254, 254, 0))
+
+    @Test fun rangeSummaryExpandsToOneLinePerRange() {   // extended spec 8.2: a swept but empty range is a finding and must not vanish
+        show(HomeFakes.settled().copy(lastRunRanges = lastRun))
+        rule.onNodeWithText("2 other ranges checked").assertIsDisplayed()
+        rule.onNodeWithTag("rangeLines").assertDoesNotExist()
+        rule.onNodeWithText("2 other ranges checked").performClick()
+        rule.onNodeWithText("10.0.4.0/24  evidence  swept, 3 found").assertIsDisplayed()
+        rule.onNodeWithText("10.0.7.0/24  manual  swept, nothing reachable").assertIsDisplayed()
+        rule.onNodeWithTag("deviceList").assertIsDisplayed()
+    }
+    @Test fun rangeSummaryIsAbsentWhileScanningAndWithoutAnExtendedRun() {
+        rule.mainClock.autoAdvance = false
+        show(HomeFakes.scanning().copy(lastRunRanges = lastRun)); rule.mainClock.advanceTimeBy(1_000)
+        rule.onNodeWithTag("rangeSummary").assertDoesNotExist()
+    }
+    @Test fun rangeSummaryIsAbsentWithoutAnExtendedRun() {
+        show(HomeFakes.settled())
+        rule.onNodeWithTag("rangeSummary").assertDoesNotExist()
+    }
+```
+
 Helper updates for the new `HostRow` shape (each file's own `row` helper only):
 - `RowTextTest.kt`: the helper's constructor call becomes `HostRow(id, ip, name, identity, DeviceType.NAS, open, status, gateway, stale, mac, other ?: "10.0.3.0/24", other != null)`, and every `HomeGroups.of(rows, "10.0.3.0/24")` call becomes `HomeGroups.of(rows)` (likewise `HomeGroups.of(listOf(row(ip = "10.0.3.9")))` and `HomeGroups.of(emptyList())`).
 - `HomeStatsTest.kt`: `HostRow(id, "10.0.4.$id", "h$id", "x", DeviceType.UNKNOWN, 0, HostStatus.UNMARKED, false, stale, null, other ?: "10.0.3.0/24", other != null)`.
@@ -5652,8 +5837,19 @@ Expected: `compileDebugUnitTestKotlin FAILED` with `Unresolved reference 'Extend
     const val NO_EXTRA_RANGES = "Extended discovery: no extra ranges to sweep"
     const val GATEWAY_FOUND_NONE = "Gateway probe found no other ranges"
     const val BIND_FAILED = "Other ranges skipped: could not bind to Wi-Fi"
-    /** Not in the Radar copy table (it has no row for GATEWAY_PROBE_SKIPPED_ANSWERS_ALL); worded like the PHANTOM row. */
+    /** Controller ruling: the Radar copy table has no row for GATEWAY_PROBE_SKIPPED_ANSWERS_ALL, so it takes the PHANTOM row's form. */
     const val GATEWAY_ANSWERS_ALL = "Gateway probe skipped: every address answered"
+    const val SOURCE_MANUAL = "manual"
+    const val SOURCE_EVIDENCE = "evidence"
+    const val SOURCE_GATEWAY = "gateway probe"
+    const val SOURCE_LOCAL = "local"
+    const val OUTCOME_PHANTOM = "skipped, every address answered"
+    const val OUTCOME_CAPPED = "not swept, scan limit reached"
+    const val OUTCOME_STOPPED = "stopped"
+    const val OUTCOME_NOT_SWEPT = "not swept"
+    fun rangesChecked(n: Int) = if (n == 1) "1 other range checked" else "$n other ranges checked"
+    fun outcomeSwept(found: Int) = if (found == 0) "swept, nothing reachable" else "swept, $found found"
+    fun rangeLine(subnet: String, source: String, outcome: String) = "$subnet  $source  $outcome"
     fun gatewayProbing(label: String, done: Int, total: Int, elapsedS: Long) = "probing $label for gateways, $done of $total  $elapsedS s"
     fun extendedRange(subnet: String, index: Int, count: Int, probed: Int, total: Int) = "$subnet ($index of $count), probing $probed of $total"
     fun preparing(elapsedS: Long) = "preparing next range  $elapsedS s"
@@ -5699,6 +5895,8 @@ package com.northwalessolutions.netprobe.ui.home
 
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.engine.discovery.ExtendedNote
+import com.northwalessolutions.netprobe.engine.discovery.RangeProgress
+import com.northwalessolutions.netprobe.engine.discovery.RangeSource
 import com.northwalessolutions.netprobe.engine.discovery.RangeState
 import com.northwalessolutions.netprobe.netenv.CidrParser
 import com.northwalessolutions.netprobe.netenv.Subnet
@@ -5728,6 +5926,29 @@ object ExtendedNotices {
     }
 }
 
+/** The done summary's range list (extended spec 8.2): a headline count and one line per extra range with source, outcome and found count. */
+object RangeSummaryText {
+    fun headline(otherRanges: Int): String = HomeCopy.rangesChecked(otherRanges)
+
+    /** [ranges] is the status list with the local range first; the local range is not listed. */
+    fun lines(ranges: List<RangeProgress>): List<String> = ranges.drop(1).map { r ->
+        val source = when (r.source) {
+            RangeSource.MANUAL -> HomeCopy.SOURCE_MANUAL
+            RangeSource.EVIDENCE -> HomeCopy.SOURCE_EVIDENCE
+            RangeSource.GATEWAY_PROBE -> HomeCopy.SOURCE_GATEWAY
+            null -> HomeCopy.SOURCE_LOCAL
+        }
+        val outcome = when (r.state) {
+            RangeState.DONE -> HomeCopy.outcomeSwept(r.found)
+            RangeState.PHANTOM -> HomeCopy.OUTCOME_PHANTOM
+            RangeState.TRUNCATED -> HomeCopy.OUTCOME_CAPPED
+            RangeState.CANCELLED -> HomeCopy.OUTCOME_STOPPED
+            RangeState.PENDING, RangeState.RUNNING -> HomeCopy.OUTCOME_NOT_SWEPT
+        }
+        HomeCopy.rangeLine(r.subnet, source, outcome)
+    }
+}
+
 /** The last run's swept extra ranges, kept in view-model memory only (extended spec 5.6), for display-time grouping. */
 object LastRun {
     fun sweptRanges(status: DiscoveryStatus): List<Subnet> =
@@ -5754,7 +5975,44 @@ object HomeGroups {
 }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeContent.kt`: in the list branch replace `DeviceList(HomeGroups.of(state.rows, localSubnet), state, actions, ownModel)` with `DeviceList(state.groups, state, actions, ownModel)` (`localSubnet` stays for `heroSubnet`).
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeContent.kt`: replace the Scaffold content lambda (`{ pad -> Box(...) { when { ... } } }`) with the following; the list now comes from `state.groups` (`localSubnet` stays for `heroSubnet`), and the range summary sits above it while the radar is SETTLED:
+```kotlin
+    }) { pad ->
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            if (mode == RadarMode.SETTLED) RangeSummary(state.lastRunRanges)   // nothing when the last run had no extra ranges
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    mode == RadarMode.HERO -> HeroPlaceholder()
+                    state.rows.isEmpty() -> EmptyState(emptyText(state))
+                    else -> DeviceList(state.groups, state, actions, ownModel)
+                }
+            }
+        }
+    }
+```
+
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt`: add the imports `androidx.compose.foundation.verticalScroll`, `androidx.compose.material.icons.filled.KeyboardArrowDown`, `androidx.compose.material.icons.filled.KeyboardArrowUp`, `androidx.compose.runtime.saveable.rememberSaveable`, `com.northwalessolutions.netprobe.engine.discovery.RangeProgress`, and append:
+```kotlin
+private val RANGE_LIST_MAX = 160.dp
+
+/** The last extended run's ranges (extended spec 8.2): "3 other ranges checked", tap for one line per range. Scrolls inside its own cap, so a long list never pushes the devices away. */
+@Composable
+fun RangeSummary(ranges: List<RangeProgress>) {
+    val others = ranges.size - 1
+    if (others < 1) return
+    var open by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().testTag("rangeSummary")) {
+        Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClickLabel = if (open) "Hide ranges" else "Show ranges", role = Role.Button) { open = !open }
+            .padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
+            Text(RangeSummaryText.headline(others), style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.weight(1f))
+            Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = NetProbeColors.textMuted)
+        }
+        if (open) Column(Modifier.heightIn(max = RANGE_LIST_MAX).verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter).testTag("rangeLines")) {
+            RangeSummaryText.lines(ranges).forEach { Text(it, style = NetProbeText.data, color = NetProbeColors.textSecondary, modifier = Modifier.padding(vertical = 2.dp)) }
+        }
+    }
+}
+```
 
 `app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`: add (import `kotlinx.coroutines.flow.MutableStateFlow`):
 ```kotlin
@@ -5771,7 +6029,7 @@ data class HostRow(val id: Long, val ip: String, val displayName: String, val id
 data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = false, val status: DiscoveryStatus? = null, val rows: List<HostRow> = emptyList(),
                        val filter: StatusFilter = StatusFilter.ALL, val query: String = "", val message: String? = null, val networkName: String? = null, val quickScanning: Boolean = false,
                        val lastScanAt: Long? = null, val totalHosts: Int = 0, val otherSubnetHosts: Int = 0, val scanStartedAt: Long? = null, val scanFinishedAt: Long? = null,
-                       val groups: List<HostGroup> = emptyList())
+                       val groups: List<HostGroup> = emptyList(), val lastRunRanges: List<RangeProgress> = emptyList())
 ```
 
 In `RowRules`, delete `OTHER_SUBNET_PREFIX` and `otherSubnet`, and replace `row`:
@@ -5790,18 +6048,22 @@ In `HomeViewModel`, add the field after `finishedAt`:
 ```kotlin
     /** The last extended run's swept ranges; memory only, replaced at the next extended run (extended spec 5.6). */
     private val lastRunRanges = MutableStateFlow<List<Subnet>>(emptyList())
+    /** The same run's full range list for the done summary (extended spec 8.2); cleared at every scan start and on a network change. */
+    private val lastRunProgress = MutableStateFlow<List<RangeProgress>>(emptyList())
 ```
 
 Replace the `state` property:
 ```kotlin
     val state: StateFlow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts,
-        finishedAt, lastRunRanges, c.settings.manual.revision) { arr ->
+        finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress) { arr ->
         @Suppress("UNCHECKED_CAST")
         val hs = arr[3] as List<HostEntity>
         @Suppress("UNCHECKED_CAST")
         val pc = arr[9] as Map<Long, Int>
         @Suppress("UNCHECKED_CAST")
         val extra = arr[11] as List<Subnet>
+        @Suppress("UNCHECKED_CAST")
+        val lastRun = arr[13] as List<RangeProgress>
         val e = arr[0] as NetworkEnv?; val cs = arr[1] as ScanController.State; val st = arr[2] as DiscoveryStatus
         val f = arr[4] as StatusFilter; val q = arr[5] as String; val run = arr[6] as Long; val qs = arr[7] as ScanController.State; val msg = arr[8] as String?
         val done = arr[10] as Long?
@@ -5812,7 +6074,8 @@ Replace the `state` property:
         val shown = HomeFilter.apply(all, f, q)
         HomeUiState(e, cs.scanning, if (cs.scanning) st else null, shown, f, q, cs.message ?: qs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs.scanning,
             lastScanAt = stats.lastScanAt, totalHosts = stats.totalHosts, otherSubnetHosts = stats.otherSubnetHosts,
-            scanStartedAt = run.takeIf { it > 0 }, scanFinishedAt = done, groups = HomeGroups.of(shown))
+            scanStartedAt = run.takeIf { it > 0 }, scanFinishedAt = done, groups = HomeGroups.of(shown),
+            lastRunRanges = lastRun)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
 ```
 
@@ -5821,6 +6084,9 @@ In `init`, replace the `env.collectLatest` collector:
         viewModelScope.launch {
             env.collectLatest { e ->
                 val net = try { e?.let { c.networks.ensure(it, GatewayMac.lookup(it.gateway)) } } catch (ce: CancellationException) { throw ce } catch (_: Exception) { null }
+                // "Scanned in N s" and the range list describe one network: a different network id clears both (latestRun can stay, the summary needs the finish time too).
+                finishedAt.value = ScanFinish.afterNetworkChange(networkId.value, net?.id, finishedAt.value)
+                if (net?.id != networkId.value) { lastRunRanges.value = emptyList(); lastRunProgress.value = emptyList() }
                 networkId.value = net?.id; c.currentNetwork.value = net
             }
         }
@@ -5838,6 +6104,7 @@ Replace `discover`:
         val opts = DiscoveryOptions(s.mdns, s.ssdp, s.netbios, s.reverseDns, s.snmp, s.httpTitle, s.sweepConcurrency, s.connectTimeoutMs, s.maxPrefix, extended = ext)
         val binder = if (ext.enabled) c.networkEnvMonitor.binderFor(e) else null   // null skips the extended phase with its notice
         if (ext.enabled) lastRunRanges.value = emptyList()
+        lastRunProgress.value = emptyList()   // the range list always describes the latest run only
         val openPorts = HashMap<String, MutableSet<Int>>()   // ports seen open per ip during this run: later emissions for the host carry none
         c.locks.acquire()
         try {
@@ -5853,13 +6120,14 @@ Replace `discover`:
             c.locks.release()
             // Also on Stop or a network change: the engine has already marked unfinished ranges CANCELLED.
             val st = c.discoveryEngine.status.value
-            if (ext.enabled) lastRunRanges.value = LastRun.sweptRanges(st)
+            if (ext.enabled) { lastRunRanges.value = LastRun.sweptRanges(st); lastRunProgress.value = st.ranges }
+            st.gatewayProbe?.let { Log.i(EXT_LOG_TAG, "gateway probe: ${it.done} of ${it.total} units, ${it.attempts} connect attempts") }   // read by Task 20 check 3
             val notices = listOfNotNull(st.clampedFrom?.let { HomeCopy.largeNetwork(it) }) + if (ext.enabled) ExtendedNotices.of(st) else emptyList()
             if (notices.isNotEmpty()) extraMessage.value = notices.joinToString("\n")
         }
     }
 ```
-Add imports `com.northwalessolutions.netprobe.engine.discovery.ExtendedOptions`. `Subnet`, `SubnetMath` and `kotlinx.coroutines.flow.*` are already imported.
+Add imports `android.util.Log`, `com.northwalessolutions.netprobe.engine.discovery.ExtendedOptions` and `com.northwalessolutions.netprobe.engine.discovery.RangeProgress`, and the top-level constant `private const val EXT_LOG_TAG = "NetProbeExt"`. `Subnet`, `SubnetMath` and `kotlinx.coroutines.flow.*` are already imported.
 
 - [ ] **Step 4: Run the tests to see them pass, then the full suite, the Compose classes and the build**
 
@@ -5868,7 +6136,7 @@ Add imports `com.northwalessolutions.netprobe.engine.discovery.ExtendedOptions`.
 ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -5
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true -Pandroid.testInstrumentationRunnerArguments.class=com.northwalessolutions.netprobe.ui.home.HomeContentTest --console=plain 2>&1 | tail -8
 ```
-Expected: `ExtendedNoticesTest` 5 and the updated `ProgressLineTest`, `CopyTableTest`, `RowRulesTest`, `RowTextTest`, `HomeStatsTest` pass; `BUILD SUCCESSFUL`; `HomeContentTest` still 13 passed (`otherSubnetGetsItsOwnStickyHeader` now runs on `state.groups`).
+Expected: `ExtendedNoticesTest` 6 and the updated `ProgressLineTest`, `CopyTableTest`, `RowRulesTest`, `RowTextTest`, `HomeStatsTest` pass; `BUILD SUCCESSFUL`; `HomeContentTest` 19 passed (the 16 from Task 6, `otherSubnetGetsItsOwnStickyHeader` now running on `state.groups`, plus the 3 range-summary cases).
 
 - [ ] **Step 5: Install and capture**
 
@@ -5892,7 +6160,7 @@ git add -A && git commit -m "Group Home by range and show extended progress and 
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSection.kt`
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/settings/SettingsScreen.kt` (insert the section between "Large networks" and "Permissions")
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/settings/SettingsScreen.kt` (insert the section between "Large networks" and "Permissions"; the scroll column keeps the `.imePadding()` Task 8 gave it, which is what lets the Add range field and its inline messages sit above the keyboard now that Task 1 made the window edge-to-edge)
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/settings/ExtendedCopyTest.kt`, `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSectionTest.kt`
 
 **Interfaces:**
@@ -5982,7 +6250,7 @@ class ExtendedSectionTest {
         rule.onNodeWithTag("addRangeButton").performClick()
         assertEquals(listOf(CidrParser.subnetOf("10.0.4.0/24")!!), store.get(1))
         assertEquals(listOf(CidrParser.subnetOf("172.16.9.0/24")!!), store.get(2))
-        rule.onNodeWithText("10.0.4.0/24").assertIsDisplayed()
+        rule.onNode(hasTestTag("manualRange") and hasText("10.0.4.0/24")).assertIsDisplayed()   // the list row; the field's placeholder shows the same text
         rule.onNodeWithContentDescription("Remove 10.0.4.0/24").performClick()
         assertTrue(store.get(1).isEmpty())
     }
@@ -6116,7 +6384,7 @@ private fun ManualEditor(networkName: String?, manual: List<Subnet>, local: Subn
         val beyond = ManualCap.beyondCap(manual, cap)
         manual.forEachIndexed { i, s ->
             Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch), verticalAlignment = Alignment.CenterVertically) {
-                Text(s.toString(), style = NetProbeText.data, color = NetProbeColors.text, modifier = Modifier.weight(1f))
+                Text(s.toString(), style = NetProbeText.data, color = NetProbeColors.text, modifier = Modifier.weight(1f).testTag("manualRange"))
                 if (beyond[i]) Text(ExtendedCopy.BEYOND_CAP, style = NetProbeText.caption, color = NetProbeColors.mark, modifier = Modifier.padding(end = 8.dp))
                 IconButton(onClick = { onChange(manual - s) }, enabled = enabled) { Icon(Icons.Default.Close, "Remove $s", tint = NetProbeColors.textMuted) }
             }
@@ -6172,7 +6440,7 @@ Open Settings and scroll to the new section:
 ADB="/c/Users/blastdav/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 ./gradlew :app:installDebug --console=plain 2>&1 | tail -3
 ```
-Capture `t17-settings-extended-off.png` (rows dimmed), switch it on and capture `t17-settings-extended-on.png`, type `8.8.8.0/24` and capture `t17-settings-bad-cidr.png`, then replace it with `10.0.4.20/24`, capture `t17-settings-normalised.png`, tap Add range and capture `t17-settings-manual-list.png`. Each with `"$ADB" -s 28221FDH300AP9 exec-out screencap -p > docs/qa/shots/phase2/<name>.png`. Leave the list empty again afterwards (Task 20 adds ranges deliberately).
+Capture `t17-settings-extended-off.png` (rows dimmed), switch it on and capture `t17-settings-extended-on.png`, type `8.8.8.0/24` and capture `t17-settings-bad-cidr.png`, then replace it with `10.0.4.20/24`, capture `t17-settings-normalised.png`, tap Add range and capture `t17-settings-manual-list.png`. Finally tap the Add range field so the keyboard opens, type `8.8.8.0/24`, and capture `t17-settings-keyboard.png`: the field, its label and the inline message "Only private ranges are allowed" must all be visible above the keyboard (this proves the `imePadding()` fix for the edge-to-edge window; if any of them is hidden, stop and tell the Director). Each with `"$ADB" -s 28221FDH300AP9 exec-out screencap -p > docs/qa/shots/phase2/<name>.png`. Leave the list empty again afterwards (Task 20 adds ranges deliberately).
 
 - [ ] **Step 6: Commit**
 
@@ -6187,7 +6455,7 @@ git add -A && git commit -m "Add the Extended discovery settings section with th
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/NeighbourRules.kt`
 - Modify: `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/DiscoveryEngine.kt` (the neighbour block and `sweepExtra`'s `release`)
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/NeighbourRulesTest.kt`; `DiscoveryEngineExtendedTest.kt` (one helper parameter and one test)
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/NeighbourRulesTest.kt`; `DiscoveryEngineExtendedTest.kt` (one helper parameter and two tests)
 
 **Interfaces:**
 - Consumes: `NeighbourEntry` (`engine/neigh/NeighbourParser.kt`), `Ipv4`, `Subnet`, `SubnetMath`, the Task 15 engine (`noteEvidence`, `emit`, `sweepExtra`).
@@ -6195,11 +6463,11 @@ git add -A && git commit -m "Add the Extended discovery settings section with th
 ```kotlin
 object NeighbourRules {
     const val PROXY_ARP_MIN_IPS = 3
-    data class Outcome(val macs: Map<String, String>, val evidence: List<Inet4Address>)
+    data class Outcome(val macs: Map<String, String>, val evidence: List<Inet4Address>, val onLinkIps: List<Inet4Address>)
     fun apply(entries: List<NeighbourEntry>, trueSubnet: Subnet, swept: Subnet, gateway: Inet4Address?): Outcome
 }
 ```
-- Rules (extended spec 6.2 and 4.2): only entries inside the interface's true subnet count (`SubnetMath.of(env.interfaceIp, env.prefixLength)`), which drops hotspot and Wi-Fi Direct interfaces; the gateway's MAC is never given to any other IP; a MAC on three or more IPs is proxy ARP and contributes neither MACs nor evidence; entries outside the swept range are evidence, never host rows. The swept-range entries still create NEIGH rows as in the MVP. On-link hosts later swept in an extra range (the unswept part of a clamped /16) take their MAC from the same dump.
+- Rules (extended spec 6.2 and 4.2): only entries inside the interface's true subnet count (`SubnetMath.of(env.interfaceIp, env.prefixLength)`), which drops hotspot and Wi-Fi Direct interfaces; the gateway's MAC is never given to any other IP; a MAC on three or more IPs is proxy ARP and contributes neither MACs nor evidence, but the IPs themselves stay in [Outcome.onLinkIps]: a host known only from the neighbour table keeps its NEIGH row and loses only the MAC claim (extended spec 6.2 says "no MAC assigned", not "no host"; a Wi-Fi repeater that NATs several clients behind one MAC must not make those phones vanish); entries outside the swept range are evidence, never host rows. Every on-link entry inside the swept range still creates a NEIGH row as in the MVP. On-link hosts later swept in an extra range (the unswept part of a clamped /16) take their MAC from the same dump.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -6224,7 +6492,7 @@ class NeighbourRulesTest {
 
     @Test fun `an entry outside the true subnet is neither evidence nor a mac`() {
         val r = NeighbourRules.apply(listOf(n("192.168.49.5", "02:00:00:00:00:49")), trueSubnet, swept, gw)
-        assertEquals(emptyMap<String, String>(), r.macs); assertEquals(emptyList<Any>(), r.evidence)
+        assertEquals(emptyMap<String, String>(), r.macs); assertEquals(emptyList<Any>(), r.evidence); assertEquals(emptyList<Any>(), r.onLinkIps)
     }
     @Test fun `an entry inside the true subnet and outside the swept range is evidence and keeps its mac`() {
         val r = NeighbourRules.apply(listOf(n("10.0.7.9", "de:ad:be:ef:00:07")), trueSubnet, swept, gw)
@@ -6233,6 +6501,7 @@ class NeighbourRulesTest {
     @Test fun `the gateway's mac is never assigned to another ip`() {
         val r = NeighbourRules.apply(listOf(n("10.0.3.1", "aa:bb:cc:00:00:01"), n("10.0.3.50", "aa:bb:cc:00:00:01")), trueSubnet, swept, gw)
         assertEquals(mapOf("10.0.3.1" to "aa:bb:cc:00:00:01"), r.macs)
+        assertEquals(listOf("10.0.3.1", "10.0.3.50"), r.onLinkIps.map { it.hostAddress })   // 10.0.3.50 keeps its row, only the MAC claim is refused
     }
     @Test fun `a mac on more than two ips is proxy arp and ignored`() {
         val shared = listOf(n("10.0.8.1", "aa:aa:aa:aa:aa:aa"), n("10.0.8.2", "aa:aa:aa:aa:aa:aa"), n("10.0.8.3", "aa:aa:aa:aa:aa:aa"))
@@ -6240,6 +6509,12 @@ class NeighbourRulesTest {
         assertEquals(mapOf("10.0.3.9" to "bb:bb:bb:bb:bb:09"), r.macs); assertEquals(emptyList<Any>(), r.evidence)
         val two = NeighbourRules.apply(shared.take(2), trueSubnet, swept, gw)
         assertEquals(2, two.macs.size)   // two IPs on one MAC is allowed (a dual-homed host)
+    }
+    @Test fun `a proxy arp ip keeps its row but loses the mac claim`() {
+        val shared = listOf(n("10.0.3.20", "aa:aa:aa:aa:aa:aa"), n("10.0.3.21", "aa:aa:aa:aa:aa:aa"), n("10.0.3.22", "aa:aa:aa:aa:aa:aa"))
+        val r = NeighbourRules.apply(shared, trueSubnet, swept, gw)
+        assertEquals(emptyMap<String, String>(), r.macs); assertEquals(emptyList<Any>(), r.evidence)
+        assertEquals(listOf("10.0.3.20", "10.0.3.21", "10.0.3.22"), r.onLinkIps.map { it.hostAddress })
     }
     @Test fun `off-link ips on a slash 24 phone get nothing from the dump`() {
         val r = NeighbourRules.apply(listOf(n("10.0.4.20", "de:ad:be:ef:04:20")), net("10.0.3.0/24"), swept, gw)
@@ -6258,6 +6533,13 @@ In `DiscoveryEngineExtendedTest.kt`, add the parameter `neigh: List<com.northwal
         assertEquals(listOf("10.0.3.1", "10.0.7.1"), swept())                      // the hotspot range is never a candidate
         assertEquals("de:ad:be:ef:00:07", h["10.0.7.9"]!!.mac); assertEquals(MacSource.NEIGH, h["10.0.7.9"]!!.macSource)
         assertFalse("192.168.49.5" in h.keys)
+    }
+    @Test fun `a host known only from the neighbour table keeps its row when three ips share its mac`() = runBlocking {
+        val shared = "aa:bb:cc:dd:ee:ff"
+        val neigh = listOf(20, 21, 22).map { com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.$it", shared, "REACHABLE") }
+        val h = engine(neigh = neigh).hosts(opts(enabled = false))
+        assertEquals(setOf("10.0.3.1", "10.0.3.20", "10.0.3.21", "10.0.3.22"), h.keys)
+        assertTrue(listOf(20, 21, 22).all { h["10.0.3.$it"]!!.mac == null })   // no MAC claim, but the hosts are still listed
     }
 ```
 
@@ -6290,7 +6572,7 @@ object NeighbourRules {
         val ipsPerMac = onLink.groupBy({ it.second }, { it.first }).mapValues { (_, ips) -> ips.distinct().size }
         val gatewayMac = gateway?.let { g -> onLink.firstOrNull { it.first == g }?.second }
         val usable = onLink.filter { (ip, mac) -> (ipsPerMac[mac] ?: 0) < PROXY_ARP_MIN_IPS && (ip == gateway || mac != gatewayMac) }
-        return Outcome(usable.associate { (ip, mac) -> ip.hostAddress to mac }, usable.map { it.first }.filter { !swept.contains(it) })
+        return Outcome(usable.associate { (ip, mac) -> ip.hostAddress to mac }, usable.map { it.first }.filter { !swept.contains(it) }, onLink.map { it.first }.distinct())
     }
 }
 ```
@@ -6309,9 +6591,9 @@ object NeighbourRules {
                         val r = NeighbourRules.apply(entries, SubnetMath.of(env.interfaceIp, env.prefixLength), local, env.gateway)
                         synchronized(neighMacs) { neighMacs.putAll(r.macs) }
                         r.evidence.forEach { noteEvidence(it) }   // evidence contributes ranges, never host rows
-                        r.macs.forEach { (text, mac) ->
-                            val ip = Ipv4.parse(text) ?: return@forEach
-                            if (local.contains(ip)) emit(DiscoveredHost(ip, mac = mac, macSource = MacSource.NEIGH, sources = setOf(Source.NEIGH)))
+                        r.onLinkIps.filter { local.contains(it) }.forEach { ip ->   // outside the swept range an entry is evidence only
+                            val mac = r.macs[ip.hostAddress]                        // null for the gateway's MAC on another IP and for proxy ARP: the row stays, the claim goes
+                            emit(DiscoveredHost(ip, mac = mac, macSource = mac?.let { MacSource.NEIGH }, sources = setOf(Source.NEIGH)))
                         }
                     }
 ```
@@ -6331,7 +6613,7 @@ Add the import `com.northwalessolutions.netprobe.netenv.Ipv4`.
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.discovery.*" --console=plain 2>&1 | tail -10
 ./gradlew :app:testDebugUnitTest :app:assembleDebug --console=plain 2>&1 | tail -5
 ```
-Expected: `NeighbourRulesTest` 5 passed, `DiscoveryEngineExtendedTest` 20 passed, `DiscoveryEngineTest` unchanged and passing (its neighbour cases use unique MACs inside the /24); `BUILD SUCCESSFUL`.
+Expected: `NeighbourRulesTest` 6 passed, `DiscoveryEngineExtendedTest` 21 passed, `DiscoveryEngineTest` unchanged and passing (its neighbour cases use unique MACs inside the /24); `BUILD SUCCESSFUL`.
 
 - [ ] **Step 5: Commit**
 
@@ -6539,7 +6821,7 @@ LAN: phone 10.0.3.0/24, Hue Bridge 10.0.4.20, enclosing 10.0.0.0/16.
 |---|---|---|---|---|---|
 | 1 | Toggle off, scan | Result and time match the Phase A baseline; Hue Bridge under "Other subnet 10.0.4.0/24", no sweep of it | | | b01-toggle-off.png |
 | 2 | Toggle on, probe off, no manual ranges | 10.0.4.0/24 found by evidence and swept; its other devices appear in that group; host count | | | b02-evidence.png, b02-progress-100.png, b02-progress-130.png |
-| 3 | Toggle on, probe on | 10.0.4.0/24 found by the gateway probe; probe duration, attempt count, hit list | | | b03-probe-progress.png, b03-hits.txt |
+| 3 | Toggle on, probe on | 10.0.4.0/24 found by the gateway probe; probe duration, hit list, and the logged attempt count between 527 and 1054 (see below) | | | b03-probe-progress.png, b03-hits.txt |
 | 4 | Manual range | 10.0.4.0/24 added; bad inputs show the 4.4 messages inline; manual ranges sweep first; another network does not show or sweep the list | | | b04-*.png |
 | 5 | Cap 1 with several candidates | Only the first (manual) range swept; the notice says "N more ranges found, raise the cap in Settings" | | | b05-cap.png |
 | 6 | Stop mid extended sweep | Ends within about 1 s; partial hosts stay; notice "Stopped at <range>"; no Wi-Fi lock held | | | b06-stop.png, b06-wifi-locks.txt |
@@ -6548,6 +6830,7 @@ LAN: phone 10.0.3.0/24, Hue Bridge 10.0.4.20, enclosing 10.0.0.0/16.
 | 9 | Phantom check | A manual /24 the UniFi rejects (or a guest network): range PHANTOM, notice "<range> skipped: every address answered", no rows stored | | | b09-phantom.png |
 | 10 | VPN routing private ranges (Director) | Extended phase skipped with "Other ranges skipped: could not bind to Wi-Fi", or probes stay on Wi-Fi; local result intact | | | b10-vpn.png |
 | 11 | Timings vs spec 4.6 | Per-range sweep time, gateway probe duration; Settings estimate (25 s per range) within 50 percent | | | b11-timings.txt |
+| S | Done summary range list | After a run with several extra ranges, "N other ranges checked" sits above the list and expands to one line per range (source, outcome, count), including a swept-but-empty range | | | b-range-summary.png |
 | R9 | Radar 10.3 item 9 | Home with extended discovery on: range progress line "10.0.4.0/24 (1 of 1), probing N of 254" at 1.0 and 1.3 | | | b02-progress-100.png, b02-progress-130.png |
 | L | logcat over checks 1 to 10 | No AndroidRuntime lines; no avc denials for netprobe | | | b-logcat-errors.txt |
 ```
@@ -6557,8 +6840,9 @@ Commands used by the rows:
 # 2 and R9: capture while the range is sweeping, at both font scales
 shot b02-progress-100
 "$ADB" -s 28221FDH300AP9 shell settings put system font_scale 1.3; shot b02-progress-130; "$ADB" -s 28221FDH300AP9 shell settings put system font_scale 1.0
-# 3: count the probe's connection attempts from the device side while it runs
-"$ADB" -s 28221FDH300AP9 shell cat /proc/net/tcp | wc -l | tee -a docs/qa/shots/phase2/b03-hits.txt
+# 3: attempts come from the app, not from the kernel socket table (a snapshot of open sockets is not an attempt count, and may be unreadable from shell):
+# when the run ends the view model logs the probe's final progress, e.g. "gateway probe: 271 of 271 units, 640 connect attempts"
+"$ADB" -s 28221FDH300AP9 logcat -d -s NetProbeExt:I | tee docs/qa/shots/phase2/b03-hits.txt
 # 6: no lock left after Stop
 "$ADB" -s 28221FDH300AP9 shell dumpsys wifi | grep -iE "WifiLock|MulticastLock|netprobe" | tee docs/qa/shots/phase2/b06-wifi-locks.txt
 # 8: confirm the window flag while the run is active
@@ -6566,7 +6850,11 @@ shot b02-progress-100
 # L
 "$ADB" -s 28221FDH300AP9 logcat -d | grep -E "AndroidRuntime|avc: denied.*netprobe|FATAL" | tee docs/qa/shots/phase2/b-logcat-errors.txt | tail -20
 ```
-For check 3 the hit list and duration are read off the progress line and the resulting group headers; note the elapsed seconds the progress line showed when the probe phase ended.
+For check 3 the hit list and duration are read off the progress line and the resulting group headers; note the elapsed seconds the progress line showed when the probe phase ended. Expected attempts come from `GatewayTargets.byUnit()`: on this LAN (phone 10.0.3.242/24, gateway .1) that is 255 /24 units of the phone's /16 with offsets .1 and .254, which is 510 addresses, plus the 17 seed addresses outside the /16, which is 527 addresses. Each address costs one attempt, or two when port 80 times out and 443 is tried, so the logged count must lie between 527 and 1054 (a LAN that silently drops everything lands at 1054); a count outside that range, or a `done` that does not equal `total`, is a failure.
+
+For check 2 the canary's addresses are the range's lowest and highest addresses not already stored for the network. On a first extended run the lowest unknown address is usually the range's own `.1` router, which refuses a high port, so the canary then rests on `.254` alone. That is spec behaviour, but record which addresses were already known before the run so the canary pair can be reconstructed.
+
+For check S, tap the "N other ranges checked" line after the run settles and capture `b-range-summary.png` with the lines showing; then start a new scan and confirm the summary is gone while it runs.
 
 - [ ] **Step 3: Fix what fails**
 
@@ -6590,20 +6878,20 @@ git add -A && git commit -m "Record extended discovery on-device QA on the Direc
 
 - **Spec coverage, Radar UI spec:**
   - Section 1 decisions: D1, D9, D10, D14, D15, D16 in Task 1; D2 to D6 and D11 in Task 4; D7 in Task 7; D8, D17 in Task 6; D12 in Tasks 2 and 6; D13 in Task 3.
-  - Section 2 tokens: 2.1 palette, role table and edge colours in Task 1 (`ContrastTest`, `EdgeColorTest`); 2.2 Plex typography with `tnum` in Task 1 (`TypographyTest`); 2.3 spacing in `Dimens` (Task 1), applied in Tasks 4 to 8 and 17; 2.4 in Task 1; 2.5 theme, window background, `enableEdgeToEdge` and portrait lock in Task 1, insets in Tasks 6, 7 and 8.
+  - Section 2 tokens: 2.1 palette, role table and edge colours in Task 1 (`ContrastTest`, `EdgeColorTest`); 2.2 Plex typography with `tnum` in Task 1 (`TypographyTest`); 2.3 spacing in `Dimens` (Task 1), applied in Tasks 4 to 8 and 17; 2.4 in Task 1; 2.5 theme, window background, `enableEdgeToEdge` and portrait lock in Task 1, insets in Tasks 6, 7 and 8 (including `imePadding()` on the Settings scroll column and the Detail port list, because the edge-to-edge window no longer resizes for the keyboard).
   - Section 3 radar: 3.1 `RadarModes` (Task 2); 3.2 to 3.5 `RadarBlock` (Task 4) placed in Home (Task 6); 3.3 status latch and 250 ms sampling in `HomeScreen` (Task 6); 3.4 summary text (Task 2), its inputs (Task 5) and persistence (Task 6, `RadarStateTest`); 3.6 one transition, cached disc, arm layer, resumed check (Task 4), row arrival (Task 6); 3.7 reduced motion (Tasks 1 and 4).
   - Section 4 Home: 4.1 pinned header, 4.3 row anatomy, 4.4 empty states and notice line in Task 6; 4.2 grouping in Task 3 (by `otherSubnet`) then Task 16 (by `HostRow.subnet`, in the view model).
   - Section 5 Detail: Task 7, with the pure helpers of 5.1 and 5.2 in Task 3.
   - Section 6 Settings: restyle in Task 8; the extended-discovery section styled in Task 17.
   - Section 7: 7.1 in Task 1; 7.2 touch floors in every component task; 7.3 strings in Task 2 and semantics in Tasks 4, 6 and 7; 7.4 in Task 4; 7.5 in Tasks 6 and 7 (font-scale tests).
-  - Section 8 copy: `HomeCopy` and `CopyTableTest` (Tasks 2 and 16); Detail strings in Tasks 3 and 7.
+  - Section 8 copy: `HomeCopy` and `CopyTableTest` (Tasks 2 and 16; regex templates over a generated matrix of every reachable state); Detail strings in Tasks 3 and 7.
   - Section 9 scope: the five read-only fields in Task 5; forbidden dependencies in Global Constraints. Section 10: 10.1 in Tasks 1 to 4; 10.2 tests 1, 3, 6 and 8 in Task 6, 2 and 7 in Task 7, 4 and 5 in Task 4, 9 in Task 1; 10.3 in Task 9 with item 9 in Task 20. Section 11 open items are listed for the Director in the Task 9 QA record. Section 12 is honoured.
 - **Spec coverage, extended-discovery spec:**
   - Sections 1 to 3: toggles default off and persisted (Task 11); every decision row is implemented where its section is.
   - Section 4: 4.1 and 4.5 in Task 12; 4.2 DNS evidence (Task 12), mDNS and SSDP evidence and the "after all strategies joined" timing (Task 15), neighbour evidence (Task 18); 4.3 targets, seeds, ports, timeout, concurrency (Task 13) and the TEST-NET pre-check wiring (Task 15); 4.4 parser and per-network storage (Task 11), editor (Task 17); 4.6 measured in Task 20 check 11; 4.7 guard logic (Task 14) and its three layers in the engine (Task 15).
   - Section 5: 5.1 in Task 14; 5.2, 5.3 and 5.4 in Task 15; 5.5 in Tasks 10 and 15; 5.6 `LastRun` in view-model memory (Task 16).
   - Sections 6 and 7: Task 18; Tasks 12 and 16 (no schema change, `RangeRules.groupFor`, `HostRow.subnet`).
-  - Section 8: 8.1 and 8.2 in Task 16 (strings owned by the Radar spec), 8.3 in Task 17. Sections 9 and 10: data flow in Task 16; binding (Task 10), cap (Task 12), screen on (Task 19), cellular unchanged.
+  - Section 8: 8.1 and 8.2 in Task 16 (strings owned by the Radar spec; the per-range done summary list is `RangeSummary`), 8.3 in Task 17. Sections 9 and 10: data flow in Task 16; binding (Task 10), cap (Task 12), screen on (Task 19), cellular unchanged.
   - Section 11: 11.1 Tasks 11 and 12; 11.2 Tasks 12 and 18; 11.3 Task 12 (`filterIsInstance<Inet4Address>`); 11.4 and 11.8 unchanged by design; 11.5, 11.6, 11.10, 11.13, 11.14 Task 15 tests; 11.7 Tasks 12 and 15; 11.9 Tasks 15 and 16 ("nothing found"); 11.11 Task 16; 11.12 Task 19.
   - Section 12: 12.1 in Tasks 11, 12, 13, 14, 16 and 18; 12.2 in Tasks 15 and 18; 12.3 in Task 6 (sticky grouped list) and Task 17 (Settings), with the unchanged `DaoTest` in the full instrumented runs of Tasks 9 and 20; 12.4 in Task 20. Section 13 open items keep their recommended defaults.
 - **Deviations and additions, each flagged for the Director:**
@@ -6613,8 +6901,8 @@ git add -A && git commit -m "Record extended discovery on-device QA on the Direc
   4. The done summary is derived from the view model's `scanStartedAt` and `scanFinishedAt` instead of a `rememberSaveable` copy, which would survive a system-initiated process death the spec says must show the idle text (Task 6).
   5. `Probe.connect` takes a `SocketBinder` instead of `android.net.Network`, plus a `BoundNetwork` coroutine-context element so HTTP, NetBIOS and SNMP enrichment of extra-range hosts is bound too (Task 10). Reverse DNS stays on the system resolver.
   6. `gatewayProbe` and `canaryProbe` signatures carry the binder and a progress callback; timeout and concurrency are constants (Task 15). `ExtendedOptions.knownIps`, `DiscoveryStatus.gatewayProbe` and `Sweep.runAll` are additions (Task 14).
-  7. Copy gaps: "Gateway probe skipped: every address answered" for `GATEWAY_PROBE_SKIPPED_ANSWERS_ALL`; cap drops reported once by the cap row, the TRUNCATED "cut short" row unused (Task 16); CIDR messages for malformed text, bad prefixes and duplicates (Task 11).
-  8. The last-run range list reaches the Director as end-of-run notices (PHANTOM, empty, cancelled, cap). Neither spec defines an expandable per-range summary, so none is built.
+  7. Copy gaps, Controller rulings applied: "Gateway probe skipped: every address answered" is included for `GATEWAY_PROBE_SKIPPED_ANSWERS_ALL` and is part of the copy-table test; cap drops are reported once by the cap row and the table's TRUNCATED "cut short" row is deleted as unused (Task 16); CIDR messages for malformed text, bad prefixes and duplicates (Task 11).
+  8. The per-range done summary that extended spec 8.2 asks for is built (Controller ruling): `RangeSummary` over `HomeUiState.lastRunRanges` in Task 16, "N other ranges checked" expanding to one line per range with source, outcome and count. The Radar spec fixes no wording for those lines, so the strings are this plan's own, listed in `HomeCopy` and covered by `CopyTableTest`. `lastRunRanges` is a second addition to `HomeUiState` beyond the Radar spec's five fields, alongside `groups` (deviation 9).
   9. `HomeUiState.groups` (Task 16) goes beyond the Radar spec's five fields; extended spec 9 step 4 requires grouping in the view model. Task 5 precedes the Home screen because `HomeContent` consumes its fields.
   10. Detail keeps a Snackbar for its own messages (D17 is about Home); the vulnerability sheet's "Keyword matches can be noisy" line is removed as a disclaimer (Task 7).
   11. Instrumented runs pass `leaveApksInstalledAfterRun=true` so the Director's stored data survives (Global Constraints).
@@ -6629,6 +6917,6 @@ git add -A && git commit -m "Record extended discovery on-device QA on the Direc
 - **Review Focus mapping:**
   1. Filter active while scanning: `HeaderRulesTest` (Task 2); `HomeContentTest.chipsStayWhileScanningWithAFilter` and `searchStaysWhileScanningWithAQuery` (Task 6); screenshot a04 (Task 9).
   2. Font scale 1.3 on Detail with the Custom error and the note expanded: `DetailContentTest.worstCaseAtFontScale13LeavesThreePortRows` and `scanBarHeightDoesNotJumpWhenScanStarts` (Task 7); screenshot a10-custom-error-note (Task 9).
-  3. A firewall that refuses everything: `DiscoveryEngineExtendedTest` tests `refuse-everything network yields phantom ranges and no extra hosts`, `accept-everything range is discarded by the sweep guard without enrichment` and `the phantom guard never discards an mdns sighting` (Task 15); `PhantomGuardTest` (Task 14); device check 9 (Task 20).
+  3. A firewall that refuses everything: `DiscoveryEngineExtendedTest` tests `refuse-everything network yields phantom ranges and no extra hosts`, `accept-everything range is discarded by the sweep guard without enrichment`, `the phantom guard never discards an mdns sighting` and, for the opposite error, `a busy real range whose live hosts answer first is not mistaken for a phantom` (Task 15; the guard judges the first 64 addresses, not the fastest 64 answers); `PhantomGuardTest` (Task 14); device check 9 (Task 20).
   4. A VPN active: `ProbeBindTest` tests `binder failure surfaces as BindFailedException and never connects`, `sweep propagates a bind failure instead of counting it as a dead host` and `udp enrichment rethrows a bind failure` (Task 10); `bind failure skips the extended phase and keeps the local result` (Task 15); the notice wording in `ExtendedNoticesTest` (Task 16); device check 10 (Task 20).
   5. Stop mid-range during an extended run: `stop mid range cancels within a second and drops held hosts` (Task 15); `ExtendedNoticesTest.cancelled range names the range that was running` (Task 16); device check 6 (Task 20).
