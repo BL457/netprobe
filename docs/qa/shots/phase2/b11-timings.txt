@@ -1,0 +1,25 @@
+NetProbe Phase 2 Part B check 11: timings on the Pixel 7 Pro, Director's LAN, 2026-10-20
+Settings during every run: sweep concurrency 128, connect timeout 600 ms, maxPrefix /22 (local /24).
+Method: screencap loop (adb exec-out screencap, about 0.45 s per frame; about 1.3 to 3 s when live OCR ran in the same loop),
+progress line read by tesseract from each frame. A range's time is from the first frame showing "<range> (i of n)" to the
+first frame showing the next range or the settled summary. Resolution: about +-0.5 s (check 8, plain capture loop) and
++-1.5 s (checks 2, 3, 4, 5, live OCR loop).
+
+Run (check)            | local sweep | gateway phase (preparing -> first range) | extra ranges, s each                               | app total
+2 (run 1, probe off)   | ~14.8 s     | -                                        | 10.0.4.0/24 ~14.7                                  | Scanned in 29 s
+2 (run 2, probe off)   | ~13.7 s     | -                                        | 10.0.4.0/24 ~15.0                                  | Scanned in 29 s
+3 (probe on, cap 4)    | ~11-12 s    | ~12.1 -> 21.7 = ~9.6 s (progress line shown 15.9 -> 21.7) | 10.0.4 16.2, 10.0.0 15.9, 10.0.2 15.9, 192.168.1 13.7 | Scanned in 83 s
+4 (manual x2, probe off)| ~14.0 s    | -                                        | 10.0.4 (manual) 15.1, 10.0.9 (manual, empty) 15.9  | Scanned in 44 s
+5 (cap 1, probe on)    | ~13.9 s     | 13.9 -> 23.1 = ~9.2 s                    | 10.0.4 15.5                                        | Scanned in 38 s
+8 (cap 4, probe on)    | ~13.1 s     | 13.1 -> 22.3 = 9.2 s (progress shown 15.3 -> 22.3) | 10.0.4 15.9, 10.0.9 16.2, 10.0.0 15.7, 10.0.2 15.8 | Scanned in 86 s
+
+Per extra /24: 13 measurements, 13.7 to 16.2 s, mean 15.5 s. A live range (10.0.4.0/24, 4 hosts plus enrichment) and a
+dead one (10.0.9.0/24, UniFi drops it, every probe times out) take the same time: two waves of 128 hosts x 600 ms x 12
+liveness ports (7.2 s each) plus the canary. Spec 4.6 typical 15 to 25 s, worst about 30 s: measured at the low end.
+Gateway probe phase: 9.2 to 9.6 s including the TEST-NET pre-check (spec 4.6: 10 to 13 s, worst about 13 s). Logged
+attempts every time: "gateway probe: 271 of 271 units, 1041 connect attempts" (window 527 to 1054).
+
+Settings estimate: SECONDS_PER_RANGE = 25 against a measured 15.5 s is 61 percent above the measurement (25 / 15.5 = 1.61),
+more than the 50 percent allowed, so it is changed to 16 s (see the fix commit). The probe text "about 13 s" is 35 to 41
+percent above the measured 9.2 to 9.6 s, inside 50 percent, so it is left alone.
+Default run measured: local + 4 ranges + probe = 86 s; local + 1 range = 29 s; local + 2 ranges = 44 s.

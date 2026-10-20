@@ -1,0 +1,40 @@
+# logcat filter: AndroidRuntime|avc: denied.*netprobe|FATAL (buffer cleared before checks 1, 3, 5, 6 and 8; this dump covers check 8 onward)
+10-20 04:41:22.855 12279 12279 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-20 04:41:22.882 12279 12279 I AndroidRuntime: Using default boot image
+10-20 04:41:22.882 12279 12279 I AndroidRuntime: Leaving lock profiling enabled
+10-20 04:41:23.132 12279 12279 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-20 04:41:24.257 12279 12279 D AndroidRuntime: Shutting down VM
+10-20 04:41:26.560 12323 12323 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-20 04:41:26.565 12323 12323 I AndroidRuntime: Using default boot image
+10-20 04:41:26.565 12323 12323 I AndroidRuntime: Leaving lock profiling enabled
+10-20 04:41:26.659 12323 12323 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-20 04:41:27.785 12323 12323 D AndroidRuntime: Shutting down VM
+10-20 04:41:29.315 12360 12360 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-20 04:41:29.319 12360 12360 I AndroidRuntime: Using default boot image
+10-20 04:41:29.319 12360 12360 I AndroidRuntime: Leaving lock profiling enabled
+10-20 04:41:29.413 12360 12360 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-20 04:41:30.616 12360 12360 D AndroidRuntime: Shutting down VM
+10-20 04:41:35.390 12625 12625 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-20 04:41:35.395 12625 12625 I AndroidRuntime: Using default boot image
+10-20 04:41:35.395 12625 12625 I AndroidRuntime: Leaving lock profiling enabled
+10-20 04:41:35.497 12625 12625 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-20 04:41:45.604 12625 12625 D AndroidRuntime: Shutting down VM
+10-20 04:41:54.189 12701 12701 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-20 04:41:54.194 12701 12701 I AndroidRuntime: Using default boot image
+10-20 04:41:54.194 12701 12701 I AndroidRuntime: Leaving lock profiling enabled
+10-20 04:41:54.293 12701 12701 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-20 04:42:04.382 12701 12701 D AndroidRuntime: Shutting down VM
+10-20 04:42:20.835 12758 12758 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-20 04:42:20.840 12758 12758 I AndroidRuntime: Using default boot image
+10-20 04:42:20.840 12758 12758 I AndroidRuntime: Leaving lock profiling enabled
+10-20 04:42:20.949 12758 12758 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-20 04:42:31.089 12758 12758 D AndroidRuntime: Shutting down VM
+10-20 04:42:39.220 12824 12824 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+10-20 04:42:39.225 12824 12824 I AndroidRuntime: Using default boot image
+10-20 04:42:39.225 12824 12824 I AndroidRuntime: Leaving lock profiling enabled
+10-20 04:42:39.327 12824 12824 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+10-20 04:42:49.416 12824 12824 D AndroidRuntime: Shutting down VM
+# lines that are not uiautomator (uid 2000) launcher VM lines:
+# (none above means none)
+# NetProbe process: 31734 04:14:51 com.northwalessolutions.netprobe - one process, started 04:14:51 (check 1), alive through checks 1 to 9
+# dropbox entries mentioning netprobe: 0

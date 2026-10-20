@@ -1,0 +1,44 @@
+Dump of WifiLockManager
+Dump of WifiMulticastLockManager
+2026-10-19T21:25:32.453756 - uid=10552, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12713
+2026-10-19T21:32:50.278165 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12294
+2026-10-19T21:54:49.849087 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12256
+2026-10-19T21:56:38.251251 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12280
+2026-10-19T21:58:30.162464 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12673
+2026-10-20T01:52:40.507109 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=1287
+2026-10-20T01:53:42.664460 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12683
+2026-10-20T01:54:31.106071 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12625
+2026-10-20T01:58:49.208129 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=1260
+2026-10-20T02:04:25.894186 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12107
+2026-10-20T02:05:06.218329 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12821
+2026-10-20T02:06:38.256844 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=4594
+2026-10-20T02:39:01.480041 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=1349
+2026-10-20T02:41:56.887208 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12693
+2026-10-20T02:43:16.989646 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12611
+2026-10-20T02:44:38.519032 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=4425
+2026-10-20T02:51:24.586699 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12118
+2026-10-20T02:52:31.283147 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12125
+2026-10-20T02:53:10.265251 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=4450
+2026-10-20T03:01:39.305563 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12675
+2026-10-20T03:03:12.275048 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12021
+2026-10-20T03:04:04.981285 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12104
+2026-10-20T03:05:01.492780 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=11206
+2026-10-20T03:05:37.188540 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12622
+2026-10-20T03:06:16.850154 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12123
+2026-10-20T03:06:47.907138 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12188
+2026-10-20T03:08:06.275322 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=1304
+2026-10-20T03:51:03.183339 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12183
+2026-10-20T04:12:19.699416 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12159
+2026-10-20T04:16:51.008203 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=12124
+2026-10-20T04:18:52.570226 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=29418
+2026-10-20T04:20:35.865183 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=28516
+2026-10-20T04:22:34.899558 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=83132
+2026-10-20T04:29:57.107301 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=44393
+2026-10-20T04:31:54.066281 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=38244
+2026-10-20T04:33:26.921103 - uid=10554, lockTag=netprobe-mdns, packageName=com.northwalessolutions.netprobe, attributionTag=null, tagHash=-580205803, durationMs=25193
+mWifiLockStats:
+mWifiLockHighPerfAcqDurationSecHistogram:
+mWifiLockLowLatencyAcqDurationSecHistogram:
+mWifiLockHighPerfActiveSessionDurationSecHistogram:
+mWifiLockLowLatencyActiveSessionDurationSecHistogram:
+10-20 03:00:14.464  1726  5322 I WifiService: acquireWifiLock uid=10289 lockMode=1 packageName=com.amazon.kindle

@@ -1,0 +1,10 @@
+Check 8 window flags (adb dumpsys window windows), run started T0=1792467116880 (PC ms)
+before Scan: KEEP_SCREEN_ON lines = 0
+== +20075ms
+      fl=KEEP_SCREEN_ON LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+== +40225ms
+      fl=KEEP_SCREEN_ON LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+== +60389ms
+      fl=KEEP_SCREEN_ON LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+after the run ended: KEEP_SCREEN_ON lines = 0
+screen_off_timeout=600000 ms; stay-awake-on-USB (stay_on_while_plugged_in=2) was on, so the flag is the evidence, not the screen staying lit
