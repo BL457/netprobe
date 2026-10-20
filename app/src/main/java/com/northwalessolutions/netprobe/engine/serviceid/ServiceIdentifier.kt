@@ -33,11 +33,9 @@ class ServiceIdentifier(
                 BannerParsers.ssh(line) ?: BannerParsers.greeting(line, baseName) }
             port in HTTP -> reader.read(ip, real, "HEAD / HTTP/1.0\r\nHost: ${ip.hostAddress}\r\n\r\n".toByteArray())
                 ?.let { BannerParsers.httpHead(String(it, Charsets.ISO_8859_1)) }
-            port in TLS -> {
-                val names = tls.certNames(ip, real)
-                if (names == null) null
-                else ServiceInfo("HTTPS", detail = names.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "cert $it" },
-                    confidence = Confidence.CONFIRMED)
+            port in TLS -> tls.certInfo(ip, real)?.let { c ->
+                ServiceInfo("HTTPS", detail = c.names.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "cert $it" },
+                    confidence = Confidence.CONFIRMED, certCn = c.cn, certOrg = c.org)
             }
             else -> reader.read(ip, real)?.let { BannerParsers.classifyUnknown(it, baseName) }
         }

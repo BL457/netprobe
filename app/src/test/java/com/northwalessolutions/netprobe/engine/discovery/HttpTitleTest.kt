@@ -98,4 +98,10 @@ class HttpTitleTest {
         val closed = ServerSocket(0).also { it.close() }.localPort
         assertNull(HttpTitleFetcher(timeoutMs = 500).fetch(lo, closed, tls = false))
     }
+
+    @Test fun `reads x powered by`() = runBlocking {
+        val p = serve { "HTTP/1.1 200 OK\r\nServer: Microsoft-IIS/10.0\r\nX-Powered-By: ASP.NET\r\nContent-Length: 0\r\n\r\n" }
+        val r = HttpTitleFetcher().fetch(lo, p, tls = false)!!
+        assertEquals("ASP.NET", r.poweredBy); assertEquals("Microsoft-IIS/10.0", r.server)
+    }
 }

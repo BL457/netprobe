@@ -59,16 +59,17 @@ class ServiceIdentifierTest {
         assertEquals("vsFTPd", s.product); assertEquals("3.0.5", s.version)
     }
 
-    private fun tlsIdent(port: Int, names: List<String>?) = runBlocking {
-        val peek = object : TlsPeek() { override suspend fun certNames(ip: InetAddress, port: Int, timeoutMs: Int) = names }
+    private fun tlsIdent(port: Int, info: CertInfo?) = runBlocking {
+        val peek = object : TlsPeek() { override suspend fun certInfo(ip: InetAddress, port: Int, timeoutMs: Int) = info }
         ServiceIdentifier(table, BannerReader(timeoutMs = 800), peek).identify(lo, port)
     }
     @Test fun `tls failure keeps port table name`() {
         val s = tlsIdent(8006, null)
         assertEquals("Proxmox", s.name); assertEquals(Confidence.PORT_TABLE, s.confidence)
     }
-    @Test fun `tls cert names confirm https`() {
-        val s = tlsIdent(443, listOf("router.lan"))
+    @Test fun `tls cert names confirm https and carry cn and o`() {
+        val s = tlsIdent(443, CertInfo("router.lan", "Ubiquiti Inc.", listOf("router.lan")))
         assertEquals("HTTPS", s.name); assertEquals(Confidence.CONFIRMED, s.confidence); assertTrue(s.detail!!.contains("router.lan"))
+        assertEquals("router.lan", s.certCn); assertEquals("Ubiquiti Inc.", s.certOrg)
     }
 }

@@ -1,10 +1,9 @@
 package com.northwalessolutions.netprobe.engine.discovery
 
 import com.northwalessolutions.netprobe.engine.common.SocketBinder
+import com.northwalessolutions.netprobe.engine.common.closeOnCancel
 import com.northwalessolutions.netprobe.engine.common.currentBinder
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -12,9 +11,10 @@ import java.net.Inet4Address
 import java.net.Proxy
 import java.net.URL
 import java.security.cert.X509Certificate
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.*
 
-data class HttpPeek(val title: String?, val server: String?, val authRealm: String?, val status: Int)
+data class HttpPeek(val title: String?, val server: String?, val authRealm: String?, val status: Int, val poweredBy: String? = null)
 
 object HttpTitleParser {
     private const val MAX_TITLE_CHARS = 120
@@ -35,12 +35,14 @@ object HttpTitleParser {
         wwwAuthenticate?.let { realmRe.find(it)?.groupValues?.get(1)?.trim() }
 }
 
-class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBytes: Int = 65536) {
+/** Open so the probe-ladder tests can fake the GET (Task 5). */
+open class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBytes: Int = 65536) {
     private companion object {
         const val READ_BUFFER_BYTES = 8192
         const val HTTP_REDIRECT_MIN = 300
         const val HTTP_REDIRECT_MAX = 399
         const val HTTP_ERROR_MIN = 400
+        const val MAX_HEADER_CHARS = 120
     }
 
     // Trust-all is used ONLY to read the page for identification; nothing sensitive is sent.
@@ -51,19 +53,22 @@ class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBytes: 
             override fun getAcceptedIssuers() = arrayOf<X509Certificate>() }), null) }.socketFactory
     }
 
-    suspend fun fetch(ip: Inet4Address, port: Int, tls: Boolean): HttpPeek? {
+    open suspend fun fetch(ip: Inet4Address, port: Int, tls: Boolean): HttpPeek? {
         val binder = currentBinder()
+        val live = AtomicReference<HttpURLConnection?>(null)
         return try {
-            runInterruptible(Dispatchers.IO) { fetchBlocking(ip, port, tls, binder) }
+            // A blocking read ignores interrupts on Android: Stop disconnects the live connection instead (spec 2.2.5).
+            closeOnCancel({ live.get()?.disconnect() }) { fetchBlocking(ip, port, tls, binder, live) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     }
 
-    private fun fetchBlocking(ip: Inet4Address, port: Int, tls: Boolean, binder: SocketBinder?): HttpPeek {
+    private fun fetchBlocking(ip: Inet4Address, port: Int, tls: Boolean, binder: SocketBinder?, live: AtomicReference<HttpURLConnection?>): HttpPeek {
         var url = URL(if (tls) "https" else "http", ip.hostAddress, port, "/")
         var hops = 0
         while (true) {
             // NO_PROXY: a LAN fetch must never be handed to a Wi-Fi proxy or PAC outside the network; bound to Wi-Fi in the extended phase.
             val c = (binder?.openConnection(url) ?: url.openConnection(Proxy.NO_PROXY)) as HttpURLConnection
+            live.set(c)
             try {
                 if (c is HttpsURLConnection) { c.sslSocketFactory = trustAll; c.hostnameVerifier = HostnameVerifier { _, _ -> true } }
                 c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false
@@ -92,7 +97,8 @@ class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBytes: 
                     // keep whatever bytes arrived
                 }
                 val html = String(bytes.toByteArray(), Charsets.UTF_8)
-                return HttpPeek(HttpTitleParser.title(html), c.getHeaderField("Server"), HttpTitleParser.realm(c.getHeaderField("WWW-Authenticate")), status)
+                return HttpPeek(HttpTitleParser.title(html), c.getHeaderField("Server"), HttpTitleParser.realm(c.getHeaderField("WWW-Authenticate")), status,
+                    c.getHeaderField("X-Powered-By")?.trim()?.take(MAX_HEADER_CHARS)?.ifEmpty { null })
             } finally {
                 c.disconnect()
             }

@@ -23,6 +23,10 @@ class ServiceMergeTest {
         val m = ServiceMerge.merge(stored, ServiceInfo("UPnP", confidence = Confidence.PORT_TABLE))
         assertEquals(stored, m)
     }
+    @Test fun `a confirmed name replaces a port table name and keeps the stored title`() {
+        val m = ServiceMerge.merge(ServiceInfo("UPnP", confidence = Confidence.PORT_TABLE, title = "x"), ServiceInfo("HTTP", confidence = Confidence.CONFIRMED))
+        assertEquals("HTTP", m.name); assertEquals(Confidence.CONFIRMED, m.confidence); assertEquals("x", m.title)
+    }
     @Test fun `a new confirmed name replaces an old one`() {
         val m = ServiceMerge.merge(stored, ServiceInfo("HTTPS", confidence = Confidence.CONFIRMED, certCn = "nas.lan", certOrg = "Synology Inc."))
         assertEquals("HTTPS", m.name); assertEquals("nas.lan", m.certCn); assertEquals("Synology Inc.", m.certOrg); assertEquals("DiskStation", m.title)
