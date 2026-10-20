@@ -1,5 +1,8 @@
 package com.northwalessolutions.netprobe.engine.discovery
 
+import com.northwalessolutions.netprobe.engine.common.BindFailedException
+import com.northwalessolutions.netprobe.engine.common.bindOrFail
+import com.northwalessolutions.netprobe.engine.common.currentBinder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
@@ -79,15 +82,17 @@ object Snmp {
     }
 
     suspend fun query(ip: Inet4Address, timeoutMs: Int = 1000): SnmpInfo? {
+        val binder = currentBinder()
         return try {
             runInterruptible(Dispatchers.IO) {
                 DatagramSocket().use { s ->
+                    binder?.bindOrFail(s)
                     s.soTimeout = timeoutMs
                     val req = buildGet(); s.send(DatagramPacket(req, req.size, ip, 161))
                     val buf = ByteArray(4096); val p = DatagramPacket(buf, buf.size); s.receive(p)
                     parseResponse(buf.copyOf(p.length))
                 }
             }
-        } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        } catch (e: CancellationException) { throw e } catch (e: BindFailedException) { throw e } catch (_: Exception) { null }
     }
 }

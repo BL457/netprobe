@@ -1,5 +1,7 @@
 package com.northwalessolutions.netprobe.engine.discovery
 
+import com.northwalessolutions.netprobe.engine.common.SocketBinder
+import com.northwalessolutions.netprobe.engine.common.currentBinder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
@@ -50,17 +52,18 @@ class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBytes: 
     }
 
     suspend fun fetch(ip: Inet4Address, port: Int, tls: Boolean): HttpPeek? {
+        val binder = currentBinder()
         return try {
-            runInterruptible(Dispatchers.IO) { fetchBlocking(ip, port, tls) }
+            runInterruptible(Dispatchers.IO) { fetchBlocking(ip, port, tls, binder) }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
     }
 
-    private fun fetchBlocking(ip: Inet4Address, port: Int, tls: Boolean): HttpPeek {
+    private fun fetchBlocking(ip: Inet4Address, port: Int, tls: Boolean, binder: SocketBinder?): HttpPeek {
         var url = URL(if (tls) "https" else "http", ip.hostAddress, port, "/")
         var hops = 0
         while (true) {
-            // NO_PROXY: a LAN fetch must never be handed to a Wi-Fi proxy or PAC outside the network.
-            val c = url.openConnection(Proxy.NO_PROXY) as HttpURLConnection
+            // NO_PROXY: a LAN fetch must never be handed to a Wi-Fi proxy or PAC outside the network; bound to Wi-Fi in the extended phase.
+            val c = (binder?.openConnection(url) ?: url.openConnection(Proxy.NO_PROXY)) as HttpURLConnection
             try {
                 if (c is HttpsURLConnection) { c.sslSocketFactory = trustAll; c.hostnameVerifier = HostnameVerifier { _, _ -> true } }
                 c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false

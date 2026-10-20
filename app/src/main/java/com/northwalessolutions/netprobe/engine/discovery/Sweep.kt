@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.engine.discovery
 
+import com.northwalessolutions.netprobe.engine.common.BindFailedException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Semaphore
@@ -27,6 +28,7 @@ open class Sweep(
                         val l = prober.probe(ip)
                         if (l.alive) send(l)
                     } catch (e: CancellationException) { throw e
+                    } catch (e: BindFailedException) { throw e      // the network cannot be used: end the sweep, do not count a dead host
                     } catch (_: Exception) { /* a single host failing never stops the sweep */
                     } finally {
                         synchronized(this@Sweep) { probed++; _progress.value = probed to list.size }

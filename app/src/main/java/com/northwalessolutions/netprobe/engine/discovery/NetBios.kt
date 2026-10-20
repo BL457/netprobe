@@ -1,5 +1,8 @@
 package com.northwalessolutions.netprobe.engine.discovery
 
+import com.northwalessolutions.netprobe.engine.common.BindFailedException
+import com.northwalessolutions.netprobe.engine.common.bindOrFail
+import com.northwalessolutions.netprobe.engine.common.currentBinder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
@@ -59,16 +62,20 @@ object NetBios {
         } catch (_: Exception) { null }
     }
 
-    suspend fun query(ip: Inet4Address, timeoutMs: Int = 1000): NetBiosInfo? = try {
-        runInterruptible(Dispatchers.IO) {
-            DatagramSocket().use { s ->
-                s.soTimeout = timeoutMs
-                val req = buildNodeStatusRequest()
-                s.send(DatagramPacket(req, req.size, ip, NBNS_PORT))
-                val buf = ByteArray(RECV_BUFFER_SIZE); val p = DatagramPacket(buf, buf.size)
-                s.receive(p)
-                parseNodeStatus(buf.copyOf(p.length))
+    suspend fun query(ip: Inet4Address, timeoutMs: Int = 1000): NetBiosInfo? {
+        val binder = currentBinder()   // set only for extra-range hosts in the extended phase
+        return try {
+            runInterruptible(Dispatchers.IO) {
+                DatagramSocket().use { s ->
+                    binder?.bindOrFail(s)
+                    s.soTimeout = timeoutMs
+                    val req = buildNodeStatusRequest()
+                    s.send(DatagramPacket(req, req.size, ip, NBNS_PORT))
+                    val buf = ByteArray(RECV_BUFFER_SIZE); val p = DatagramPacket(buf, buf.size)
+                    s.receive(p)
+                    parseNodeStatus(buf.copyOf(p.length))
+                }
             }
-        }
-    } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        } catch (e: CancellationException) { throw e } catch (e: BindFailedException) { throw e } catch (_: Exception) { null }
+    }
 }

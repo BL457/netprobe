@@ -24,8 +24,11 @@ object Probe {
      * Must be called from a background dispatcher; the engines call it from their limitedParallelism view.
      * Do not put Dispatchers.IO inside this function: that would funnel the 128-wide scan onto the 64-thread IO pool.
      */
-    suspend fun connect(ip: InetAddress, port: Int, timeoutMs: Int, keepOpen: Boolean = false): Outcome = coroutineScope {
+    suspend fun connect(ip: InetAddress, port: Int, timeoutMs: Int, keepOpen: Boolean = false, binder: SocketBinder? = null): Outcome = coroutineScope {
         val socket = Socket()
+        // Bound before connect; a bind failure is thrown, never classified as Timeout (extended spec 5.5).
+        val route = binder ?: currentBinder()
+        if (route != null) try { route.bindOrFail(socket) } catch (e: BindFailedException) { socket.close(); throw e }
         val finished = java.util.concurrent.atomic.AtomicBoolean(false)
         // A blocking connect is not interruptible; close() from another coroutine unblocks it (spec 5.3).
         val closer = launch(Dispatchers.Unconfined, start = CoroutineStart.UNDISPATCHED) {

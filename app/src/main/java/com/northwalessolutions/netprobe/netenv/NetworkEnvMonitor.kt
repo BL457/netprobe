@@ -1,6 +1,8 @@
 package com.northwalessolutions.netprobe.netenv
 
 import android.content.Context
+import com.northwalessolutions.netprobe.engine.common.NetworkBinder
+import com.northwalessolutions.netprobe.engine.common.SocketBinder
 import android.net.*
 import android.net.wifi.WifiManager
 import kotlinx.coroutines.channels.awaitClose
@@ -41,6 +43,16 @@ class NetworkEnvMonitor(private val context: Context) {
         }
         return candidates.firstNotNullOfOrNull { NetworkEnvMapper.map(it) }
     }
+
+    /** The Wi-Fi or Ethernet Network that carries [env]; never a VPN. Null means the extended phase must be skipped. */
+    @Suppress("DEPRECATION")
+    fun binderFor(env: NetworkEnv): SocketBinder? = cm.allNetworks.firstOrNull { n ->
+        val nc = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+        val lp = cm.getLinkProperties(n) ?: return@firstOrNull false
+        !nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+            (nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || nc.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) &&
+            lp.linkAddresses.any { it.address == env.interfaceIp }
+    }?.let { NetworkBinder(it) }
 
     private fun snapshot(nc: NetworkCapabilities, lp: LinkProperties): LinkSnapshot {
         @Suppress("DEPRECATION") val info = runCatching { wifi.connectionInfo }.getOrNull()
