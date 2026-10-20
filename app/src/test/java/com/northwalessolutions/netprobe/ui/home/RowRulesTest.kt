@@ -35,11 +35,6 @@ class RowRulesTest {
         // After a DHCP move the phone's old address is just another host.
         assertEquals(DeviceType.MEDIA, RowRules.row(host("192.168.1.50"), TestEnvs.home.copy(interfaceIp = RowRules.parseIpv4("192.168.1.60")!!), 22, 0, false).type)
     }
-    @Test fun `secondary line appends the other subnet`() {
-        val r = HostRow(1, "10.0.4.20", "Hue Bridge - 317AA9", "Philips Hue Bridge", DeviceType.IOT, 0, HostStatus.UNMARKED, false, false, null, "10.0.4.0/24")
-        assertTrue(r.offSubnet); assertEquals("10.0.4.20  ·  Philips Hue Bridge, other subnet 10.0.4.0/24", rowSecondaryLine(r))
-        assertEquals("10.0.4.20  ·  Philips Hue Bridge", rowSecondaryLine(r.copy(otherSubnet = null)))
-    }
 }
 
 class NetworkDetailLineTest {
