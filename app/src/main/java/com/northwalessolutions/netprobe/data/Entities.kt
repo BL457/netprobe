@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.data
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
@@ -44,3 +45,24 @@ data class PortEntity(
 
 @Entity(tableName = "vuln_cache")
 data class VulnCacheEntity(@PrimaryKey val query: String, val json: String, val fetchedAt: Long)
+
+/** A tool run's lifecycle (spec 7.1); Room stores it as TEXT by its name, as HostStatus does. */
+enum class ToolRunStatus { RUNNING, DONE, STOPPED, FAILED, INTERRUPTED }
+
+/** One follow-up tool run on one port of one host (spec 7.1). [port] is the target port, 161 for the SNMP walk. */
+@Entity(tableName = "tool_runs",
+    foreignKeys = [ForeignKey(entity = HostEntity::class, parentColumns = ["id"], childColumns = ["hostId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("hostId", "toolId", "port", "startedAt")])
+data class ToolRunEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0, val hostId: Long, val toolId: String, val port: Int,
+    val startedAt: Long, val finishedAt: Long?, val status: ToolRunStatus, val optionsJson: String, val summary: String,
+)
+
+/** One finding of a run (spec 7.1). [kind] is TEXT, parsed leniently; [extra] is a JSON object or null. */
+@Entity(tableName = "tool_findings",
+    foreignKeys = [ForeignKey(entity = ToolRunEntity::class, parentColumns = ["id"], childColumns = ["runId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("runId")])
+data class ToolFindingEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0, val runId: Long, val kind: String,
+    val value: String, val detail: String?, val extra: String?,
+)

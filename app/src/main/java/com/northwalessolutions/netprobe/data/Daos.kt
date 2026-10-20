@@ -67,3 +67,9 @@ data class PortCount(val hostId: Long, val n: Int)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun put(e: VulnCacheEntity)
     @Query("DELETE FROM vuln_cache") suspend fun clear()
 }
+
+/** Minimal stub so NetProbeDb.tools() compiles and KSP exports the tool tables; replaced wholesale in Task 2. */
+@Dao interface ToolDao {
+    @Insert suspend fun insertRun(r: ToolRunEntity): Long
+    @Insert suspend fun insertFinding(f: ToolFindingEntity): Long
+}

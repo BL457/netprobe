@@ -49,4 +49,28 @@ class SchemaExportTest {
         }
         assertEquals(v1.getValue("vuln_cache").keys, v2.getValue("vuln_cache").keys)
     }
+    @Test fun `version 3 is exported`() {
+        assertEquals(3, root(3)["database"]!!.jsonObject["version"]!!.jsonPrimitive.int)
+    }
+    @Test fun `version 3 keeps every version 2 table and column unchanged`() {
+        val v2 = columns(2); val v3 = columns(3)
+        for ((table, cols) in v2) {
+            val now = v3[table]
+            assertNotNull("table $table was dropped", now)
+            for ((name, field) in cols) {
+                val col = now!![name]
+                assertNotNull("$table.$name was dropped", col)
+                assertEquals("$table.$name affinity", field["affinity"], col!!["affinity"])
+                assertEquals("$table.$name notNull", field["notNull"], col["notNull"])
+            }
+        }
+    }
+    @Test fun `version 3 adds exactly tool_runs and tool_findings`() {
+        val v2 = columns(2); val v3 = columns(3)
+        assertEquals(setOf("tool_runs", "tool_findings"), v3.keys - v2.keys)
+        assertEquals(setOf("id", "hostId", "toolId", "port", "startedAt", "finishedAt", "status", "optionsJson", "summary"), v3.getValue("tool_runs").keys)
+        assertEquals(setOf("id", "runId", "kind", "value", "detail", "extra"), v3.getValue("tool_findings").keys)
+        assertEquals("INTEGER", v3.getValue("tool_runs").getValue("port")["affinity"]!!.jsonPrimitive.content)
+        assertTrue("port is NOT NULL", v3.getValue("tool_runs").getValue("port")["notNull"]!!.jsonPrimitive.boolean)
+    }
 }
