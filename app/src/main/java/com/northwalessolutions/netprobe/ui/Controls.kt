@@ -41,6 +41,7 @@ import com.northwalessolutions.netprobe.ui.theme.DISABLED_ALPHA
 import com.northwalessolutions.netprobe.ui.theme.Dimens
 import com.northwalessolutions.netprobe.ui.theme.LocalReducedMotion
 import com.northwalessolutions.netprobe.ui.theme.Motion
+import com.northwalessolutions.netprobe.ui.theme.motionSpec
 import com.northwalessolutions.netprobe.ui.theme.NetProbeColors
 import com.northwalessolutions.netprobe.ui.theme.NetProbeText
 
@@ -82,8 +83,8 @@ private val CONTROL_INSET = 4.dp
 fun ScanPill(scanning: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val reduced = LocalReducedMotion.current
     val active = enabled || scanning
-    val floatSpec: AnimationSpec<Float> = if (reduced) snap() else tween(Motion.PILL_MORPH_MS, easing = FastOutSlowInEasing)
-    val colorSpec: AnimationSpec<Color> = if (reduced) snap() else tween(Motion.PILL_MORPH_MS, easing = FastOutSlowInEasing)
+    val floatSpec: AnimationSpec<Float> = motionSpec(reduced, Motion.PILL_MORPH_MS)
+    val colorSpec: AnimationSpec<Color> = motionSpec(reduced, Motion.PILL_MORPH_MS)
     val fill by animateFloatAsState(if (scanning) 0f else 1f, floatSpec, label = "pillFill")
     val outline by animateFloatAsState(if (scanning) 1f else 0f, floatSpec, label = "pillOutline")
     val labelColor by animateColorAsState(if (scanning) NetProbeColors.signal else NetProbeColors.background, colorSpec, label = "pillLabel")
@@ -130,7 +131,7 @@ private val SEGMENT_TEXT_PAD = 2.dp
 fun PinnedSegmented(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, activeFill: Color, activeText: Color,
                     modifier: Modifier = Modifier, enabled: Boolean = true, activeWeight: FontWeight = FontWeight.W400) {
     val reduced = LocalReducedMotion.current
-    val colorSpec: AnimationSpec<Color> = if (reduced) snap() else tween(Motion.SELECT_MS, easing = FastOutSlowInEasing)
+    val colorSpec: AnimationSpec<Color> = motionSpec(reduced, Motion.SELECT_MS)
     Row(modifier.heightIn(min = Dimens.touch).alpha(if (enabled) 1f else DISABLED_ALPHA).selectableGroup().drawBehind {
         val inset = CONTROL_INSET.toPx()
         drawRoundRect(NetProbeColors.border, topLeft = Offset(0f, inset), size = Size(size.width, size.height - 2 * inset),

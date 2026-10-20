@@ -1,5 +1,7 @@
 package com.northwalessolutions.netprobe.ui.detail
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -152,6 +154,7 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
             onProfile: (ScanProfile) -> Unit, onCustom: (String) -> Unit, onScan: () -> Unit) {
     // Reserved from the data style's line height, so the bar never jumps when a scan starts (about 21 dp at 1.3). The sp line height
     // alone came out 1 px short of the laid-out text on the Pixel (pixel rounding), so the measured line wins when it is taller.
+    val reduced = LocalReducedMotion.current
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val progressHeight = remember(density, measurer) {
@@ -173,8 +176,10 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
         Box(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).heightIn(min = progressHeight), contentAlignment = Alignment.CenterEnd) {
             if (scanning) Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
         }
+        val target = detailFraction(progress, identified)
+        val shown by animateFloatAsState(target, motionSpec(reduced, Motion.PROGRESS_MS, LinearEasing), label = "progress")
         Box(Modifier.fillMaxWidth().height(2.dp)) {
-            if (scanning) LinearProgressIndicator(progress = { detailFraction(progress, identified) },
+            if (scanning) LinearProgressIndicator(progress = { shown },
                 modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface,
                 gapSize = 0.dp, drawStopIndicator = {})   // a plain 2 dp line as drawn: no M3 gap or end dot
         }
@@ -185,28 +190,30 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
 /** Port row: number, service and version, one action word; long-press opens the sheet (spec 5.2). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLongPress: () -> Unit) {
+fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLongPress: () -> Unit, modifier: Modifier = Modifier) {
     val word = actionWord(schemeOf(p))
     val run = { onAction(primaryAction(ip, p)) }
     val copy = word == "Copy"
-    Row(Modifier.fillMaxWidth().combinedClickable(onClick = run, onLongClick = onLongPress, onLongClickLabel = "More actions")
-        .padding(horizontal = Dimens.gutter, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("${p.port}", style = NetProbeText.port, color = NetProbeColors.text, modifier = Modifier.width(PORT_COLUMN))
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(p.service.name, style = NetProbeText.secondary, color = NetProbeColors.text)
-            portSubLine(p.service)?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth().combinedClickable(onClick = run, onLongClick = onLongPress, onLongClickLabel = "More actions")
+            .padding(horizontal = Dimens.gutter, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${p.port}", style = NetProbeText.port, color = NetProbeColors.text, modifier = Modifier.width(PORT_COLUMN))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(p.service.name, style = NetProbeText.secondary, color = NetProbeColors.text)
+                portSubLine(p.service)?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+            Spacer(Modifier.width(10.dp))
+            // The word is its own target (not merged into the row) and long-presses exactly like the row body: a long press never runs the action.
+            Box(Modifier.sizeIn(minWidth = Dimens.touch, minHeight = Dimens.touch)
+                .combinedClickable(role = Role.Button, onClick = run, onLongClick = onLongPress, onLongClickLabel = "More actions")
+                .semantics { contentDescription = actionDescription(ip, p) }.testTag("portAction"), contentAlignment = Alignment.CenterEnd) {
+                Text(word, style = if (copy) NetProbeText.action.copy(fontWeight = FontWeight.W400) else NetProbeText.action,
+                    color = if (copy) NetProbeColors.textMuted else NetProbeColors.signal, maxLines = 1)
+            }
         }
-        Spacer(Modifier.width(10.dp))
-        // The word is its own target (not merged into the row) and long-presses exactly like the row body: a long press never runs the action.
-        Box(Modifier.sizeIn(minWidth = Dimens.touch, minHeight = Dimens.touch)
-            .combinedClickable(role = Role.Button, onClick = run, onLongClick = onLongPress, onLongClickLabel = "More actions")
-            .semantics { contentDescription = actionDescription(ip, p) }.testTag("portAction"), contentAlignment = Alignment.CenterEnd) {
-            Text(word, style = if (copy) NetProbeText.action.copy(fontWeight = FontWeight.W400) else NetProbeText.action,
-                color = if (copy) NetProbeColors.textMuted else NetProbeColors.signal, maxLines = 1)
-        }
+        HorizontalDivider(thickness = 1.dp, color = NetProbeColors.rowDivider)
     }
-    HorizontalDivider(thickness = 1.dp, color = NetProbeColors.rowDivider)
 }
 
 private val TRY_AS_CHIP_HEIGHT = 32.dp

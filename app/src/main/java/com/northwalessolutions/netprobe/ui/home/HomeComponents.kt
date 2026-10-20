@@ -1,6 +1,6 @@
 package com.northwalessolutions.netprobe.ui.home
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,6 +42,9 @@ import com.northwalessolutions.netprobe.ui.theme.*
 /** Test hooks: the edge colour of a row and the alpha a text is drawn with. Not announced by TalkBack. */
 val EdgeColorKey = SemanticsPropertyKey<Color>("EdgeColor")
 private var SemanticsPropertyReceiver.edgeColor by EdgeColorKey
+/** Test hook (spec 1.17): a row's stagger delay in ms, or -1 when it does not animate. Home rows and Detail port rows. */
+val ArrivalDelayKey = SemanticsPropertyKey<Int>("ArrivalDelay")
+var SemanticsPropertyReceiver.arrivalDelay by ArrivalDelayKey
 val TextAlphaKey = SemanticsPropertyKey<Float>("TextAlpha")
 private var SemanticsPropertyReceiver.textAlpha by TextAlphaKey
 
@@ -123,7 +126,7 @@ fun FilterRow(selected: StatusFilter, onSelect: (StatusFilter) -> Unit) {
 @Composable
 private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
     val reduced = LocalReducedMotion.current
-    val spec: AnimationSpec<Color> = if (reduced) snap() else tween(Motion.SELECT_MS, easing = FastOutSlowInEasing)
+    val spec: AnimationSpec<Color> = motionSpec(reduced, Motion.SELECT_MS)
     // Only alpha animates on the fill, so mid-fade pixels lie between the background and the selected surface (spec 1.11).
     val fill by animateColorAsState(if (selected) NetProbeColors.surface else NetProbeColors.surface.copy(alpha = 0f), spec, label = "chipFill")
     val outline by animateColorAsState(if (selected) NetProbeColors.surface else NetProbeColors.border, spec, label = "chipOutline")
@@ -161,6 +164,25 @@ fun NoticeLine(text: String, onDismiss: () -> Unit, onUndo: (() -> Unit)? = null
     }
 }
 
+data class Notice(val text: String, val undo: Boolean)
+
+/**
+ * The notice line expands and fades in over 200 ms and shrinks and fades out over 160 ms (spec 1.13); the last notice is latched so
+ * the exit animates the old words, not a blank line. A late notice therefore slides the list down instead of jumping it.
+ */
+@Composable
+fun NoticeArea(notice: Notice?, onDismiss: () -> Unit, onUndo: () -> Unit, onDismissUndo: () -> Unit) {
+    val reduced = LocalReducedMotion.current
+    var last by remember { mutableStateOf(notice) }
+    LaunchedEffect(notice) { if (notice != null) last = notice }
+    val shown = notice ?: last
+    AnimatedVisibility(visible = notice != null, modifier = Modifier.testTag("noticeArea"),
+        enter = if (reduced) EnterTransition.None else expandVertically(tween(Motion.NOTICE_IN_MS)) + fadeIn(tween(Motion.NOTICE_IN_MS)),
+        exit = if (reduced) ExitTransition.None else shrinkVertically(tween(Motion.NOTICE_OUT_MS)) + fadeOut(tween(Motion.NOTICE_OUT_MS))) {
+        shown?.let { n -> if (n.undo) NoticeLine(n.text, onDismissUndo, onUndo = onUndo) else NoticeLine(n.text, onDismiss) }
+    }
+}
+
 /** Sticky group header: caption on opaque background with a 1 dp surface rule above (spec 4.2). */
 @Composable
 fun GroupHeader(text: String) {
@@ -187,11 +209,13 @@ fun MarkChip(text: String, modifier: Modifier = Modifier) {
 /** Row anatomy (spec 4.3): edge, name with mark chip, data line, open-port count. The whole row is the click target. */
 @Composable
 fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val edge = if (own) EdgeColors.phone else r.type.edgeColor(r.isGateway)
+    val reduced = LocalReducedMotion.current
+    val edgeTarget = if (own) EdgeColors.phone else r.type.edgeColor(r.isGateway)
+    val edge by animateColorAsState(edgeTarget, motionSpec(reduced, Motion.EDGE_COLOUR_MS), label = "edge")
     val description = RowText.description(r, if (own && r.identityLine == RowRules.OWN_LINE) ownModel else null)
     val nameAlpha = if (r.stale) STALE_NAME_ALPHA else 1f
     Row(modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClick = onClick).drawnAlpha(1f)   // the row itself is never dimmed: only edge and name are (spec 4.3)
-        .semantics(mergeDescendants = true) { contentDescription = description; edgeColor = edge }.testTag("hostRow")
+        .semantics(mergeDescendants = true) { contentDescription = description; edgeColor = edgeTarget }.testTag("hostRow")
         .padding(start = Dimens.rowStart, end = Dimens.gutter, top = Dimens.rowVertical, bottom = Dimens.rowVertical),
         verticalAlignment = Alignment.CenterVertically) {
         TypeEdge(edge, r.stale)
@@ -202,8 +226,12 @@ fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit,
                     modifier = Modifier.weight(1f, fill = false).drawnAlpha(nameAlpha).testTag("rowName"))
                 if (r.status != HostStatus.UNMARKED) MarkChip(r.status.label(), Modifier.padding(start = 6.dp))
             }
-            Text(RowText.dataLine(r, if (own && r.identityLine == RowRules.OWN_LINE) ownModel else null), style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 2,
-                overflow = TextOverflow.Ellipsis, modifier = Modifier.drawnAlpha(1f).testTag("rowData"))
+            // Cross-fades when an identity improves (spec 1.14); Crossfade does not animate on first composition, so a scrolled-in row never fades.
+            Crossfade(RowText.dataLine(r, if (own && r.identityLine == RowRules.OWN_LINE) ownModel else null),
+                animationSpec = motionSpec(reduced, Motion.IDENTITY_FADE_MS), label = "rowData") { line ->
+                Text(line, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.drawnAlpha(1f).testTag("rowData"))
+            }
         }
         if (r.openPorts > 0) Text("${r.openPorts} open", style = NetProbeText.count, color = NetProbeColors.signal, textAlign = TextAlign.End,
             modifier = Modifier.padding(start = 12.dp))

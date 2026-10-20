@@ -12,6 +12,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.unit.width
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
@@ -95,11 +97,20 @@ class ControlsMotionTest {
         val nodeId = rule.onNodeWithTag("detailScanButton").fetchSemanticsNode().id
         fun profile() = rule.onNodeWithTag("profileSegments").getBoundsInRoot()
         val at0 = profile()
-        st = st.copy(scanning = true); rule.mainClock.advanceTimeByFrame()
-        rule.mainClock.advanceTimeBy(90); assertEquals("moved at 90 ms", at0, profile())
-        rule.mainClock.advanceTimeBy(20)
-        assertBetween(NetProbeColors.signal, NetProbeColors.background, pixel("detailScanButton"), "pill centre at 110 ms")
-        rule.mainClock.advanceTimeBy(110); assertEquals("moved at 220 ms", at0, profile())
+        val pillWidth = rule.onNodeWithTag("detailScanButton").getBoundsInRoot().width
+        fun checkPillBounds(at: String) {   // the morph never shrinks the touch target below 48 dp or changes its width
+            val bounds = rule.onNodeWithTag("detailScanButton").getBoundsInRoot()
+            assertTrue("pill height ${bounds.height} at $at", bounds.height >= 48.dp)
+            assertEquals("pill width at $at", pillWidth, bounds.width)
+        }
+        st = st.copy(scanning = true); rule.mainClock.advanceTimeByFrame(); checkPillBounds("start")
+        var elapsed = 0
+        while (elapsed < 90) { rule.mainClock.advanceTimeBy(FRAME_MS); elapsed += FRAME_MS.toInt(); checkPillBounds("$elapsed ms") }
+        assertEquals("moved at 90 ms", at0, profile())
+        while (elapsed < 110) { rule.mainClock.advanceTimeBy(FRAME_MS); elapsed += FRAME_MS.toInt(); checkPillBounds("$elapsed ms") }
+        assertBetween(NetProbeColors.signal, NetProbeColors.background, pixel("detailScanButton"), "pill centre at ~110 ms")
+        while (elapsed < 220) { rule.mainClock.advanceTimeBy(FRAME_MS); elapsed += FRAME_MS.toInt(); checkPillBounds("$elapsed ms") }
+        assertEquals("moved at 220 ms", at0, profile())
         assertEquals("the pill is one node throughout", nodeId, rule.onNodeWithTag("detailScanButton").fetchSemanticsNode().id)
     }
 
@@ -108,5 +119,6 @@ class ControlsMotionTest {
         const val CHANNEL_GAP = 0.02f
         const val EPS = 0.004f
         const val CLOSE = 0.02f
+        const val FRAME_MS = 10L
     }
 }

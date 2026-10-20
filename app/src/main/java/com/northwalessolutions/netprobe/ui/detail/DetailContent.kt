@@ -1,5 +1,7 @@
 package com.northwalessolutions.netprobe.ui.detail
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,15 +11,22 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.EmptyState
 import com.northwalessolutions.netprobe.ui.home.IdentityLine
+import com.northwalessolutions.netprobe.ui.home.arrivalDelay
+import com.northwalessolutions.netprobe.ui.theme.LocalReducedMotion
+import com.northwalessolutions.netprobe.ui.theme.Motion
+import com.northwalessolutions.netprobe.ui.theme.motionSpec
 import com.northwalessolutions.netprobe.ui.theme.Dimens
 import com.northwalessolutions.netprobe.ui.theme.NetProbeColors
 import com.northwalessolutions.netprobe.ui.theme.NetProbeText
@@ -34,6 +43,7 @@ data class DetailActions(
 /** All Detail layout (Radar spec section 5). PINNED: the topBar column; only `portList` scrolls. */
 @Composable
 fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false) {
+    val reduced = LocalReducedMotion.current
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
     var why by rememberSaveable { mutableStateOf(false) }
@@ -41,6 +51,10 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     var sheetPort by rememberSaveable { mutableStateOf<Int?>(null) }
     val ip = state.host?.ip.orEmpty()
     val focusManager = LocalFocusManager.current
+    // Detail port rows arrive as found (spec 1.10): the set listed when the scan starts never fades or rises.
+    var portBaseline by remember { mutableStateOf<Set<Int>?>(null) }
+    LaunchedEffect(state.scanning) { portBaseline = if (state.scanning) state.ports.map { it.port }.toSet() else null }
+    val risePx = with(LocalDensity.current) { Motion.ROW_RISE.toPx() }
     // The IME joins the content insets (as on Home): the list and the empty state end at the keyboard top. A separate imePadding
     // on the list counted the navigation bar twice and left a 48 dp gap above the keyboard on the Pixel.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
@@ -49,7 +63,11 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
                     DetailName(state.displayName) { editing = true }
-                    identityWithType(IdentityLine.of(h), Effective.type(h))?.let { IdentityText(it, state.displayName) { editing = true } }
+                    identityWithType(IdentityLine.of(h), Effective.type(h))?.let { line ->
+                        Crossfade(line, animationSpec = motionSpec(reduced, Motion.IDENTITY_FADE_MS), label = "identity") {
+                            IdentityText(it, state.displayName) { editing = true }
+                        }
+                    }
                     Text(listOfNotNull(h.ip, h.mac).joinToString("  "), style = NetProbeText.data, color = NetProbeColors.textMuted)
                     SoftwareChips(softwareLabels(h))
                     DetailLinks(onWhy = { why = true }, onVulns = actions.onDeviceVulns)
@@ -66,7 +84,19 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
         else LazyColumn(Modifier.padding(pad).fillMaxSize()
             .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }   // a tap outside the note field collapses the note; rows consume their own taps
             .testTag("portList")) {
-            items(state.ports, key = { it.port }) { p -> PortRowItem(ip, p, onAction = actions.onAction, onLongPress = { sheetPort = p.port }) }
+            items(state.ports, key = { it.port }) { p ->
+                val base = portBaseline
+                val arriving = !reduced && base != null && p.port !in base
+                val rise = remember(p.port) { Animatable(if (arriving) 1f else 0f) }
+                LaunchedEffect(p.port) { if (rise.value > 0f) rise.animateTo(0f, tween(Motion.PORT_ROW_MS, easing = FastOutSlowInEasing)) }
+                // While a scan runs every row gets the placement spec, so rows below a new port slide down instead of jumping
+                // (spec 9.2 test 8); only the new row fades and rises.
+                val itemModifier = if (reduced || base == null) Modifier else Modifier.animateItem(
+                    fadeInSpec = if (arriving) tween(Motion.PORT_ROW_MS) else null,
+                    placementSpec = tween(Motion.PORT_ROW_MS, easing = FastOutSlowInEasing), fadeOutSpec = null)
+                PortRowItem(ip, p, onAction = actions.onAction, onLongPress = { sheetPort = p.port },
+                    modifier = itemModifier.graphicsLayer { translationY = rise.value * risePx }.semantics { arrivalDelay = if (arriving) 0 else -1 })
+            }
         }
     }
     if (why) state.host?.let { ReasonsSheet(it) { why = false } }

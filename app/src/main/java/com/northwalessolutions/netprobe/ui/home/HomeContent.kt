@@ -13,11 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.ui.EmptyState
 import com.northwalessolutions.netprobe.ui.theme.*
+import kotlinx.coroutines.delay
 
 data class HomeActions(
     val onScan: () -> Unit = {}, val onStop: () -> Unit = {}, val onOpenHost: (Long) -> Unit = {}, val onDismissMessage: () -> Unit = {},
@@ -63,10 +65,12 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
                 heroSubnet = localSubnet, quickScanning = state.quickScanning, onStopQuick = actions.onStopQuickScan,
                 scanCompleted = state.scanCompleted, onBusyChange = { radarBusy = it })
             // While an Undo is pending it takes the notice line; an earlier notice was not dismissed and shows again afterwards (spec 5.3).
-            when {
-                state.undoText != null -> NoticeLine(state.undoText, actions.onDismissUndo, onUndo = actions.onUndo)
-                state.message != null -> NoticeLine(state.message, actions.onDismissMessage)
+            val notice = when {
+                state.undoText != null -> Notice(state.undoText, undo = true)
+                state.message != null -> Notice(state.message, undo = false)
+                else -> null
             }
+            NoticeArea(notice, actions.onDismissMessage, actions.onUndo, actions.onDismissUndo)
             if (HeaderRules.showFilters(mode, state.filter, state.query)) {
                 FilterRow(state.filter, actions.onFilter)
                 SearchField(state.query, actions.onQuery)
@@ -92,18 +96,25 @@ private fun DeviceList(groups: List<HostGroup>, state: HomeUiState, actions: Hom
     // Rows present when the scan began never animate; nor do initial load, filter changes or returning to the screen (spec 3.6).
     var baseline by remember { mutableStateOf<Set<Long>?>(null) }
     LaunchedEffect(state.scanning) { baseline = if (state.scanning) state.rows.map { it.id }.toSet() else null }
+    // Rows landing in the same emission start 40 ms apart, capped at 200 ms (spec 1.8); a row keeps its delay for the scan.
+    val known = remember { HashMap<Long, Int>() }
+    val delays: Map<Long, Int> = remember(state.rows, baseline, reduced) {
+        val b = baseline
+        if (b == null || reduced) { known.clear(); emptyMap() }
+        else { known.putAll(RowStagger.delays(state.rows.map { it.id }.filter { it !in b && it !in known })); HashMap(known) }
+    }
     val risePx = with(LocalDensity.current) { Motion.ROW_RISE.toPx() }
     LazyColumn(Modifier.fillMaxSize().testTag("deviceList")) {
         groups.forEach { g ->
             stickyHeader(key = "header:${g.subnet}:${g.local}") { GroupHeader(GroupHeaders.text(g.subnet, g.local)) }
             items(g.rows, key = { it.id }) { r ->
-                val arriving = !reduced && baseline?.let { r.id !in it } == true
-                val rise = remember(r.id) { Animatable(if (arriving) 1f else 0f) }
-                LaunchedEffect(r.id) { if (rise.value > 0f) rise.animateTo(0f, tween(Motion.ROW_ARRIVAL_MS, easing = Motion.rowEasing)) }
-                val itemModifier = if (arriving) Modifier.animateItem(fadeInSpec = tween(Motion.ROW_ARRIVAL_MS, easing = Motion.rowEasing),
+                val wait = delays[r.id]
+                val rise = remember(r.id) { Animatable(if (wait != null) 1f else 0f) }
+                LaunchedEffect(r.id) { if (rise.value > 0f) { delay((wait ?: 0).toLong()); rise.animateTo(0f, tween(Motion.ROW_ARRIVAL_MS, easing = Motion.rowEasing)) } }
+                val itemModifier = if (wait != null) Modifier.animateItem(fadeInSpec = tween(Motion.ROW_ARRIVAL_MS, delayMillis = wait, easing = Motion.rowEasing),
                     placementSpec = null, fadeOutSpec = null) else Modifier
                 HostRowItem(r, own = RowRules.isOwn(r.ip, state.env), ownModel = ownModel, onClick = { actions.onOpenHost(r.id) },
-                    modifier = itemModifier.graphicsLayer { translationY = rise.value * risePx })
+                    modifier = itemModifier.graphicsLayer { translationY = rise.value * risePx }.semantics { arrivalDelay = wait ?: -1 })
             }
         }
     }

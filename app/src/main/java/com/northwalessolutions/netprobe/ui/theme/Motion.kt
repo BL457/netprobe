@@ -4,6 +4,10 @@ import android.content.Context
 import android.provider.Settings
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Spring
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
@@ -64,6 +68,10 @@ object Motion {
     const val EDGE_COLOUR_MS = 300
     const val PROGRESS_MS = 250
 }
+
+/** The one place the reduced-motion rule lives: instant under reduced motion, else a [ms] tween. */
+fun <T> motionSpec(reduced: Boolean, ms: Int, easing: Easing = FastOutSlowInEasing): FiniteAnimationSpec<T> =
+    if (reduced) snap() else tween(ms, easing = easing)
 
 /** Provided by NetProbeTheme; tests override it without touching system settings (spec 3.7). */
 val LocalReducedMotion = compositionLocalOf { false }
