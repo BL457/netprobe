@@ -71,7 +71,7 @@ class ExtendedSectionTest {
         show(cap = 2)
         rule.onAllNodesWithText("Beyond cap, will be skipped").assertCountEquals(1)
         rule.onNodeWithContentDescription("More ranges").performClick()
-        rule.onNodeWithText("At most 3 extra /24 networks (about 2 minutes)").assertIsDisplayed()
+        rule.onNodeWithText("At most 3 extra /24 networks (about 1 minute)").assertIsDisplayed()
         rule.onAllNodesWithText("Beyond cap, will be skipped").assertCountEquals(0)
     }
 }

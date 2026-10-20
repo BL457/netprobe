@@ -5,10 +5,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ExtendedCopyTest {
-    @Test fun `live cap line uses 25 s per range`() {
+    @Test fun `live cap line uses 16 s per range, measured on the Pixel 7 Pro`() {
         assertEquals("At most 1 extra /24 network (about 1 minute)", ExtendedCopy.capLine(1))
         assertEquals("At most 4 extra /24 networks (about 2 minutes)", ExtendedCopy.capLine(4))
-        assertEquals("At most 16 extra /24 networks (about 7 minutes)", ExtendedCopy.capLine(16))
+        assertEquals("At most 3 extra /24 networks (about 1 minute)", ExtendedCopy.capLine(3))
+        assertEquals("At most 16 extra /24 networks (about 5 minutes)", ExtendedCopy.capLine(16))
     }
     @Test fun `entries beyond the cap are marked by their slash 24 units`() {
         val list = listOf("10.0.4.0/24", "10.0.8.0/23", "10.0.20.0/24").map { CidrParser.subnetOf(it)!! }

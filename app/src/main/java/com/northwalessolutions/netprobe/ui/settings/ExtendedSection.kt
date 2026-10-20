@@ -37,7 +37,7 @@ object ExtendedCopy {
     const val NO_NETWORK = "Connect to a network to edit its ranges"
     const val BEYOND_CAP = "Beyond cap, will be skipped"
     const val ADD = "Add range"
-    const val SECONDS_PER_RANGE = 25
+    const val SECONDS_PER_RANGE = 16   // measured on the Pixel 7 Pro (Task 20 check 11): 13.7 to 16.2 s per /24, mean 15.5 s
     private const val SECONDS_PER_MINUTE = 60.0
     fun capLine(n: Int): String {
         val minutes = ceil(n * SECONDS_PER_RANGE / SECONDS_PER_MINUTE).toInt()
