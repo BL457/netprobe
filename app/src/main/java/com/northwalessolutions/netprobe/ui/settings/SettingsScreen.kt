@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.data.SettingsState
+import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.npFieldColors
@@ -65,6 +66,15 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit) {
             Text("Largest network to sweep. Bigger networks are cut down to your own /24 unless widened here.", style = NetProbeText.data, color = NetProbeColors.textMuted)
             PinnedSegmented(PREFIX_OPTIONS.map { "/$it" }, PREFIX_OPTIONS.indexOf(s.maxPrefix), { i -> update { it.copy(maxPrefix = PREFIX_OPTIONS[i]) } },
                 activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, modifier = Modifier.fillMaxWidth())
+
+            Section("Extended discovery")
+            val network by container.currentNetwork.collectAsStateWithLifecycle()
+            val revision by container.settings.manual.revision.collectAsStateWithLifecycle()
+            val manual = remember(network?.id, revision) { container.settings.manual.forNetwork(network?.id) }
+            val local = remember(s.maxPrefix) { container.networkEnvMonitor.current()?.let { SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, s.maxPrefix).subnet } }
+            ExtendedSection(s, update, networkName = network?.displayName, manual = manual, local = local) { list ->
+                network?.id?.let { container.settings.manual.set(it, list) }
+            }
 
             Section("Permissions")
             LocationPermissionRow()
