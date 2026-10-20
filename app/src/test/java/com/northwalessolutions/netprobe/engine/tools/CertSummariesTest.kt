@@ -74,4 +74,15 @@ class CertSummariesTest {
         assertEquals("a b c", CertSummaries.clean("a\u0000 b\u001B\n c"))
         assertEquals(CertSummaries.MAX_TEXT, CertSummaries.clean("x".repeat(5000)).length)
     }
+    @Test fun `format characters are dropped and a dangling surrogate is trimmed`() {
+        assertEquals("ab", CertSummaries.clean("a‮b​"))
+        val capped = CertSummaries.clean("x".repeat(CertSummaries.MAX_TEXT - 1) + "😀")
+        assertEquals(CertSummaries.MAX_TEXT - 1, capped.length)
+        assertFalse(capped.last().isHighSurrogate())
+    }
+    @Test fun `alternative names are capped with an and N more row`() {
+        // A 60-name certificate would need another fixture; the cap is pinned through the constant and the copy.
+        assertEquals(50, CertSummaries.MAX_SANS)
+        assertEquals("and 10 more", com.northwalessolutions.netprobe.ui.tools.ToolCopy.andMore(10))
+    }
 }

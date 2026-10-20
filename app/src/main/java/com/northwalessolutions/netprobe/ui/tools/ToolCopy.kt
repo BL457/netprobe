@@ -195,6 +195,7 @@ object ToolCopy {
     fun keyEc(bits: Int) = "EC $bits bit"
     fun keyDsa(bits: Int) = "DSA $bits bit"
     fun chainCertificate(n: Int, m: Int) = "Chain certificate $n of $m"
+    fun andMore(n: Int) = "and $n more"
 
     // SMB details (6.3)
     const val DIALECT = "Dialect"; const val SIGNING = "Signing"; const val REQUIRED = "Required"; const val ENABLED_NOT_REQUIRED = "Enabled, not required"

@@ -3,13 +3,13 @@ package com.northwalessolutions.netprobe.engine.serviceid
 import com.northwalessolutions.netprobe.engine.common.CancellableIo
 import com.northwalessolutions.netprobe.engine.common.HttpClient
 import com.northwalessolutions.netprobe.engine.common.Probe
+import com.northwalessolutions.netprobe.engine.common.TlsFailures
 import com.northwalessolutions.netprobe.engine.common.bindOrFail
 import com.northwalessolutions.netprobe.engine.common.closeOnCancel
 import com.northwalessolutions.netprobe.engine.common.currentBinder
 import kotlinx.coroutines.CancellationException
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.SocketTimeoutException
 import java.security.cert.X509Certificate
 import javax.net.ssl.*
 
@@ -76,9 +76,9 @@ open class TlsPeek {
                 if (chain.isEmpty()) Attempt.HandshakeFailed else Attempt.Done(TlsDetails(s.session.protocol, s.session.cipherSuite, chain, serverName))
             }
         } catch (e: CancellationException) { throw e
-        } catch (_: SocketTimeoutException) { Attempt.NoConnection
-        } catch (_: SSLException) { Attempt.HandshakeFailed
-        } catch (_: Exception) { Attempt.NoConnection
+        } catch (e: Exception) {
+            // A timeout or a reset anywhere in the cause chain (providers wrap them in an SSLException) is a dead host, never retried.
+            if (!TlsFailures.isTimeout(e) && !TlsFailures.isReset(e) && TlsFailures.isSslFailure(e)) Attempt.HandshakeFailed else Attempt.NoConnection
         } finally { runCatching { raw.close() } }
     }
 

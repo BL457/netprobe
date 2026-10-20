@@ -63,7 +63,7 @@ class ToolCopyTableTest {
         // SNMP details
         "sysDescr", "sysObjectID", "Uptime", "sysContact", "sysName", "sysLocation", "\\d+ days? \\d+ h", "\\d+ h \\d+ min",
         "((up|down|testing|unknown|dormant|notPresent|lowerLayerDown|ethernetCsmacd|softwareLoopback|propVirtual|ieee80211|gigabitEthernet|tunnel|l2vlan|ieee8023adLag|bridge|type \\d+|\\d+ (M|G)bit/s|([0-9a-f]{2}:){5}[0-9a-f]{2})(, )?)*",
-        "Interface address", "\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+",
+        "and \\d+ more", "Interface address", "\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+",
         // Wordlists screen, import results, Settings
         "Back", "Wordlists", "Import wordlist", "Importing", "Built in", "Imported", "\\d+ entr(y|ies), built in", "\\d+ entr(y|ies), imported $date",
         "Delete", "Delete .+\\?", "Cancel", "No imported wordlists yet", "Delete .+", "Imported .+, \\d+ entr(y|ies)( \\(\\d+ skipped\\))?",
@@ -137,7 +137,7 @@ class ToolCopyTableTest {
             ToolCopy.PRESENT, ToolCopy.ERROR_SIGNATURE, ToolCopy.matched("title", "Synology DiskStation")))
         addAll(listOf(ToolCopy.SUBJECT, ToolCopy.ISSUER, ToolCopy.SAN_DNS, ToolCopy.SAN_IP, ToolCopy.validityRange("3 Jan 2026", "3 Jan 2027"), ToolCopy.VALID,
             ToolCopy.EXPIRED, ToolCopy.NOT_YET_VALID, ToolCopy.expiresIn(1), ToolCopy.expiresIn(12), ToolCopy.keyRsa(2048), ToolCopy.keyEc(256), ToolCopy.keyDsa(2048),
-            ToolCopy.ED25519, ToolCopy.ED448, ToolCopy.PUBLIC_KEY, ToolCopy.SIGNATURE_ALGORITHM, ToolCopy.SHA256_FINGERPRINT, ToolCopy.chainCertificate(1, 2),
+            ToolCopy.ED25519, ToolCopy.ED448, ToolCopy.PUBLIC_KEY, ToolCopy.SIGNATURE_ALGORITHM, ToolCopy.SHA256_FINGERPRINT, ToolCopy.chainCertificate(1, 2), ToolCopy.andMore(3),
             ToolCopy.PROTOCOL_AND_CIPHER, ToolCopy.CERTIFICATE, ToolCopy.SELF_SIGNED, ToolCopy.WEAK_RSA, ToolCopy.SHA1_SIGNED))
         addAll(listOf(ToolCopy.DIALECT, ToolCopy.SIGNING, ToolCopy.REQUIRED, ToolCopy.ENABLED_NOT_REQUIRED, ToolCopy.SESSION, ToolCopy.ANONYMOUS_ALLOWED,
             ToolCopy.ANONYMOUS_REFUSED, ToolCopy.GUEST_ALLOWED, ToolCopy.GUEST_MAPPED, ToolCopy.GUEST_REFUSED, ToolCopy.NETBIOS_NAME, ToolCopy.NETBIOS_DOMAIN,

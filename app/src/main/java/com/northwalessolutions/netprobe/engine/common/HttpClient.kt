@@ -84,19 +84,8 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
         return try { read(BufferedInputStream(socket.getInputStream(), READ_BUFFER), method, deadline) } catch (_: SocketTimeoutException) { HttpResult.Failed(HttpFailure.Timeout) } catch (_: SocketException) { HttpResult.Failed(HttpFailure.Reset) }
     }
 
-    /** A handshake read timeout can arrive bare or wrapped in an SSLException, depending on the TLS provider. */
-    private fun isTimeout(e: Throwable): Boolean {
-        var t: Throwable? = e
-        repeat(MAX_CAUSE_DEPTH) { if (t is SocketTimeoutException) return true; t = t?.cause ?: return false }
-        return false
-    }
-
-    /** True when the exception or a cause is an SSLException: the peer spoke, but not TLS we could finish (a plain reset is not). */
-    private fun isSslFailure(e: Throwable): Boolean {
-        var t: Throwable? = e
-        repeat(MAX_CAUSE_DEPTH) { if (t is javax.net.ssl.SSLException) return true; t = t?.cause ?: return false }
-        return false
-    }
+    private fun isTimeout(e: Throwable) = TlsFailures.isTimeout(e)
+    private fun isSslFailure(e: Throwable) = TlsFailures.isSslFailure(e)
 
     private fun layerTls(raw: Socket, ip: Inet4Address, port: Int, hostName: String?, sslContext: SSLContext?, tlsSocket: AtomicReference<SSLSocket?>): SSLSocket {
         val ctx = sslContext ?: trustAllContext()
@@ -207,7 +196,6 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
         private const val READ_BUFFER = 8192
         /** The whole exchange after connect may take this many read timeouts, so a server dripping one byte at a time still ends. */
         private const val DEADLINE_FACTOR = 2L
-        private const val MAX_CAUSE_DEPTH = 8
         private const val HTTP_PORT = 80
         private const val HTTPS_PORT = 443
         private const val FIRST_VISIBLE_ASCII = 0x21

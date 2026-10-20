@@ -78,4 +78,26 @@ class TlsLoopbackTest {
         val port = java.net.ServerSocket(0, 1, lo).use { it.localPort }   // closed again: nothing listens
         assertNull(TlsPeek().details(lo, port, "chnas.local", 2000))
     }
+    /** A plain TCP listener counting accepted connections; [onAccept] decides what the peer does with each. */
+    private fun rawPeer(onAccept: (java.net.Socket) -> Unit): Pair<Int, java.util.concurrent.atomic.AtomicInteger> {
+        val ss = java.net.ServerSocket(0, 50, lo); val count = java.util.concurrent.atomic.AtomicInteger()
+        thread(isDaemon = true) { while (!ss.isClosed) { val c = try { ss.accept() } catch (_: Exception) { break }; count.incrementAndGet(); onAccept(c) } }
+        rawServers += ss
+        return ss.localPort to count
+    }
+    private val rawServers = mutableListOf<java.net.ServerSocket>()
+    @After fun tearDownRaw() { rawServers.forEach { runCatching { it.close() } } }
+
+    @Test fun `a silent peer costs one connection, not two`() = runBlocking {
+        val (port, count) = rawPeer { /* accept and say nothing */ }
+        assertNull(TlsPeek().details(lo, port, "chnas.local", 300))
+        Thread.sleep(100)
+        assertEquals(1, count.get())
+    }
+    @Test fun `a peer that accepts then closes costs one connection, not two`() = runBlocking {
+        val (port, count) = rawPeer { it.close() }
+        assertNull(TlsPeek().details(lo, port, "chnas.local", 2000))
+        Thread.sleep(100)
+        assertEquals(1, count.get())
+    }
 }

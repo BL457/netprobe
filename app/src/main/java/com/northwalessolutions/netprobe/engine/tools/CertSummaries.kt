@@ -20,6 +20,8 @@ object CertSummaries {
     const val WEAK_RSA_BITS = 2048
     /** Longest certificate-supplied string that reaches a finding. */
     const val MAX_TEXT = 200
+    /** Most alternative names listed; a certificate can carry hundreds. */
+    const val MAX_SANS = 50
     private const val DAY_MS = 86_400_000L
     private const val SAN_DNS = 2
     private const val SAN_IP = 7
@@ -28,16 +30,18 @@ object CertSummaries {
     private val ED448_OID = byteArrayOf(0x06, 0x03, 0x2B, 0x65, 0x71)
 
     /** Control characters removed (a name must never carry a newline or escape into a finding or a hint), then capped at [MAX_TEXT]. */
-    fun clean(text: String): String = text.filterNot { it.isISOControl() }.take(MAX_TEXT)
+    fun clean(text: String): String =
+        text.filterNot { it.isISOControl() || Character.getType(it) == Character.FORMAT.toInt() }.take(MAX_TEXT).let { if (it.lastOrNull()?.isHighSurrogate() == true) it.dropLast(1) else it }
 
     fun of(details: TlsDetails, now: Long, formatDate: (Long) -> String = ::mediumDate): List<Finding> {
         val leaf = details.chain.firstOrNull() ?: return emptyList()
         val subject = clean(leaf.subjectX500Principal.name); val issuer = clean(leaf.issuerX500Principal.name)
-        val sans = sans(leaf)
+        val allSans = sans(leaf); val sans = allSans.take(MAX_SANS)
         val out = ArrayList<Finding>()
         out += Finding(FindingKind.CERT_SUBJECT, subject, ToolCopy.SUBJECT)
         out += Finding(FindingKind.CERT_ISSUER, issuer, ToolCopy.ISSUER)
         sans.forEach { (value, ip) -> out += Finding(FindingKind.CERT_SAN, value, if (ip) ToolCopy.SAN_IP else ToolCopy.SAN_DNS) }
+        if (allSans.size > MAX_SANS) out += Finding(FindingKind.CERT_SAN, ToolCopy.andMore(allSans.size - MAX_SANS))
         out += Finding(FindingKind.CERT_VALIDITY, ToolCopy.validityRange(formatDate(leaf.notBefore.time), formatDate(leaf.notAfter.time)), validity(leaf, now))
         out += Finding(FindingKind.CERT_KEY, keyText(leaf.publicKey), ToolCopy.PUBLIC_KEY)
         out += Finding(FindingKind.CERT_SIGNATURE, clean(leaf.sigAlgName), ToolCopy.SIGNATURE_ALGORITHM)
