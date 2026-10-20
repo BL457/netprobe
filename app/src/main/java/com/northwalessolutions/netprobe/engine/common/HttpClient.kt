@@ -30,7 +30,7 @@ data class HttpResponse(
     override fun hashCode(): Int = System.identityHashCode(this)
 }
 
-sealed interface HttpFailure { object Refused : HttpFailure; object Timeout : HttpFailure; object Reset : HttpFailure; object Malformed : HttpFailure }
+sealed interface HttpFailure { object Refused : HttpFailure; object Timeout : HttpFailure; object Reset : HttpFailure; object Malformed : HttpFailure; object Handshake : HttpFailure }
 sealed interface HttpResult { data class Ok(val response: HttpResponse) : HttpResult; data class Failed(val failure: HttpFailure) : HttpResult }
 
 /**
@@ -75,7 +75,7 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
         // hanging the run. The connect itself is bounded by Probe.connect's timeout argument.
         raw.soTimeout = timeoutMs
         val socket: Socket = if (!tls) raw else try { layerTls(raw, ip, port, hostName, sslContext, tlsSocket) }
-            catch (e: IOException) { return HttpResult.Failed(if (isTimeout(e)) HttpFailure.Timeout else HttpFailure.Reset) }
+            catch (e: IOException) { return HttpResult.Failed(if (isTimeout(e)) HttpFailure.Timeout else HttpFailure.Handshake) }   // a TLS handshake that failed outright
         socket.soTimeout = timeoutMs
         val deadline = System.currentTimeMillis() + DEADLINE_FACTOR * timeoutMs       // overall, so a dripping server still stops
         val host = hostHeader(ip, port, tls, hostName)

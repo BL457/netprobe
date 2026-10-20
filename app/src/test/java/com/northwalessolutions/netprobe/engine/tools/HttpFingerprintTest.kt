@@ -102,6 +102,35 @@ class HttpFingerprintTest {
             assertEquals(bad, 5, seen.size)
         }
     }
+    @Test fun `a location naming the server name is followed and a query string is kept`() = runTest {
+        val seen = mutableListOf<Triple<Boolean, Int, String>>()
+        run(HttpGet { tls, port, path -> seen += Triple(tls, port, path); if (path == "/") ok(302, "", listOf("Location" to "http://CHNAS.local:8080/a?b=1#frag")) else ok(200) })
+        assertEquals(Triple(false, 8080, "/a?b=1"), seen[1])
+    }
+    @Test fun `a different hostname, a protocol relative path and a bad port are not followed`() = runTest {
+        for (bad in listOf("http://other.local/", "//10.0.3.9/x", "http://10.0.3.9:0/", "http://10.0.3.9:70000/", "http://10.0.3.9:99999999999/")) {
+            val seen = mutableListOf<String>()
+            run(HttpGet { _, _, path -> seen += path; if (path == "/") ok(302, "", listOf("Location" to bad)) else ok(404) })
+            assertEquals(bad, 5, seen.size)
+        }
+    }
+    @Test fun `a fragment on a relative location is stripped`() = runTest {
+        val seen = mutableListOf<String>()
+        run(HttpGet { _, _, path -> seen += path; if (path == "/") ok(302, "", listOf("Location" to "/login#top")) else ok(200) })
+        assertEquals("/login", seen[1])
+    }
+    @Test fun `server and powered-by hints come from the hop page too`() = runTest {
+        val (_, p) = run(HttpGet { _, _, path -> when {
+            path == "/" -> ok(302, "", listOf("Location" to "/home"))
+            path == "/home" -> ok(200, "", listOf("Server" to "lighttpd/1.4", "X-Powered-By" to "PHP/8"))
+            else -> ok(404)
+        } })
+        assertTrue("http.server=lighttpd/1.4" in p.hints()); assertTrue("http.poweredBy=PHP/8" in p.hints())
+    }
+    @Test fun `a generator meta with content before name is found`() = runTest {
+        val (_, p) = run(HttpGet { _, _, path -> if (path == "/") ok(200, "<meta content='Hugo 0.1' name='generator'>") else ok(404) })
+        assertEquals("Hugo 0.1", p.of(FindingKind.GENERATOR).single().value)
+    }
     @Test fun `no response on slash is FAILED`() = runTest {
         val (r, _) = run(HttpGet { _, _, _ -> HttpResult.Failed(HttpFailure.Timeout) })
         assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("No HTTP response on this port", r.summary)

@@ -40,6 +40,6 @@ class FingerprintRulesTest {
     }
     @Test fun `the file has no em-dashes`() {
         val text = javaClass.classLoader!!.getResource("http_fingerprints.json")!!.readText()
-        assertFalse(text.contains('—'))
+        assertFalse(text.contains('\u2014'))
     }
 }

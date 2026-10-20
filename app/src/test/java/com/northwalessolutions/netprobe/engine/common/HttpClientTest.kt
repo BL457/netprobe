@@ -190,6 +190,12 @@ class HttpClientTest {
         val ok = r as? HttpResult.Ok ?: throw AssertionError("expected Ok, got $r")
         assertEquals("Wikiped", String(ok.response.body, Charsets.ISO_8859_1))
     }
+    @Test fun `a server that answers a tls hello with plain text is a handshake failure`() {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { val c = s.accept(); c.getOutputStream().write("HTTP/1.1 400 Bad Request\r\n\r\n".toByteArray()); c.getOutputStream().flush(); Thread.sleep(300); c.close() } }
+        val r = runBlocking { client(1000).request(lo, s.localPort, tls = true, method = "GET", path = "/") }
+        assertEquals(HttpFailure.Handshake, (r as HttpResult.Failed).failure)
+    }
     @Test fun `a drip fed tls handshake is stopped by the overall bound`() {
         // A TLS record header announcing 16 KB, then one byte every 200 ms: every read beats soTimeout, so only an overall bound ends it.
         val bytes = byteArrayOf(0x16, 0x03, 0x03, 0x40, 0x00) + ByteArray(60) { 0x02 }

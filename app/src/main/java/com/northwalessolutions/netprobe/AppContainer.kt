@@ -5,10 +5,10 @@ import com.northwalessolutions.netprobe.actions.ActionProvider
 import com.northwalessolutions.netprobe.actions.AndroidActionRunner
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.common.HttpClient
-import com.northwalessolutions.netprobe.engine.common.HttpResult
 import com.northwalessolutions.netprobe.engine.tools.FingerprintRules
 import com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTool
 import com.northwalessolutions.netprobe.engine.tools.HttpGet
+import com.northwalessolutions.netprobe.engine.tools.namedThenIp
 import com.northwalessolutions.netprobe.engine.common.Locks
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
@@ -107,9 +107,8 @@ class AppContainer(val context: Context) {
                 val client = HttpClient(HttpFingerprintTool.FINGERPRINT_TIMEOUT_MS)
                 val ctx = HttpClient.trustAllContext()      // one client and one SSLContext per run (spec 4.5)
                 HttpGet { tls, port, path ->
-                    val named = client.request(t.ip, port, tls, "GET", path, t.serverName, if (tls) ctx else null)
-                    // spec 4.9: a failed exchange with the name is retried once on the IP.
-                    if (named is HttpResult.Failed && t.serverName != null) client.request(t.ip, port, tls, "GET", path, null, if (tls) ctx else null) else named
+                    // spec 4.9: the name first; only a failed TLS handshake is retried, once, on the IP.
+                    namedThenIp(tls, t.serverName) { name -> client.request(t.ip, port, tls, "GET", path, name, if (tls) ctx else null) }
                 }
             },
             rules = FingerprintRules.load(RawResources.read(context, R.raw.http_fingerprints))))
