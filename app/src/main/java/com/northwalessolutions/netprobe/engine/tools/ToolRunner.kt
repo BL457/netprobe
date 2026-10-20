@@ -135,6 +135,9 @@ class ToolRunner(
             currentCoroutineContext().ensureActive()           // a run cancelled before its first dispatch never enters the tool
             var result: ToolResult? = null
             bind(target.ip, run.env) { result = tool.run(target, options, Control(run), progress) }
+            // A tool that swallows the closed socket's IOException (TlsPeek, TcpSmbTransport) returns FAILED after a Stop:
+            // a cancelled run is STOPPED whatever the tool returned.
+            currentCoroutineContext().ensureActive()
             val r = result ?: ToolResult(ToolRunStatus.FAILED, ToolCopy.failed("no result"))
             status = r.status; summary = r.summary
         } catch (ce: CancellationException) {

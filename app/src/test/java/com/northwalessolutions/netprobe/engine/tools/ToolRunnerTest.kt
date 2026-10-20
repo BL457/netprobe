@@ -6,6 +6,7 @@ import com.northwalessolutions.netprobe.engine.tools.ToolRunnerTestSupport.FakeT
 import com.northwalessolutions.netprobe.engine.tools.ToolRunnerTestSupport.Rig
 import com.northwalessolutions.netprobe.engine.tools.ToolRunnerTestSupport.office
 import com.northwalessolutions.netprobe.engine.tools.ToolRunnerTestSupport.target
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.Assert.*
@@ -69,6 +70,24 @@ class ToolRunnerTest {
         rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); entered.await()
         rig.runner.stop(7); runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.STOPPED, "Stopped after 1234 of 4614, 7 found"), rig.store.finished.single())
+        assertNull(rig.busy.busy.value[7])
+    }
+    @Test fun `Stop during a blocking exchange is STOPPED even when the tool then returns FAILED`() = runTest {
+        // Models TlsPeek and TcpSmbTransport: the closed socket's IOException is swallowed and the tool returns FAILED without
+        // suspending again. The runner must still record the cancelled run as STOPPED with the stop summary (review I1).
+        val entered = CompletableDeferred<Unit>(); val reply = CompletableDeferred<Unit>()
+        val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, p ->
+            p.update(0, null, 0); entered.complete(Unit)
+            withContext(NonCancellable) { reply.await() }
+            ToolResult(ToolRunStatus.FAILED, "No TLS handshake on this port")
+        })
+        rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); entered.await()
+        rig.runner.stop(7); runCurrent()
+        assertTrue("the tool is still blocked in its exchange", rig.store.finished.isEmpty())
+        reply.complete(Unit); runCurrent()
+        val row = rig.store.finished.single()
+        assertEquals(ToolRunStatus.STOPPED, row.second)
+        assertEquals(ToolCopy.stopped(0, null, 0), row.third)
         assertNull(rig.busy.busy.value[7])
     }
     @Test fun `Stop ends a tool blocked in CancellableIo closing within a second`() = runBlocking {
