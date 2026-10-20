@@ -1,5 +1,7 @@
 package com.northwalessolutions.netprobe.ui.home
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -120,12 +122,17 @@ fun FilterRow(selected: StatusFilter, onSelect: (StatusFilter) -> Unit) {
 
 @Composable
 private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
+    val reduced = LocalReducedMotion.current
+    val spec: AnimationSpec<Color> = if (reduced) snap() else tween(Motion.SELECT_MS, easing = FastOutSlowInEasing)
+    // Only alpha animates on the fill, so mid-fade pixels lie between the background and the selected surface (spec 1.11).
+    val fill by animateColorAsState(if (selected) NetProbeColors.surface else NetProbeColors.surface.copy(alpha = 0f), spec, label = "chipFill")
+    val outline by animateColorAsState(if (selected) NetProbeColors.surface else NetProbeColors.border, spec, label = "chipOutline")
+    val text by animateColorAsState(if (selected) NetProbeColors.text else NetProbeColors.textSecondary, spec, label = "chipText")
     Box(Modifier.heightIn(min = Dimens.touch).selectable(selected, onClick = onClick, role = Role.Tab)
-        .semantics { contentDescription = "Filter: $label" + if (selected) ", selected" else "" }, contentAlignment = Alignment.Center) {
-        Box(Modifier.heightIn(min = CHIP_HEIGHT).clip(CircleShape).background(if (selected) NetProbeColors.surface else Color.Transparent)
-            .border(1.dp, if (selected) NetProbeColors.surface else NetProbeColors.border, CircleShape).padding(horizontal = 12.dp),
+        .semantics { contentDescription = "Filter: $label" + if (selected) ", selected" else "" }.testTag("chip:$label"), contentAlignment = Alignment.Center) {
+        Box(Modifier.heightIn(min = CHIP_HEIGHT).clip(CircleShape).background(fill).border(1.dp, outline, CircleShape).padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center) {
-            Text(label, style = NetProbeText.chip, color = if (selected) NetProbeColors.text else NetProbeColors.textSecondary)
+            Text(label, style = NetProbeText.chip, color = text)
         }
     }
 }

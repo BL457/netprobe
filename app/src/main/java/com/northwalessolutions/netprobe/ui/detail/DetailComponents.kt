@@ -160,7 +160,7 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
     Column(Modifier.fillMaxWidth().testTag("detailScanBar")) {
         Row(Modifier.padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
             PinnedSegmented(PROFILES.map { it.label }, PROFILES.indexOfFirst { it.label == profile.label }, { onProfile(PROFILES[it]) },
-                activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, enabled = !scanning, modifier = Modifier.weight(1f))
+                activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, enabled = !scanning, modifier = Modifier.weight(1f).testTag("profileSegments"))
             Spacer(Modifier.width(12.dp))
             ScanPill(scanning, enabled = enabled && !(profile is ScanProfile.Custom && customError != null), onClick = onScan)
         }
