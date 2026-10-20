@@ -49,14 +49,14 @@ object IdentityLine {
         return if (onlyMdns) "Unknown device, found via mDNS" else "Unknown device"
     }
     /** Same rule from a stored host; "only mDNS" means no NetBIOS, UPnP or MAC evidence alongside the mDNS name. */
-    fun of(h: HostEntity): String = of(h.identVendor, h.identModel, h.identOs, h.deviceType,
+    fun of(h: HostEntity): String = of(Effective.vendor(h), Effective.model(h), h.identOs, Effective.type(h),
         onlyMdns = h.mdnsName != null && h.netbiosName == null && h.upnpName == null && h.mac == null)
 }
 
 /** Pure row rules: off-subnet labelling and the phone's own-address label (computed here, never stored as an identity). */
 object RowRules {
     const val THIS_PHONE = "This phone"
-    private const val OWN_LINE = "Android device"
+    const val OWN_LINE = "Android device"
     private const val OCTETS = 4
     private const val OCTET_MAX = 255
 
@@ -76,7 +76,10 @@ object RowRules {
         val name = if (own && h.customName.isNullOrBlank()) THIS_PHONE else DisplayName.of(h)
         val scanned = env?.let { listOf(SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, maxPrefix).subnet) + extraRanges }.orEmpty()
         val (subnet, off) = RangeRules.groupFor(h.ip, scanned, manualRanges)
-        return HostRow(h.id, h.ip, name, if (own) OWN_LINE else IdentityLine.of(h), if (own) DeviceType.PHONE else h.deviceType, openPorts, h.status, h.isGateway, stale, h.mac, subnet, off)
+        // The own phone keeps "Android device" (and Build.MODEL on Home) unless the Director set a model; its type stays PHONE unless set.
+        val line = if (own && h.userModel == null) OWN_LINE else IdentityLine.of(h)
+        val type = if (own) h.userType ?: DeviceType.PHONE else Effective.type(h)
+        return HostRow(h.id, h.ip, name, line, type, openPorts, h.status, h.isGateway, stale, h.mac, subnet, off)
     }
 }
 

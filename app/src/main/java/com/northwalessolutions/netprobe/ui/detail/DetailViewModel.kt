@@ -119,7 +119,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     fun lookupVulnsForDevice() {
         val h = state.value.host ?: return
         if (RowRules.isOwn(h.ip, env.value)) { message.value = OWN_PHONE; return }
-        val q = c.vulnLookup.queryForDevice(DeviceIdentity(h.identVendor, h.identModel, h.identOs, h.deviceType, h.identConfidence, h.identReasons))
+        val q = c.vulnLookup.queryForDevice(DeviceIdentity(Effective.vendor(h), Effective.model(h), h.identOs, Effective.type(h), h.identConfidence, h.identReasons))
             ?: run { message.value = "Device not identified well enough to search"; return }
         runVuln(q)
     }

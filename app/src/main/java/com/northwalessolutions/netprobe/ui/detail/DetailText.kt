@@ -70,3 +70,9 @@ fun detailProgress(p: ScanProgress?): String = p?.let { "${it.done} of ${it.tota
 
 /** "Runs Home Assistant" chips, in the stored rule-file order (spec 3.6). */
 fun softwareLabels(h: HostEntity): List<String> = SoftwareColumn.decode(h.identSoftware).map(DetailCopy::runs)
+
+/** "Set by you: type NAS, vendor Synology, model DS220+": only the set fields, in that order; the name is the title (spec 4.4). */
+fun setByYouLine(h: HostEntity): String? {
+    val parts = listOfNotNull(h.userType?.let { "type ${EditCopy.typeLabel(it)}" }, h.userVendor?.let { "vendor $it" }, h.userModel?.let { "model $it" })
+    return if (parts.isEmpty()) null else DetailCopy.setByYou(parts.joinToString(", "))
+}

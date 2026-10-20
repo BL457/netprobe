@@ -1,7 +1,12 @@
 package com.northwalessolutions.netprobe.ui.home
 
 import com.northwalessolutions.netprobe.engine.discovery.*
+import com.northwalessolutions.netprobe.data.TestHosts
+import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.ui.detail.DetailCopy
+import com.northwalessolutions.netprobe.ui.detail.EditCopy
+import com.northwalessolutions.netprobe.ui.detail.setByYouLine
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,6 +32,9 @@ class CopyTableTest {
         "Stopped at \\S+", "\\d+ other ranges?: nothing found", "\\d+ other ranges? answered for everything", "\\S+: nothing found", "\\d+ other ranges? checked",
         "\\S+  (manual|evidence|gateway probe|local)  (swept, nothing reachable|swept, \\d+ found|skipped, every address answered|not swept, scan limit reached|stopped|not started)",
         "Runs .+",
+        "Set by you: (type (Router|Phone|Computer|Printer|Media|IoT|NAS|Camera|Server)(, vendor .+)?(, model .+)?|vendor .+(, model .+)?|model .+)",
+        "Edit device, .+", "More options", "Edit device", "Remove device", "Name", "Type", "Vendor", "Model", "Detected: .+", "Reset to detected",
+        "Router", "Phone", "Computer", "Printer", "Media", "IoT", "NAS", "Camera", "Server", "Not set", "Save", "Cancel",
     ).map { Regex(it) }
     /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
     private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", templates.any { it.matches(s) })
@@ -83,5 +91,15 @@ class CopyTableTest {
     @Test fun `software chip strings`() {
         listOf("Home Assistant", "Plex Media Server", "UniFi Network").forEach { inTable(DetailCopy.runs(it)) }
         assertTrue(DetailCopy.runs("Grafana") == "Runs Grafana")
+    }
+    @Test fun `edit dialog, overflow and set by you strings`() {
+        listOf(EditCopy.TITLE, EditCopy.NAME, EditCopy.TYPE, EditCopy.VENDOR, EditCopy.MODEL, EditCopy.RESET, EditCopy.NOT_SET, EditCopy.SAVE, EditCopy.CANCEL,
+            EditCopy.detected("Synology"), EditCopy.detected(null), DetailCopy.MORE_OPTIONS, DetailCopy.EDIT_DEVICE, DetailCopy.REMOVE_DEVICE,
+            DetailCopy.editDescription("DiskStation")).forEach { inTable(it) }
+        assertEquals("Detected: none", EditCopy.detected(null)); assertEquals(9, EditCopy.TYPES.size)
+        EditCopy.TYPES.forEach { inTable(EditCopy.typeLabel(it)) }
+        val h = TestHosts.host()
+        for (t in listOf(null, DeviceType.NAS)) for (v in listOf(null, "Synology")) for (m in listOf(null, "DS220+"))
+            setByYouLine(h.copy(userType = t, userVendor = v, userModel = m))?.let { inTable(it) }
     }
 }

@@ -175,7 +175,7 @@ fun MarkChip(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val edge = if (own) EdgeColors.phone else r.type.edgeColor(r.isGateway)
-    val description = RowText.description(r, if (own) ownModel else null)
+    val description = RowText.description(r, if (own && r.identityLine == RowRules.OWN_LINE) ownModel else null)
     val nameAlpha = if (r.stale) STALE_NAME_ALPHA else 1f
     Row(modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClick = onClick).drawnAlpha(1f)   // the row itself is never dimmed: only edge and name are (spec 4.3)
         .semantics(mergeDescendants = true) { contentDescription = description; edgeColor = edge }.testTag("hostRow")
@@ -189,7 +189,7 @@ fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit,
                     modifier = Modifier.weight(1f, fill = false).drawnAlpha(nameAlpha).testTag("rowName"))
                 if (r.status != HostStatus.UNMARKED) MarkChip(r.status.label(), Modifier.padding(start = 6.dp))
             }
-            Text(RowText.dataLine(r, if (own) ownModel else null), style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 2,
+            Text(RowText.dataLine(r, if (own && r.identityLine == RowRules.OWN_LINE) ownModel else null), style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 2,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.drawnAlpha(1f).testTag("rowData"))
         }
         if (r.openPorts > 0) Text("${r.openPorts} open", style = NetProbeText.count, color = NetProbeColors.signal, textAlign = TextAlign.End,

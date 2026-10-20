@@ -68,4 +68,11 @@ class DetailTextTest {
         assertEquals(listOf("Runs Home Assistant", "Runs Grafana"), softwareLabels(bare().copy(identSoftware = "Home Assistant\nGrafana")))
         assertEquals(emptyList<String>(), softwareLabels(bare()))
     }
+    @Test fun `set by you lists only the set fields, in order`() {   // spec 9.1 test 25
+        val h = bare()
+        assertNull(setByYouLine(h)); assertNull(setByYouLine(h.copy(customName = "Mine")))   // the name is the title, not listed
+        assertEquals("Set by you: type NAS, vendor Synology, model DS220+", setByYouLine(h.copy(userType = DeviceType.NAS, userVendor = "Synology", userModel = "DS220+")))
+        assertEquals("Set by you: vendor Synology", setByYouLine(h.copy(userVendor = "Synology")))
+        assertEquals("Set by you: type IoT, model Hue", setByYouLine(h.copy(userType = DeviceType.IOT, userModel = "Hue")))
+    }
 }
