@@ -101,6 +101,20 @@ class ToolRunnerTest {
         boom.runner.start(target(8), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.FAILED, "Failed: boom"), boom.store.finished.single())
     }
+    @Test fun `a tool's own timeout is FAILED, not STOPPED, and re-identifies nothing`() = runTest {
+        val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> withTimeout(1_000) { awaitCancellation() } })
+        rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
+        advanceTimeBy(1_001); runCurrent()
+        val (_, status, summary) = rig.store.finished.single()
+        assertEquals(ToolRunStatus.FAILED, status); assertTrue(summary, summary.startsWith("Failed: Timed out"))
+        assertEquals(emptyList<Long>(), rig.finishedHosts); assertNull(rig.busy.busy.value[7])
+    }
+    @Test fun `an Error from a tool is FAILED with its reason`() = runTest {
+        val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> throw AssertionError("deep") })
+        rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
+        assertEquals(Triple(1L, ToolRunStatus.FAILED, "Failed: deep"), rig.store.finished.single())
+        assertNull(rig.busy.busy.value[7])
+    }
     @Test fun `onFinished is skipped for a FAILED run with no finding and runs for one with a finding`() = runTest {
         val empty = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> ToolResult(ToolRunStatus.FAILED, "No HTTP response on this port") })
         empty.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()

@@ -26,6 +26,41 @@ class ToolRunnerPauseTest {
         advanceTimeBy(10); runCurrent()
         assertTrue(passed.isCompleted)
     }
+    @Test fun `a gate parked in its rate wait when the pause lands stays closed until the resume`() = runTest {
+        var passed = 0; val burstTaken = CompletableDeferred<Unit>()
+        val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { c, _ ->
+            repeat(10) { c.gate(); passed++ }; burstTaken.complete(Unit)
+            c.gate(); passed++                                              // the eleventh parks in delay(10)
+            awaitCancellation()
+        })
+        rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); burstTaken.await(); runCurrent()
+        assertEquals(10, passed)
+        rig.foreground.value = false; runCurrent()
+        advanceTimeBy(50); runCurrent()
+        assertEquals("no request may be sent in the background", 10, passed)
+        rig.foreground.value = true; runCurrent()
+        assertEquals("the bucket is emptied on resume", 10, passed)
+        advanceTimeBy(10); runCurrent()
+        assertEquals(11, passed)
+        rig.runner.stop(7); runCurrent()
+    }
+    @Test fun `a gate that wakes before the foreground collector still waits for the emptied bucket`() = runTest {
+        val passed = CompletableDeferred<Unit>(); val reached = CompletableDeferred<Unit>()
+        val tool = FakeTool(ToolId.DIR_BRUTEFORCE) { c, _ -> reached.complete(Unit); c.gate(); passed.complete(Unit); ToolResult(ToolRunStatus.DONE, "ok") }
+        val fg = kotlinx.coroutines.flow.MutableStateFlow(false)
+        // Runs on an unconfined dispatcher, the collectors on the standard one: the gate subscribes to foreground first, so on the
+        // resume it wakes before the collector has emptied the bucket.
+        val runner = ToolRunner(backgroundScope, UnconfinedTestDispatcher(testScheduler), mapOf(tool.id to tool), ToolRunnerTestSupport.FakeStore(),
+            HostBusyRegistry(), AppMessages(), kotlinx.coroutines.flow.MutableStateFlow(ToolRunnerTestSupport.home), fg, { _, _, b -> b() }, {},
+            clock = { testScheduler.currentTime })
+        runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None)
+        assertTrue(reached.isCompleted); runCurrent()
+        assertFalse(passed.isCompleted)
+        fg.value = true; runCurrent()
+        assertFalse("the full pre-pause bucket must not be spent", passed.isCompleted)
+        advanceTimeBy(10); runCurrent()
+        assertTrue(passed.isCompleted)
+    }
     @Test fun `a pause stops the elapsed clock`() = runTest {
         val entered = CompletableDeferred<Unit>()
         val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> entered.complete(Unit); awaitCancellation() }, now = { testScheduler.currentTime })

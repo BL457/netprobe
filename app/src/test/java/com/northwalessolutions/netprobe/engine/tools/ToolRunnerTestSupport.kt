@@ -39,6 +39,7 @@ object ToolRunnerTestSupport {
         override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress) = body(control, progress)
     }
     /** The default clock is the test scheduler's virtual time, never a constant: each run's RateBucket reads it, so a frozen clock would never refill and a gate after a resume (or past the burst) would hang. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     class Rig(scope: CoroutineScope, tool: Tool, val store: FakeStore = FakeStore(), val busy: HostBusyRegistry = HostBusyRegistry(),
               val messages: AppMessages = AppMessages(),
               now: () -> Long = (scope.coroutineContext[ContinuationInterceptor] as TestDispatcher).scheduler.let { s -> { s.currentTime } },

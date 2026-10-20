@@ -47,6 +47,7 @@ class ToolRunner(
     private val tickerLock = Any()
     /** Guards pause state against registration: a run registered while a foreground change is being applied is never left behind. */
     private val pauseLock = Any()
+    private val publishLock = Any()
 
     /** Test seam: runs inside start() just before the run is registered, so a test can land a foreground or network change there. */
     internal var beforeRegister: suspend () -> Unit = {}
@@ -73,6 +74,7 @@ class ToolRunner(
         runs.values.filter { it.startKey != key }.forEach { it.networkChanged = true; it.job?.cancel() }
     }
 
+    @OptIn(DelicateCoroutinesApi::class)                     // CoroutineStart.ATOMIC, see below
     suspend fun start(target: ToolTarget, toolId: ToolId, options: ToolOptions): Start {
         repo.ready.await()                                     // a run started at launch is never marked INTERRUPTED (rule 1)
         val tool = tools[toolId] ?: throw IllegalArgumentException("no tool registered for ${toolId.key}")   // before any claim or row
@@ -129,17 +131,27 @@ class ToolRunner(
         var status = ToolRunStatus.STOPPED; var summary = ""
         try {
             run.registered.await()
+            currentCoroutineContext().ensureActive()           // a run cancelled before its first dispatch never enters the tool
             var result: ToolResult? = null
             bind(target.ip, run.env) { result = tool.run(target, options, Control(run), progress) }
             val r = result ?: ToolResult(ToolRunStatus.FAILED, ToolCopy.failed("no result"))
             status = r.status; summary = r.summary
         } catch (ce: CancellationException) {
-            status = ToolRunStatus.STOPPED
-            summary = if (run.networkChanged) ToolCopy.NETWORK_CHANGED else ToolCopy.stopped(run.done, run.total, run.found)
+            if (currentCoroutineContext().isActive) {
+                // The run itself was not cancelled: the tool let its own timeout (or another cancellation) escape. Spec 4.4 rule 4:
+                // any other exception escaping the tool is FAILED, never STOPPED.
+                log(ce)
+                status = ToolRunStatus.FAILED; summary = ToolCopy.failed(ce.message ?: ce.javaClass.simpleName)
+            } else {
+                status = ToolRunStatus.STOPPED
+                summary = if (run.networkChanged) ToolCopy.NETWORK_CHANGED else ToolCopy.stopped(run.done, run.total, run.found)
+            }
         } catch (b: BindFailedException) {
             status = ToolRunStatus.FAILED; summary = ToolCopy.BIND_FAILED
-        } catch (ex: Exception) {
-            status = ToolRunStatus.FAILED; summary = ToolCopy.failed(ex.message ?: ex.javaClass.simpleName)
+        } catch (t: Throwable) {
+            // Exceptions and Errors alike: the row records why, never STOPPED with an empty summary.
+            log(t)
+            status = ToolRunStatus.FAILED; summary = ToolCopy.failed(t.message ?: t.javaClass.simpleName)
         } finally {
             withContext(NonCancellable) { run.registered.await(); end(run, status, summary) }
         }
@@ -159,12 +171,16 @@ class ToolRunner(
         try { onFinished(run.hostId) } catch (ex: Exception) { log(ex) }
     }
 
+    /** Compute and assign under one lock, so a slow publisher can never overwrite a newer map (a stale map would pin toolRunActive). */
     private fun publish() {
-        val now = clock(); val fg = foreground.value
-        _active.value = runs.values.associate { r ->
-            r.hostId to Active(r.runId, r.hostId, r.toolId, r.port, r.activeMs(now), r.done, r.total, r.found, r.errors, !fg)
+        synchronized(publishLock) {
+            val now = clock(); val fg = foreground.value
+            _active.value = runs.values.associate { r ->
+                r.hostId to Active(r.runId, r.hostId, r.toolId, r.port, r.activeMs(now), r.done, r.total, r.found, r.errors, !fg)
+            }
         }
     }
+
 
     /** One ticker while any run is live; it ends itself when the last run ends (rule 8). */
     private fun ensureTicker() {
@@ -184,9 +200,16 @@ class ToolRunner(
     }
 
     private inner class Control(private val run: Run) : RunControl {
+        /**
+         * The pause is re-checked on every pass, so a worker parked in its rate wait when ON_STOP lands never sends in the background.
+         * After the app flag it also waits for the run's own resume, which empties the bucket first, so a gate can never spend tokens
+         * the pause should have discarded, whichever of the gate and the foreground collector wakes first.
+         */
         override suspend fun gate() {
-            if (!foreground.value) foreground.first { it }
             while (true) {
+                if (!foreground.value) foreground.first { it }
+                if (run.paused.value) run.paused.first { !it }
+                if (!foreground.value) continue
                 val wait = run.bucket.acquireDelayMs()
                 if (wait == 0L) return
                 delay(wait)
@@ -208,8 +231,11 @@ class ToolRunner(
         @Volatile var job: Job? = null
         private var accumulatedMs = 0L
         private var segmentStart = startedAt          // -1 while paused
-        @Synchronized fun pause(now: Long) { if (segmentStart >= 0) { accumulatedMs += now - segmentStart; segmentStart = -1; pauseEpoch++ } }
-        @Synchronized fun resume(now: Long) { if (segmentStart < 0) { segmentStart = now; bucket.reset() } }
+        private val _paused = MutableStateFlow(false)
+        /** This run's own pause state; it turns false only after resume() has emptied the bucket. */
+        val paused: StateFlow<Boolean> = _paused
+        @Synchronized fun pause(now: Long) { if (segmentStart >= 0) { accumulatedMs += now - segmentStart; segmentStart = -1; pauseEpoch++; _paused.value = true } }
+        @Synchronized fun resume(now: Long) { if (segmentStart < 0) { segmentStart = now; bucket.reset(); _paused.value = false } }
         @Synchronized fun activeMs(now: Long): Long = accumulatedMs + if (segmentStart >= 0) now - segmentStart else 0L
     }
 

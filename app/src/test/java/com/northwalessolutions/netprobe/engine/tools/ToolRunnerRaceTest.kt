@@ -47,11 +47,13 @@ class ToolRunnerRaceTest {
         rig.runner.stop(8); runCurrent()
     }
     @Test fun `a Stop before the run's first dispatch still writes STOPPED and releases the host`() = runTest {
-        val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> awaitCancellation() })
+        var entered = false
+        val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> entered = true; awaitCancellation() })
         rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None)
         rig.runner.stop(7)                                                // no runCurrent between: the job has not been dispatched yet
         runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.STOPPED, "Stopped after 0 steps, 0 found"), rig.store.finished.single())
+        assertFalse("a cancelled job never enters the tool body", entered)
         assertNull(rig.busy.busy.value[7]); assertTrue(rig.runner.active.value.isEmpty())
     }
     @Test fun `an unregistered tool is refused before any claim or row`() = runTest {
