@@ -10,7 +10,7 @@ import org.junit.Test
  */
 class BundledWordlistsTest {
     private companion object {
-        val STATE_CHANGING = Regex("(?i)(reboot|restart|shutdown|reset|factory|upgrade|apply|logout|logoff|signout|webproc|formlogin|setup\\.cgi|(^|/)save($|\\.))")
+        val STATE_CHANGING = Regex("(?i)(reboot|restart|shutdown|reset|factory|upgrade|apply|logout|logoff|signout|webproc|formlogin|setup\\.cgi|(^|/)save($|\\.)|(^|/)(install|deploy|sync|ping)($|[._-]))")
     }
     private fun read(name: String): String = javaClass.classLoader!!.getResource(name)!!.readText()
     private fun check(name: String, min: Int, max: Int) {
@@ -29,9 +29,9 @@ class BundledWordlistsTest {
     }
     @Test fun `common short`() { check("wordlist_common_short.txt", 250, 350) }
     @Test fun `the deny pattern catches the endpoints it exists for`() {
-        for (bad in listOf("reboot.html", "cgi-bin/webproc", "apply.cgi", "boaform/admin/formLogin", "logout", "save", "admin/factory_reset"))
+        for (bad in listOf("reboot.html", "cgi-bin/webproc", "apply.cgi", "boaform/admin/formLogin", "logout", "save", "admin/factory_reset", "install", "install.php", "deploy", "sync", "ping", "api/ping"))
             assertTrue(bad, STATE_CHANGING.containsMatchIn(bad))
-        for (fine in listOf("settings", "setup.html", "saved-searches", "firmware")) assertFalse(fine, STATE_CHANGING.containsMatchIn(fine))
+        for (fine in listOf("settings", "setup.html", "saved-searches", "firmware", "actuator/mappings", "pingback-docs")) assertFalse(fine, STATE_CHANGING.containsMatchIn(fine))
     }
     @Test fun `admin panels`() { check("wordlist_admin_panels.txt", 120, 180) }
     @Test fun `api paths`() { check("wordlist_api_paths.txt", 120, 180) }

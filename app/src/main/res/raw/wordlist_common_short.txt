@@ -81,7 +81,6 @@ db
 debug
 default
 demo
-deploy
 dev
 dist
 doc
@@ -126,8 +125,6 @@ index.html
 index.php
 info
 info.php
-install
-install.php
 internal
 intranet
 inventory
@@ -253,7 +250,6 @@ style.css
 styles
 support
 swagger
-sync
 sys
 system
 tag
