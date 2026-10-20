@@ -5,6 +5,10 @@ import com.northwalessolutions.netprobe.actions.ActionProvider
 import com.northwalessolutions.netprobe.actions.AndroidActionRunner
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.common.HttpClient
+import com.northwalessolutions.netprobe.engine.common.HttpResult
+import com.northwalessolutions.netprobe.engine.tools.FingerprintRules
+import com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTool
+import com.northwalessolutions.netprobe.engine.tools.HttpGet
 import com.northwalessolutions.netprobe.engine.common.Locks
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
@@ -98,6 +102,17 @@ class AppContainer(val context: Context) {
                 Exchange { method, path -> client.request(t.ip, t.port, t.tls, method, path, null, ctx) }   // Host is always the IP
             },
             resolve = { id -> resolveWordlist(id) }))
+        put(ToolId.HTTP_FINGERPRINT, HttpFingerprintTool(
+            getFor = { t ->
+                val client = HttpClient(HttpFingerprintTool.FINGERPRINT_TIMEOUT_MS)
+                val ctx = HttpClient.trustAllContext()      // one client and one SSLContext per run (spec 4.5)
+                HttpGet { tls, port, path ->
+                    val named = client.request(t.ip, port, tls, "GET", path, t.serverName, if (tls) ctx else null)
+                    // spec 4.9: a failed exchange with the name is retried once on the IP.
+                    if (named is HttpResult.Failed && t.serverName != null) client.request(t.ip, port, tls, "GET", path, null, if (tls) ctx else null) else named
+                }
+            },
+            rules = FingerprintRules.load(RawResources.read(context, R.raw.http_fingerprints))))
     }
     /** The chosen list, else common-short (spec 5.1, 11.10); streams through withEntries, so a list is never loaded whole. */
     private fun resolveWordlist(id: String): LoadedWordlist? {
