@@ -181,6 +181,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         lastRunProgress.value = emptyList()   // the range list always describes the latest run only
         val openPorts = HashMap<String, MutableSet<Int>>()   // ports seen open per ip during this run: later emissions for the host carry none
         var completed = false
+        if (ext.enabled) c.extendedRunActive.value = true
         c.locks.acquire()
         try {
             c.discoveryEngine.discover(e, opts, binder).collect { h ->
@@ -193,6 +194,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             }
             completed = true
         } finally {
+            c.extendedRunActive.value = false
             c.locks.release()
             // Also on Stop or a network change: the engine has already marked unfinished ranges CANCELLED.
             val st = c.discoveryEngine.status.value

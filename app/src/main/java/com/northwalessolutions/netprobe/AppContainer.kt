@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class AppContainer(val context: Context) {
     /** The network row Home resolved for the current env; Settings edits that network's manual ranges (extended spec 8.3 item 4). */
     val currentNetwork = MutableStateFlow<NetworkEntity?>(null)
+    /** True from the start of an extended run until its discover() returns, whatever screen is showing. */
+    val extendedRunActive = MutableStateFlow(false)
     val settings by lazy { AppSettings(context) }
     val db by lazy { NetProbeDb.open(context) }
     val networks by lazy { NetworkRepository(db) }
