@@ -89,7 +89,8 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         // Stored ports are part of the evidence: a narrow Custom scan must not forget what a Full scan found.
         c.hosts.byIdOnce(hostId)?.let { e ->
             val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(e), c.ports.servicesFor(hostId), found.keys.toSet(), found, e.mac?.let(c.ouiLookup))
-            c.hosts.setIdentity(hostId, c.deviceIdentifier.identify(ev))
+            // After a port scan the stored identity is replaced only by one at least as confident (spec 3.3).
+            c.hosts.setIdentityIfNotWeaker(hostId, c.deviceIdentifier.identify(ev))
         }
     }
 

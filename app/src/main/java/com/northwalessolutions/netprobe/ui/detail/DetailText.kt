@@ -1,6 +1,8 @@
 package com.northwalessolutions.netprobe.ui.detail
 
 import com.northwalessolutions.netprobe.actions.DeviceAction
+import com.northwalessolutions.netprobe.data.HostEntity
+import com.northwalessolutions.netprobe.data.SoftwareColumn
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
@@ -65,3 +67,6 @@ fun identityWithType(identity: String, type: DeviceType): String? {
 }
 
 fun detailProgress(p: ScanProgress?): String = p?.let { "${it.done} of ${it.total}, found ${it.open}" } ?: "starting"
+
+/** "Runs Home Assistant" chips, in the stored rule-file order (spec 3.6). */
+fun softwareLabels(h: HostEntity): List<String> = SoftwareColumn.decode(h.identSoftware).map(DetailCopy::runs)

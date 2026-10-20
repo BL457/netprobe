@@ -1,10 +1,13 @@
 package com.northwalessolutions.netprobe.ui.detail
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -232,6 +235,22 @@ fun ReasonsSheet(h: HostEntity, onClose: () -> Unit) {
             Text("Why this identity", style = NetProbeText.rowName, color = NetProbeColors.text)
             h.identReasons.forEach { Text(it, style = NetProbeText.secondary, color = NetProbeColors.textSecondary) }
             if (found.isNotEmpty()) Text("Found as: ${found.joinToString(", ")}", style = NetProbeText.data, color = NetProbeColors.textMuted)
+        }
+    }
+}
+
+private val SOFTWARE_CHIP_RADIUS = 4.dp
+
+/** One neutral chip per software name in a single horizontally scrolling row; the mark-chip shape, not a status (spec 3.6). */
+@Composable
+fun SoftwareChips(labels: List<String>) {
+    if (labels.isEmpty()) return
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp).testTag("softwareChips"),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        labels.forEach { label ->
+            Text(label, style = NetProbeText.caption, color = NetProbeColors.textSecondary, maxLines = 1,
+                modifier = Modifier.clip(RoundedCornerShape(SOFTWARE_CHIP_RADIUS)).background(NetProbeColors.surface)
+                    .padding(vertical = 2.dp, horizontal = 6.dp).semantics { contentDescription = label })
         }
     }
 }

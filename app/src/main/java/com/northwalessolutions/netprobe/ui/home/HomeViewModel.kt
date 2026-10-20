@@ -250,7 +250,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         c.ports.markScanned(h.id)
         c.hosts.byIdOnce(h.id)?.let { e ->
             val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(e), c.ports.servicesFor(h.id), found.keys.toSet(), found, e.mac?.let(c.ouiLookup))
-            c.hosts.setIdentity(h.id, c.deviceIdentifier.identify(ev))
+            c.hosts.setIdentityIfNotWeaker(h.id, c.deviceIdentifier.identify(ev))
         }
     }
 

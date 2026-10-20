@@ -52,6 +52,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
                         Text(it, style = NetProbeText.secondary, color = NetProbeColors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     Text(listOfNotNull(h.ip, h.mac).joinToString("  "), style = NetProbeText.data, color = NetProbeColors.textMuted)
+                    SoftwareChips(softwareLabels(h))
                     DetailLinks(onWhy = { why = true }, onVulns = actions.onDeviceVulns)
                 }
                 StatusSegments(h.status, actions.onStatus)

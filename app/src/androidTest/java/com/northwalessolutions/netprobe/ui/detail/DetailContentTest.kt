@@ -144,4 +144,15 @@ class DetailContentTest {
             }
         }
     }
+    @Test fun softwareChipsShowUnderTheDataLineAndLeaveFivePortRowsAt13() {
+        show(DetailFakes.state().copy(host = DetailFakes.host().copy(identSoftware = "Home Assistant\nGrafana")), fontScale = 1.3f)
+        rule.onNodeWithTag("softwareChips").assertIsDisplayed()
+        rule.onNodeWithText("Runs Home Assistant", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithText("Runs Grafana", useUnmergedTree = true).assertExists()
+        assertTrue("rows: ${fullyVisibleRows()}", fullyVisibleRows() >= 5)
+    }
+    @Test fun noSoftwareMeansNoChipRow() {
+        show(DetailFakes.state())
+        rule.onNodeWithTag("softwareChips").assertDoesNotExist()
+    }
 }

@@ -1,6 +1,8 @@
 package com.northwalessolutions.netprobe.ui.detail
 
 import com.northwalessolutions.netprobe.actions.DeviceAction
+import com.northwalessolutions.netprobe.data.HostEntity
+import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
 import com.northwalessolutions.netprobe.engine.serviceid.Confidence
@@ -56,5 +58,14 @@ class DetailTextTest {
         assertEquals("cert chnas.local", versionLine(ServiceInfo("HTTPS", null, null, "cert chnas.local", Confidence.CONFIRMED)))
         assertNull(versionLine(http))
         assertEquals("312 of 65535, found 4", detailProgress(ScanProgress(312, 65535, 4, 0))); assertEquals("starting", detailProgress(null))
+    }
+
+    private fun bare() = HostEntity(networkId = 1, ip = "10.0.3.59", mac = null, reverseDnsName = null, mdnsName = null, netbiosName = null, upnpName = null,
+        upnpManufacturer = null, upnpModel = null, vendor = null, deviceType = DeviceType.UNKNOWN, customName = null, identVendor = null, identModel = null,
+        identOs = null, identConfidence = 0, identReasons = emptyList(), snmpSysDescr = null, httpTitle = null, mdnsTxtJson = null, status = HostStatus.UNMARKED,
+        note = "", isGateway = false, firstSeen = 0, lastSeen = 0, lastPortScan = null, lastDiscoveryRun = 0)
+    @Test fun `software chips read the stored column in order`() {
+        assertEquals(listOf("Runs Home Assistant", "Runs Grafana"), softwareLabels(bare().copy(identSoftware = "Home Assistant\nGrafana")))
+        assertEquals(emptyList<String>(), softwareLabels(bare()))
     }
 }
