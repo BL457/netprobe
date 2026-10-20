@@ -185,6 +185,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private suspend fun discoverOn(e: NetworkEnv) {
         // null only while this network's Forget is pending, which committedBefore has already ended; the guard stays for a Forget racing in.
         val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return
+        if (net.id == c.forgottenNetworkId.value) return   // a Forget on this network is in flight: it is unavailable
         networkId.value = net.id; c.currentNetwork.value = net
         val runId = System.currentTimeMillis(); latestRun.value = runId
         lastRunCompleted.value = false
@@ -215,7 +216,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             c.extendedRunActive.value = false
             c.locks.release()
             // runCatching: a database error here must not skip the RunEnd publication below.
-            StaleRun.toPersist(completed, runId)?.let { id -> withContext(NonCancellable) { runCatching { c.networks.markRun(net.id, id) } } }
+            StaleRun.toPersist(completed, runId)?.let { id -> withContext(NonCancellable) { runCatching { c.networks.markRun(net.id, id) }.onFailure { Log.w(EXT_LOG_TAG, "markRun failed", it) } } }
             // Also on Stop or a network change: the engine has already marked unfinished ranges CANCELLED.
             val st = c.discoveryEngine.status.value
             st.gatewayProbe?.let { Log.i(EXT_LOG_TAG, "gateway probe: ${it.done} of ${it.total} units, ${it.attempts} connect attempts") }   // read by Task 20 check 3
@@ -231,18 +232,30 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun forgetNetwork() {
         if (controller.isRunning || quick.isRunning) return
         val net = c.currentNetwork.value ?: return
+        if (c.forgottenNetworkId.value == net.id) return   // a double tap never posts twice
+        // Set before launching: Home hides the rows and discoverOn refuses this network from this line on, so no Scan can start on it.
+        c.forgottenNetworkId.value = net.id
         c.appScope.launch {
-            c.networks.setForgotten(net.id, System.currentTimeMillis())
-            c.forgottenNetworkId.value = net.id
-            c.networkEpoch.update { it + 1 }                // ensure() now returns null for this network: Home shows it empty
-            // The lambdas touch only process-wide state, so an Undo still works after the activity is recreated (G4).
-            c.undo.post(PendingUndo(HomeCopy.forgot(net.displayName),
-                restore = { c.networks.setForgotten(net.id, null); c.forgottenNetworkId.value = null; c.networkEpoch.update { it + 1 } },
-                commit = {
-                    c.settings.manual.set(net.id, emptyList())   // key first: a crash after the cascade then leaves no stray key
-                    c.networks.deleteNetworkCascade(net.id)
-                    c.forgottenNetworkId.value = null; c.networkEpoch.update { it + 1 }   // Home then inserts a fresh row for the current env
-                }))
+            try {
+                c.networks.setForgotten(net.id, System.currentTimeMillis())
+                c.networkEpoch.update { it + 1 }                // ensure() now returns null for this network: Home shows it empty
+                // The lambdas touch only process-wide state, so an Undo still works after the activity is recreated (G4).
+                // compareAndSet: a second Forget's id is never wiped by this one's end. The finally blocks never leave the stuck state.
+                c.undo.post(PendingUndo(HomeCopy.forgot(net.displayName),
+                    restore = {
+                        try { c.networks.setForgotten(net.id, null) }
+                        finally { c.forgottenNetworkId.compareAndSet(net.id, null); c.networkEpoch.update { it + 1 } }
+                    },
+                    commit = {
+                        try {
+                            c.settings.manual.set(net.id, emptyList())   // key first: a crash after the cascade then leaves no stray key
+                            c.networks.deleteNetworkCascade(net.id)
+                        } finally { c.forgottenNetworkId.compareAndSet(net.id, null); c.networkEpoch.update { it + 1 } }   // Home then inserts a fresh row
+                    }))
+            } catch (t: Throwable) {
+                c.forgottenNetworkId.compareAndSet(net.id, null); c.networkEpoch.update { it + 1 }
+                throw t
+            }
         }
     }
     fun undo() { c.appScope.launch { c.undo.undo() } }

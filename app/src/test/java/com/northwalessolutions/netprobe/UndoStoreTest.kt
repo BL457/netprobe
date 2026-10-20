@@ -1,10 +1,13 @@
 package com.northwalessolutions.netprobe
 
+import kotlinx.coroutines.*
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Test
 
 /** spec 9.1 test 30, Review Focus 4: at most one Undo; every scan start commits it, so a restore can never land mid-scan. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class UndoStoreTest {
     private val log = mutableListOf<String>()
     private fun undoable(name: String) = PendingUndo("Removed $name", restore = { log += "restore $name" }, commit = { log += "commit $name" })
@@ -31,5 +34,14 @@ class UndoStoreTest {
         assertEquals(listOf("commit A", "scan starts, pending = null"), log); assertEquals(7, result)
         s.committedBefore { log += "second scan" }
         assertEquals("nothing pending: nothing committed twice", 1, log.count { it.startsWith("commit") })
+    }
+    @Test fun `cancelling the caller mid commit still finishes the commit exactly once`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val s = UndoStore()
+        s.post(PendingUndo("Forgot A", restore = { log += "restore A" }, commit = { log += "commit A started"; gate.await(); log += "commit A done" }))
+        val caller = launch { s.committedBefore { log += "scan body" } }
+        runCurrent()
+        caller.cancel(); gate.complete(Unit); caller.join(); runCurrent()
+        assertEquals(listOf("commit A started", "commit A done"), log); assertNull(s.pending.value)
     }
 }

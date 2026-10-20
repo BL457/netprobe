@@ -23,7 +23,7 @@ class UndoStore {
         mutex.withLock {
             val previous = _pending.value
             _pending.value = null
-            previous?.commit?.invoke()
+            if (previous != null) withContext(NonCancellable) { previous.commit() }
             _pending.value = next
         }
     }
@@ -31,7 +31,7 @@ class UndoStore {
         mutex.withLock {
             val p = _pending.value ?: return@withLock
             _pending.value = null
-            p.restore()
+            withContext(NonCancellable) { p.restore() }   // a cancelled caller must not leave a half-applied Undo
         }
     }
     /** Idempotent: a second call finds nothing pending. */
@@ -39,7 +39,7 @@ class UndoStore {
         mutex.withLock {
             val p = _pending.value ?: return@withLock
             _pending.value = null
-            p.commit()
+            withContext(NonCancellable) { p.commit() }    // a Stop or ViewModel clear must not abandon the cascade midway
         }
     }
     /** Every scan body (radar, Quick scan all, Detail) runs inside this, so a pending Undo is final before the scan's first lookup. */
