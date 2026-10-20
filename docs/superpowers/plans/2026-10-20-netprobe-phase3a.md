@@ -6316,17 +6316,18 @@ run() { ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.
 ```
 If `leaveApksInstalledAfterRun` is rejected by this AGP version, stop and ask the Director before running any instrumented test without it.
 
-- [ ] **Step 0: Back up the live database, before anything is installed or any instrumented test runs**
+- [ ] **Step 0: Back up the live database and settings, before anything is installed or any instrumented test runs**
 
-The installed build is still schema 1. Force-stop the app first so nothing writes during the copy:
+The installed build is still schema 1. Force-stop the app first so nothing writes during the copy. The settings file holds the Director's manual ranges (`extManual.<networkId>`), so it is backed up with the database:
 ```bash
 "$ADB" -s $DEV shell am force-stop $PKG
 for f in netprobe.db netprobe.db-wal netprobe.db-shm; do
   "$ADB" -s $DEV exec-out run-as $PKG cat databases/$f > "$BK/$f.bak"
 done
+"$ADB" -s $DEV exec-out run-as $PKG cat shared_prefs/netprobe.xml > "$BK/netprobe.xml.bak"
 ls -l "$BK"
 ```
-Expected: three files; `netprobe.db.bak` non-empty (the `-wal` and `-shm` files may be empty if the last session checkpointed; record their sizes). If `netprobe.db.bak` is empty, stop.
+Expected: four files (`netprobe.db.bak`, `netprobe.db-wal.bak`, `netprobe.db-shm.bak`, `netprobe.xml.bak`); `netprobe.db.bak` and `netprobe.xml.bak` non-empty (the `-wal` and `-shm` files may be empty if the last session checkpointed; record their sizes). If `netprobe.db.bak` or `netprobe.xml.bak` is empty, stop.
 
 - [ ] **Step 1: Build the schema 1 rollback APK from the local tree (no downloads)**
 
@@ -6360,7 +6361,7 @@ run com.northwalessolutions.netprobe.data.MigrationTest
 run com.northwalessolutions.netprobe.data.DirectorCopyMigrationTest
 "$ADB" -s $DEV shell run-as $PKG ls -l databases/
 ```
-Expected: both pass (DirectorCopyMigrationTest is not skipped: it reports 1 test, not an assumption failure); `netprobe.db` and its `-wal` have the same size and time as in `before-tests.txt`; the copy is gone (the test deletes it). If either fails, stop: do not open the app.
+Expected: both pass (DirectorCopyMigrationTest is not skipped: it reports 1 test, not an assumption failure); `netprobe.db`, its `-wal` and its `-shm` have the same size and time as in `before-tests.txt`; the copy is gone (the test deletes it). DirectorCopyMigrationTest's `@After` deletes the copy even when the test fails, so repeat step 2 (re-push the copy) before any re-run of it. If either fails, stop: do not open the app.
 
 - [ ] **Step 4: In-place migration of the real database (install over, never clean)**
 ```bash
@@ -6369,7 +6370,7 @@ Expected: both pass (DirectorCopyMigrationTest is not skipped: it reports 1 test
 "$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3a/q00-after-migration.png
 "$ADB" -s $DEV logcat -d | grep -E "AndroidRuntime|FATAL|IllegalStateException: Migration|Room" | tail -10
 ```
-Check on screen: every host the Director marked shows its mark; open two marked hosts and confirm their notes and custom names. Record pass or fail. If anything is missing, stop and tell the Director; the restore procedure below is his call.
+Check on screen: every host the Director marked shows its mark; open two marked hosts and confirm their notes and custom names. Record pass or fail. If anything is missing, stop and tell the Director; the schema 1 rollback procedure below is his call.
 
 - [ ] **Step 5: The rest of the instrumented suite** (DAO and Compose tests use in-memory databases or fake state):
 ```bash
@@ -6380,9 +6381,34 @@ for c in data.DaoTest data.RemoveDeviceTest ui.home.RadarBlockTest ui.home.HomeC
 done
 run com.northwalessolutions.netprobe.ui.HomeScreenTest   # last: it launches the real activity, which opens netprobe.db as the app does
 ```
-Expected: every class passes. Record each class's count. The radar, motion and stagger tests are timing tests on a real frame clock: a failure is recorded with its message, not retried into a pass and not relaxed.
+Expected: every class passes. Record each class's count. The radar, motion and stagger tests are timing tests on a real frame clock: a failure is recorded with its message, not retried into a pass and not relaxed. This covers the pulse timing in `RadarBlockTest` (about a 464 ms margin), the one-frame settle-start sample, and the parallel-budget admission check in `ServiceIdentifierLadderTest`; if that admission-check assertion flakes, the ruling may drop it in favour of the bound, but only the Director rules, and the failure is still recorded.
 
-- [ ] **Step 6: Screen recordings** (10 to 20 s each; motion on unless stated):
+- [ ] **Step 6: Schema 2 backup of the migrated data (taken once the in-place migration has succeeded and the suite has run)**
+
+From here the Director's live data is schema 2. This backup lets Bugsy undo any damage and keep the Phase 3A build installed. Force-stop first so nothing writes during the copy:
+```bash
+mkdir -p "$BK/schema2"
+"$ADB" -s $DEV shell am force-stop $PKG
+for f in netprobe.db netprobe.db-wal netprobe.db-shm; do
+  "$ADB" -s $DEV exec-out run-as $PKG cat databases/$f > "$BK/schema2/$f.bak"
+done
+"$ADB" -s $DEV exec-out run-as $PKG cat shared_prefs/netprobe.xml > "$BK/schema2/netprobe.xml.bak"
+ls -l "$BK/schema2"
+```
+Expected: four files; `netprobe.db.bak` and `netprobe.xml.bak` non-empty. If either is empty, stop and tell the Director. Relaunch the app afterwards (`am start -W -n $PKG/.MainActivity`).
+
+**Restore schema 2 data (keeps the Phase 3A build installed; use when a check damaged the live data and the Director agrees).** The app is force-stopped first, and all three database files are replaced together, because a stale `-wal` or `-shm` next to a restored file can corrupt it:
+```bash
+"$ADB" -s $DEV shell am force-stop $PKG
+for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV shell run-as $PKG rm -f databases/$f; done
+for f in netprobe.db netprobe.db-wal; do "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/$f'" < "$BK/schema2/$f.bak"; done
+"$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > shared_prefs/netprobe.xml'" < "$BK/schema2/netprobe.xml.bak"
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/ shared_prefs/
+"$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
+```
+Expected: `netprobe.db`, `netprobe.db-wal` and `netprobe.xml` the same sizes as their `schema2` backups; every mark, note and manual range is back. The schema 1 rollback at the end of this task is a different procedure and is used only if the migration itself failed.
+
+- [ ] **Step 7: Screen recordings** (10 to 20 s each; motion on unless stated):
 ```bash
 rec() { "$ADB" -s $DEV shell screenrecord --time-limit "$2" /sdcard/$1.mp4; "$ADB" -s $DEV pull /sdcard/$1.mp4 docs/qa/shots/phase3a/$1.mp4; "$ADB" -s $DEV shell rm /sdcard/$1.mp4; }
 ```
@@ -6392,7 +6418,7 @@ rec() { "$ADB" -s $DEV shell screenrecord --time-limit "$2" /sdcard/$1.mp4; "$AD
 4. `rec r4-detail-full 20`: a Detail Full scan on the NAS or Home Assistant host: port rows arriving and sliding into order, the pill morph, the progress line gliding, the identity line changing.
 5. `rec r5-selection 10`: filter chips, status segments and profile segments.
 
-- [ ] **Step 7: Screenshots** (`"$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3a/<name>.png`, at font scale 1.0 and again at 1.3 via `"$ADB" -s $DEV shell settings put system font_scale 1.3`, restored to 1.0 afterwards):
+- [ ] **Step 8: Screenshots** (`"$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3a/<name>.png`, at font scale 1.0 and again at 1.3 via `"$ADB" -s $DEV shell settings put system font_scale 1.3`, restored to 1.0 afterwards):
 6. `s06-mid-sweep` at about 12 devices (arm head, trail and lit blips visible).
 7. `s07-port-sheet` on a non-standard HTTP port showing "Open with..." and the Try as chips; `s07b-chooser` after a chip tap.
 8. `s08-why` "Why this identity" for a host identified from port evidence (port lines visible).
@@ -6401,24 +6427,35 @@ rec() { "$ADB" -s $DEV shell screenrecord --time-limit "$2" /sdcard/$1.mp4; "$AD
 11. `s11-stopped` "Stopped after N s" after Stop.
 12. `s12-restart-stale` Home after `am force-stop` and relaunch, stale rows still dimmed.
 
-- [ ] **Step 8: Behaviour checks, each recorded pass or fail**
+- [ ] **Step 9: Behaviour checks, each recorded pass or fail**
 - The non-standard HTTP port the Director saw shows "Open" and opens in the browser.
 - Try as ssh on port 22 offers his SSH app.
 - After a Full scan, the Synology, Home Assistant, Hue, UniFi and Hub Manager hosts each gain or keep the right identity (record the identity line and the "Why this identity" lines). A Proxmox node, if there is one, reads "Proxmox VE" (G9 rule).
 - An identity never drops after a Quick scan, or after the next radar scan (Review Focus 3).
-- Remove device on a marked host, then Undo: mark and note restored exactly. Remove during a running radar scan: the host does not come back before the scan ends. Remove a host while Quick scan all runs, before the loop reaches it: no ports appear for it, and Undo still restores it (Review Focus 4, G2).
-- A new scan drops a pending Undo (G8): Remove a marked host, start a Detail scan on another host: the Undo notice is gone and the host stays removed. Forget this network, then start a radar scan: a fresh empty network row, no Undo.
-- Forget this network, then Undo: every host, mark, note and manual range back. Forget, then back out of the app and reopen it, then Undo: Home shows the network again (G4). Forget, then dismiss: a fresh empty network row.
+- Destructive checks, on a disposable network only. No check may commit a Forget or a Remove on the home network without the Director's go-ahead. Bugsy sets this up explicitly before running any of them:
+  1. Join a disposable network: the phone's own hotspot (from a second device) or a second Wi-Fi the Director does not keep. Never the home network.
+  2. Start a radar scan on it so it has a network row and at least two hosts.
+  3. Mark one throwaway host on it (for example a TV or a printer) and give it a note. These are never hosts the Director marked himself.
+  4. Then run, all on the disposable network: Remove device on the throwaway marked host, then Undo: mark and note restored exactly. Remove during a running radar scan: the host does not come back before the scan ends. Remove a host while Quick scan all runs, before the loop reaches it: no ports appear for it, and Undo still restores it (Review Focus 4, G2). Remove a marked host, start a Detail scan on another host: the Undo notice is gone and the host stays removed (G8). Forget this network, then start a radar scan: a fresh empty network row, no Undo. Forget, then dismiss: a fresh empty network row. Forget, then back out of the app and reopen it, then Undo: Home shows the network again (G4).
+  5. Rejoin the home Wi-Fi.
+- Non-destructive Undo checks may run on the home network, because the schema 2 backup from step 6 exists: Forget this network, then Undo: every host, mark, note and manual range back. Remove device on a host, then Undo: mark and note restored exactly. If an Undo fails, stop, tell the Director, and offer the "Restore schema 2 data" procedure from step 6; do not run it unasked.
+- Remove a device while its Detail page is open: the header blanks for the length of the exit slide (record it; it is expected).
+- Home Assistant on port 8123 shows "Open" and it opens in the browser (Task 11).
+- Start a radar scan, stop it after a few seconds, `am force-stop`, relaunch: no mass dimming (A10, Task 12).
+- Edit device at font scale 1.3 with the keyboard up: Save and Cancel are reachable (Task 10).
+- With TalkBack on, the Detail identity line is announced as "Edit device, <name>" (deviation 10, Task 10).
+- Detail at font scale 1.3 keeps the five-row floor, with the chip row in the pinned header.
+- A Full scan of a slow-handshake TLS device (a NAS) ends promptly on Stop (Task 5).
 - A Full scan of a host with 9100 open prints nothing (check the printer), and the scan ends within the budget (Review Focus 1 and 2).
-- Janky frames under 5 percent during a radar scan:
+- Janky frames under 5 percent during steady radar scanning and also during the expand and the settle (Task 16: the live layer cache rebuilds per frame while the size changes); record the figures for each phase:
 ```bash
 "$ADB" -s $DEV shell dumpsys gfxinfo $PKG reset
 # start a radar scan on the LAN and wait for it to settle
 "$ADB" -s $DEV shell dumpsys gfxinfo $PKG | grep -E "Total frames rendered|Janky frames"
 ```
-- The database migrated in place on the installed build with marks and notes intact (step 4).
+- The database migrated in place on the installed build with marks and notes intact (step 4); the schema 2 backup (step 6) was taken after it.
 
-- [ ] **Step 9: Record and hand over**
+- [ ] **Step 10: Record and hand over**
 
 Write `docs/qa/phase3a-on-device.md`: the date, build commit, every step's result, the test counts per class, the screenshot and recording names, the gfxinfo numbers, and for the Director to rule on: the spec section 10 assumptions (A1 to A10), the section 11 open items, and these plan-review items: the active-probe worst case is about 60 s + 8 x 12 s of summed probe time because a GET with its redirect can take about 12 s, not the spec's "about 76 s" (G12); port evidence never expires, so a reused IP keeps the old device's titles and certificates until its port rows are dropped (G16); the Quick scan all arc keeps its 1200 ms turn through its own token (G17); a vendor-only override on his own phone shows on Detail but Home keeps "Android device" (G18); the `p-proxmox-cert` rule matches O, not the spec's "PVE Cluster" (G9). Then commit:
 ```bash
@@ -6426,17 +6463,18 @@ git add docs/qa/phase3a-on-device.md docs/qa/shots/phase3a && git commit -m "Pha
 ```
 The backups and the rollback APK in `K:/claude/netprobe_db_backup/phase3a/` are never committed.
 
-**Restore procedure (only on the Director's say-so; G3).** This puts the schema 1 build and the step 0 backup back together. All three database files are replaced with the app stopped, because a stale `-wal` or `-shm` next to a restored file can corrupt it:
+**Rollback to schema 1 (only on the Director's say-so, and only for a failed migration; G3).** This puts the schema 1 build and the step 0 backup back together and loses Phase 3A. To undo damage to schema 2 data while keeping Phase 3A, use "Restore schema 2 data" in step 6 instead. All three database files and the settings file are replaced with the app stopped, because a stale `-wal` or `-shm` next to a restored file can corrupt it:
 ```bash
 "$ADB" -s $DEV shell am force-stop $PKG
 "$ADB" -s $DEV install -r -d "$BK/netprobe-schema1-b37db04.apk"   # -r keeps the data directory; -d allows going back to the older build
 for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV shell run-as $PKG rm -f databases/$f; done
 for f in netprobe.db netprobe.db-wal; do "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/$f'" < "$BK/$f.bak"; done
-"$ADB" -s $DEV shell run-as $PKG ls -l databases/
+"$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > shared_prefs/netprobe.xml'" < "$BK/netprobe.xml.bak"
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/ shared_prefs/
 ls -l "$BK"
 "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 ```
-Expected: `netprobe.db` and `netprobe.db-wal` the same sizes as their backups; the app opens on the schema 1 build with every mark and note. Record what was restored and why.
+Expected: `netprobe.db`, `netprobe.db-wal` and `netprobe.xml` the same sizes as their backups; the app opens on the schema 1 build with every mark, note and manual range. Record what was restored and why.
 
 ---
 
@@ -6504,10 +6542,10 @@ Expected: `netprobe.db` and `netprobe.db-wal` the same sizes as their backups; t
   - Task 17 adds the `chip:`, `segment:` and `profileSegments` tags that `ControlsMotionTest` (Task 17) reads, and needs no type from Task 18. `ArrivalDelayKey` and its public `arrivalDelay` setter are defined in Task 18 and used only by Task 18's `DeviceList`, `DetailContent` and `ListMotionTest`; `ControlsMotionTest` does not reference them.
   - `ScanController.stopAndJoin` (Task 14) is used by `DetailViewModel.removeDevice` (Task 14). `UndoStore`, `PendingUndo`, `AppScopes` (Task 13) are used in Tasks 13 and 14.
 - **Review Focus mapping:**
-  1. Printer ports never receive an active probe: Task 5 `ServiceIdentifierLadderTest.passive only ports never receive a byte in either mode`, `ipp gets one head in active mode and nothing more`, `passive only and head only sets are pinned`; device check in Task 19 step 8.
+  1. Printer ports never receive an active probe: Task 5 `ServiceIdentifierLadderTest.passive only ports never receive a byte in either mode`, `ipp gets one head in active mode and nothing more`, `passive only and head only sets are pinned`; device check in Task 19 step 9.
   2. The active budget: Task 5 `no more than 64 ports ever enter the ladder`, `no step starts once 60 s have been spent and refused ports stay open and unknown`, `today's steps are not counted against the budget`, `eight parallel identifies overshoot by at most eight steps`, `passive mode sends nothing new to a silent unknown port`, `quick scan all is passive`; `ActiveProbeBudgetTest`.
   3. Identity flapping: Task 3 `ServiceMergeTest.a port table result never replaces a confirmed name` and `the evidence builder uses the same merge`; Task 7 `IdentityStabilityTest` (three tests); Task 2 `IdentityWriteTest.identity guard replaces on equal or higher confidence only`; instrumented Task 7 `DaoTest.portEvidenceSurvivesRediscoveryAndATimedOutRescan` and Task 2 `DaoTest.identityGuardKeepsAStrongerStoredIdentity`.
-  4. Undo re-adding a host mid-scan, orphan ports, or a failed Undo: Task 13 `UndoStoreTest` (five, including `a scan body runs only after the pending undo is committed`); Task 14 `RemovedHostsTest` (three), `QuickScanAllLoopTest` (four, including the unreached host and the job registered before its body), `ScanControllerJoinTest`; instrumented Task 2 `DaoTest.restoreWinsOverAnythingALateScanWrote` and Task 14 `RemoveDeviceTest` (`theRadarCollectorNeverReinsertsARemovedIp`, `anEmissionWaitingOnTheLockSeesTheRemove`, `quickScanAllSkipsAHostRemovedBeforeItIsReached`, `aLateWriteForADeletedHostIsDropped`, `removeDuringQuickScanAllLeavesNoOrphansAndTheLoopCarriesOn`); device checks in Task 19 step 8.
+  4. Undo re-adding a host mid-scan, orphan ports, or a failed Undo: Task 13 `UndoStoreTest` (five, including `a scan body runs only after the pending undo is committed`); Task 14 `RemovedHostsTest` (three), `QuickScanAllLoopTest` (four, including the unreached host and the job registered before its body), `ScanControllerJoinTest`; instrumented Task 2 `DaoTest.restoreWinsOverAnythingALateScanWrote` and Task 14 `RemoveDeviceTest` (`theRadarCollectorNeverReinsertsARemovedIp`, `anEmissionWaitingOnTheLockSeesTheRemove`, `quickScanAllSkipsAHostRemovedBeforeItIsReached`, `aLateWriteForADeletedHostIsDropped`, `removeDuringQuickScanAllLeavesNoOrphansAndTheLoopCarriesOn`); device checks in Task 19 step 9.
   5. Migration preserving marks and notes: Task 1 `MigrationSqlTest` (three tests), `SchemaExportTest` (three tests); instrumented Task 1 `MigrationTest.marksNotesAndPortsSurviveTheMigration` and `DirectorCopyMigrationTest.theDirectorsCopyMigratesWithEveryMarkAndNote`, run first in Task 19 before the real database is touched; the "app file unchanged" check holds because nothing opens `netprobe.db` at process start (Task 2 rule, `PurgeOnceTest`, `DaoTest.ensurePurgesALeftoverForgetBeforeItsFirstLookup`); restore procedure and rollback APK in Task 19.
 
 ## Gruff plan review response
@@ -6517,11 +6555,11 @@ Review: `docs/superpowers/plans/2026-10-20-phase3a-plan-gruff-review.md` (ecb3f6
 - G1 (BLOCKING): applied. No database work when `AppContainer` is built (Task 13 rule and implementation, no `init` block); the purge runs once at the top of `NetworkRepository.ensure` through `PurgeOnce` (Task 2), pinned by `PurgeOnceTest` and `DaoTest.ensurePurgesALeftoverForgetBeforeItsFirstLookup`; Task 19 states why steps 3 and 5 never open `netprobe.db`.
 - G2 (BLOCKING): applied. `AppContainer.removedHostIds` checked by Quick scan all before each host; scan paths write ports through `PortRepository.upsertOpenIfHostExists`; the radar's check and write run in the extracted `RadarCollector` under `hostWriteLock`, which Remove also holds; `HostRepository.restore` clears stray rows first (Task 2); tests drive the production functions (Tasks 2 and 14, ruling R5).
 - G3: applied. Task 19 step 1 builds the b37db04 schema 1 APK offline into the backup folder, and a restore procedure closes the task.
-- G4: applied. `forgottenNetworkId` and `networkEpoch` moved to `AppContainer` (Task 13); Task 19 step 8 checks Undo after the activity is recreated.
+- G4: applied. `forgottenNetworkId` and `networkEpoch` moved to `AppContainer` (Task 13); Task 19 step 9 checks Undo after the activity is recreated.
 - G5: applied. Pulse counts checked as 1 by 150 ms, 1 at 300 ms, 2 by 450 ms, plus the window invariant; settle rest asserted at the 512 ms sample (Task 16).
 - G6: applied. `onComposed` is passed into `DiscBackground`, `ArmLayer` and `LiveLayer`, and the test bounds the sum (Task 16).
 - G7: applied. Each `CancellationTest` case also requires the server to see the socket close within 300 ms (Task 4).
-- G8: applied. `UndoStore.committedBefore` wraps every scan body, pinned by `UndoStoreTest.a scan body runs only after the pending undo is committed` (Task 13); Task 19 step 8 checks it on the device.
+- G8: applied. `UndoStore.committedBefore` wraps every scan body, pinned by `UndoStoreTest.a scan body runs only after the pending undo is committed` (Task 13); Task 19 step 9 checks it on the device.
 - G9: applied. `p-proxmox-cert` matches O `^Proxmox Virtual Environment$`; flagged for the Director (Task 7, deviation 13).
 - G10: applied. The motion task is split into Task 17 (navigation and controls, `ControlsMotionTest`) and Task 18 (lists and lines, `ListMotionTest`); deferred QA is now Task 19 and every reference follows.
 - G11: applied through G2: the tests call `RadarCollector.store`, `QuickScanAllLoop.run`, `RemovedHosts.skipQuickScan` and `upsertOpenIfHostExists`, not copies of their logic.
