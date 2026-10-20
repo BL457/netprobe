@@ -8,6 +8,7 @@ import com.northwalessolutions.netprobe.engine.discovery.MacSource
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentity
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
+import com.northwalessolutions.netprobe.engine.identify.IdentifyRules
 import com.northwalessolutions.netprobe.ui.home.RadarCollector
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -51,5 +52,28 @@ class RadarIdentityGuardTest {
         c.store(1, DiscoveredHost(ip, mac = "aa:bb:cc:00:11:22", macSource = MacSource.NEIGH), 2L)
         val row = hosts.byIdOnce(id)!!
         assertEquals(null, row.identModel); assertEquals(0, row.identConfidence); assertEquals(DeviceType.UNKNOWN, row.deviceType)
+    }
+
+    @Test fun theF1GatewayWithNoMacOnEitherSideKeepsUbiquiti() = runBlocking {   // 10.0.4.1: off-subnet, no MAC ever
+        val c = collector()
+        val gw = InetAddress.getByName("10.0.4.1") as Inet4Address
+        c.store(1, DiscoveredHost(gw, httpTitle = "UniFi Security Gateway"), 1L)
+        val id = db.hosts().find(1, "10.0.4.1")!!.id
+        hosts.setIdentity(id, DeviceIdentity("Ubiquiti", null, null, DeviceType.ROUTER, 70, listOf("httpTitle: UniFi Security Gateway")))
+        c.store(1, DiscoveredHost(gw, httpTitle = "UniFi Security Gateway"), 2L)   // the pre-fix radar result was Unknown 40
+        val row = hosts.byIdOnce(id)!!
+        assertEquals(null, row.mac); assertEquals("Ubiquiti", row.identVendor); assertEquals(DeviceType.ROUTER, row.deviceType); assertEquals(70, row.identConfidence)
+    }
+    @Test fun anEqualConfidenceRadarResultReplacesTheStoredOne() = runBlocking {
+        val usgRule = """[{"id":"p-unifi-usg","field":"httpTitle","pattern":"UniFi Security Gateway","vendor":"Ubiquiti","model":"UniFi Security Gateway",""" +
+            """"type":"ROUTER","weight":90,"sample":"UniFi Security Gateway"}]"""
+        val c = RadarCollector(hosts, PortRepository(db), DeviceIdentifier(IdentifyRules.load(usgRule)), { null }, Mutex()) { emptySet() }
+        val usg = DiscoveredHost(ip, mac = piMac, macSource = MacSource.NEIGH, httpTitle = "UniFi Security Gateway")
+        c.store(1, usg, 1L)
+        val id = db.hosts().find(1, "10.0.3.170")!!.id
+        hosts.setIdentity(id, DeviceIdentity(null, null, null, DeviceType.ROUTER, 90, listOf("gateway: default gateway")))
+        c.store(1, usg, 2L)                                                    // the same device at the same confidence 90
+        val row = hosts.byIdOnce(id)!!
+        assertEquals("Ubiquiti", row.identVendor); assertEquals("UniFi Security Gateway", row.identModel); assertEquals(90, row.identConfidence)
     }
 }

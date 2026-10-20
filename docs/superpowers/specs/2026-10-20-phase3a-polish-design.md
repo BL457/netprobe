@@ -472,9 +472,10 @@ Existing fields (`mdnsType`, `mdnsTxt`, `upnp*`, `snmpSysDescr`, `hostname`, `ne
 
 ### 3.3 When the identity is written
 
-- Discovery runs: unchanged, always write (a re-used IP must be able to lose an old identity; discovery already includes stored port evidence).
+- Discovery runs (radar), revised after device QA finding F1: for the same device the write goes through `setIdentityIfNotWeaker`, the same guard as a port scan (equal or higher confidence replaces; lower does not). "Same device" means the stored MAC and the new MAC are not contrary: equal ignoring case, or either or both unknown (an off-subnet gateway has no MAC on either side and is guarded). When the new host carries a neighbour-table (NEIGH) MAC it is compared directly with the stored one, so a stored higher-rank MAC never masks a new device. A different known MAC on the IP is a fresh device and always writes with plain `setIdentity`, so a re-used IP still loses an old identity. The decision is `IdentityWrite.radarReplaces` / `sameDevice`. Before F1 the radar always wrote, and a rule demotion (title-unifi, title-pihole) dropped the Director's UniFi gateways from Ubiquiti ROUTER 70 to Unknown 40.
 - After every port scan (Detail scan, every host of Quick scan all): re-identify from the full evidence as today, then write only when the new confidence is equal to or higher than the stored `identConfidence`. Equal is included so a scan at the same confidence can still add a model or a port reason line. New repository call `HostRepository.setIdentityIfNotWeaker(hostId, identity)`: one `UPDATE hosts SET ... WHERE id = :id AND identConfidence <= :c`, so it is atomic.
 - What the guard protects: with the read paths fixed (3.1), stored evidence only grows, so a port scan's result is normally never weaker than the stored one. The guard covers the remaining window, a discovery write racing a port scan's write for the same host, and is kept because it is one `WHERE` clause. It is not the fix for identity drops; 3.1 is.
+- Trade-off (assumption A11): a rule demotion, or a same-MAC device that was repurposed, keeps its stored identity until equal or stronger evidence arrives.
 - Manual overrides (section 4) are separate columns and are never touched by either path.
 
 ### 3.4 "Why this identity"
@@ -498,6 +499,8 @@ Weights follow the existing scale: 100 direct extraction, 95 near-certain, 90 pr
 {"id":"p-srm-title","field":"httpTitle","pattern":"Synology Router|\\bSRM\\b","vendor":"Synology","model":"Synology Router","type":"ROUTER","weight":95,"sample":"Synology Router - SRM"},
 {"id":"p-unifi-os","field":"httpTitle","pattern":"UniFi OS","vendor":"Ubiquiti","model":"UniFi OS console","weight":80,"sample":"UniFi OS"},
 {"id":"p-unifi-cert","field":"certName","pattern":"^UniFi$","software":"UniFi Network","weight":40,"sample":"UniFi"},
+{"id":"p-unifi-usg","field":"httpTitle","pattern":"UniFi Security Gateway","vendor":"Ubiquiti","model":"UniFi Security Gateway","type":"ROUTER","weight":90,"sample":"UniFi Security Gateway"},
+{"id":"p-ubnt-router-cert","field":"certName","pattern":"^UbiquitiRouterUI$","vendor":"Ubiquiti","type":"ROUTER","weight":80,"sample":"UbiquitiRouterUI"},
 {"id":"p-hue-title","field":"httpTitle","pattern":"hue personal wireless lighting","vendor":"Philips Hue","model":"Hue Bridge","type":"IOT","weight":90,"sample":"hue personal wireless lighting"},
 {"id":"p-hue-cert","field":"certOrg","pattern":"Philips Hue","vendor":"Philips Hue","model":"Hue Bridge","type":"IOT","weight":90,"sample":"Philips Hue"},
 {"id":"p-plex-http","field":"service","onPorts":[32400],"pattern":"^HTTPS?$","software":"Plex Media Server","type":"SERVER","weight":40,"sample":"HTTP"},
@@ -551,13 +554,13 @@ Weights follow the existing scale: 100 direct extraction, 95 near-certain, 90 pr
 {"id":"p-airplay","field":"httpServer","pattern":"AirTunes","vendor":"Apple","weight":60,"sample":"AirTunes/620.8.2"},
 ```
 
-That is 57 new entries (several products have both a title rule and a certificate rule). Coverage against the controller's list:
+That is 59 new entries (several products have both a title rule and a certificate rule); `p-unifi-usg` and `p-ubnt-router-cert` were added after device QA (F1), because the Director's UniFi Security Gateways (hardware) are identified only by that title and the USG certificate. The rules file holds 120 rules. Coverage against the controller's list:
 
 | Asked for | Rules |
 |-----------|-------|
 | Synology DSM on 5000/5001 | p-dsm-title, p-dsm-cert, p-dsm-ftp; existing ports-synology, title-synology |
 | Pi-hole admin | existing title-pihole, converted to a software rule (3.6) and fed by port titles |
-| UniFi | p-unifi-os (console, platform); p-unifi-cert and existing title-unifi as software "UniFi Network" (3.6) |
+| UniFi | p-unifi-os (console, platform); p-unifi-usg and p-ubnt-router-cert (UniFi Security Gateway, platform, F1); p-unifi-cert and existing title-unifi as software "UniFi Network" (3.6) |
 | Hue | p-hue-title, p-hue-cert; existing hue (mDNS) |
 | Home Assistant 8123 | existing title-hass and port-hass, converted to software rules (3.6) |
 | Plex 32400 | p-plex-http; existing title-plex and port-plex, converted to software rules (3.6) |
@@ -592,7 +595,7 @@ Existing rules changed (exact replacement entries, same positions in the file):
 {"id":"title-plex","field":"httpTitle","pattern":"\\bPlex\\b","software":"Plex Media Server","type":"SERVER","weight":40,"sample":"Plex"},
 {"id":"port-plex","field":"anyPort","anyPort":[32400],"software":"Plex Media Server","type":"SERVER","weight":40},
 {"id":"title-pihole","field":"httpTitle","pattern":"Pi-hole","software":"Pi-hole","type":"SERVER","weight":40,"sample":"Pi-hole - Login"},
-{"id":"title-unifi","field":"httpTitle","pattern":"UniFi","software":"UniFi Network","weight":40,"sample":"UniFi Network"},
+{"id":"title-unifi","field":"httpTitle","pattern":"UniFi(?! Security Gateway)","software":"UniFi Network","weight":40,"sample":"UniFi Network"},
 {"id":"port-rdp","field":"anyPort","anyPort":[3389],"os":"Windows","type":"COMPUTER","weight":60},
 ```
 
@@ -908,7 +911,7 @@ Each was decided by the controller or by Ada while the Director was away. Overtu
 |---|------------|---------------|
 | A1 | Motion choices: the arm turns once per 3 s (was 2.4 s); the trail is 140 degrees; blips dim to 0.45 between sweeps and light up as the arm passes (today they sit at full strength); extra motion beyond the list (identity cross-fade, edge colour change, smooth Detail progress line) | Tokens in `Motion.kt` (`BLIP_REST_ALPHA = 1f` restores today's blips); extras are each one modifier |
 | A2 | Full and Custom scans send active probes (TLS handshake, HTTP HEAD, a GET when it is HTTP, RTSP OPTIONS on 554/8554, an RDP connection request on 3389) to ports that said nothing passively, within 64 ports and 60 s of probe time per scan; Quick, and so Quick scan all, sends nothing beyond today. There is no Settings toggle: choosing Quick is the switch | Drop the ladder: "Open with..." and Try as still work, but D6 then applies only to the fixed HTTP and TLS port lists. A toggle is open item 11.6 |
-| A3 | After a port scan the identity is replaced when the new confidence is equal or higher (the controller said "higher"; equal lets a same-weight scan add a model or reason line). Discovery runs still always replace it | Change `<=` to `<` in one query |
+| A3 | After a port scan, and after a radar run for the same device (stored and new MACs not contrary, including both unknown), the identity is replaced when the new confidence is equal or higher (the controller said "higher"; equal lets a same-weight scan add a model or reason line). A different known MAC on the IP always writes, as a fresh device (3.3, F1) | Change `<=` to `<` in one query |
 | A4 | The Edit device dialog replaces the rename dialog and opens from the name, the identity line and the overflow; confirming a detected value stores no override, so it follows later detection; a type cannot be overridden to "unknown" | Entry points are three click handlers; the equal-to-detected rule is one line in `DeviceEdits.of` |
 | A5 | The one migration adds twelve columns, not three: `identSoftware`, `lastRunAt`, `forgotten` and six port evidence columns besides the three overrides | Without the port columns a narrow scan forgets earlier titles and certificates and identities flap |
 | A6 | Undo is memory only and lasts until the notice is dismissed, any scan starts, another Undo replaces it, or the process ends; then the deletion is final (a pending Forget is purged at the next start). "Remove device" works during scans by stopping that host's scans and skipping its IP for the rest of a radar scan | A timed or persisted undo is a larger change |
@@ -916,6 +919,7 @@ Each was decided by the controller or by Ada while the Director was away. Overtu
 | A8 | "Open with..." defaults to http for an unknown port and https for a bare TLS port | One constant in `PortUris` |
 | A9 | Home Assistant, Plex, Pi-hole and the UniFi Network app become software chips, not identities, so hosts the Director already sees as "Home Assistant" or "Pi-hole" may now read by their platform (for example "Raspberry Pi Computer") with a "Runs Home Assistant" chip | Raise the converted rules' weights back; the software chip stays |
 | A10 | Stale dimming persists only for completed runs | One condition in `discover`'s `finally` |
+| A11 | Never-drop trade-off (3.3, F1): a rule demotion, or a repurposed device that keeps its MAC, keeps its stored identity until equal or stronger evidence arrives. Today's reset is Remove device, then rescan. A "Re-identify" overflow action in Detail is the Director's option | Add the Re-identify action (one plain `setIdentity` call) |
 
 ## 11. Open items
 

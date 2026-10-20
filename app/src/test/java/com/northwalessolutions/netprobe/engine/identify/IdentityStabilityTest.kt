@@ -66,7 +66,11 @@ class IdentityStabilityTest {
     @Test fun `F1 a radar re-identification of the same device never lowers the stored identity`() {   // the Pi-holes, 10.0.3.170 and 10.0.3.234
         val piMac = "e4:5f:01:e4:22:dc"
         val ev = HostEvidenceBuilder.build(DiscoveredHost(InetAddress.getByName("10.0.3.170") as Inet4Address, httpTitle = "Pi-hole btast2", reverseDnsName = "pi.hole"),
-            mapOf(22 to ServiceInfo("SSH", "OpenSSH", "9.2p1", "Debian-2+deb12u5", Confidence.CONFIRMED)), emptySet(), emptyMap(), null)
+            mapOf(22 to ServiceInfo("SSH", "OpenSSH", "9.2p1", "Debian-2+deb12u5", Confidence.CONFIRMED),   // the real row's full port set
+                53 to ServiceInfo("DNS", confidence = Confidence.PORT_TABLE),
+                80 to ServiceInfo("HTTP", null, null, "403 Forbidden", Confidence.PORT_TABLE),
+                443 to ServiceInfo("HTTPS", null, null, "cert pi.hole", Confidence.PORT_TABLE, certCn = "pi.hole"),
+                5900 to ServiceInfo("VNC", null, null, "RFB 003.008", Confidence.CONFIRMED)), emptySet(), emptyMap(), null)
         val radar = id.identify(ev)
         assertEquals(70, radar.confidence)                                     // the stored Phase 2 row reads model Pi-hole at 90
         assertFalse(IdentityWrite.radarReplaces(storedConfidence = 90, newConfidence = radar.confidence, previousMac = piMac, currentMac = piMac))
