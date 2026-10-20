@@ -1,6 +1,8 @@
 package com.northwalessolutions.netprobe.ui.home
 
 import androidx.compose.ui.geometry.Offset
+import com.northwalessolutions.netprobe.ui.theme.Motion
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -43,3 +45,38 @@ fun blipOffset(index: Int, radiusPx: Float): Offset {
     val d = RadarGeometry.radiusFraction(index) * radiusPx
     return Offset((cos(angle) * d).toFloat(), (sin(angle) * d).toFloat())
 }
+
+private const val FULL_TURN_DEG = 360f
+private const val HALF_F = 0.5f
+
+/** The sweep wedge (spec 1.3): head at 360 degrees, a 140 degree tail behind it; (position, alpha of signal) for Brush.sweepGradient. */
+object ArmTrail {
+    private val DEGREES_ALPHA = listOf(0f to 0f, 220f to 0f, 260f to 0.03f, 300f to 0.09f, 330f to 0.20f, 350f to 0.38f,
+        359f to Motion.ARM_HEAD_ALPHA, 360f to Motion.ARM_HEAD_ALPHA)
+    fun stops(): List<Pair<Float, Float>> = DEGREES_ALPHA.map { (deg, alpha) -> deg / FULL_TURN_DEG to alpha }
+}
+
+/** 1 when the arm head is on the blip, falling to 0 at AFTERGLOW_DEG behind it; 0 ahead of the arm (spec 1.4). */
+fun afterglow(armDeg: Float, blipDeg: Float): Float {
+    val d = ((armDeg - blipDeg) % FULL_TURN_DEG + FULL_TURN_DEG) % FULL_TURN_DEG
+    if (d >= Motion.AFTERGLOW_DEG) return 0f
+    val g = 1f - d / Motion.AFTERGLOW_DEG
+    return g * g
+}
+
+/** Disc outline tint towards signal, once per arm turn: BREATH_MAX at 0 degrees, BREATH_MIN at 180 (spec 1.6). */
+fun breath(armDeg: Float): Float =
+    Motion.BREATH_MIN + (Motion.BREATH_MAX - Motion.BREATH_MIN) * (HALF_F + HALF_F * cos(Math.toRadians(armDeg.toDouble())).toFloat())
+
+/** The clockwise screen angle of a blip offset in [0, 360); screen y points down, as the arm's rotationZ does (spec 1.4). */
+fun blipAngleDeg(offset: Offset): Float {
+    val deg = Math.toDegrees(atan2(offset.y.toDouble(), offset.x.toDouble())).toFloat()
+    return (deg % FULL_TURN_DEG + FULL_TURN_DEG) % FULL_TURN_DEG
+}
+
+/** Blip core alpha: lerp(BLIP_REST_ALPHA, 1, glow), or BLIP_STATIC_ALPHA under reduced motion (spec 1.4, 1.15). */
+fun blipCoreAlpha(glow: Float, reduced: Boolean): Float = if (reduced) Motion.BLIP_STATIC_ALPHA else Motion.BLIP_REST_ALPHA + (1f - Motion.BLIP_REST_ALPHA) * glow
+/** Blip glow alpha: lerp(GLOW_REST_ALPHA, GLOW_LIT_ALPHA, glow), or GLOW_REST_ALPHA under reduced motion. */
+fun blipGlowAlpha(glow: Float, reduced: Boolean): Float = if (reduced) Motion.GLOW_REST_ALPHA else Motion.GLOW_REST_ALPHA + (Motion.GLOW_LIT_ALPHA - Motion.GLOW_REST_ALPHA) * glow
+/** Glow scale about the blip centre: lerp(1, GLOW_LIT_SCALE, glow), or 1 under reduced motion. */
+fun blipGlowScale(glow: Float, reduced: Boolean): Float = if (reduced) 1f else 1f + (Motion.GLOW_LIT_SCALE - 1f) * glow
