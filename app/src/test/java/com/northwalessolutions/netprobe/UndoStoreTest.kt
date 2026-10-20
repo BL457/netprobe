@@ -39,7 +39,7 @@ class UndoStoreTest {
         val gate = CompletableDeferred<Unit>()
         val s = UndoStore()
         s.post(PendingUndo("Forgot A", restore = { log += "restore A" }, commit = { log += "commit A started"; gate.await(); log += "commit A done" }))
-        val caller = launch { s.committedBefore { log += "scan body" } }
+        val caller = launch { s.commit() }
         runCurrent()
         caller.cancel(); gate.complete(Unit); caller.join(); runCurrent()
         assertEquals(listOf("commit A started", "commit A done"), log); assertNull(s.pending.value)
