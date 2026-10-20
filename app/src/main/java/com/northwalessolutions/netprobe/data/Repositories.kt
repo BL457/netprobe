@@ -214,23 +214,23 @@ object ToolHintsRule {
     }
 }
 
-class ToolRepository(private val db: NetProbeDb) {
+class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netprobe.engine.tools.ToolStore {
     private val dao get() = db.tools()
     private val _ready = CompletableDeferred<Unit>()
     /** Completed by [markInterrupted]; ToolRunner.start awaits it so a run started at launch is never marked INTERRUPTED. */
-    val ready: Deferred<Unit> = _ready
+    override val ready: Deferred<Unit> = _ready
 
-    suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String): Long = db.withTransaction {
+    override suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String): Long = db.withTransaction {
         val id = dao.insertRun(ToolRunEntity(hostId = hostId, toolId = toolId, port = port, startedAt = startedAt,
             finishedAt = null, status = ToolRunStatus.RUNNING, optionsJson = optionsJson, summary = ""))
         dao.prune(hostId, toolId, port, KEEP_RUNS_PER_TOOL)   // per (host, tool, port), ruling R5: port 80's runs never prune port 5000's
         id
     }
-    suspend fun finish(runId: Long, finishedAt: Long?, status: ToolRunStatus, summary: String) = dao.finish(runId, finishedAt, status, summary)
-    suspend fun addFinding(runId: Long, kind: String, value: String, detail: String?, extra: String?): Long =
+    override suspend fun finish(runId: Long, finishedAt: Long?, status: ToolRunStatus, summary: String) = dao.finish(runId, finishedAt, status, summary)
+    override suspend fun addFinding(runId: Long, kind: String, value: String, detail: String?, extra: String?): Long =
         dao.insertFinding(ToolFindingEntity(runId = runId, kind = kind, value = value, detail = detail, extra = extra))
     /** Process death left a RUNNING row: mark each INTERRUPTED with its finding count, in one transaction, then complete [ready] (spec 4.4 rule 5). */
-    suspend fun markInterrupted(summaryOf: (found: Int) -> String) {
+    override suspend fun markInterrupted(summaryOf: (found: Int) -> String) {
         try {
             db.withTransaction {
                 for (r in dao.runningOnce()) dao.finish(r.id, null, ToolRunStatus.INTERRUPTED, summaryOf(dao.findingCount(r.id)))
@@ -241,9 +241,9 @@ class ToolRepository(private val db: NetProbeDb) {
     fun run(id: Long): Flow<ToolRunEntity?> = dao.run(id)
     fun findings(runId: Long): Flow<List<ToolFindingEntity>> = dao.findings(runId)
     suspend fun findingsOnce(runId: Long): List<ToolFindingEntity> = dao.findingsOnce(runId)
-    suspend fun findingCount(runId: Long): Int = dao.findingCount(runId)
+    override suspend fun findingCount(runId: Long): Int = dao.findingCount(runId)
     /** One UPDATE of a run's optionsJson, used when a tool records a value it learns mid-run (methodUsed, spec 7.1). */
-    suspend fun setOptions(runId: Long, json: String) = dao.setOptions(runId, json)
+    override suspend fun setOptions(runId: Long, json: String) = dao.setOptions(runId, json)
     /** Hosts with any tool run: the radar asks hintsFor only for these, so an emission adds no query for the rest (plan review G13). */
     suspend fun hostsWithRuns(): Set<Long> = dao.hostsWithRuns().toSet()
     /** Hints of one run per (host, tool, port) by [ToolHintsRule]. */

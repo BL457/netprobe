@@ -22,8 +22,9 @@ import com.northwalessolutions.netprobe.ui.theme.Motion
 
 @Composable
 fun NetProbeNav(container: AppContainer) {
-    val keepOn by container.extendedRunActive.collectAsStateWithLifecycle()
-    KeepScreenOn(keepOn)
+    val extended by container.extendedRunActive.collectAsStateWithLifecycle()
+    val toolRun by container.toolRunActive.collectAsStateWithLifecycle()
+    KeepScreenOn(extended || toolRun)
     val nav = rememberNavController()
     NetProbeNavHost(nav,
         home = { HomeScreen(container, onOpenHost = { nav.navigate("host/$it") }, onOpenSettings = { nav.navigate("settings") }) },

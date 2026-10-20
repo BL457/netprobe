@@ -17,6 +17,16 @@ import android.util.Log
 import com.northwalessolutions.netprobe.engine.tools.AppMessages
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.engine.tools.TOOL_THREADS
+import com.northwalessolutions.netprobe.engine.tools.Tool
+import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolRunner
+import com.northwalessolutions.netprobe.ui.home.ScanBinding
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +79,26 @@ class AppContainer(val context: Context) {
     val ports by lazy { PortRepository(db) }
     val vulnCache by lazy { VulnCacheRepository(db) }
     val toolRepo by lazy { ToolRepository(db) }
+    /** The registered tools; each tool task (10 to 14) adds its line to toolMap(). A ToolId absent here never gets a chip. */
+    val tools: Map<ToolId, Tool> by lazy { toolMap() }
+    private fun toolMap(): Map<ToolId, Tool> = buildMap {
+        // Task 10: DIR_BRUTEFORCE. Task 11: HTTP_FINGERPRINT. Task 12: TLS_CERTIFICATE. Task 13: SNMP_WALK. Task 15: SMB_SESSION.
+    }
+    /** Reading this lazy is the only place markInterrupted starts; no instrumented test reads it (Global Constraints). */
+    val toolRunner: ToolRunner by lazy {
+        appScope.launch { toolRepo.markInterrupted(ToolCopy::interrupted) }
+        ToolRunner(appScope, toolDispatcher, tools, toolRepo, hostBusy, appMessages,
+            networkEnvMonitor.env.stateIn(appScope, SharingStarted.Eagerly, networkEnvMonitor.current()),
+            foreground,
+            bind = { ip, e, block -> ScanBinding.run(ip, e, settings.state.value.maxPrefix, settings.state.value.extEnabled, networkEnvMonitor::binderFor) { block() } },
+            onFinished = { hostId -> reidentifyFromTools(hostId) },
+            log = { Log.e(AppScopes.LOG_TAG, "tool run", it) })
+    }
+    /** True while any tool run is live; Nav keeps the screen on for it (spec 4.4). */
+    val toolRunActive: StateFlow<Boolean> by lazy { toolRunner.active.map { it.isNotEmpty() }.stateIn(appScope, SharingStarted.Eagerly, false) }
+    /** Filled in Task 7 (identification from tool hints). */
+    @Suppress("UNUSED_PARAMETER")
+    private suspend fun reidentifyFromTools(hostId: Long) { }
     val networkEnvMonitor by lazy { NetworkEnvMonitor(context) }
     val portTable by lazy { PortTable.fromJson(RawResources.read(context, R.raw.ports)) }
     val mdnsTypes by lazy { RawResources.lines(RawResources.read(context, R.raw.mdns_types)) }
