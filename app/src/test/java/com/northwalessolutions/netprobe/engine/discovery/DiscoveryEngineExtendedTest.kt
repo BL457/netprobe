@@ -60,7 +60,7 @@ class DiscoveryEngineExtendedTest {
     private val rdnsCalls = Collections.synchronizedList(mutableListOf<String>())
 
     private fun engine(alive: (Inet4Address) -> Boolean = { false }, mdns: List<MdnsRecord> = emptyList(), mdnsDelayMs: Long = 0,
-                       gatewayHits: List<String> = emptyList(), gatewayThrows: Boolean = false,
+                       gatewayHits: List<String> = emptyList(), gatewayThrows: Boolean = false, gatewayAnswered: List<String> = emptyList(),
                        canary: (Inet4Address, Int) -> Probe.Outcome = { _, _ -> Probe.Outcome.Timeout },
                        delayFor: (Inet4Address) -> Long = { 0 }, onNetbios: suspend (Inet4Address) -> Unit = {},
                        completionOrder: (List<Inet4Address>) -> List<Inet4Address> = { it },
@@ -71,7 +71,7 @@ class DiscoveryEngineExtendedTest {
             upnpFetch = { _, _ -> null }, netbios = { a -> netbiosCalls += a.hostAddress; onNetbios(a); null }, snmp = { null },
             httpTitle = { _, _, _ -> null }, reverseDns = { a -> rdnsCalls += a.hostAddress; null }, neighbours = { Result.success(neigh) }, mdnsTypes = listOf("_http._tcp"),
             deviceInfo = { _, _ -> null },
-            gatewayProbe = { t, onProgress, _ -> gatewayCalls += t; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2); gatewayHits.map(::net) },
+            gatewayProbe = { t, onProgress, _ -> gatewayCalls += t; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2); GatewayProbeResult(gatewayHits.map(::net), gatewayAnswered.map(::ip).toSet()) },
             canaryProbe = { a, port, _ -> canaryCalls += "${a.hostAddress}:$port"; canary(a, port) },
             random = Random(1),
         )
@@ -207,6 +207,21 @@ class DiscoveryEngineExtendedTest {
         val probed = canaryCalls.map { it.substringBefore(':') }
         assertEquals(listOf("10.0.4.2", "10.0.4.253"), probed)
         assertTrue(canaryCalls.all { it.substringAfter(':').toInt() in 49152..65535 })
+    }
+    @Test fun `canaries skip the gateway probe's answering addresses and the 1 and 254 offsets`() = runBlocking {   // final review I3
+        val real = setOf("10.0.4.1", "10.0.4.254")   // live hosts that reset closed ports, just proved real by the gateway probe
+        val e = engine(gatewayHits = listOf("10.0.4.0/24"), gatewayAnswered = real.toList(),
+            canary = { a, _ -> if (a.hostAddress in real) Probe.Outcome.Refused else Probe.Outcome.Timeout })
+        e.hosts(opts(probe = true))
+        val probed = canaryCalls.map { it.substringBefore(':') }.filter { it.startsWith("10.0.4.") }
+        assertEquals(listOf("10.0.4.2", "10.0.4.253"), probed)
+        assertEquals(RangeState.DONE, e.status.value.ranges[1].state); assertNull(e.status.value.ranges[1].canaryFallback)
+    }
+    @Test fun `with fewer than two clean canary addresses the canary uses what remains and says so`() = runBlocking {
+        val e = engine(gatewayAnswered = listOf("10.0.4.252", "10.0.4.253"))
+        e.hosts(opts(manual = listOf("10.0.4.248/29"), probe = true, known = setOf("10.0.4.249", "10.0.4.250")))
+        assertEquals(listOf("10.0.4.251"), canaryCalls.map { it.substringBefore(':') }.filter { it.startsWith("10.0.4.") })
+        assertEquals(1, e.status.value.ranges[1].canaryFallback)
     }
     @Test fun `a bind failure mid phase ends the extended phase as skipped and keeps what was found`() = runBlocking {   // controller ruling 2
         val e = engine(alive = { it.hostAddress == "10.0.4.7" },

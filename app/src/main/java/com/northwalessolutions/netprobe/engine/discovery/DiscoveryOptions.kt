@@ -23,7 +23,9 @@ enum class DiscoveryPhase { LOCAL, GATEWAY_PROBE, EXTENDED, DONE }
 enum class ExtendedNote { GATEWAY_PROBE_SKIPPED_ANSWERS_ALL, GATEWAY_PROBE_FOUND_NONE, NO_EXTRA_RANGES, SKIPPED_BIND_FAILED }
 
 /** Per-range progress; probed and total are this range's own and are not monotonic across ranges. [source] null is the local range. */
-data class RangeProgress(val subnet: String, val source: RangeSource?, val state: RangeState, val probed: Int, val total: Int, val found: Int)
+/** [canaryFallback] is null when the canary ran on two clean addresses; otherwise how many (0 or 1) were left to probe (final review I3). */
+data class RangeProgress(val subnet: String, val source: RangeSource?, val state: RangeState, val probed: Int, val total: Int, val found: Int,
+                         val canaryFallback: Int? = null)
 /** [label] is the walked /16 (for example "10.0.0.0/16"); done and total count /24 units; [attempts] counts connects tried, for the device check. */
 data class GatewayProbeProgress(val label: String, val done: Int, val total: Int, val attempts: Int = 0)
 

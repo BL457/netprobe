@@ -11,6 +11,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
 
+/** The gateway probe's hit /24s and every address that answered, which the canary must not reuse (final review I3). */
+data class GatewayProbeResult(val hits: List<Subnet>, val answered: Set<Inet4Address> = emptySet())
+
 /** What the gateway probe walks (extended spec 4.3 steps 1 to 4). */
 data class GatewayTargets(val enclosing: Subnet?, val exclude: Subnet, val gatewayOffset: Int?, val seeds: List<Inet4Address>) {
     fun byUnit(): Map<Subnet, List<Inet4Address>> {
@@ -63,9 +66,10 @@ object GatewayProbe {
     const val CONCURRENCY = 64
     val PORTS = listOf(80, 443)
 
-    /** A /24 is a hit when any probed address in it connects or is refused on 80 or 443; hits come back ordered by address. */
+    /** A /24 is a hit when any probed address in it connects or is refused on 80 or 443; hits come back ordered by address. [onAnswer] gets each answering address. */
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun run(targets: GatewayTargets, connect: suspend (Inet4Address, Int) -> Probe.Outcome, onProgress: (Int, Int, Int) -> Unit = { _, _, _ -> },
+                    onAnswer: (Inet4Address) -> Unit = {},
                     dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(CONCURRENCY)): List<Subnet> {
         val units = targets.byUnit()
         val sem = Semaphore(CONCURRENCY)
@@ -76,7 +80,7 @@ object GatewayProbe {
         onProgress(0, units.size, 0)
         coroutineScope {
             for ((unit, addresses) in units) launch(dispatcher) {
-                for (a in addresses) if (sem.withPermit { answers(a, connect, attempts) }) { hits += unit; break }
+                for (a in addresses) if (sem.withPermit { answers(a, connect, attempts) }) { onAnswer(a); hits += unit; break }
                 // Counter and callback under one lock: two units finishing together can never report 272 before 271, so the status never steps back.
                 synchronized(lock) { done++; onProgress(done, units.size, attempts.get()) }
             }

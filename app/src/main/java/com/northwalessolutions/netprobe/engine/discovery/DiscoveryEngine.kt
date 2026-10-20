@@ -59,7 +59,7 @@ class DiscoveryEngine(
     val neighbours: () -> Result<List<NeighbourEntry>>,
     val mdnsTypes: List<String>,
     val deviceInfo: suspend (String, Inet4Address) -> Map<String, String>?,
-    val gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?) -> List<Subnet> = { _, _, _ -> emptyList() },
+    val gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?) -> GatewayProbeResult = { _, _, _ -> GatewayProbeResult(emptyList()) },
     val canaryProbe: suspend (Inet4Address, Int, SocketBinder?) -> Probe.Outcome = { _, _, _ -> Probe.Outcome.Timeout },
     val random: Random = Random.Default,
 ) {
@@ -105,12 +105,16 @@ class DiscoveryEngine(
         }
 
         /** One extra range: canary, guarded sweep, enrichment; DONE only after enrichment (extended spec 4.7 and 5.2). */
-        suspend fun sweepExtra(i: Int, c: CandidateRange, canaryPort: Int, b: SocketBinder) {
+        suspend fun sweepExtra(i: Int, c: CandidateRange, canaryPort: Int, b: SocketBinder, gatewayAnswered: Set<Inet4Address>) {
             updateRange(i) { it.copy(state = RangeState.RUNNING) }
             val known = options.extended.knownIps + synchronized(found) { found.map { it.hostAddress } }
             val fresh = c.subnet.hosts().filter { it != env.interfaceIp && it.hostAddress !in known }.toList()
             if (fresh.size >= PhantomGuard.CANARY_MIN_UNKNOWN) {
-                val outcomes = listOf(fresh.first(), fresh.last()).map { softly { canaryProbe(it, canaryPort, b) } ?: Probe.Outcome.Timeout }
+                // Never the addresses the gateway probe just proved real, nor the .1 / .254 it probes: a real host that resets closed ports would read PHANTOM (final review I3).
+                val clean = fresh.filter { it !in gatewayAnswered && (SubnetMath.toInt(it) and LAST_OCTET) !in GATEWAY_OFFSETS }
+                val picks = if (clean.size >= CANARY_COUNT) listOf(clean.first(), clean.last()) else clean
+                if (picks.size < CANARY_COUNT) updateRange(i) { it.copy(canaryFallback = picks.size) }
+                val outcomes = picks.map { softly { canaryProbe(it, canaryPort, b) } ?: Probe.Outcome.Timeout }
                 if (PhantomGuard.canaryPhantom(outcomes)) { updateRange(i) { it.copy(state = RangeState.PHANTOM, found = 0) }; return }
             }
             val sweep = sweepFactory(HostProber(timeoutMs = options.connectTimeoutMs), options.sweepConcurrency)
@@ -165,6 +169,7 @@ class DiscoveryEngine(
                 val highPort = RandomHighPort.pick(random)   // one per run, for the TEST-NET pre-check and every canary (spec 4.3, 4.7)
                 Evidence.dnsServers(env, local).forEach { noteEvidence(it) }
                 var hits = emptyList<Subnet>()
+                var gatewayAnswered = emptySet<Inet4Address>()
                 if (ext.gatewayProbe) {
                     _status.update { it.copy(phase = DiscoveryPhase.GATEWAY_PROBE) }
                     val pre = AnswersForEverything.TEST_NET.flatMap { a ->
@@ -176,7 +181,8 @@ class DiscoveryEngine(
                         val label = targets.enclosing?.toString() ?: OTHER_RANGES_LABEL
                         var ran = false
                         isolated {
-                            hits = gatewayProbe(targets, { d, t, n -> _status.update { it.copy(gatewayProbe = GatewayProbeProgress(label, d, t, n)) } }, b)
+                            val r = gatewayProbe(targets, { d, t, n -> _status.update { it.copy(gatewayProbe = GatewayProbeProgress(label, d, t, n)) } }, b)
+                            hits = r.hits; gatewayAnswered = r.answered
                             ran = true
                         }
                         if (ran && hits.isEmpty()) addNote(ExtendedNote.GATEWAY_PROBE_FOUND_NONE)
@@ -188,7 +194,7 @@ class DiscoveryEngine(
                 _status.update { s -> s.copy(phase = DiscoveryPhase.EXTENDED, truncatedRanges = cand.truncated.size,
                     ranges = s.ranges + cand.ranges.map { RangeProgress(it.subnet.toString(), it.source, RangeState.PENDING, 0, it.subnet.size, 0) } +
                         cand.truncated.map { RangeProgress(it.subnet.toString(), it.source, RangeState.TRUNCATED, 0, it.subnet.size, 0) }) }
-                withContext(BoundNetwork(b)) { cand.ranges.forEachIndexed { k, c -> sweepExtra(1 + k, c, highPort, b) } }   // one range at a time
+                withContext(BoundNetwork(b)) { cand.ranges.forEachIndexed { k, c -> sweepExtra(1 + k, c, highPort, b, gatewayAnswered) } }   // one range at a time
             } catch (e: BindFailedException) {
                 addNote(ExtendedNote.SKIPPED_BIND_FAILED)
             }
@@ -280,6 +286,9 @@ class DiscoveryEngine(
     companion object {
         const val CANARY_TIMEOUT_MS = 600
         private const val OTHER_RANGES_LABEL = "other ranges"
+        private const val CANARY_COUNT = 2
+        private const val LAST_OCTET = 0xFF
+        private val GATEWAY_OFFSETS = setOf(GatewayTargets.LOW, GatewayTargets.HIGH)
         fun production(context: Context, mdnsTypes: List<String>): DiscoveryEngine {
             val nsd = AndroidNsdSource(context); val upnp = UpnpFetcher(); val titles = HttpTitleFetcher(); val rdns = ReverseDns()
             return DiscoveryEngine(
@@ -290,7 +299,10 @@ class DiscoveryEngine(
                 neighbours = { NeighbourTable.dump() }, mdnsTypes = mdnsTypes,
                 deviceInfo = { name, host -> DeviceInfoTxt.query(name, host) },
                 gatewayProbe = { targets, onProgress, b ->
-                    GatewayProbe.run(targets, connect = { a, port -> Probe.connect(a, port, GatewayProbe.TIMEOUT_MS, binder = b) }, onProgress = onProgress)
+                    val answered = java.util.concurrent.ConcurrentHashMap.newKeySet<Inet4Address>()
+                    val hits = GatewayProbe.run(targets, connect = { a, port -> Probe.connect(a, port, GatewayProbe.TIMEOUT_MS, binder = b) },
+                        onProgress = onProgress, onAnswer = { answered += it })
+                    GatewayProbeResult(hits, answered.toSet())
                 },
                 // Probe.connect blocks: never on the collector's (possibly Main) dispatcher.
                 canaryProbe = { a, port, b -> withContext(Dispatchers.IO) { Probe.connect(a, port, CANARY_TIMEOUT_MS, binder = b) } },

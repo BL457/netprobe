@@ -45,13 +45,14 @@ class GatewayProbeTest {
         assertNull(t.enclosing); assertEquals(20, t.byUnit().values.sumOf { it.size })
     }
     @Test fun `a unit is a hit on connect or refused, ports are 80 then 443 only`() = runBlocking {
-        val calls = Collections.synchronizedList(mutableListOf<String>())
+        val calls = Collections.synchronizedList(mutableListOf<String>()); val answered = Collections.synchronizedList(mutableListOf<String>())
         val t = GatewayTargets.of(env("10.0.3.242", "10.0.3.1"), net("10.0.3.0/24"))
         val hits = GatewayProbe.run(t, connect = { a, port ->
             calls += "${a.hostAddress}:$port"
             when (a.hostAddress) { "10.0.4.1" -> Probe.Outcome.Refused; "10.0.9.254" -> if (port == 443) Probe.Outcome.Connected(3, null) else Probe.Outcome.Timeout
                 "10.0.5.1" -> Probe.Outcome.Unreachable; else -> Probe.Outcome.Timeout }
-        }, dispatcher = Dispatchers.Default)
+        }, onAnswer = { answered += it.hostAddress }, dispatcher = Dispatchers.Default)
+        assertEquals(setOf("10.0.4.1", "10.0.9.254"), answered.toSet())   // the canary must not reuse these (final review I3)
         assertEquals(listOf("10.0.4.0/24", "10.0.9.0/24"), hits.map { it.toString() })
         assertTrue(calls.all { it.endsWith(":80") || it.endsWith(":443") })
         assertFalse("10.0.5.1:443" in calls)                  // unreachable is definitive: no second port
