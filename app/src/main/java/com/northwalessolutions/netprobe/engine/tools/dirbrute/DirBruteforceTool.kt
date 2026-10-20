@@ -58,7 +58,7 @@ class DirBruteforceTool(
         val list = resolve(o.wordlistId) ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolCopy.BRUTE_NO_WORDLIST))
         val fellBack = list.id != o.wordlistId
         if (fellBack) {                                          // the chosen list is gone: optionsJson records what actually ran
-            progress.option(WORDLIST_ID, list.id); progress.option(WORDLIST_NAME, list.name); progress.option(WORDLIST_ENTRIES, list.count.toString())
+            progress.option(WORDLIST_ID, list.id); progress.option(WORDLIST_NAME, list.name); progress.option(WORDLIST_ENTRIES, list.count)   // a JSON number, as encode writes it
         }
         val result = runList(list, o, target, control, progress)
         return if (fellBack) result.copy(summary = ToolCopy.bruteFallback(result.summary)) else result

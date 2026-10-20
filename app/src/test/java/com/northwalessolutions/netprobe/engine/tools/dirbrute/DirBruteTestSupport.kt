@@ -13,7 +13,10 @@ object DirBruteTestSupport {
         override fun update(done: Int, total: Int?, found: Int, errors: Int) { lastDone = done; lastTotal = total; lastFound = found; lastErrors = errors }
         override suspend fun finding(f: Finding) { findings += f }
         val options = mutableMapOf<String, String>()
-        override suspend fun option(key: String, value: String) { options[key] = value }
+        /** The same optionsJson the runner would keep, so a test can check each value's JSON type. */
+        var optionsJson = "{}"
+        override suspend fun option(key: String, value: String) { options[key] = value; optionsJson = ToolOptionsJson.withOption(optionsJson, key, value) }
+        override suspend fun option(key: String, value: Int) { options[key] = value.toString(); optionsJson = ToolOptionsJson.withOption(optionsJson, key, value) }
         fun paths() = findings.filter { it.kind == FindingKind.PATH }.map { it.value }
     }
     /** Never pauses, never rate-limits; [epoch] lets a test simulate a pause that began during a request. */

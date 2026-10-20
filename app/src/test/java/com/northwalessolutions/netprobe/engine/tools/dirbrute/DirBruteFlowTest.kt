@@ -14,6 +14,10 @@ import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSuppor
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSupport.target
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSupport.tool
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.Assert.*
@@ -177,6 +181,8 @@ class DirBruteFlowTest {
         val r = t.run(target(), options(off.copy(wordlistId = "user:gone")), TestControl(), p)
         assertEquals(ToolRunStatus.DONE, r.status); assertEquals("Wordlist not found, common-short used, 0 found in 2 paths", r.summary)
         assertEquals(mapOf("wordlistId" to "builtin:common-short", "wordlistName" to "common-short", "wordlistEntries" to "2"), p.options)
+        val entries = Json.parseToJsonElement(p.optionsJson).jsonObject.getValue("wordlistEntries").jsonPrimitive
+        assertFalse("wordlistEntries is a JSON number, as encode writes it", entries.isString); assertEquals(2, entries.int)
     }
     @Test fun `the chosen list records nothing extra`() = runTest {
         val p = CollectingProgress()

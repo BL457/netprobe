@@ -41,6 +41,8 @@ interface ToolProgress {
     suspend fun finding(f: Finding)                                   // persisted immediately (spec 4.6)
     /** Records a value learned mid-run into the run's optionsJson, for example methodUsed after calibration (spec 7.1). */
     suspend fun option(key: String, value: String) {}
+    /** As [option], written as a JSON number, for example wordlistEntries after a wordlist fallback. */
+    suspend fun option(key: String, value: Int) {}
 }
 
 /**

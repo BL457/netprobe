@@ -122,9 +122,10 @@ class ToolRunner(
                 try { repo.addFinding(run.runId, f.kind.name, f.value, f.detail, FindingExtraJson.encode(f)) }
                 catch (ce: CancellationException) { throw ce } catch (ex: Exception) { log(ex) }   // logged, the run continues (11.12)
             }
-            override suspend fun option(key: String, value: String) {
-                // One UPDATE of optionsJson (spec 7.1): for example methodUsed after a calibration switch (plan review G8).
-                val json = run.withOption(key, value)
+            override suspend fun option(key: String, value: String) { saveOptions(run.withOption(key, value)) }
+            override suspend fun option(key: String, value: Int) { saveOptions(run.withOption(key, value)) }
+            /** One UPDATE of optionsJson (spec 7.1): for example methodUsed after a calibration switch (plan review G8). */
+            private suspend fun saveOptions(json: String) {
                 try { repo.setOptions(run.runId, json) } catch (ce: CancellationException) { throw ce } catch (ex: Exception) { log(ex) }
             }
         }
@@ -222,6 +223,7 @@ class ToolRunner(
     private inner class Run(val runId: Long, val hostId: Long, val toolId: ToolId, val port: Int, startedAt: Long, val startKey: String, val env: NetworkEnv,
                             private var optionsJson: String) {
         @Synchronized fun withOption(key: String, value: String): String { optionsJson = ToolOptionsJson.withOption(optionsJson, key, value); return optionsJson }
+        @Synchronized fun withOption(key: String, value: Int): String { optionsJson = ToolOptionsJson.withOption(optionsJson, key, value); return optionsJson }
         val bucket = RateBucket(MAX_REQUESTS_PER_SECOND, RateBucket.BURST, clock)
         val recorded = AtomicInteger(0)
         /** Completed by start() once the run is in `runs` (or failed to get there). */

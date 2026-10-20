@@ -15,6 +15,7 @@ class ToolJsonTest {
         assertEquals("{\"tls\":false,\"methodUsed\":\"GET_ONLY\"}", ToolOptionsJson.withOption("{\"tls\":false}", "methodUsed", "GET_ONLY"))
         assertEquals("{\"methodUsed\":\"GET_ONLY\"}", ToolOptionsJson.withOption("{\"methodUsed\":\"HEAD_THEN_GET\"}", "methodUsed", "GET_ONLY"))
         assertEquals("nope", ToolOptionsJson.withOption("nope", "a", "b"))
+        assertEquals("a number stays a number", "{\"tls\":false,\"wordlistEntries\":312}", ToolOptionsJson.withOption("{\"tls\":false}", "wordlistEntries", 312))
     }
     @Test fun `extra json is url then the per kind fields, null when empty`() {
         assertNull(FindingExtraJson.encode(Finding(FindingKind.TITLE, "x")))

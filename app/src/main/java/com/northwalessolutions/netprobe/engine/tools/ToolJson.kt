@@ -23,9 +23,12 @@ object ToolOptionsJson {
             put("statusCodes", JsonArray(o.statusCodes.map { JsonPrimitive(it) })); put("baseline", o.baseline)
         }
     }.toString()
-    /** [json] with [key] set to [value]; a malformed [json] is returned unchanged. */
-    fun withOption(json: String, key: String, value: String): String =
-        runCatching { JsonObject(Json.parseToJsonElement(json).jsonObject + (key to JsonPrimitive(value))).toString() }.getOrElse { json }
+    /** [json] with [key] set to the string [value]; a malformed [json] is returned unchanged. */
+    fun withOption(json: String, key: String, value: String): String = withOption(json, key, JsonPrimitive(value))
+    /** [json] with [key] set to the number [value], the same JSON type [encode] writes for counts (wordlistEntries). */
+    fun withOption(json: String, key: String, value: Int): String = withOption(json, key, JsonPrimitive(value))
+    private fun withOption(json: String, key: String, value: JsonPrimitive): String =
+        runCatching { JsonObject(Json.parseToJsonElement(json).jsonObject + (key to value)).toString() }.getOrElse { json }
 }
 
 /** tool_findings.extra (spec 7.1): url when present, then the per-kind fields; null when both are empty. */
