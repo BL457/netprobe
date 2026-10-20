@@ -49,6 +49,9 @@ class ActiveProbeBudget(val maxPorts: Int = MAX_ACTIVE_PORTS, val maxMs: Long = 
 
 object ProbeModes {
     /** Quick is passive, and so is every host of Quick scan all; Full and Custom get a fresh budget per scan (spec 2.2.1). */
-    fun forProfile(profile: ScanProfile, newBudget: () -> ActiveProbeBudget = { ActiveProbeBudget() }): ProbeMode =
-        if (profile is ScanProfile.Quick) ProbeMode.Passive else ProbeMode.Active(newBudget())
+    fun forProfile(profile: ScanProfile, newBudget: () -> ActiveProbeBudget = { ActiveProbeBudget() }): ProbeMode = when (profile) {
+        // Exhaustive on purpose: a new profile must choose its mode here rather than fail open into the active ladder.
+        ScanProfile.Quick -> ProbeMode.Passive
+        ScanProfile.Full, is ScanProfile.Custom -> ProbeMode.Active(newBudget())
+    }
 }

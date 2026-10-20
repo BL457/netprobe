@@ -129,15 +129,20 @@ class ServiceIdentifierLadderTest {
         assertEquals(setOf(25, 110, 143, 515, 2000, 2001) + (6000..6063).toSet() + (9100..9107).toSet(), ServiceIdentifier.PASSIVE_ONLY)
         assertEquals(setOf(631), ServiceIdentifier.HEAD_ONLY)
     }
+    /** Records every attempt in [calls] before failing, so a runCatching around a ladder call cannot hide the attempt. */
+    private val noTls = object : TlsPeek() {
+        override suspend fun certInfo(ip: InetAddress, port: Int, timeoutMs: Int): CertInfo? { calls += "tls:$port"; fail("ClientHello sent to port $port"); return null }
+    }
+    private val noGet = object : HttpTitleFetcher() {
+        override suspend fun fetch(ip: Inet4Address, port: Int, tls: Boolean): HttpPeek? { calls += "get:$port"; fail("GET sent to port $port"); return null }
+    }
     @Test fun `passive only ports never receive a byte in either mode`() {
         val strictReader = object : BannerReader() {
             override suspend fun read(ip: InetAddress, port: Int, sendFirst: ByteArray?): ByteArray? {
-                if (sendFirst != null) fail("wrote ${sendFirst.size} bytes to port $port")
+                if (sendFirst != null) { calls += "send:$port:${kind(sendFirst)}"; fail("wrote ${sendFirst.size} bytes to port $port") }
                 calls += "read:$port"; return null
             }
         }
-        val noTls = object : TlsPeek() { override suspend fun certInfo(ip: InetAddress, port: Int, timeoutMs: Int): CertInfo? { fail("ClientHello sent to port $port"); return null } }
-        val noGet = object : HttpTitleFetcher() { override suspend fun fetch(ip: Inet4Address, port: Int, tls: Boolean): HttpPeek? { fail("GET sent to port $port"); return null } }
         val id = ServiceIdentifier(table, strictReader, noTls, noGet)
         for (mode in listOf(ProbeMode.Passive, active())) for (port in listOf(9100, 9107, 515, 2000, 6000, 6063, 25, 110, 143)) {
             calls.clear()
@@ -150,6 +155,11 @@ class ServiceIdentifierLadderTest {
             tls = Tls { unifiCert }, http = Http { _, _ -> HttpPeek("x", null, null, 200) }), 631, active())
         assertEquals(listOf("read:631", "send:631:HEAD"), calls); assertEquals("CUPS/2.4 IPP/2.1", s.server)
         calls.clear(); run(identifier(), 631, ProbeMode.Passive); assertEquals(listOf("read:631"), calls)
+    }
+    @Test fun `ipp with a silent head gets nothing after it`() {
+        val s = run(ServiceIdentifier(table, Reader(), noTls, noGet), 631, active())
+        assertEquals("no TLS, GET, RTSP or RDP after a failed HEAD", listOf("read:631", "send:631:HEAD"), calls)
+        assertEquals(Confidence.PORT_TABLE, s.confidence)
     }
 
     // ---- the budget (9.1 test 13, Review Focus 2) ----
@@ -179,16 +189,26 @@ class ServiceIdentifierLadderTest {
     }
     @Test fun `eight parallel identifies overshoot by at most eight steps`() = runBlocking {
         val longest = AtomicLong(0)
-        suspend fun slow() { val t0 = System.nanoTime(); delay(SLOW_STEP_MS); longest.accumulateAndGet((System.nanoTime() - t0) / 1_000_000) { a, b -> maxOf(a, b) } }
+        val startedAt: MutableList<Long> = Collections.synchronizedList(mutableListOf())
+        lateinit var budget: ActiveProbeBudget
+        // step() reads the clock straight after its admission check and then runs the block on the same thread with no suspension
+        // before slow(), so the spend seen at that clock read is the spend the step was admitted at. Reading spentMs later, inside
+        // slow(), races with parallel steps finishing in between and can report a value past the cap for a step admitted under it.
+        val admittedAt = ThreadLocal<Long>()
+        suspend fun slow() {
+            startedAt += admittedAt.get()
+            val t0 = System.nanoTime(); delay(SLOW_STEP_MS); longest.accumulateAndGet((System.nanoTime() - t0) / 1_000_000) { a, b -> maxOf(a, b) }
+        }
         val reader = object : BannerReader() { override suspend fun read(ip: InetAddress, port: Int, sendFirst: ByteArray?): ByteArray? { if (sendFirst != null) slow(); return null } }
         val tls = object : TlsPeek() { override suspend fun certInfo(ip: InetAddress, port: Int, timeoutMs: Int): CertInfo? { slow(); return null } }
-        val budget = ActiveProbeBudget(MAX_ACTIVE_PORTS, PARALLEL_BUDGET_MS) { System.nanoTime() / 1_000_000 }
+        budget = ActiveProbeBudget(MAX_ACTIVE_PORTS, PARALLEL_BUDGET_MS) { admittedAt.set(budget.spentMs); System.nanoTime() / 1_000_000 }
         val id = ServiceIdentifier(table, reader, tls, Http())
         val sem = Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)
         coroutineScope { for (p in 20000 until 20100) launch(Dispatchers.Default) { sem.withPermit { id.identify(ip, p, Evidence(), ProbeMode.Active(budget)) } } }
         val bound = PARALLEL_BUDGET_MS + ServiceIdentifier.MAX_PARALLEL_IDENTIFIES * (longest.get() + SCHEDULING_SLACK_MS)
         assertTrue("the budget never filled: ${budget.spentMs} ms", budget.spentMs >= PARALLEL_BUDGET_MS)
         assertTrue("spent ${budget.spentMs} ms, bound $bound ms", budget.spentMs <= bound)
+        assertTrue("a step started after the budget was spent: $startedAt", startedAt.isNotEmpty() && startedAt.all { it < PARALLEL_BUDGET_MS })
     }
 
     private companion object { const val SLOW_STEP_MS = 20L; const val PARALLEL_BUDGET_MS = 300L; const val SCHEDULING_SLACK_MS = 30L }
