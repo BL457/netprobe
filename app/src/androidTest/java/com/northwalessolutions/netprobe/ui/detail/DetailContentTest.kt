@@ -231,4 +231,43 @@ class DetailContentTest {
         rule.onNodeWithText("Remove device").assertIsEnabled().performClick()
         assertEquals(listOf("stop", "remove", "back"), events)
     }
+    private fun showTools(state: DetailUiState, tools: com.northwalessolutions.netprobe.ui.tools.DetailToolsState,
+                          toolActions: com.northwalessolutions.netprobe.ui.tools.ToolActions = com.northwalessolutions.netprobe.ui.tools.ToolActions()) = rule.setContent {
+        NetProbeTheme { DeviceConfigurationOverride(phone) { DetailContent(state, recording, toolState = tools, toolActions = toolActions) } }
+    }
+    @Test fun thePinnedBarShowsTheToolRunAndItsStop() {
+        var stopped = 0
+        showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(
+            bar = com.northwalessolutions.netprobe.ui.tools.ToolRunBar("Directory brute-force on 5000", "1234 of 4614, 7 found  12 s", 0.27f),
+            busy = com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry.Work.TOOL),
+            com.northwalessolutions.netprobe.ui.tools.ToolActions(onStopTool = { stopped++ }))
+        rule.onNodeWithTag("toolBarLabel").assertTextEquals("Directory brute-force on 5000")
+        rule.onNodeWithTag("toolBarProgress").assertTextEquals("1234 of 4614, 7 found  12 s")
+        rule.onNodeWithTag("detailScanButton").assert(hasContentDescription("Stop tool run")).performClick()
+        assertEquals(1, stopped); assertEquals(0, scans)
+        rule.onNodeWithText("Full").assertIsNotEnabled()
+    }
+    @Test fun thePortSheetShowsRunToolRowsOnlyForApplicableTools() {
+        val ran = mutableListOf<Pair<com.northwalessolutions.netprobe.engine.tools.ToolId, Int>>()
+        showTools(DetailFakes.state(listOf(DetailFakes.port(5000, "http"), DetailFakes.port(22, "ssh", name = "SSH"))),
+            com.northwalessolutions.netprobe.ui.tools.DetailToolsState(), com.northwalessolutions.netprobe.ui.tools.ToolActions(onRunTool = { t, p -> ran += t to p }))
+        rule.onNodeWithText("5000").performTouchInput { longClick() }
+        rule.onNodeWithText("Run tool").assertIsDisplayed()
+        rule.onNodeWithTag("sheetTool:dir-bruteforce").assertIsDisplayed(); rule.onNodeWithTag("sheetTool:http-fingerprint").assertIsDisplayed()
+        rule.onNodeWithTag("sheetTool:smb-session").assertDoesNotExist()
+        rule.onNodeWithTag("sheetTool:http-fingerprint").performClick()
+        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolId.HTTP_FINGERPRINT to 5000), ran)
+        rule.onNodeWithText("22").performTouchInput { longClick() }
+        rule.onNodeWithText("Run tool").assertDoesNotExist()
+    }
+    @Test fun removeDeviceIsDisabledWhileAToolHoldsTheHost() {
+        showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(busy = com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry.Work.TOOL))
+        rule.onNodeWithTag("detailMenu").performClick()
+        rule.onNodeWithText("Remove device").assertIsNotEnabled()
+    }
+    @Test fun theToolsBlockIsTheFirstListItem() {
+        showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(tools = com.northwalessolutions.netprobe.ui.tools.ToolsFakesForDetail.tools))
+        val header = rule.onNodeWithTag("toolsHeader").getBoundsInRoot(); val firstPort = rule.onAllNodesWithTag("portAction")[0].getBoundsInRoot()
+        assertTrue(header.bottom <= firstPort.top)
+    }
 }

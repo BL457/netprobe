@@ -40,6 +40,9 @@ import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
+import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolRunBar
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.ScanPill
 import com.northwalessolutions.netprobe.ui.home.label
@@ -77,7 +80,7 @@ fun IdentityText(text: String, name: String, onEdit: () -> Unit) {
 
 /** Overflow on the "Back to Home" row (spec 4.5): "Edit device" and, from Task 14, "Remove device"; both always enabled. */
 @Composable
-fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null) {
+fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null, removeEnabled: Boolean = true) {
     Box {
         var open by remember { mutableStateOf(false) }
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("detailMenu")) {
@@ -85,7 +88,7 @@ fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null) {
         }
         DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
             DropdownMenuItem(text = { Text(DetailCopy.EDIT_DEVICE) }, onClick = { open = false; onEdit() })
-            onRemove?.let { remove -> DropdownMenuItem(text = { Text(DetailCopy.REMOVE_DEVICE) }, onClick = { open = false; remove() }) }
+            onRemove?.let { remove -> DropdownMenuItem(text = { Text(DetailCopy.REMOVE_DEVICE) }, enabled = removeEnabled, onClick = { open = false; remove() }) }
         }
     }
 }
@@ -151,7 +154,8 @@ fun NoteLine(hostId: Long, note: String, onSave: (String) -> Unit, startExpanded
 /** Profile control, Scan pill, Custom ports field, progress text and the 2 dp progress line, all pinned (spec 5.1 items 8 and 9). */
 @Composable
 fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scanning: Boolean, progress: ScanProgress?, enabled: Boolean, identifying: Int = 0, identified: Int = 0,
-            onProfile: (ScanProfile) -> Unit, onCustom: (String) -> Unit, onScan: () -> Unit) {
+            onProfile: (ScanProfile) -> Unit, onCustom: (String) -> Unit, onScan: () -> Unit,
+            toolBar: ToolRunBar? = null, onStopTool: () -> Unit = {}) {
     // Reserved from the data style's line height, so the bar never jumps when a scan starts (about 21 dp at 1.3). The sp line height
     // alone came out 1 px short of the laid-out text on the Pixel (pixel rounding), so the measured line wins when it is taller.
     val reduced = LocalReducedMotion.current
@@ -163,9 +167,10 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
     Column(Modifier.fillMaxWidth().testTag("detailScanBar")) {
         Row(Modifier.padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
             PinnedSegmented(PROFILES.map { it.label }, PROFILES.indexOfFirst { it.label == profile.label }, { onProfile(PROFILES[it]) },
-                activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, enabled = !scanning, modifier = Modifier.weight(1f).testTag("profileSegments"))
+                activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, enabled = !scanning && toolBar == null, modifier = Modifier.weight(1f).testTag("profileSegments"))
             Spacer(Modifier.width(12.dp))
-            ScanPill(scanning, enabled = enabled && !(profile is ScanProfile.Custom && customError != null), onClick = onScan)
+            if (toolBar != null) ScanPill(scanning = true, enabled = true, onClick = onStopTool, stopDescription = ToolCopy.STOP_DESCRIPTION)
+            else ScanPill(scanning, enabled = enabled && !(profile is ScanProfile.Custom && customError != null), onClick = onScan)
         }
         if (profile is ScanProfile.Custom) {
             OutlinedTextField(customText, onCustom, Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter), label = { Text("Ports") },
@@ -174,14 +179,27 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
                 colors = npFieldColors(), shape = RoundedCornerShape(BOX_RADIUS))
         }
         Box(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).heightIn(min = progressHeight), contentAlignment = Alignment.CenterEnd) {
-            if (scanning) Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
+            when {
+                toolBar != null -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(toolBar.label, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).testTag("toolBarLabel"))
+                    Text(toolBar.progress, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, modifier = Modifier.padding(start = 8.dp).testTag("toolBarProgress"))
+                }
+                scanning -> Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
+            }
         }
         val target = detailFraction(progress, identified)
         val shown by animateFloatAsState(target, motionSpec(reduced, Motion.PROGRESS_MS, LinearEasing), label = "progress")
+        val toolFraction = toolBar?.fraction
         Box(Modifier.fillMaxWidth().height(2.dp)) {
-            if (scanning) LinearProgressIndicator(progress = { shown },
-                modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface,
-                gapSize = 0.dp, drawStopIndicator = {})   // a plain 2 dp line as drawn: no M3 gap or end dot
+            when {
+                toolFraction != null -> LinearProgressIndicator(progress = { toolFraction }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
+                    trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})
+                toolBar != null -> LinearProgressIndicator(modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface, gapSize = 0.dp)
+                scanning -> LinearProgressIndicator(progress = { shown },
+                    modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface,
+                    gapSize = 0.dp, drawStopIndicator = {})   // a plain 2 dp line as drawn: no M3 gap or end dot
+            }
         }
         HorizontalDivider(thickness = 1.dp, color = NetProbeColors.surface)
     }
@@ -239,7 +257,8 @@ private fun TryAsRow(ip: String, port: Int, pairs: List<Pair<String, String>>, o
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PortSheet(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onVulns: () -> Unit, onClose: () -> Unit) {
+fun PortSheet(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onVulns: () -> Unit, onClose: () -> Unit,
+              tools: List<ToolId> = emptyList(), toolsBusy: Boolean = false, onTool: (ToolId) -> Unit = {}) {
     ModalBottomSheet(onDismissRequest = onClose, containerColor = NetProbeColors.surface, shape = SHEET_SHAPE) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).padding(bottom = 16.dp)) {
             Text("$ip:${p.port} ${p.service.name}", style = NetProbeText.rowName, color = NetProbeColors.text, modifier = Modifier.padding(bottom = 8.dp))
@@ -247,6 +266,15 @@ fun PortSheet(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onVulns:
             head.forEach { (label, a) -> SheetRow(label, if (a is DeviceAction.OpenWith) NetProbeColors.signal else NetProbeColors.text) { onAction(a); onClose() } }
             if (p.tryAs.isNotEmpty()) TryAsRow(ip, p.port, p.tryAs) { uri -> onAction(DeviceAction.OpenWith(uri)); onClose() }
             tail.forEach { (label, a) -> SheetRow(label, NetProbeColors.text) { onAction(a); onClose() } }
+            if (tools.isNotEmpty()) {
+                Text(ToolCopy.RUN_TOOL, style = NetProbeText.caption, color = NetProbeColors.textMuted, modifier = Modifier.padding(top = 4.dp))
+                tools.forEach { tool ->
+                    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button) { onTool(tool); onClose() }.testTag("sheetTool:${tool.key}"),
+                        contentAlignment = Alignment.CenterStart) {
+                        Text(ToolCopy.toolName(tool), style = NetProbeText.secondary, color = if (toolsBusy) NetProbeColors.textMuted else NetProbeColors.signal)
+                    }
+                }
+            }
             SheetRow("Look up vulnerabilities for this service", NetProbeColors.signal) { onVulns(); onClose() }
         }
     }

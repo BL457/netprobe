@@ -80,7 +80,7 @@ private val CONTROL_INSET = 4.dp
  * so the profile control never shifts, and the pill stays one node.
  */
 @Composable
-fun ScanPill(scanning: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun ScanPill(scanning: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, stopDescription: String? = null) {
     val reduced = LocalReducedMotion.current
     val active = enabled || scanning
     val floatSpec: AnimationSpec<Float> = motionSpec(reduced, Motion.PILL_MORPH_MS)
@@ -100,7 +100,8 @@ fun ScanPill(scanning: Boolean, enabled: Boolean, onClick: () -> Unit, modifier:
         })
     }
     Box(modifier.heightIn(min = Dimens.touch).clip(CircleShape).clickable(enabled = active, role = Role.Button, onClick = onClick)
-        .alpha(if (active) 1f else DISABLED_ALPHA).testTag("detailScanButton"), contentAlignment = Alignment.Center) {
+        .alpha(if (active) 1f else DISABLED_ALPHA).testTag("detailScanButton")
+        .semantics { if (scanning && stopDescription != null) contentDescription = stopDescription }, contentAlignment = Alignment.Center) {
         // Fill and outline alphas are read in the draw phase only; the squash in the layer block.
         val pill = Modifier.heightIn(min = CONTROL_VISUAL).graphicsLayer { scaleX = squash.value }.drawBehind {
             val radius = CornerRadius(size.height / 2)

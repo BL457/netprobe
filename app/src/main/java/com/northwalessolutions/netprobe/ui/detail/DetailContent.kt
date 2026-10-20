@@ -20,6 +20,8 @@ import androidx.compose.ui.semantics.semantics
 import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
+import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
+import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
 import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.EmptyState
 import com.northwalessolutions.netprobe.ui.home.IdentityLine
@@ -30,6 +32,7 @@ import com.northwalessolutions.netprobe.ui.theme.motionSpec
 import com.northwalessolutions.netprobe.ui.theme.Dimens
 import com.northwalessolutions.netprobe.ui.theme.NetProbeColors
 import com.northwalessolutions.netprobe.ui.theme.NetProbeText
+import com.northwalessolutions.netprobe.ui.tools.*
 import com.northwalessolutions.netprobe.ui.vulns.VulnSheet
 
 data class DetailActions(
@@ -42,10 +45,15 @@ data class DetailActions(
 
 /** All Detail layout (Radar spec section 5). PINNED: the topBar column; only `portList` scrolls. */
 @Composable
-fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false) {
+fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false,
+                  toolState: DetailToolsState = DetailToolsState(), toolActions: ToolActions = ToolActions()) {
     val reduced = LocalReducedMotion.current
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
+    LaunchedEffect(toolState.appMessage?.id) {
+        toolState.appMessage?.let { m -> snackbar.showSnackbar(m.text); toolActions.onDismissAppMessage(m.id) }
+    }
+    var toolsExpanded by rememberSaveable(state.host?.id) { mutableStateOf(false) }
     var why by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var sheetPort by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -59,7 +67,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     // on the list counted the navigation bar twice and left a 48 dp gap above the keyboard on the Pixel.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("detailHeader")) {
-            BackToHome(actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, onRemove = { if (state.scanning) actions.onStop(); actions.onRemove(); actions.onBack() }) }
+            BackToHome(actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.busy != HostBusyRegistry.Work.TOOL, onRemove = { if (state.scanning) actions.onStop(); actions.onRemove(); actions.onBack() }) }
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
                     DetailName(state.displayName) { editing = true }
@@ -77,13 +85,21 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
             }
             ScanBar(state.profile, state.customPortsText, state.customError, state.scanning, state.progress, enabled = state.host != null,
                 identifying = state.identifying, identified = state.identified,
-                onProfile = actions.onProfile, onCustom = actions.onCustom, onScan = { if (state.scanning) actions.onStop() else actions.onScan() })
+                onProfile = actions.onProfile, onCustom = actions.onCustom, onScan = { if (state.scanning) actions.onStop() else actions.onScan() },
+                toolBar = toolState.bar, onStopTool = toolActions.onStopTool)
         }
     }) { pad ->
-        if (state.ports.isEmpty()) EmptyState(if (state.scanning) "Scanning ports" else "No open ports yet, run a scan", pad)
+        val tools = toolState.tools
+        if (state.ports.isEmpty() && tools == null) EmptyState(if (state.scanning) "Scanning ports" else "No open ports yet, run a scan", pad)
         else LazyColumn(Modifier.padding(pad).fillMaxSize()
             .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }   // a tap outside the note field collapses the note; rows consume their own taps
             .testTag("portList")) {
+            tools?.let { t ->
+                item(key = "tools") {
+                    ToolsBlock(t, toolsExpanded, busy = toolState.busy != null, onToggle = { toolsExpanded = !toolsExpanded },
+                        onRunChip = toolActions.onRunTool, onResults = toolActions.onOpenResults)
+                }
+            }
             items(state.ports, key = { it.port }) { p ->
                 val base = portBaseline
                 val arriving = !reduced && base != null && p.port !in base
@@ -105,7 +121,8 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     }
     sheetPort?.let { port ->
         state.ports.firstOrNull { it.port == port }?.let { p ->
-            PortSheet(ip, p, onAction = actions.onAction, onVulns = { actions.onPortVulns(p.port) }, onClose = { sheetPort = null })
+            PortSheet(ip, p, onAction = actions.onAction, onVulns = { actions.onPortVulns(p.port) }, onClose = { sheetPort = null },
+                tools = ToolApplicability.toolsFor(p.port, p.service), toolsBusy = toolState.busy != null, onTool = { toolActions.onRunTool(it, p.port) })
         }
     }
     state.vuln?.let { VulnSheet(it, onClose = actions.onCloseVulns, onRerun = actions.onRerunVulns, onOpen = actions.onOpenLink) }
