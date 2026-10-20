@@ -66,6 +66,13 @@ class DirBruteFlowTest {
         val r = tool(ex, listOf("x", "y")).run(target(), options(off), TestControl(), p)
         assertEquals(2, calls.get()); assertEquals(1, p.lastErrors); assertEquals("0 found in 2 paths, 1 error", r.summary)
     }
+    @Test fun `a reset is transient like a timeout, retried once then counted as an error`() = runTest {
+        val calls = AtomicInteger(0)   // Reset takes the same branch as Timeout, which calls limiter.onTimeoutOrReset (halving: AdaptiveLimiterTest)
+        val ex = Exchange { _, path -> if (path == "/x") { calls.incrementAndGet(); HttpResult.Failed(HttpFailure.Reset) } else resp(404) }
+        val p = CollectingProgress()
+        tool(ex, listOf("x", "y")).run(target(), options(off), TestControl(), p)
+        assertEquals(2, calls.get()); assertEquals(1, p.lastErrors)
+    }
     @Test fun `refused and malformed are not retried`() = runTest {
         val calls = AtomicInteger(0)
         val ex = Exchange { _, _ -> calls.incrementAndGet(); HttpResult.Failed(HttpFailure.Malformed) }

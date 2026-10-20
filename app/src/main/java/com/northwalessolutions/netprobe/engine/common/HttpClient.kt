@@ -75,7 +75,7 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
         // hanging the run. The connect itself is bounded by Probe.connect's timeout argument.
         raw.soTimeout = timeoutMs
         val socket: Socket = if (!tls) raw else try { layerTls(raw, ip, port, hostName, sslContext, tlsSocket) }
-            catch (e: IOException) { return HttpResult.Failed(if (isTimeout(e)) HttpFailure.Timeout else HttpFailure.Handshake) }   // a TLS handshake that failed outright
+            catch (e: IOException) { return HttpResult.Failed(when { isTimeout(e) -> HttpFailure.Timeout; isSslFailure(e) -> HttpFailure.Handshake; else -> HttpFailure.Reset }) }   // only a TLS-level failure is a Handshake; a plain reset stays Reset
         socket.soTimeout = timeoutMs
         val deadline = System.currentTimeMillis() + DEADLINE_FACTOR * timeoutMs       // overall, so a dripping server still stops
         val host = hostHeader(ip, port, tls, hostName)
@@ -88,6 +88,13 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
     private fun isTimeout(e: Throwable): Boolean {
         var t: Throwable? = e
         repeat(MAX_CAUSE_DEPTH) { if (t is SocketTimeoutException) return true; t = t?.cause ?: return false }
+        return false
+    }
+
+    /** True when the exception or a cause is an SSLException: the peer spoke, but not TLS we could finish (a plain reset is not). */
+    private fun isSslFailure(e: Throwable): Boolean {
+        var t: Throwable? = e
+        repeat(MAX_CAUSE_DEPTH) { if (t is javax.net.ssl.SSLException) return true; t = t?.cause ?: return false }
         return false
     }
 

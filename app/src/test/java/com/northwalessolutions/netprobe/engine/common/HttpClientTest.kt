@@ -196,6 +196,12 @@ class HttpClientTest {
         val r = runBlocking { client(1000).request(lo, s.localPort, tls = true, method = "GET", path = "/") }
         assertEquals(HttpFailure.Handshake, (r as HttpResult.Failed).failure)
     }
+    @Test fun `a connection reset during the tls handshake stays Reset`() {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { val c = s.accept(); c.setSoLinger(true, 0); c.close() } }   // RST, no bytes
+        val r = runBlocking { client(1000).request(lo, s.localPort, tls = true, method = "GET", path = "/") }
+        assertEquals(HttpFailure.Reset, (r as HttpResult.Failed).failure)
+    }
     @Test fun `a drip fed tls handshake is stopped by the overall bound`() {
         // A TLS record header announcing 16 KB, then one byte every 200 ms: every read beats soTimeout, so only an overall bound ends it.
         val bytes = byteArrayOf(0x16, 0x03, 0x03, 0x40, 0x00) + ByteArray(60) { 0x02 }
