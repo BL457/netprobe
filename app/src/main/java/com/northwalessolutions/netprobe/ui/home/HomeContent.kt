@@ -42,6 +42,8 @@ private fun emptyText(s: HomeUiState): String = when {
 @Composable
 fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoveryStatus? = state.status,
                 now: Long = System.currentTimeMillis(), ownModel: String = Build.MODEL) {
+    // True from the start of a scan until the radar's settle ends: Quick scan all and Forget wait for it (spec 1.7).
+    var radarBusy by remember { mutableStateOf(false) }
     // lastScanAt is null when a finished scan stored no host; the in-memory finish time keeps that case SETTLED (spec 3.1), not HERO.
     val mode = RadarModes.of(state.scanning, state.totalHosts, state.lastScanAt ?: state.scanFinishedAt)
     val localSubnet = state.env?.let { SubnetMath.of(it.interfaceIp, it.prefixLength).toString() }
@@ -52,14 +54,14 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)
             .padding(top = Dimens.gutter, bottom = 10.dp)) {
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
-                HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && state.totalHosts > 0 && state.env != null),
+                HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && !radarBusy && state.totalHosts > 0 && state.env != null),
                     quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan, onSettings = actions.onOpenSettings,
-                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning, onForget = actions.onForget)
+                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy, onForget = actions.onForget)
             }
             RadarBlock(mode, progress?.found ?: 0, ProgressLine.of(progress, elapsedS), summary, canScan = state.env != null,
                 onScan = { actions.onDismissMessage(); actions.onScan() }, onStop = actions.onStop, modifier = Modifier.padding(top = 12.dp),
                 heroSubnet = localSubnet, quickScanning = state.quickScanning, onStopQuick = actions.onStopQuickScan,
-                scanCompleted = state.scanCompleted)
+                scanCompleted = state.scanCompleted, onBusyChange = { radarBusy = it })
             // While an Undo is pending it takes the notice line; an earlier notice was not dismissed and shows again afterwards (spec 5.3).
             when {
                 state.undoText != null -> NoticeLine(state.undoText, actions.onDismissUndo, onUndo = actions.onUndo)

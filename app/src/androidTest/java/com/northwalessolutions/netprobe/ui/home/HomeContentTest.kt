@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.ui.home
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -14,6 +15,7 @@ import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.discovery.*
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.ui.theme.EdgeColors
+import com.northwalessolutions.netprobe.ui.theme.LocalReducedMotion
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
 import com.northwalessolutions.netprobe.ui.theme.STALE_NAME_ALPHA
 import org.junit.Assert.assertEquals
@@ -216,5 +218,16 @@ class HomeContentTest {
         rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithText("Forget this network").assertIsNotEnabled()
         st = st.copy(networkId = 1); rule.waitForIdle()
         rule.onNodeWithText("Forget this network").assertIsEnabled().performClick(); assertEquals(1, forgets)
+    }
+    @Test fun quickScanAllAndForgetWaitForTheSettle() {
+        rule.mainClock.autoAdvance = false
+        var st by mutableStateOf(HomeFakes.scanning().copy(networkId = 1))
+        rule.setContent { NetProbeTheme { CompositionLocalProvider(LocalReducedMotion provides false) { HomeContent(st, rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro") } } }
+        rule.mainClock.advanceTimeBy(1_000)
+        st = HomeFakes.settled().copy(networkId = 1); rule.mainClock.advanceTimeBy(64)       // mid-settle
+        rule.onNodeWithTag("homeMenu").performClick(); rule.mainClock.advanceTimeBy(100)
+        rule.onNodeWithText("Quick scan all").assertIsNotEnabled(); rule.onNodeWithText("Forget this network").assertIsNotEnabled()
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.onNodeWithText("Quick scan all").assertIsEnabled(); rule.onNodeWithText("Forget this network").assertIsEnabled()
     }
 }

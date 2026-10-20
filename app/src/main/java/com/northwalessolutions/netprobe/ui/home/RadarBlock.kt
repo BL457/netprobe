@@ -22,10 +22,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
@@ -34,28 +36,35 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import com.northwalessolutions.netprobe.ui.StopPill
 import com.northwalessolutions.netprobe.ui.theme.*
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** Test hook: true only while the arm is turning (SCANNING, resumed, motion allowed). */
+/** Test hooks (spec 1.17), all on "radarBlock" and set from composition state, never from the per-frame angle. */
 val ArmSpinningKey = SemanticsPropertyKey<Boolean>("ArmSpinning")
 private var SemanticsPropertyReceiver.armSpinning by ArmSpinningKey
+val RadarFractionKey = SemanticsPropertyKey<Float>("RadarFraction")
+private var SemanticsPropertyReceiver.radarFraction by RadarFractionKey
+val PulseCountKey = SemanticsPropertyKey<Int>("PulseCount")
+private var SemanticsPropertyReceiver.pulseCount by PulseCountKey
+val PulseActiveKey = SemanticsPropertyKey<Boolean>("PulseActive")
+private var SemanticsPropertyReceiver.pulseActive by PulseActiveKey
+val BreathingKey = SemanticsPropertyKey<Boolean>("Breathing")
+private var SemanticsPropertyReceiver.breathing by BreathingKey
 
 private const val ANNOUNCE_STEP = 5
 private const val MIN_COUNT_SP = 12
-private const val ARM_HEAD_ALPHA = 0.55f
-private const val ARM_TAIL_ALPHA = 0.08f
-private const val ARM_TAIL_STOP = 70f / 360f
-private const val ARM_CLEAR_STOP = 110f / 360f
-private const val GLOW_ALPHA = 0.35f
 private const val FILL_INNER_STOP = 0.3f
 private const val FILL_OUTER_STOP = 0.7f
 private const val QUICK_ARC_SWEEP = 90f
+private const val PULSE_END_FRACTION = 0.95f
+private const val FULL_TURN_DEG = 360f
 private val RING_STROKE = 3.dp
 private val DISC_STROKE = 2.dp
 private val INNER_RING_STROKE = 1.dp
@@ -64,38 +73,75 @@ private val TEXT_GAP = 10.dp
 private val HERO_DOTS = listOf(Offset(-0.45f, -0.30f), Offset(0.50f, -0.10f), Offset(0.15f, 0.55f))
 
 /**
- * The scan control (Radar spec section 3): one composable owns HERO, SCANNING and SETTLED so the size change is one continuous
- * animation driven by a single `fraction` (0 = ring, 1 = disc). Only the ring, the HERO circle and the Stop pill are actionable.
+ * The scan control (Radar spec section 3, Phase 3A spec section 1): one composable owns HERO, SCANNING and SETTLED so the size
+ * change is one continuous animation driven by a single `fraction` (0 = ring, 1 = disc). Only the ring, the HERO circle and the
+ * Stop pill are actionable. [onBusyChange] is true from SCANNING until the settle ends; [onComposed] is a test hook called after
+ * every composition of this block and of its three layer composables (plan review G6).
  */
 @Composable
 fun RadarBlock(
     mode: RadarMode, found: Int, progressLine: String?, summary: RadarSummary, canScan: Boolean,
     onScan: () -> Unit, onStop: () -> Unit, modifier: Modifier = Modifier,
     heroSubnet: String? = null, quickScanning: Boolean = false, onStopQuick: () -> Unit = {}, scanCompleted: Boolean = true,
+    onBusyChange: (Boolean) -> Unit = {}, onComposed: () -> Unit = {},
 ) {
+    SideEffect { onComposed() }
     val reduced = LocalReducedMotion.current
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val spinning = mode == RadarMode.SCANNING && lifecycle.isAtLeast(Lifecycle.State.RESUMED) && !reduced
+    val resumed = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
     val transition = updateTransition(mode, label = "radar")
-    val fraction by transition.animateFloat(
-        transitionSpec = { tween(if (reduced) 0 else Motion.SIZE_MS, easing = FastOutSlowInEasing) }, label = "fraction",
-    ) { if (it == RadarMode.SETTLED) 0f else 1f }
+    // The settle springs (spec 1.7), so fraction may dip below 0: only the ring's own size reads it unclamped.
+    val fraction by transition.animateFloat(transitionSpec = {
+        when {
+            reduced -> snap()
+            RadarMode.SCANNING isTransitioningTo RadarMode.SETTLED -> spring(dampingRatio = Motion.SETTLE_DAMPING, stiffness = Motion.SETTLE_STIFFNESS)
+            else -> tween(Motion.SIZE_MS, easing = FastOutSlowInEasing)
+        }
+    }, label = "fraction") { if (it == RadarMode.SETTLED) 0f else 1f }
+    val f = fraction.coerceIn(0f, 1f)
+    val atRest = transition.currentState == transition.targetState
+    val settling = transition.currentState == RadarMode.SCANNING && transition.targetState == RadarMode.SETTLED
+    // Arm, blips and the angle exist while scanning or settling; the Stop pill and progress line too.
+    val live = mode == RadarMode.SCANNING || settling
+    val latestBusy by rememberUpdatedState(onBusyChange)
+    LaunchedEffect(live) { latestBusy(live) }
+
     val labelAlpha by animateFloatAsState(if (mode == RadarMode.SETTLED) 1f else 0f, tween(if (reduced) 0 else Motion.LABEL_FADE_MS), label = "label")
     val heroAlpha by animateFloatAsState(if (mode == RadarMode.HERO) 1f else 0f, tween(if (reduced) 0 else Motion.LABEL_FADE_MS), label = "hero")
-    val blipsAlpha by animateFloatAsState(
-        if (mode == RadarMode.SCANNING) 1f else 0f,
-        tween(if (reduced) 0 else if (mode == RadarMode.SCANNING) Motion.BLIP_IN_MS else Motion.BLIP_OUT_MS), label = "blips")
+    // The arm and blips fade in with the scan and out over ARM_FADE_MS when the settle starts (spec 1.7).
+    val liveAlpha by animateFloatAsState(if (mode == RadarMode.SCANNING) 1f else 0f,
+        tween(if (reduced) 0 else if (mode == RadarMode.SCANNING) Motion.BLIP_IN_MS else Motion.ARM_FADE_MS), label = "live")
 
-    // Blips: one per new host, the newest batch fades in; at most 64 are drawn, the count stays exact.
+    // One angle for the arm, the afterglow and the breathing, hoisted here (spec 1.3). Not resumed: frozen where it stopped and
+    // resumed from there, through a non-state holder written in the arm's layer block (spec 1.9, Gruff m2).
+    val lastAngle = remember { FloatArray(1).also { it[0] = Motion.STATIC_ARM_DEG } }
+    val turning = live && resumed && !reduced
+    val angle: () -> Float = when {
+        reduced -> ({ Motion.STATIC_ARM_DEG })
+        turning -> {
+            val start = remember { lastAngle[0] }
+            val a = rememberInfiniteTransition(label = "arm")
+                .animateFloat(start, start + FULL_TURN_DEG, infiniteRepeatable(tween(Motion.ARM_TURN_MS, easing = LinearEasing)), label = "angle")
+            ({ a.value })
+        }
+        else -> ({ lastAngle[0] })
+    }
+    val breathingOn = turning && mode == RadarMode.SCANNING
+
+    // Blips: one per new host, the newest batch fades in; at most 64 are drawn, the count stays exact. The find counter only rises.
     val newest = remember { Animatable(1f) }
     var shownBlips by remember { mutableIntStateOf(0) }
     var newestFrom by remember { mutableIntStateOf(0) }
     var blipMode by remember { mutableStateOf<RadarMode?>(null) }
+    var lastFound by remember { mutableIntStateOf(0) }
+    var finds by remember { mutableIntStateOf(0) }
+    var pulseStarts by remember { mutableIntStateOf(0) }
     LaunchedEffect(found, mode) {
         val entering = mode == RadarMode.SCANNING && blipMode != RadarMode.SCANNING
         blipMode = mode
         if (mode != RadarMode.SCANNING) return@LaunchedEffect
-        if (entering) { shownBlips = 0; newestFrom = 0 }   // a new scan never fades the previous scan's blips back in
+        if (entering) { shownBlips = 0; newestFrom = 0; finds = 0; pulseStarts = 0; lastFound = found }   // a new scan: no old blips, the reset never pulses
+        else { if (found > lastFound) finds++; lastFound = found }
         val n = found.coerceAtMost(RadarGeometry.MAX_BLIPS)
         if (n < shownBlips) { shownBlips = n; newestFrom = n; return@LaunchedEffect }
         if (n > shownBlips) {
@@ -104,7 +150,27 @@ fun RadarBlock(
         }
     }
 
-    // TalkBack: polite updates in steps of 5, one announcement when the scan finishes (spec 7.3).
+    // Ring pulse (spec 1.5, Gruff M2): gated by the frame clock, launched from a scope no found change can cancel, eased at draw time.
+    val pulse = remember { Animatable(1f) }                 // 1 = idle
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(mode, reduced) {
+        if (mode != RadarMode.SCANNING || reduced) return@LaunchedEffect
+        var lastStart: Long? = null
+        var seen = finds
+        snapshotFlow { finds }.collect { n ->
+            val rose = n > seen
+            seen = n
+            if (!rose) return@collect
+            val now = withFrameMillis { it }
+            if (PulseGate.shouldStart(now, lastStart)) {
+                lastStart = now; pulseStarts++
+                scope.launch { pulse.snapTo(0f); pulse.animateTo(1f, tween(Motion.PULSE_MS, easing = LinearEasing)) }
+            }
+        }
+    }
+    val pulseRunning by remember { derivedStateOf { pulse.value < 1f } }
+
+    // TalkBack: polite updates in steps of 5, one announcement when the scan finishes or stops (spec 7.3, Phase 3A 5.4).
     var announced by remember { mutableStateOf(0 to progressLine) }
     LaunchedEffect(mode) { if (mode == RadarMode.SCANNING) announced = 0 to progressLine }
     LaunchedEffect(found) { if (mode == RadarMode.SCANNING && abs(found - announced.first) >= ANNOUNCE_STEP) announced = found to progressLine }
@@ -117,23 +183,26 @@ fun RadarBlock(
         previous = mode
     }
 
-    val live = canScan || quickScanning
-    val resumed = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
-    // The Stop pill and progress line belong to a scan: kept while it runs and while the disc settles back to the ring.
-    val pillShown = mode == RadarMode.SCANNING || (transition.currentState == RadarMode.SCANNING && transition.targetState == RadarMode.SETTLED)
-    BoxWithConstraints(modifier.fillMaxWidth().testTag("radarBlock")) {
+    val actionable = canScan || quickScanning
+    // The hooks are composition state (spec 1.17): read here, never from the per-frame angle.
+    val pulsesNow = pulseStarts
+    val pulseActiveNow = pulseRunning
+    BoxWithConstraints(modifier.fillMaxWidth().testTag("radarBlock").semantics {
+        armSpinning = turning; radarFraction = fraction; pulseCount = pulsesNow; pulseActive = pulseActiveNow; breathing = breathingOn
+    }) {
         val width = maxWidth
+        // Unclamped: the ring's own size is the visible bounce. Everything else reads f (spec 1.7 table).
         val diameter = lerp(Dimens.ringDiameter, Dimens.discDiameter, fraction)
         val target = diameter + (Dimens.ringTarget - Dimens.ringDiameter) * (1f - fraction)
-        val centreX = lerp(Dimens.gutter + Dimens.ringTarget / 2, width / 2, fraction)
-        val areaHeight = lerp(Dimens.ringTarget, Dimens.discDiameter, fraction)
         val stroke = lerp(RING_STROKE, DISC_STROKE, fraction)
+        val centreX = lerp(Dimens.gutter + Dimens.ringTarget / 2, width / 2, f)
+        val areaHeight = lerp(Dimens.ringTarget, Dimens.discDiameter, f)
         // Quick scan dims the ring's base stroke to `border` so the indeterminate `signal` arc reads over it (spec 3.3, 12.9).
-        val ringColor = if (live && !quickScanning) NetProbeColors.signal else NetProbeColors.border
-        val strokeColor = lerp(ringColor, NetProbeColors.borderSubtle, fraction)
+        val ringColor = if (actionable && !quickScanning) NetProbeColors.signal else NetProbeColors.border
+        val strokeColor = lerp(ringColor, NetProbeColors.borderSubtle, f)
         val modeModifier = when (mode) {
             RadarMode.SETTLED -> Modifier.clip(CircleShape)
-                .clickable(enabled = live && fraction == 0f, role = Role.Button, onClick = if (quickScanning) onStopQuick else onScan)   // no tap until settled
+                .clickable(enabled = actionable && atRest, role = Role.Button, onClick = if (quickScanning) onStopQuick else onScan)   // no tap until at rest
                 .semantics { contentDescription = when { quickScanning -> RadarText.STOP_QUICK; canScan -> RadarText.ringDescription(summary); else -> RadarText.RING_DISABLED } }
                 .testTag("radarRing")
             RadarMode.SCANNING -> Modifier
@@ -145,19 +214,20 @@ fun RadarBlock(
             Box(Modifier.fillMaxWidth().heightIn(min = areaHeight)) {
                 Box(Modifier.offset(x = centreX - target / 2, y = (areaHeight - target) / 2).size(target).then(modeModifier), contentAlignment = Alignment.Center) {
                     Box(Modifier.size(diameter), contentAlignment = Alignment.Center) {
-                        DiscBackground(fraction, stroke, strokeColor, mode == RadarMode.HERO, Modifier.matchParentSize().clearAndSetSemantics { })
-                        if (mode == RadarMode.SCANNING) Arm(spinning, Modifier.matchParentSize())
-                        if (shownBlips > 0) Blips(shownBlips, newestFrom, { newest.value }, { blipsAlpha }, Modifier.matchParentSize().clearAndSetSemantics { })
+                        DiscBackground(f, mode == RadarMode.HERO, onComposed, Modifier.matchParentSize().clearAndSetSemantics { })
+                        if (live) ArmLayer(angle, { liveAlpha }, lastAngle, onComposed, Modifier.matchParentSize())
+                        LiveLayer(stroke, strokeColor, breathingOn, shownBlips, newestFrom, reduced, angle, { pulse.value }, { newest.value }, { liveAlpha },
+                            onComposed, Modifier.matchParentSize().clearAndSetSemantics { })
                         if (mode == RadarMode.SETTLED && quickScanning) QuickArc(animate = resumed && !reduced, Modifier.matchParentSize())
                         if (mode != RadarMode.HERO && labelAlpha > 0f) Text(if (quickScanning) HomeCopy.STOP else HomeCopy.SCAN, style = NetProbeText.ringLabel,
-                            color = if (live) NetProbeColors.signal else NetProbeColors.border, modifier = Modifier.alpha(labelAlpha))
+                            color = if (actionable) NetProbeColors.signal else NetProbeColors.border, modifier = Modifier.alpha(labelAlpha))
                         if (mode == RadarMode.SCANNING || (mode == RadarMode.SETTLED && labelAlpha < 1f))
                             CountColumn(found, Modifier.alpha((1f - labelAlpha) * (1f - heroAlpha)))
                         if (heroAlpha > 0f) HeroButton(canScan && mode == RadarMode.HERO, canScan, heroSubnet, onScan, Modifier.alpha(heroAlpha))
                     }
                 }
-                if (fraction < 1f) Column(Modifier.align(Alignment.CenterStart).padding(start = Dimens.gutter + Dimens.ringTarget + TEXT_GAP, end = Dimens.gutter)
-                    .alpha(1f - fraction)) {
+                if (f < 1f) Column(Modifier.align(Alignment.CenterStart).padding(start = Dimens.gutter + Dimens.ringTarget + TEXT_GAP, end = Dimens.gutter)
+                    .alpha(1f - f)) {
                     Text(summary.headline, style = NetProbeText.summary, color = NetProbeColors.text, maxLines = 1)
                     Text(if (quickScanning) HomeCopy.QUICK_SCANNING else summary.detail, style = NetProbeText.secondary, color = NetProbeColors.textSecondary)
                 }
@@ -168,12 +238,12 @@ fun RadarBlock(
                 Text(if (canScan && heroSubnet != null) HomeCopy.heroSubtitle(heroSubnet) else HomeCopy.HERO_NO_NETWORK_SUB,
                     style = NetProbeText.secondary, color = NetProbeColors.textMuted, textAlign = TextAlign.Center)
             }
-            if (pillShown) {
-                // Height and alpha follow the same fraction as the disc, so the list below slides and never steps (spec 3.6).
+            if (live) {
+                // Height and alpha follow the clamped fraction, so the list below slides, never steps, and a layout height is never negative.
                 Column(Modifier.fillMaxWidth().clipToBounds().layout { measurable, constraints ->
                     val placeable = measurable.measure(constraints)
-                    layout(placeable.width, (placeable.height * fraction).roundToInt()) { placeable.place(0, 0) }
-                }.graphicsLayer { alpha = fraction }.padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    layout(placeable.width, (placeable.height * f).roundToInt()) { placeable.place(0, 0) }
+                }.graphicsLayer { alpha = f }.padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     StopPill(if (mode == RadarMode.SCANNING) onStop else ({}), description = RadarText.STOP_SCAN, tag = "radarStop")
                     Spacer(Modifier.height(6.dp))
                     Text(progressLine.orEmpty(), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.Center,
@@ -184,77 +254,97 @@ fun RadarBlock(
     }
 }
 
-/** Static disc, outline, inner rings and HERO dots; re-recorded only when its inputs or the size change (spec 3.6). */
+/** Layer 1 (spec 1.16): fill, inner rings and HERO dots on their own layer, re-recorded only when f or the size changes. */
 @Composable
-private fun DiscBackground(fraction: Float, stroke: Dp, strokeColor: Color, hero: Boolean, modifier: Modifier) {
-    Spacer(modifier.drawWithCache {
+private fun DiscBackground(f: Float, hero: Boolean, onComposed: () -> Unit, modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): this body must not recompose per frame either
+    Spacer(modifier.graphicsLayer().drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
         val fill = Brush.radialGradient(0f to NetProbeColors.discCentre, FILL_INNER_STOP to NetProbeColors.discCentre,
             FILL_OUTER_STOP to NetProbeColors.background, 1f to NetProbeColors.background, center = c, radius = r.coerceAtLeast(1f))
         val ring1 = r - Dimens.discInnerRing1.toPx(); val ring2 = r - Dimens.discInnerRing2.toPx()
-        val strokePx = stroke.toPx(); val thin = INNER_RING_STROKE.toPx()
+        val thin = Stroke(INNER_RING_STROKE.toPx())
         val dotR = Dimens.blip.toPx() / 2
         val dots = HERO_DOTS.map { c + it * r }
         onDrawBehind {
-            if (fraction > 0f) {
-                drawCircle(fill, r, c, alpha = fraction)
-                if (ring1 > 0f) drawCircle(NetProbeColors.borderSubtle, ring1, c, alpha = fraction, style = Stroke(thin))
-                if (ring2 > 0f) drawCircle(NetProbeColors.borderSubtle, ring2, c, alpha = fraction, style = Stroke(thin))
+            if (f > 0f) {
+                drawCircle(fill, r, c, alpha = f)
+                if (ring1 > 0f) drawCircle(NetProbeColors.borderSubtle, ring1, c, alpha = f, style = thin)
+                if (ring2 > 0f) drawCircle(NetProbeColors.borderSubtle, ring2, c, alpha = f, style = thin)
             }
-            drawCircle(strokeColor, r - strokePx / 2, c, style = Stroke(strokePx))
             if (hero) dots.forEach { drawCircle(NetProbeColors.textMuted, dotR, it) }
         }
     })
 }
 
-/**
- * Blips above the arm, as in the mockup, so the arm's centre cut-out never hides or halves a blip. Positions and glows are
- * re-recorded only when the blip count or the size changes; the newest batch's fade is read in the draw phase only.
- */
+/** Layer 2: the sweep, rotated in its layer block (a property change per frame, never a re-record); the bright edge leads (spec 1.3). */
 @Composable
-private fun Blips(blips: Int, newestFrom: Int, newestAlpha: () -> Float, blipsAlpha: () -> Float, modifier: Modifier) {
-    Spacer(modifier.drawWithCache {
+private fun ArmLayer(angle: () -> Float, armAlpha: () -> Float, lastAngle: FloatArray, onComposed: () -> Unit, modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): never call angle() or armAlpha() in this body
+    Spacer(modifier.clearAndSetSemantics { }.graphicsLayer {
+        val a = angle()
+        lastAngle[0] = a % FULL_TURN_DEG          // a non-state holder: no recomposition; the arm resumes from here
+        rotationZ = a
+        alpha = armAlpha()
+    }.drawWithCache {
         val r = size.minDimension / 2
         val c = size.center
-        val blipR = Dimens.blip.toPx() / 2; val glowR = blipR + Dimens.blipGlow.toPx()
-        val points = (0 until blips).map { i -> (c + blipOffset(i, r)).let { p -> p to Brush.radialGradient(listOf(NetProbeColors.signal.copy(alpha = GLOW_ALPHA), Color.Transparent), center = p, radius = glowR) } }
+        val sweep = Brush.sweepGradient(*ArmTrail.stops().map { (pos, a) -> pos to NetProbeColors.signal.copy(alpha = a) }.toTypedArray(), center = c)
+        // An annulus inside the outline with the centre cut out (even-odd): the count sits on the disc's plain fill.
+        val outer = (r - DISC_STROKE.toPx()).coerceAtLeast(0f)
+        val inner = RadarGeometry.armMask(Dimens.discCentreMask.toPx(), r)
+        val annulus = Path().apply { fillType = PathFillType.EvenOdd; addOval(Rect(c, outer)); addOval(Rect(c, inner)) }
+        val head = NetProbeColors.signal.copy(alpha = Motion.HEAD_LINE_ALPHA)
+        val headWidth = Motion.HEAD_LINE_WIDTH.toPx()
         onDrawBehind {
-            val all = blipsAlpha()
-            points.forEachIndexed { i, (p, glow) ->
-                val a = all * if (i >= newestFrom) newestAlpha() else 1f
-                drawCircle(glow, glowR, p, alpha = a); drawCircle(NetProbeColors.signal, blipR, p, alpha = a)
-            }
+            drawPath(annulus, sweep)
+            drawLine(head, Offset(c.x + inner, c.y), Offset(c.x + outer, c.y), strokeWidth = headWidth, cap = StrokeCap.Round)
         }
     })
 }
 
-/** The sweep arm: its own layer, rotated in the layer block so a frame never recomposes or re-records the disc (spec 3.6). */
+/**
+ * Layer 3, the one live layer (spec 1.16): the breathing outline, the pulse ring and the blips with their afterglow, in that order,
+ * above the arm. It has its own graphicsLayer, so its per-frame redraw re-records only this layer. Positions, angles and brushes are
+ * built in the cache once per blip count or size; the draw allocates nothing and reads the angle only while breathing or blips show.
+ */
 @Composable
-private fun Arm(spinning: Boolean, modifier: Modifier) {
-    if (spinning) {
-        val angle = rememberInfiniteTransition(label = "arm")
-            .animateFloat(0f, 360f, infiniteRepeatable(tween(Motion.ARM_TURN_MS, easing = LinearEasing)), label = "angle")
-        ArmLayer({ angle.value }, spinning = true, modifier)
-    } else ArmLayer({ Motion.STATIC_ARM_DEG }, spinning = false, modifier)
-}
-
-@Composable
-private fun ArmLayer(angle: () -> Float, spinning: Boolean, modifier: Modifier) {
-    Spacer(modifier.clearAndSetSemantics { armSpinning = spinning }.graphicsLayer { rotationZ = angle() }.drawWithCache {
+private fun LiveLayer(stroke: Dp, strokeColor: Color, breathing: Boolean, blips: Int, newestFrom: Int, reduced: Boolean,
+                      angle: () -> Float, pulse: () -> Float, newestAlpha: () -> Float, blipsAlpha: () -> Float, onComposed: () -> Unit,
+                      modifier: Modifier) {
+    SideEffect { onComposed() }                   // test hook (G6): never call angle(), pulse() or the alphas in this body
+    Spacer(modifier.graphicsLayer().drawWithCache {
         val r = size.minDimension / 2
-        val sweep = Brush.sweepGradient(0f to NetProbeColors.signal.copy(alpha = ARM_HEAD_ALPHA), ARM_TAIL_STOP to NetProbeColors.signal.copy(alpha = ARM_TAIL_ALPHA),
-            ARM_CLEAR_STOP to Color.Transparent, 1f to Color.Transparent, center = size.center)
-        // The arm is an annulus: inside the disc outline, with the centre cut out (even-odd) so the count sits on the disc's own
-        // plain fill and the inner ring shows through; the mask never outgrows the disc while it grows.
-        val outer = (r - DISC_STROKE.toPx()).coerceAtLeast(0f)
-        val inner = RadarGeometry.armMask(Dimens.discCentreMask.toPx(), r)
         val c = size.center
-        val annulus = Path().apply {
-            fillType = PathFillType.EvenOdd
-            addOval(Rect(c, outer)); addOval(Rect(c, inner))
+        val strokePx = stroke.toPx()
+        val outline = Stroke(strokePx)
+        val pulseStroke = Stroke(Motion.PULSE_STROKE.toPx())
+        val mask = RadarGeometry.armMask(Dimens.discCentreMask.toPx(), r)
+        val blipR = Dimens.blip.toPx() / 2; val glowR = blipR + Dimens.blipGlow.toPx()
+        val offsets = List(blips) { blipOffset(it, r) }
+        val points = offsets.map { c + it }
+        val angles = FloatArray(blips) { blipAngleDeg(offsets[it]) }
+        val glows = points.map { p -> Brush.radialGradient(listOf(NetProbeColors.signal, Color.Transparent), center = p, radius = glowR) }
+        onDrawBehind {
+            val b = if (breathing) breath(angle()) else 0f
+            drawCircle(lerp(strokeColor, NetProbeColors.signal, b), r - strokePx / 2, c, style = outline)
+            val p = pulse()
+            if (p < 1f) {
+                val e = LinearOutSlowInEasing.transform(p)
+                drawCircle(NetProbeColors.signal, lerp(mask, r * PULSE_END_FRACTION, e), c, alpha = Motion.PULSE_ALPHA * (1f - e), style = pulseStroke)
+            }
+            val all = blipsAlpha()
+            if (blips > 0 && all > 0f) {
+                val arm = if (reduced) 0f else angle()
+                for (i in 0 until blips) {
+                    val g = if (reduced) 0f else afterglow(arm, angles[i])
+                    val fade = all * if (i >= newestFrom) newestAlpha() else 1f
+                    scale(blipGlowScale(g, reduced), pivot = points[i]) { drawCircle(glows[i], glowR, points[i], alpha = blipGlowAlpha(g, reduced) * fade) }
+                    drawCircle(NetProbeColors.signal, blipR, points[i], alpha = blipCoreAlpha(g, reduced) * fade)
+                }
+            }
         }
-        onDrawBehind { drawPath(annulus, sweep) }
     })
 }
 
@@ -265,7 +355,7 @@ private fun QuickArc(animate: Boolean, modifier: Modifier) {
     if (!animate) QuickArcLayer({ Motion.STATIC_ARM_DEG }, modifier)
     else {
         val angle = rememberInfiniteTransition(label = "quick")
-            .animateFloat(0f, 360f, infiniteRepeatable(tween(Motion.ARM_TURN_MS / 2, easing = LinearEasing)), label = "quickAngle")
+            .animateFloat(0f, FULL_TURN_DEG, infiniteRepeatable(tween(Motion.QUICK_ARC_TURN_MS, easing = LinearEasing)), label = "quickAngle")
         QuickArcLayer({ angle.value }, modifier)
     }
 }

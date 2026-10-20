@@ -47,5 +47,9 @@ class RadarMotionTest {
         assertEquals(1f, blipGlowScale(0f, false), 1e-6f); assertEquals(Motion.GLOW_LIT_SCALE, blipGlowScale(1f, false), 1e-6f)
         assertEquals(Motion.BLIP_STATIC_ALPHA, blipCoreAlpha(1f, true), 0f); assertEquals(Motion.GLOW_REST_ALPHA, blipGlowAlpha(1f, true), 0f)
         assertEquals(1f, blipGlowScale(1f, true), 0f)
+        assertEquals("half lit", 0.725f, blipCoreAlpha(0.5f, false), 1e-6f)
+        // The radar passes glow 0 under reduced motion: the static look, never the dimmed rest look.
+        assertEquals(Motion.BLIP_STATIC_ALPHA, blipCoreAlpha(0f, true), 0f); assertEquals(Motion.GLOW_REST_ALPHA, blipGlowAlpha(0f, true), 0f)
+        assertEquals(1f, blipGlowScale(0f, true), 0f)
     }
 }
