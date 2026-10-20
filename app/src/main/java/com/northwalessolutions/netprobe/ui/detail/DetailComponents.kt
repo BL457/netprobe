@@ -15,16 +15,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -107,14 +105,16 @@ fun StatusSegments(current: HostStatus, onSelect: (HostStatus) -> Unit) {
 /** Saves 400 ms after the last keystroke, and on leaving the screen if an edit is still pending (MVP behaviour). */
 @Composable
 fun NoteField(hostId: Long, note: String, onSave: (String) -> Unit, modifier: Modifier = Modifier) {
-    var text by rememberSaveable(hostId) { mutableStateOf(note) }
+    // A TextFieldValue so the cursor starts after the existing text: tapping the note to add to it appends, never prefixes.
+    var value by rememberSaveable(hostId, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(note, TextRange(note.length))) }
+    val text = value.text
     val latestText by rememberUpdatedState(text); val latestNote by rememberUpdatedState(note); val save by rememberUpdatedState(onSave)
     LaunchedEffect(text) { if (text != note) { delay(NOTE_DEBOUNCE_MS); onSave(text) } }
     DisposableEffect(hostId) { onDispose { if (latestText != latestNote) save(latestText) } }
-    val focusManager = LocalFocusManager.current   // Done clears focus, which collapses the note (NoteLine); tapping the list does the same (DetailContent)
-    OutlinedTextField(text, { text = it }, modifier.fillMaxWidth().testTag("note"), textStyle = NetProbeText.secondaryItalic,
-        minLines = NOTE_MIN_LINES, maxLines = NOTE_MAX_LINES, colors = npFieldColors(), shape = RoundedCornerShape(BOX_RADIUS),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }))
+    // Default IME action: Enter inserts a line break (multi-line note, spec 5.1 item 7). Focus loss collapses the note (NoteLine);
+    // a tap on the list clears focus (DetailContent).
+    OutlinedTextField(value, { value = it }, modifier.fillMaxWidth().testTag("note"), textStyle = NetProbeText.secondaryItalic,
+        minLines = NOTE_MIN_LINES, maxLines = NOTE_MAX_LINES, colors = npFieldColors(), shape = RoundedCornerShape(BOX_RADIUS))
 }
 
 /** Collapsed: a two-line box ("Add a note" when empty). Tap swaps in the field; losing focus collapses it (spec 5.1 item 7). */
@@ -192,7 +192,9 @@ fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLong
             versionLine(p.service)?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
         Spacer(Modifier.width(10.dp))
-        Box(Modifier.sizeIn(minWidth = Dimens.touch, minHeight = Dimens.touch).clickable(role = Role.Button, onClick = run)
+        // The word is its own target (not merged into the row) and long-presses exactly like the row body: a long press never runs the action.
+        Box(Modifier.sizeIn(minWidth = Dimens.touch, minHeight = Dimens.touch)
+            .combinedClickable(role = Role.Button, onClick = run, onLongClick = onLongPress, onLongClickLabel = "More actions")
             .semantics { contentDescription = actionDescription(ip, p) }.testTag("portAction"), contentAlignment = Alignment.CenterEnd) {
             Text(word, style = if (copy) NetProbeText.action.copy(fontWeight = FontWeight.W400) else NetProbeText.action,
                 color = if (copy) NetProbeColors.textMuted else NetProbeColors.signal, maxLines = 1)

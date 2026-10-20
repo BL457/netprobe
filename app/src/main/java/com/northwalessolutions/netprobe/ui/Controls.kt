@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -76,10 +77,20 @@ fun ScanPill(scanning: Boolean, enabled: Boolean, onClick: () -> Unit, modifier:
         val pill = Modifier.heightIn(min = CONTROL_VISUAL).clip(CircleShape)
             .then(if (scanning) Modifier.border(PILL_STROKE, NetProbeColors.signal, CircleShape) else Modifier.background(NetProbeColors.signal))
             .padding(horizontal = 18.dp)
+        // Both labels are laid out and the unused one is invisible, so the pill is max(Scan, Stop) wide at any font scale
+        // and the profile control beside it never shifts when a scan starts.
         Box(pill, contentAlignment = Alignment.Center) {
-            Text(if (scanning) "Stop" else "Scan", style = NetProbeText.scanPill, color = if (scanning) NetProbeColors.signal else NetProbeColors.background)
+            val color = if (scanning) NetProbeColors.signal else NetProbeColors.background
+            PillLabel("Scan", color, visible = !scanning)
+            PillLabel("Stop", color, visible = scanning)
         }
     }
+}
+
+@Composable
+private fun PillLabel(text: String, color: Color, visible: Boolean) {
+    Text(text, style = NetProbeText.scanPill, color = color,
+        modifier = if (visible) Modifier else Modifier.alpha(0f).clearAndSetSemantics {})
 }
 
 /** Equal segments in an 8 dp outlined control; 40 dp visual inside a 48 dp target; labels wrap rather than truncate (spec 5.1, 7.5). */

@@ -6,6 +6,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -104,5 +106,26 @@ class DetailContentTest {
         rule.waitForIdle()
         rule.onNode(hasTestTag("note") and hasSetTextAction()).assertDoesNotExist()   // the collapsed box has no text-entry action
         rule.onNodeWithTag("note").assertIsDisplayed()
+    }
+    @Test fun longPressOnTheActionWordOpensTheSheetAndRunsNothing() {   // fix round 1, I1
+        show(DetailFakes.state(listOf(DetailFakes.port(22, "ssh", name = "SSH"))))
+        rule.onNodeWithTag("portAction").performTouchInput { longClick() }
+        rule.onNodeWithText("Copy IP and port").assertIsDisplayed()
+        assertTrue("actions: $actions", actions.isEmpty())
+    }
+    @Test fun scanPillKeepsItsWidthWhenItTurnsToStop() {   // fix round 1, pill width
+        var st by mutableStateOf(DetailFakes.state())
+        rule.setContent { NetProbeTheme { DeviceConfigurationOverride(phone) { DetailContent(st, recording) } } }
+        val before = rule.onNodeWithTag("detailScanButton").getBoundsInRoot()
+        st = st.copy(scanning = true)
+        rule.waitForIdle()
+        assertEquals(before, rule.onNodeWithTag("detailScanButton").getBoundsInRoot())
+        rule.onNodeWithTag("detailScanButton").assertTextEquals("Stop")
+    }
+    @Test fun expandedNotePutsTheCursorAtTheEnd() {   // fix round 1, note cursor
+        val note = "QA note NAS"
+        show(DetailFakes.state(note = note), noteExpanded = true)
+        rule.onNode(hasTestTag("note") and hasSetTextAction())
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(note.length)))
     }
 }
