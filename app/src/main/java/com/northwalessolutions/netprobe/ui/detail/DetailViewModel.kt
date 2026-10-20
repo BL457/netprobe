@@ -10,6 +10,7 @@ import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
 import com.northwalessolutions.netprobe.engine.portscan.*
 import com.northwalessolutions.netprobe.engine.serviceid.Evidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
+import com.northwalessolutions.netprobe.engine.serviceid.ProbeModes
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
@@ -72,12 +73,13 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     private suspend fun scanHostOn(h: HostEntity, profile: ScanProfile, ip: Inet4Address) {
         val types = c.hosts.mdnsTypesFor(hostId)                  // once per scan, not per port
         val found = HashMap<Int, ServiceInfo>()
+        val mode = ProbeModes.forProfile(profile)   // one budget per Full or Custom scan, shared by its identifies
         // Identify off the collector so a slow banner never back-pressures the scan; coroutineScope waits for every identify.
         coroutineScope {
             val sem = Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)
             c.portScanEngine.scan(ip, profile, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
                 launch { sem.withPermit {
-                    val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer))
+                    val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), mode)
                     synchronized(found) { found[r.port] = info }
                     c.ports.upsertOpen(hostId, r.port, info)
                 } }

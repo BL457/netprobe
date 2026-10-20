@@ -14,7 +14,6 @@ import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
 import com.northwalessolutions.netprobe.engine.neigh.GatewayMac
 import com.northwalessolutions.netprobe.engine.portscan.PortState
-import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.serviceid.Evidence
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
@@ -240,9 +239,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         // Identify off the collector so a slow banner never back-pressures the scan; coroutineScope waits for every identify.
         coroutineScope {
             val sem = Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)
-            c.portScanEngine.scan(ip, ScanProfile.Quick, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
+            c.portScanEngine.scan(ip, QuickScanAllPolicy.profile, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
                 launch { sem.withPermit {
-                    val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer))
+                    val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), QuickScanAllPolicy.mode())
                     synchronized(found) { found[r.port] = info }
                     c.ports.upsertOpen(h.id, r.port, info)
                 } }
