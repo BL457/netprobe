@@ -5,6 +5,8 @@ import com.northwalessolutions.netprobe.engine.discovery.HttpTitleFetcher
 import com.northwalessolutions.netprobe.engine.discovery.NetBios
 import com.northwalessolutions.netprobe.engine.discovery.Snmp
 import com.northwalessolutions.netprobe.engine.discovery.Sweep
+import com.northwalessolutions.netprobe.engine.portscan.PortScanEngine
+import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -59,5 +61,18 @@ class ProbeBindTest {
     @Test fun `udp enrichment rethrows a bind failure`() = runBlocking {
         try { withContext(BoundNetwork(RecordingBinder(fail = true))) { NetBios.query(lo, 100) }; fail("expected BindFailedException") }
         catch (_: BindFailedException) { }
+    }
+    @Test fun `port scan under a failing bound network throws instead of reporting closed ports`() = runBlocking {
+        val scan = PortScanEngine().scan(lo, ScanProfile.Custom(listOf(80, 443)))
+        try { withContext(BoundNetwork(RecordingBinder(fail = true))) { scan.toList() }; fail("expected BindFailedException") }
+        catch (_: BindFailedException) { }
+    }
+    @Test fun `bindOrFail rethrows cancellation untouched`() {
+        val cancelling = object : SocketBinder {
+            override fun bind(socket: Socket) { throw kotlinx.coroutines.CancellationException("c") }
+            override fun bind(socket: DatagramSocket) { throw kotlinx.coroutines.CancellationException("c") }
+            override fun openConnection(url: URL): URLConnection = throw UnsupportedOperationException()
+        }
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) { cancelling.bindOrFail(Socket()) }
     }
 }

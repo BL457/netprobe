@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.engine.common
 
 import android.net.Network
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import java.io.IOException
 import java.net.DatagramSocket
@@ -35,5 +36,5 @@ class BoundNetwork(val binder: SocketBinder) : AbstractCoroutineContextElement(K
 
 suspend fun currentBinder(): SocketBinder? = currentCoroutineContext()[BoundNetwork]?.binder
 
-fun SocketBinder.bindOrFail(socket: Socket) = try { bind(socket) } catch (e: Exception) { throw BindFailedException(e) }
-fun SocketBinder.bindOrFail(socket: DatagramSocket) = try { bind(socket) } catch (e: Exception) { throw BindFailedException(e) }
+fun SocketBinder.bindOrFail(socket: Socket) = try { bind(socket) } catch (e: CancellationException) { throw e } catch (e: Exception) { throw BindFailedException(e) }
+fun SocketBinder.bindOrFail(socket: DatagramSocket) = try { bind(socket) } catch (e: CancellationException) { throw e } catch (e: Exception) { throw BindFailedException(e) }

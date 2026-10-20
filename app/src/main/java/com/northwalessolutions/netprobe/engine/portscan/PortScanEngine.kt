@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.engine.portscan
 
+import com.northwalessolutions.netprobe.engine.common.BindFailedException
 import com.northwalessolutions.netprobe.engine.common.Probe
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -37,6 +38,7 @@ class PortScanEngine(
                         send(r)
                         synchronized(this@PortScanEngine) { done++; if (r.state == PortState.OPEN) open++; _progress.value = ScanProgress(done, ports.size, open, errors) }
                     } catch (e: CancellationException) { throw e
+                    } catch (e: BindFailedException) { throw e      // the network cannot be used: fail the scan, do not report ports as closed
                     } catch (e: Exception) {
                         synchronized(this@PortScanEngine) { done++; errors++; _progress.value = ScanProgress(done, ports.size, open, errors) }
                     } finally { sem.release() }
