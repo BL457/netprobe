@@ -39,4 +39,13 @@ class ExtendedNoticesTest {
         val st = DiscoveryStatus(ranges = listOf(local, r("10.0.4.0/24", RangeState.DONE, 2), r("10.0.5.0/24", RangeState.PHANTOM), r("10.0.4.16/28", RangeState.DONE)))
         assertEquals(listOf("10.0.4.0/24", "10.0.4.16/28"), LastRun.sweptRanges(st).map { it.toString() })
     }
+    @Test fun `per-range notices are capped at two then rolled up per kind`() {
+        val st = DiscoveryStatus(ranges = listOf(local, r("10.0.4.0/24", RangeState.PHANTOM), r("10.0.5.0/24", RangeState.DONE), r("10.0.6.0/24", RangeState.PHANTOM),
+            r("10.0.7.0/24", RangeState.DONE), r("10.0.8.0/24", RangeState.DONE), r("10.0.9.0/24", RangeState.DONE, found = 2)))
+        assertEquals(listOf("10.0.4.0/24 skipped: every address answered", "10.0.5.0/24: nothing found", "1 other range answered for everything", "2 other ranges: nothing found"), ExtendedNotices.of(st))
+    }
+    @Test fun `the done headline counts swept ranges only`() {
+        val ranges = listOf(local, r("10.0.4.0/24", RangeState.DONE, 3), r("10.0.5.0/24", RangeState.PHANTOM), r("10.0.6.0/24", RangeState.TRUNCATED), r("10.0.7.0/24", RangeState.DONE))
+        assertEquals("2 other ranges checked", RangeSummaryText.checked(ranges))
+    }
 }

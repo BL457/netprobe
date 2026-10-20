@@ -22,7 +22,11 @@ object ScanFinish {
         else -> previous
     }
 
-    /** "Scanned in N s" belongs to one network: when the resolved network id changes, the finish time goes (Task 16 calls this). */
+    /** A scan the network change cancelled never finished on any network: the controller's NETWORK_CHANGED state yields no finish time. */
+    fun fromController(state: ScanController.State, wasScanning: Boolean, previous: Long?, now: Long): Long? =
+        if (state.message == ScanController.NETWORK_CHANGED) null else next(wasScanning, state.scanning, previous, now)
+
+    /** "Scanned in N s" belongs to one network: when the resolved network id changes, the finish time goes (the view model calls this). */
     fun afterNetworkChange(previousNetworkId: Long?, networkId: Long?, finishedAt: Long?): Long? =
         if (previousNetworkId == networkId) finishedAt else null
 }

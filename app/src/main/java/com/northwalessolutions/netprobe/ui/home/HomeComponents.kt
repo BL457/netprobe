@@ -47,6 +47,7 @@ private var SemanticsPropertyReceiver.textAlpha by TextAlphaKey
 fun Modifier.drawnAlpha(a: Float): Modifier = alpha(a).semantics { textAlpha = a }
 
 private const val DNS_SHOWN = 2
+private const val NOTICE_MAX_LINES = 4   // the notice is pinned: it never pushes the list off screen
 private val CHIP_HEIGHT = 32.dp
 private val SEGMENT_RADIUS = 8.dp
 private val MARK_RADIUS = 4.dp
@@ -139,7 +140,7 @@ fun SearchField(query: String, onQuery: (String) -> Unit) {
 @Composable
 fun NoticeLine(text: String, onDismiss: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = Dimens.gutter).testTag("notice"), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.weight(1f))
+        Text(text, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = NOTICE_MAX_LINES, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Box(Modifier.size(Dimens.touch).clickable(onClick = onDismiss).semantics { contentDescription = "Dismiss notice"; role = Role.Button },
             contentAlignment = Alignment.Center) {
             Icon(Icons.Default.Close, null, tint = NetProbeColors.textMuted, modifier = Modifier.size(ICON_SMALL))
@@ -212,13 +213,12 @@ private val RANGE_LIST_MAX = 160.dp
 /** The last extended run's ranges (extended spec 8.2): "3 other ranges checked", tap for one line per range. Scrolls inside its own cap, so a long list never pushes the devices away. */
 @Composable
 fun RangeSummary(ranges: List<RangeProgress>) {
-    val others = ranges.size - 1
-    if (others < 1) return
+    if (ranges.size < 2) return
     var open by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().testTag("rangeSummary")) {
         Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClickLabel = if (open) "Hide ranges" else "Show ranges", role = Role.Button) { open = !open }
             .padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
-            Text(RangeSummaryText.headline(others), style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.weight(1f))
+            Text(RangeSummaryText.checked(ranges), style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.weight(1f))
             Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = NetProbeColors.textMuted)
         }
         if (open) Column(Modifier.heightIn(max = RANGE_LIST_MAX).verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter).testTag("rangeLines")) {

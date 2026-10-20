@@ -44,6 +44,8 @@ object HomeCopy {
     fun phantom(subnet: String) = "$subnet skipped: every address answered"
     fun cancelled(subnet: String) = "Stopped at $subnet"
     fun nothingFound(subnet: String) = "$subnet: nothing found"
+    fun othersNothingFound(n: Int) = if (n == 1) "1 other range: nothing found" else "$n other ranges: nothing found"
+    fun othersAnsweredAll(n: Int) = if (n == 1) "1 other range answered for everything" else "$n other ranges answered for everything"
 
     fun heroSubtitle(subnet: String) = "Tap to find what is on $subnet"
     fun devices(n: Int) = if (n == 1) "1 device" else "$n devices"

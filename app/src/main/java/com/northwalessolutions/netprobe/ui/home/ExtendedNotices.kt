@@ -10,6 +10,8 @@ import com.northwalessolutions.netprobe.netenv.Subnet
 
 /** End-of-run notices for the notice line (Radar spec 4.4 and section 8). Ranges with hosts need no notice: their group says it. */
 object ExtendedNotices {
+    private const val MAX_RANGE_LINES = 2
+
     fun of(status: DiscoveryStatus): List<String> {
         val out = ArrayList<String>()
         status.notes.forEach { n ->
@@ -21,12 +23,12 @@ object ExtendedNotices {
             }
         }
         val extras = status.ranges.drop(1)
-        extras.forEach { r ->
-            when {
-                r.state == RangeState.PHANTOM -> out += HomeCopy.phantom(r.subnet)
-                r.state == RangeState.DONE && r.found == 0 -> out += HomeCopy.nothingFound(r.subnet)
-            }
-        }
+        // The notice sits in the pinned header: at most MAX_RANGE_LINES per-range lines, the rest rolled up one line per kind.
+        val quiet = extras.filter { it.state == RangeState.PHANTOM || (it.state == RangeState.DONE && it.found == 0) }
+        quiet.take(MAX_RANGE_LINES).forEach { r -> out += if (r.state == RangeState.PHANTOM) HomeCopy.phantom(r.subnet) else HomeCopy.nothingFound(r.subnet) }
+        val rest = quiet.drop(MAX_RANGE_LINES)
+        rest.count { it.state == RangeState.PHANTOM }.takeIf { it > 0 }?.let { out += HomeCopy.othersAnsweredAll(it) }
+        rest.count { it.state == RangeState.DONE }.takeIf { it > 0 }?.let { out += HomeCopy.othersNothingFound(it) }
         extras.firstOrNull { it.state == RangeState.CANCELLED }?.let { out += HomeCopy.cancelled(it.subnet) }   // the one that was running
         if (status.truncatedRanges > 0) out += HomeCopy.capDropped(status.truncatedRanges)
         return out
@@ -36,6 +38,9 @@ object ExtendedNotices {
 /** The done summary's range list (extended spec 8.2): a headline count and one line per extra range with source, outcome and found count. */
 object RangeSummaryText {
     fun headline(otherRanges: Int): String = HomeCopy.rangesChecked(otherRanges)
+
+    /** The headline counts ranges actually swept; skipped, capped and stopped ranges appear only in the expanded lines. */
+    fun checked(ranges: List<RangeProgress>): String = headline(ranges.drop(1).count { it.state == RangeState.DONE })
 
     /** [ranges] is the status list with the local range first; the local range is not listed. */
     fun lines(ranges: List<RangeProgress>): List<String> = ranges.drop(1).map { r ->
@@ -60,4 +65,22 @@ object RangeSummaryText {
 object LastRun {
     fun sweptRanges(status: DiscoveryStatus): List<Subnet> =
         status.ranges.drop(1).filter { it.state == RangeState.DONE }.mapNotNull { CidrParser.subnetOf(it.subnet) }
+}
+
+/** What one run publishes when it ends, or null when its network is no longer current (a slow unwind must not touch the new network's state). */
+data class RunEnd(val swept: List<Subnet>?, val progress: List<RangeProgress>?, val notice: String?) {
+    companion object {
+        /** [completed] is true only for a scan that ran to its end: the MVP's large-network notice is not shown after Stop, failure or a network change. */
+        fun of(currentNetworkId: Long?, runNetworkId: Long, extEnabled: Boolean, completed: Boolean, status: DiscoveryStatus): RunEnd? {
+            if (currentNetworkId != runNetworkId) return null
+            val notices = listOfNotNull(status.clampedFrom?.takeIf { completed }?.let { HomeCopy.largeNetwork(it) }) + if (extEnabled) ExtendedNotices.of(status) else emptyList()
+            return RunEnd(if (extEnabled) LastRun.sweptRanges(status) else null, if (extEnabled) status.ranges else null, notices.takeIf { it.isNotEmpty() }?.joinToString("\n"))
+        }
+    }
+}
+
+/** The per-network memory of the last run (finish time and the extended range lists): all of it belongs to one network. */
+data class RunMemory(val finishedAt: Long?, val swept: List<Subnet>, val progress: List<RangeProgress>) {
+    fun afterNetworkChange(previousNetworkId: Long?, networkId: Long?): RunMemory =
+        if (previousNetworkId == networkId) this else RunMemory(ScanFinish.afterNetworkChange(previousNetworkId, networkId, finishedAt), emptyList(), emptyList())
 }

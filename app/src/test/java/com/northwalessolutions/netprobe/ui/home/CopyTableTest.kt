@@ -22,7 +22,7 @@ class CopyTableTest {
         "probing \\S+ for gateways, \\d+ of \\d+  \\d+ s", "probing for gateways, \\d+ of \\d+  \\d+ s", "\\S+ \\(\\d+ of \\d+\\), probing \\d+ of \\d+", "preparing next range  \\d+ s",
         "\\d+ more ranges? found, raise the cap in Settings", "Extended discovery: no extra ranges to sweep", "Gateway probe found no other ranges",
         "Gateway probe skipped: every address answered", "Other ranges skipped: could not bind to Wi-Fi", "\\S+ skipped: every address answered",
-        "Stopped at \\S+", "\\S+: nothing found", "\\d+ other ranges? checked",
+        "Stopped at \\S+", "\\d+ other ranges?: nothing found", "\\d+ other ranges? answered for everything", "\\S+: nothing found", "\\d+ other ranges? checked",
         "\\S+  (manual|evidence|gateway probe|local)  (swept, nothing reachable|swept, \\d+ found|skipped, every address answered|not swept, scan limit reached|stopped|not swept)",
     ).map { Regex(it) }
     /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
@@ -69,7 +69,7 @@ class CopyTableTest {
     @Test fun `every notice and range summary state matches the table`() {
         for (note in ExtendedNote.entries) inTable(ExtendedNotices.of(DiscoveryStatus(notes = listOf(note))).single())
         for (state in RangeState.entries) for (found in listOf(0, 2)) for (source in RangeSource.entries) for (dropped in listOf(0, 1, 2)) {
-            val st = DiscoveryStatus(truncatedRanges = dropped, ranges = listOf(localRange, RangeProgress("10.0.5.0/24", source, state, 254, 254, found)))
+            val st = DiscoveryStatus(truncatedRanges = dropped, ranges = listOf(localRange) + (1..4).map { RangeProgress("10.0.$it.0/24", source, state, 254, 254, found) })
             ExtendedNotices.of(st).forEach { inTable(it) }
             RangeSummaryText.lines(st.ranges).forEach { inTable(it) }
             inTable(RangeSummaryText.headline(st.ranges.size - 1))

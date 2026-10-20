@@ -433,9 +433,9 @@ Sentence case, active voice, no disclaimers. Plurals: "1 device", "13 devices". 
 | Notice, gateway probe found nothing | "Gateway probe found no other ranges" |
 | Notice, extended note SKIPPED_BIND_FAILED | "Other ranges skipped: could not bind to Wi-Fi" |
 | Notice, extended note PHANTOM | "10.0.5.0/24 skipped: every address answered" |
-| Notice, extended note TRUNCATED | "10.0.7.0/24 cut short: scan limit reached" |
 | Notice, extended note CANCELLED | "Stopped at 10.0.6.0/24" |
 | Notice, extended note EMPTY | "10.0.4.0/24: nothing found" |
+| Notice, more than two quiet ranges (roll-up, one line per kind; N counts the ranges not listed above) | "N other ranges: nothing found"; "N other ranges answered for everything" ("1 other range ..." when N is 1) |
 | Notice, scan failed | "Scan failed: <reason>" |
 | Notice, quick scan partial | The view model's existing string, unchanged ("Quick scan finished, N device(s) could not be scanned") |
 | Notice, location | "Turn on Location to show the Wi-Fi name"; "Wi-Fi name stays hidden without location permission" |
