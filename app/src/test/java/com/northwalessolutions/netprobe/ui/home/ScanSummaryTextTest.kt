@@ -27,4 +27,15 @@ class ScanSummaryTextTest {
         assertEquals("Scan finished, 13 devices", RadarText.finished("13 devices"))
         assertEquals("Scan finished, no devices found", RadarText.finished("No devices found"))
     }
+    @Test fun `a stopped run reads stopped after`() {
+        assertEquals(RadarSummary("13 devices", "Stopped after 12 s"), ScanSummaryText.of(13, 0, 12_000, completed = false))
+        assertEquals(RadarSummary("13 devices", "Stopped after 12 s, 1 on another subnet"), ScanSummaryText.of(13, 1, 12_000, completed = false))
+        assertEquals(RadarSummary("No devices found", "Stopped after 12 s"), ScanSummaryText.of(0, 0, 12_000, completed = false))
+        assertEquals("Stopped after 12 s", RadarSummaries.settled(13, 0, 5_000L, 1_000_000L, 1_012_000L, 10_000_000L, completed = false) { "d" }.detail)
+        assertEquals("Scanned in 12 s", ScanSummaryText.of(13, 0, 12_000).detail)
+    }
+    @Test fun `finished and stopped announcements`() {
+        assertEquals("Scan stopped, 13 devices", RadarText.stopped("13 devices")); assertEquals("Scan stopped, no devices found", RadarText.stopped("No devices found"))
+        assertEquals("Scan finished, 13 devices", RadarText.finished("13 devices"))
+    }
 }

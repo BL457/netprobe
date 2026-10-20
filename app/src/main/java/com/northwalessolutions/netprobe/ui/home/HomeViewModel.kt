@@ -36,7 +36,8 @@ data class HostRow(val id: Long, val ip: String, val displayName: String, val id
 data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = false, val status: DiscoveryStatus? = null, val rows: List<HostRow> = emptyList(),
                        val filter: StatusFilter = StatusFilter.ALL, val query: String = "", val message: String? = null, val networkName: String? = null, val quickScanning: Boolean = false,
                        val lastScanAt: Long? = null, val totalHosts: Int = 0, val otherSubnetHosts: Int = 0, val scanStartedAt: Long? = null, val scanFinishedAt: Long? = null,
-                       val groups: List<HostGroup> = emptyList(), val lastRunRanges: List<RangeProgress> = emptyList())
+                       val groups: List<HostGroup> = emptyList(), val lastRunRanges: List<RangeProgress> = emptyList(),
+                       val scanCompleted: Boolean = true)
 
 object IdentityLine {
     val DeviceType.label: String get() = when (this) { DeviceType.ROUTER -> "Router"; DeviceType.PHONE -> "Phone"; DeviceType.COMPUTER -> "Computer"; DeviceType.PRINTER -> "Printer"
@@ -107,6 +108,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val lastRunRanges = MutableStateFlow<List<Subnet>>(emptyList())
     /** The same run's full range list for the done summary (extended spec 8.2); cleared at every scan start and on a network change. */
     private val lastRunProgress = MutableStateFlow<List<RangeProgress>>(emptyList())
+    /** False from the start of a run until it completes; a stopped or failed run keeps it false so the summary reads "Stopped after N s" (spec 5.4). */
+    private val lastRunCompleted = MutableStateFlow(true)
     private val controller = ScanController(viewModelScope, env) { e -> discover(e) }
     /** Quick scan all is network-bound like discovery: a Wi-Fi switch or loss cancels it, and Stop cancels it. */
     private val quick = ScanController(viewModelScope, env) { e -> quickScanAllOn(e) }
@@ -115,7 +118,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val hosts: Flow<List<HostEntity>> = networkId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
 
     val state: StateFlow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts,
-        finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress) { arr ->
+        finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress, lastRunCompleted) { arr ->
         @Suppress("UNCHECKED_CAST")
         val hs = arr[3] as List<HostEntity>
         @Suppress("UNCHECKED_CAST")
@@ -135,7 +138,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         HomeUiState(e, cs.scanning, if (cs.scanning) st else null, shown, f, q, cs.message ?: qs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs.scanning,
             lastScanAt = stats.lastScanAt, totalHosts = stats.totalHosts, otherSubnetHosts = stats.otherSubnetHosts,
             scanStartedAt = run.takeIf { it > 0 }, scanFinishedAt = done, groups = HomeGroups.of(shown),
-            lastRunRanges = lastRun)
+            lastRunRanges = lastRun, scanCompleted = arr[14] as Boolean)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
 
     init {
@@ -154,6 +157,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 // "Scanned in N s" and the range list describe one network: a different network id clears both (ruling 1).
                 val kept = RunMemory(finishedAt.value, lastRunRanges.value, lastRunProgress.value).afterNetworkChange(networkId.value, net?.id)
                 finishedAt.value = kept.finishedAt; lastRunRanges.value = kept.swept; lastRunProgress.value = kept.progress
+                latestRun.value = StaleRun.seed(networkId.value, net?.id, latestRun.value, net?.lastRunAt)
                 networkId.value = net?.id; c.currentNetwork.value = net
             }
         }
@@ -176,6 +180,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return
         networkId.value = net.id; c.currentNetwork.value = net
         val runId = System.currentTimeMillis(); latestRun.value = runId
+        lastRunCompleted.value = false
         val s = c.settings.state.value
         val ext = if (!s.extEnabled) ExtendedOptions() else ExtendedOptions(enabled = true, maxRanges = s.extMax, gatewayProbe = s.extGatewayProbe,
             manual = c.settings.manual.get(net.id), knownIps = c.hosts.hostsForNetwork(net.id).first().map { it.ip }.toSet())
@@ -198,10 +203,11 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(merged), c.ports.servicesFor(id), ports, emptyMap(), merged.mac?.let(c.ouiLookup))
                 c.hosts.setIdentity(id, c.deviceIdentifier.identify(ev))
             }
-            completed = true
+            completed = true; lastRunCompleted.value = true
         } finally {
             c.extendedRunActive.value = false
             c.locks.release()
+            StaleRun.toPersist(completed, runId)?.let { id -> withContext(NonCancellable) { c.networks.markRun(net.id, id) } }
             // Also on Stop or a network change: the engine has already marked unfinished ranges CANCELLED.
             val st = c.discoveryEngine.status.value
             st.gatewayProbe?.let { Log.i(EXT_LOG_TAG, "gateway probe: ${it.done} of ${it.total} units, ${it.attempts} connect attempts") }   // read by Task 20 check 3

@@ -71,7 +71,7 @@ private val HERO_DOTS = listOf(Offset(-0.45f, -0.30f), Offset(0.50f, -0.10f), Of
 fun RadarBlock(
     mode: RadarMode, found: Int, progressLine: String?, summary: RadarSummary, canScan: Boolean,
     onScan: () -> Unit, onStop: () -> Unit, modifier: Modifier = Modifier,
-    heroSubnet: String? = null, quickScanning: Boolean = false, onStopQuick: () -> Unit = {},
+    heroSubnet: String? = null, quickScanning: Boolean = false, onStopQuick: () -> Unit = {}, scanCompleted: Boolean = true,
 ) {
     val reduced = LocalReducedMotion.current
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
@@ -112,7 +112,8 @@ fun RadarBlock(
     var previous by remember { mutableStateOf(mode) }
     LaunchedEffect(mode) {
         @Suppress("DEPRECATION")
-        if (previous == RadarMode.SCANNING && mode == RadarMode.SETTLED) view.announceForAccessibility(RadarText.finished(summary.headline))
+        if (previous == RadarMode.SCANNING && mode == RadarMode.SETTLED)
+            view.announceForAccessibility(if (scanCompleted) RadarText.finished(summary.headline) else RadarText.stopped(summary.headline))
         previous = mode
     }
 

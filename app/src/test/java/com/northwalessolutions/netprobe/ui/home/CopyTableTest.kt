@@ -22,7 +22,7 @@ class CopyTableTest {
     private val templates: List<Regex> = listOf(
         "Scan", "Stop", "found", "No devices found", "\\d+ devices?",
         "Last scan (just now|\\d+ seconds ago|\\d+ minutes? ago|\\d+ hours? ago|yesterday|$date)",
-        "Scanned in \\d+ s(, \\d+ on another subnet)?",
+        "(Scanned in|Stopped after) \\d+ s(, \\d+ on another subnet)?",
         "Nothing scanned yet", "Tap to find what is on \\d+\\.\\d+\\.\\d+\\.\\d+/\\d+", "No network", "Connect to Wi-Fi or Ethernet to scan",
         "starting", "probing \\d+ of \\d+  \\d+ s", "identifying \\d+ devices?  \\d+ s", "Quick scanning", "Search name, IP, vendor or MAC",
         "Devices appear here as they are found", "Looking for devices", "No devices found\\. Check the network and scan again\\.",
@@ -33,6 +33,8 @@ class CopyTableTest {
         "Gateway probe skipped: every address answered", "Other ranges skipped: could not bind to Wi-Fi", "\\S+ skipped: every address answered",
         "Stopped at \\S+", "\\d+ other ranges?: nothing found", "\\d+ other ranges? answered for everything", "\\S+: nothing found", "\\d+ other ranges? checked",
         "\\S+  (manual|evidence|gateway probe|local)  (swept, nothing reachable|swept, \\d+ found|skipped, every address answered|not swept, scan limit reached|stopped|not started)",
+        "Scan (finished|stopped), (\\d+ devices?|no devices found)", "Scan skipped: could not bind to Wi-Fi", "identifying \\d+ ports?",
+        "\\d+ of \\d+, found \\d+",
         "Runs .+",
         "Set by you: (type (Router|Phone|Computer|Printer|Media|IoT|NAS|Camera|Server)(, vendor .+)?(, model .+)?|vendor .+(, model .+)?|model .+)",
         "Edit device, .+", "More options", "Edit device", "Remove device", "Name", "Type", "Vendor", "Model", "Detected: .+", "Reset to detected",
@@ -56,11 +58,13 @@ class CopyTableTest {
         for (hosts in listOf(0, 1, 13)) for (other in listOf(0, 1)) for (finish in finishes) for (last in lastScans) {
             val mode = RadarModes.of(false, hosts, last ?: finish?.second)
             if (mode == RadarMode.HERO) continue   // HERO shows the hero strings, checked below
-            val s = RadarSummaries.settled(hosts, other, last, finish?.first, finish?.second, now) { date }
-            inTable(s.headline)
-            detailOk(s.detail, blankAllowed = hosts > 0 && last == null && finish == null)   // the one reachable blank
+            for (completed in listOf(true, false)) {
+                val s = RadarSummaries.settled(hosts, other, last, finish?.first, finish?.second, now, completed = completed) { date }
+                inTable(s.headline)
+                detailOk(s.detail, blankAllowed = hosts > 0 && last == null && finish == null)   // the one reachable blank
+            }
         }
-        for (hosts in listOf(0, 1, 13)) for (other in listOf(0, 1)) ScanSummaryText.of(hosts, other, 12_000).let { inTable(it.headline); inTable(it.detail) }
+        for (hosts in listOf(0, 1, 13)) for (other in listOf(0, 1)) for (completed in listOf(true, false)) ScanSummaryText.of(hosts, other, 12_000, completed).let { inTable(it.headline); inTable(it.detail) }
     }
     @Test fun `hero, empty and notice strings`() {
         listOf(HomeCopy.SCAN, HomeCopy.STOP, HomeCopy.FOUND, HomeCopy.HERO_TITLE, HomeCopy.heroSubtitle("10.0.3.0/24"), HomeCopy.HERO_NO_NETWORK,
@@ -110,5 +114,11 @@ class CopyTableTest {
         inTable(DeviceAction.OpenWith("http://10.0.3.59:8090/").label); inTable(DetailCopy.TRY_AS)
         PortUris.TRY_AS.forEach { inTable(it); inTable(DetailCopy.tryAsDescription("10.0.3.59", 8123, it)) }
         assertEquals("Open 10.0.3.59:8123 as ssh", DetailCopy.tryAsDescription("10.0.3.59", 8123, "ssh"))
+    }
+    @Test fun `announcements, bind wording and the identify tail`() {
+        for (h in listOf("No devices found", "1 device", "13 devices")) { inTable(RadarText.finished(h)); inTable(RadarText.stopped(h)) }
+        inTable(DetailCopy.SCAN_BIND_FAILED); inTable(DetailCopy.identifying(1)); inTable(DetailCopy.identifying(3))
+        for (p in listOf(com.northwalessolutions.netprobe.engine.portscan.ScanProgress(312, 65535, 4, 0), com.northwalessolutions.netprobe.engine.portscan.ScanProgress(9, 9, 2, 0)))
+            for (n in listOf(0, 1, 3)) inTable(com.northwalessolutions.netprobe.ui.detail.detailProgress(p, n))
     }
 }

@@ -57,6 +57,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
                 NoteLine(h.id, h.note, actions.onNote, startExpanded = startNoteExpanded)
             }
             ScanBar(state.profile, state.customPortsText, state.customError, state.scanning, state.progress, enabled = state.host != null,
+                identifying = state.identifying, identified = state.identified,
                 onProfile = actions.onProfile, onCustom = actions.onCustom, onScan = { if (state.scanning) actions.onStop() else actions.onScan() })
         }
     }) { pad ->

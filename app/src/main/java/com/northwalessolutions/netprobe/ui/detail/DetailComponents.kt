@@ -148,7 +148,7 @@ fun NoteLine(hostId: Long, note: String, onSave: (String) -> Unit, startExpanded
 
 /** Profile control, Scan pill, Custom ports field, progress text and the 2 dp progress line, all pinned (spec 5.1 items 8 and 9). */
 @Composable
-fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scanning: Boolean, progress: ScanProgress?, enabled: Boolean,
+fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scanning: Boolean, progress: ScanProgress?, enabled: Boolean, identifying: Int = 0, identified: Int = 0,
             onProfile: (ScanProfile) -> Unit, onCustom: (String) -> Unit, onScan: () -> Unit) {
     // Reserved from the data style's line height, so the bar never jumps when a scan starts (about 21 dp at 1.3). The sp line height
     // alone came out 1 px short of the laid-out text on the Pixel (pixel rounding), so the measured line wins when it is taller.
@@ -171,10 +171,10 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
                 colors = npFieldColors(), shape = RoundedCornerShape(BOX_RADIUS))
         }
         Box(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).heightIn(min = progressHeight), contentAlignment = Alignment.CenterEnd) {
-            if (scanning) Text(detailProgress(progress), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
+            if (scanning) Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
         }
         Box(Modifier.fillMaxWidth().height(2.dp)) {
-            if (scanning) LinearProgressIndicator(progress = { progress?.let { p -> if (p.total == 0) 0f else p.done / p.total.toFloat() } ?: 0f },
+            if (scanning) LinearProgressIndicator(progress = { detailFraction(progress, identified) },
                 modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface,
                 gapSize = 0.dp, drawStopIndicator = {})   // a plain 2 dp line as drawn: no M3 gap or end dot
         }

@@ -30,3 +30,11 @@ object ScanFinish {
     fun afterNetworkChange(previousNetworkId: Long?, networkId: Long?, finishedAt: Long?): Long? =
         if (previousNetworkId == networkId) finishedAt else null
 }
+
+/** Stale dimming across restarts (spec 5.5): the in-session latestRun is seeded from the network row only when the network changes. */
+object StaleRun {
+    fun seed(previousNetworkId: Long?, networkId: Long?, current: Long, lastRunAt: Long?): Long =
+        if (previousNetworkId == networkId) current else lastRunAt ?: 0L
+    /** A run stopped after 2 s, failed or killed must never dim nearly every host after a restart (Gruff Q1). */
+    fun toPersist(completed: Boolean, runId: Long): Long? = if (completed) runId else null
+}

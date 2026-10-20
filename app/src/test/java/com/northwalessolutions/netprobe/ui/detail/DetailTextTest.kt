@@ -85,4 +85,13 @@ class DetailTextTest {
         val (head, tail) = sheetSplit(port(8090, "http://10.0.3.59:8090/"))
         assertEquals(listOf("Open with..."), head.map { it.first }); assertEquals(listOf("Copy IP", "Copy IP and port"), tail.map { it.first })
     }
+    @Test fun `detail progress counts identifies`() {
+        assertEquals("312 of 65535, found 4", detailProgress(ScanProgress(312, 65535, 4, 0), identifying = 3))   // the sweep runs: text unchanged
+        assertEquals("identifying 3 ports", detailProgress(ScanProgress(65535, 65535, 4, 0), identifying = 3))
+        assertEquals("identifying 1 port", detailProgress(ScanProgress(1000, 1000, 1, 0), identifying = 1))
+        assertEquals("1000 of 1000, found 2", detailProgress(ScanProgress(1000, 1000, 2, 0), identifying = 0))
+        assertEquals(0.5f, detailFraction(ScanProgress(100, 100, 100, 0), identified = 0), 0.0001f)
+        assertEquals(1f, detailFraction(ScanProgress(100, 100, 4, 0), identified = 4), 0.0001f)
+        assertEquals(0f, detailFraction(null, 0), 0f); assertEquals(0f, detailFraction(ScanProgress(0, 0, 0, 0), 0), 0f)
+    }
 }

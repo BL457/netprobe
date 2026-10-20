@@ -45,7 +45,7 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
     val mode = RadarModes.of(state.scanning, state.totalHosts, state.lastScanAt ?: state.scanFinishedAt)
     val localSubnet = state.env?.let { SubnetMath.of(it.interfaceIp, it.prefixLength).toString() }
     val elapsedS = state.scanStartedAt?.let { ((now - it) / MS_PER_S).coerceAtLeast(0) } ?: 0L
-    val summary = RadarSummaries.settled(state.totalHosts, state.otherSubnetHosts, state.lastScanAt, state.scanStartedAt, state.scanFinishedAt, now)
+    val summary = RadarSummaries.settled(state.totalHosts, state.otherSubnetHosts, state.lastScanAt, state.scanStartedAt, state.scanFinishedAt, now, completed = state.scanCompleted)
     // The IME joins the content insets so an empty state or the last rows never sit behind the keyboard while searching.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)
@@ -56,7 +56,8 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             }
             RadarBlock(mode, progress?.found ?: 0, ProgressLine.of(progress, elapsedS), summary, canScan = state.env != null,
                 onScan = { actions.onDismissMessage(); actions.onScan() }, onStop = actions.onStop, modifier = Modifier.padding(top = 12.dp),
-                heroSubnet = localSubnet, quickScanning = state.quickScanning, onStopQuick = actions.onStopQuickScan)
+                heroSubnet = localSubnet, quickScanning = state.quickScanning, onStopQuick = actions.onStopQuickScan,
+                scanCompleted = state.scanCompleted)
             state.message?.let { NoticeLine(it, actions.onDismissMessage) }
             if (HeaderRules.showFilters(mode, state.filter, state.query)) {
                 FilterRow(state.filter, actions.onFilter)

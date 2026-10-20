@@ -76,7 +76,20 @@ fun identityWithType(identity: String, type: DeviceType): String? {
     }
 }
 
-fun detailProgress(p: ScanProgress?): String = p?.let { "${it.done} of ${it.total}, found ${it.open}" } ?: "starting"
+/** "312 of 65535, found 4" while the sweep runs; "identifying 3 ports" once it is done and identifies are still running (spec 1.14, Gruff m16). */
+fun detailProgress(p: ScanProgress?, identifying: Int = 0): String {
+    if (p == null) return "starting"
+    if (p.done >= p.total && identifying > 0) return DetailCopy.identifying(identifying)
+    return "${p.done} of ${p.total}, found ${p.open}"
+}
+
+/** (ports probed + identifies finished) / (ports total + open ports found). */
+fun detailFraction(p: ScanProgress?, identified: Int): Float {
+    if (p == null) return 0f
+    val total = p.total + p.open
+    if (total == 0) return 0f
+    return ((p.done + identified).toFloat() / total).coerceIn(0f, 1f)
+}
 
 /** "Runs Home Assistant" chips, in the stored rule-file order (spec 3.6). */
 fun softwareLabels(h: HostEntity): List<String> = SoftwareColumn.decode(h.identSoftware).map(DetailCopy::runs)

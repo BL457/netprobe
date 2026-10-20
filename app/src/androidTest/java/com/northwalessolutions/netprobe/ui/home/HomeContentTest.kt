@@ -179,4 +179,8 @@ class HomeContentTest {
         rule.onAllNodesWithTag("hostRow")[1].performClick()
         assertEquals(listOf(2L), rec.opened)
     }
+    @Test fun aStoppedRunSaysStoppedAfter() {
+        show(HomeFakes.settled().copy(scanStartedAt = 1_000L, scanFinishedAt = 13_000L, scanCompleted = false))
+        rule.onNodeWithText("Stopped after 12 s").assertIsDisplayed()
+    }
 }

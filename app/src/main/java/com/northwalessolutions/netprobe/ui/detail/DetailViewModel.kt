@@ -16,7 +16,6 @@ import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.engine.common.BindFailedException
-import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.home.RowRules
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.home.ScanController
@@ -30,8 +29,11 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class PortRow(val port: Int, val service: ServiceInfo, val primary: DeviceAction?, val actions: List<DeviceAction>, val tryAs: List<Pair<String, String>> = emptyList())
 sealed class VulnSheetState { data class Loading(val query: String) : VulnSheetState(); data class Ready(val query: String, val result: VulnResult) : VulnSheetState() }
+/** Identifies started and finished during the current Detail scan (spec 1.14). */
+data class IdentifyCount(val pending: Int = 0, val done: Int = 0)
 data class DetailUiState(val host: HostEntity? = null, val displayName: String = "", val ports: List<PortRow> = emptyList(), val scanning: Boolean = false, val progress: ScanProgress? = null,
-                         val profile: ScanProfile = ScanProfile.Quick, val customPortsText: String = "", val customError: String? = null, val message: String? = null, val vuln: VulnSheetState? = null)
+                         val profile: ScanProfile = ScanProfile.Quick, val customPortsText: String = "", val customError: String? = null, val message: String? = null, val vuln: VulnSheetState? = null,
+                         val identifying: Int = 0, val identified: Int = 0)
 
 class DetailViewModel(private val c: AppContainer, private val hostId: Long) : ViewModel() {
     private val profile = MutableStateFlow<ScanProfile>(ScanProfile.Quick); private val customText = MutableStateFlow(""); private val customError = MutableStateFlow<String?>(null)
@@ -39,12 +41,13 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     private val env: StateFlow<NetworkEnv?> = c.networkEnvMonitor.env.stateIn(viewModelScope, SharingStarted.Eagerly, c.networkEnvMonitor.current())
     /** Port scans are network-bound: losing or switching Wi-Fi cancels them, so they never probe the same IP on another network. */
     private val scan = ScanController(viewModelScope, env) { }
+    private val identify = MutableStateFlow(IdentifyCount())
     private var vulnJob: Job? = null
     /** Try as pairs per port, cached: the package manager is asked once per port, not on every state emission (review checklist: no per-emission work). */
-    private val tryAsCache = ConcurrentHashMap<Int, List<Pair<String, String>>>()
-    private fun tryAsFor(ip: String, port: Int) = tryAsCache.getOrPut(port) { c.actions.tryAs(ip, port) }
+    private val tryAsCache = ConcurrentHashMap<String, List<Pair<String, String>>>()
+    private fun tryAsFor(ip: String, port: Int) = tryAsCache.getOrPut("$ip:$port") { c.actions.tryAs(ip, port) }
 
-    val state: StateFlow<DetailUiState> = combine(c.hosts.host(hostId), c.ports.portsForHost(hostId), scan.state, c.portScanEngine.progress, profile, customText, customError, message, vuln, env) { arr ->
+    val state: StateFlow<DetailUiState> = combine(c.hosts.host(hostId), c.ports.portsForHost(hostId), scan.state, c.portScanEngine.progress, profile, customText, customError, message, vuln, env, identify) { arr ->
         @Suppress("UNCHECKED_CAST")
         val ps = arr[1] as List<PortEntity>
         val h = arr[0] as HostEntity?; val sc = arr[2] as ScanController.State; val pr = arr[3] as ScanProgress?; val e = arr[9] as NetworkEnv?
@@ -52,8 +55,9 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             PortRow(p.port, info, h?.let { c.actions.primary(it.ip, p.port, info) }, h?.let { c.actions.actionsFor(it.ip, p.port, info) } ?: emptyList(),
                 h?.let { tryAsFor(it.ip, p.port) }.orEmpty()) }
         val name = h?.let { if (RowRules.isOwn(it.ip, e) && it.customName.isNullOrBlank()) RowRules.THIS_PHONE else DisplayName.of(it) } ?: ""
-        DetailUiState(h, name, rows, sc.scanning, if (sc.scanning) pr else null, arr[4] as ScanProfile, arr[5] as String, arr[6] as String?, sc.message ?: arr[7] as String?, arr[8] as VulnSheetState?)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailUiState())
+        DetailUiState(h, name, rows, sc.scanning, if (sc.scanning) pr else null, arr[4] as ScanProfile, arr[5] as String, arr[6] as String?, sc.message ?: arr[7] as String?, arr[8] as VulnSheetState?,
+            identifying = (arr[10] as IdentifyCount).pending, identified = (arr[10] as IdentifyCount).done)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailUiState())
 
     fun setProfile(p: ScanProfile) { profile.value = p; customError.value = null }
     fun setCustomPorts(t: String) { customText.value = t; customError.value = null }
@@ -65,7 +69,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val resolved = if (prof is ScanProfile.Custom) ProfileParser.parse(customText.value).getOrElse { customError.value = it.message; return } else prof
         scan.start { e ->
             // An off-subnet row that cannot be bound to Wi-Fi is not scanned at all (final review I2): say so, never scan it unbound.
-            try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = HomeCopy.BIND_FAILED }
+            try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = DetailCopy.SCAN_BIND_FAILED }
         }
     }
 
@@ -80,14 +84,20 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val found = HashMap<Int, ServiceInfo>()
         val mode = ProbeModes.forProfile(profile)   // one budget per Full or Custom scan, shared by its identifies
         // Identify off the collector so a slow banner never back-pressures the scan; coroutineScope waits for every identify.
+        identify.value = IdentifyCount()
         coroutineScope {
             val sem = Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)
             c.portScanEngine.scan(ip, profile, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
-                launch { sem.withPermit {
-                    val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), mode)
-                    synchronized(found) { found[r.port] = info }
-                    c.ports.upsertOpen(hostId, r.port, info)
-                } }
+                identify.update { it.copy(pending = it.pending + 1) }
+                launch {
+                    try {
+                        sem.withPermit {
+                            val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), mode)
+                            synchronized(found) { found[r.port] = info }
+                            c.ports.upsertOpen(hostId, r.port, info)
+                        }
+                    } finally { identify.update { IdentifyCount(it.pending - 1, it.done + 1) } }
+                }
             }
         }
         c.ports.markScanned(hostId)

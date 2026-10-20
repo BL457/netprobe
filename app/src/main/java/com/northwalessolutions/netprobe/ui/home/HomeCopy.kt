@@ -51,6 +51,7 @@ object HomeCopy {
     fun devices(n: Int) = if (n == 1) "1 device" else "$n devices"
     fun lastScan(relative: String) = "Last scan $relative"
     fun scannedIn(seconds: Long) = "Scanned in $seconds s"
+    fun stoppedAfter(seconds: Long) = "Stopped after $seconds s"
     fun onAnotherSubnet(k: Int) = "$k on another subnet"
     fun emptySearch(query: String) = "No devices match \"$query\""
     fun emptyFilter(label: String) = "No devices marked $label"

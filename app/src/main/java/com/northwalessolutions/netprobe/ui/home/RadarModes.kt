@@ -15,9 +15,11 @@ object RadarModes {
 object ScanSummaryText {
     private const val MS_PER_S = 1000L
     private const val HALF_S = 500L
-    fun of(totalHosts: Int, otherSubnetHosts: Int, durationMs: Long): RadarSummary {
+    /** "Scanned in N s" after a completed run, "Stopped after N s" after Stop or a failure (spec 5.4); ", K on another subnet" either way. */
+    fun of(totalHosts: Int, otherSubnetHosts: Int, durationMs: Long, completed: Boolean = true): RadarSummary {
         val seconds = ((durationMs + HALF_S) / MS_PER_S).coerceAtLeast(1)
-        val detail = HomeCopy.scannedIn(seconds) + if (otherSubnetHosts > 0) ", " + HomeCopy.onAnotherSubnet(otherSubnetHosts) else ""
+        val lead = if (completed) HomeCopy.scannedIn(seconds) else HomeCopy.stoppedAfter(seconds)
+        val detail = lead + if (otherSubnetHosts > 0) ", " + HomeCopy.onAnotherSubnet(otherSubnetHosts) else ""
         return RadarSummary(headline(totalHosts), detail)
     }
     fun headline(totalHosts: Int): String = if (totalHosts == 0) HomeCopy.NO_DEVICES else HomeCopy.devices(totalHosts)
@@ -26,9 +28,9 @@ object ScanSummaryText {
 object RadarSummaries {
     /** The done summary while this view model holds a finished run; otherwise the idle text (duration is not persisted, spec 3.4). */
     fun settled(totalHosts: Int, otherSubnetHosts: Int, lastScanAt: Long?, scanStartedAt: Long?, scanFinishedAt: Long?, now: Long,
-                formatDate: (Long) -> String = RelativeTime::defaultDate): RadarSummary {
+                completed: Boolean = true, formatDate: (Long) -> String = RelativeTime::defaultDate): RadarSummary {
         if (scanStartedAt != null && scanFinishedAt != null && scanFinishedAt >= scanStartedAt)
-            return ScanSummaryText.of(totalHosts, otherSubnetHosts, scanFinishedAt - scanStartedAt)
+            return ScanSummaryText.of(totalHosts, otherSubnetHosts, scanFinishedAt - scanStartedAt, completed)
         val detail = lastScanAt?.let { HomeCopy.lastScan(RelativeTime.of(it, now, formatDate)) } ?: ""
         return RadarSummary(ScanSummaryText.headline(totalHosts), detail)
     }
@@ -48,4 +50,5 @@ object RadarText {
     }
     fun heroDescription(subnet: String?): String = subnet?.let { "Scan the network $it" } ?: RING_DISABLED
     fun finished(headline: String): String = "Scan finished, ${lowerFirst(headline)}"
+    fun stopped(headline: String): String = "Scan stopped, ${lowerFirst(headline)}"
 }
