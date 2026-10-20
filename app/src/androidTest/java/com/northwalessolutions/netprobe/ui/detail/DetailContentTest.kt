@@ -261,7 +261,7 @@ class DetailContentTest {
         rule.onNodeWithText("Run tool").assertDoesNotExist()
     }
     @Test fun removeDeviceIsDisabledWhileAToolHoldsTheHost() {
-        showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(busy = com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry.Work.TOOL))
+        showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(busy = com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry.Work.TOOL, removeAllowed = false))
         rule.onNodeWithTag("detailMenu").performClick()
         rule.onNodeWithText("Remove device").assertIsNotEnabled()
     }

@@ -20,7 +20,6 @@ import androidx.compose.ui.semantics.semantics
 import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
-import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
 import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.EmptyState
@@ -67,7 +66,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     // on the list counted the navigation bar twice and left a 48 dp gap above the keyboard on the Pixel.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("detailHeader")) {
-            BackToHome(actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.busy != HostBusyRegistry.Work.TOOL, onRemove = { if (state.scanning) actions.onStop(); actions.onRemove(); actions.onBack() }) }
+            BackToHome(actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.removeAllowed, onRemove = { if (state.scanning) actions.onStop(); actions.onRemove(); actions.onBack() }) }
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
                     DetailName(state.displayName) { editing = true }
@@ -126,4 +125,6 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
         }
     }
     state.vuln?.let { VulnSheet(it, onClose = actions.onCloseVulns, onRerun = actions.onRerunVulns, onOpen = actions.onOpenLink) }
+    toolState.dirBrute?.let { DirBruteSheet(it, onRun = toolActions.onStartDirBrute, onManageWordlists = { toolActions.onCloseDirBrute(); toolActions.onManageWordlists() }, onDismiss = toolActions.onCloseDirBrute) }
+    toolState.results?.let { ToolResultsSheet(it, toolActions.onOlderRun, toolActions.onNewerRun, toolActions.onCopyFinding, toolActions.onOpenFinding, toolActions.onShare, toolActions.onCloseResults) }
 }

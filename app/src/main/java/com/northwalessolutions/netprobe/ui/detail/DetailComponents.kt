@@ -151,6 +151,9 @@ fun NoteLine(hostId: Long, note: String, onSave: (String) -> Unit, startExpanded
     }
 }
 
+/** Fixed fill of the tool bar line under reduced motion (no indeterminate sweep). */
+private const val STATIC_TOOL_FRACTION = 0.3f
+
 /** Profile control, Scan pill, Custom ports field, progress text and the 2 dp progress line, all pinned (spec 5.1 items 8 and 9). */
 @Composable
 fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scanning: Boolean, progress: ScanProgress?, enabled: Boolean, identifying: Int = 0, identified: Int = 0,
@@ -195,6 +198,8 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
             when {
                 toolFraction != null -> LinearProgressIndicator(progress = { toolFraction }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
                     trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})
+                toolBar != null && reduced -> LinearProgressIndicator(progress = { STATIC_TOOL_FRACTION }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
+                    trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})   // reduced motion: a fixed partial bar, no sweep
                 toolBar != null -> LinearProgressIndicator(modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface, gapSize = 0.dp)
                 scanning -> LinearProgressIndicator(progress = { shown },
                     modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface,

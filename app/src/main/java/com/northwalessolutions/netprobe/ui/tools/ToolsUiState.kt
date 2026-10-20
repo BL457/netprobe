@@ -23,7 +23,9 @@ data class ToolResultsState(val runId: Long, val title: String, val statusLine: 
                             val findings: List<FindingRow>, val active: Boolean)
 data class DirBruteSheetState(val port: Int, val targetUrl: String, val lists: List<WordlistMeta>, val initial: DirBruteOptions, val busyReason: String?)
 data class DetailToolsState(val tools: ToolsUiState? = null, val bar: ToolRunBar? = null, val busy: HostBusyRegistry.Work? = null,
-                            val results: ToolResultsState? = null, val dirBrute: DirBruteSheetState? = null, val appMessage: AppMessage? = null)
+                            val results: ToolResultsState? = null, val dirBrute: DirBruteSheetState? = null, val appMessage: AppMessage? = null,
+                            /** Remove device is refused only while a tool run holds the host (spec 4.3); computed by DetailBusyRules. */
+                            val removeAllowed: Boolean = true)
 
 object ToolsUiModel {
     private const val MS_PER_S = 1000L
