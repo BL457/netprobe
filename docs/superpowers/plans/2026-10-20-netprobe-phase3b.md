@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-20-phase3b-followup-tools-design.md` at c79e6aa is binding. Its Gruff review (`docs/superpowers/specs/2026-10-20-phase3b-gruff-review.md`) explains the reasoning; where review and spec differ, the spec wins. The 3A plan (`2026-10-20-netprobe-phase3a.md` at 6b992d4) owns every name this phase consumes, and where the 3B spec and the 3A plan disagree the 3A plan wins (recorded in the Plan Self-Review Notes). The Radar spec and the 3A spec own every token, type style and motion this phase reuses.
 
-**Roles:** The stronger model implements and reviews Task 1 (the schema 3 migration), Task 6 (the `ToolRunner`: pause, resume, INTERRUPTED, the ticker, end states) and Task 10 (the directory brute-force engine: calibration, the not-found filter, adaptive concurrency). Task 14 (the SMB session probe, hand-written SMB2 / NTLM / SPNEGO / MD4) is built after the other tools and gets its own review as the spec directs (15.2.4), but does not need the stronger model. Every other task is standard.
+**Roles:** The stronger model implements and reviews Task 1 (the schema 3 migration), Task 6 (the `ToolRunner`: pause, resume, INTERRUPTED, the ticker, end states) and Task 10 (the directory brute-force engine: calibration, the not-found filter, adaptive concurrency). Tasks 14 and 15 (the SMB session probe: hand-written MD4 / NTLM / SPNEGO in 14, SMB2, framing and the probe in 15) are built after the other tools and get their own review as the spec directs (15.2.4), but do not need the stronger model. Tasks 17 and 19 edit screens 3A's motion task also edits; each opens with a Step 0 that re-reads those files on the branch. Every other task is standard. The plan has 20 tasks: 19 built and JVM-tested now, and Task 20, the deferred on-device QA.
 
 ## Global Constraints
 
@@ -26,9 +26,11 @@ Carried from the 3A plan (unchanged, they still bind):
 - Every user-visible string lives in a Copy object (`ToolCopy`, `WordlistCopy`, or 3A's `HomeCopy` / `DetailCopy`) and has a template in a copy table test (`ToolCopyTableTest` for 3B, 3A's `CopyTableTest` for 3A strings); regex templates use doubled backslashes (`"\\d+"`). Tool summaries and finding details are user-visible, so tools read them from `ToolCopy` too.
 - Block bodies (`{ ... }`) for every function in which `return` appears; no `return` inside an expression body.
 - Every instrumented run passes `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`, so NetProbe is never uninstalled and the Director's data survives.
-- THE PHONE IS NOT AVAILABLE during Tasks 1 to 17. Every task is built and tested on the JVM. Compose UI tests and the migration tests are written in full and must compile (`./gradlew :app:compileDebugAndroidTestKotlin`) but are not run. No task may claim device evidence. Task 18 lists every instrumented run, screenshot and recording; it is executed later, when the Director returns.
+- THE PHONE IS NOT AVAILABLE during Tasks 1 to 19. Every task is built and tested on the JVM. Compose UI tests and the migration tests are written in full and must compile (`./gradlew :app:compileDebugAndroidTestKotlin`) but are not run. No task may claim device evidence. Task 20 lists every instrumented run, screenshot and recording; it is executed later, when the Director returns.
 - No instrumented test may open, create or delete a database named `DB_NAME` ("netprobe.db"). Migration tests use `MIGRATION_TEST_DB` ("netprobe-migration-test.db") or the pushed copy "netprobe-migration-copy.db"; DAO tests use in-memory databases.
-- Building `AppContainer` never touches the database (no `init` block, no eager repository use). The one new exception is `ToolRepository.markInterrupted`, launched on `appScope` when the `toolRunner` lazy is first read (Task 6): it runs off the main thread, and `ToolRunner.start` awaits its `ready` before inserting a run, so a run started in the first moments is never marked INTERRUPTED under its live job. No instrumented test reads the production `toolRunner`.
+- Building `AppContainer` never touches the database (no `init` block, no eager repository use). The one new exception is `ToolRepository.markInterrupted`, launched on `appScope` when the `toolRunner` lazy is first read (Task 6): it runs off the main thread, and `ToolRunner.start` awaits its `ready` before inserting a run, so a run started in the first moments is never marked INTERRUPTED under its live job. `NetProbeNav` reads `toolRunActive`, so the only instrumented test that reaches the production `toolRunner` is 3A's `HomeScreenTest`, which launches the real activity; Task 20 runs it last, after the in-place migration (plan review G26).
+- 3B starts only when 3A is finished: Task 1 Step 0 checks 3A's last task and final review are committed and records the base commit in `docs/superpowers/plans/phase3b-base.txt`, from which Task 20 builds the rollback APK (plan review G17).
+- Every commit stages the files its task names and checks `git status --short` before committing; never `git add -A` or `git add .`, because another agent may be working in the same tree (plan review G21).
 - All shell commands are Git Bash syntax, run from `K:/claude/netprobe`, using `./gradlew`, never a global `gradle`. Never kill python or java processes wholesale.
 - Standard commands used by every task:
   - JVM, one class or package: `./gradlew :app:testDebugUnitTest --tests "<pattern>" --console=plain 2>&1 | tail -20`
@@ -39,24 +41,27 @@ New in 3B:
 
 - Schema version 3 with `MIGRATION_2_3`, added after 3A's `MIGRATION_1_2`, and additive only: it creates `tool_runs` and `tool_findings` and their indices with `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`, and alters no existing table. A test proves it runs `execSQL` only and contains no `ALTER` or `DROP`. `tool_runs` carries a `port` column; `tool_findings` is foreign-keyed to `tool_runs` with cascade, and `tool_runs` to `hosts` with cascade.
 - History is capped at `KEEP_RUNS_PER_TOOL = 10` runs per host per tool (oldest pruned on insert) and `MAX_FINDINGS = 500` findings per run.
-- The three bundled wordlists are authored in this plan as complete lists (Task 8) and committed as plain `res/raw/*.txt` resources, LF line endings, ASCII only, no leading slash, no comments, no blanks, no duplicates. Imports are `text/plain` only through `ActivityResultContracts.OpenDocument`; no network fetch of any list.
+- The three bundled wordlists are authored in this plan as complete lists (Task 8) and committed as plain `res/raw/*.txt` resources, LF line endings, ASCII only, no leading slash, no comments, no blanks, no duplicates, and no entry whose GET can change a device's state (reboot, upgrade, apply, logout, save: plan review G10). Imports are `text/plain` only through `ActivityResultContracts.OpenDocument`; no network fetch of any list.
 - All tool I/O runs on `Dispatchers.IO.limitedParallelism(TOOL_THREADS)` with `TOOL_THREADS = 16`; `CancellableIo.closing` inherits the caller's dispatcher and never names `Dispatchers.IO`.
-- A per-host token bucket caps every tool at `MAX_REQUESTS_PER_SECOND = 100` (burst 10), a constant and not an option.
+- A per-host token bucket caps every tool at `MAX_REQUESTS_PER_SECOND = 100` (burst 10), a constant and not an option. A token is taken once per request sent: brute-force calls `control.gate()` before the HEAD and again before the GET, so a HEAD-200 catch-all still sends at most 100 requests a second (plan review G3).
+- Every companion tool wraps each exchange in `RunControl.excusedOnce`, so a request that fails while the Director is in the browser is retried once after the resume instead of ending a step (spec 4.8, plan review G5).
 - Directory brute-force always sends the IP as the Host header; the TLS certificate and HTTP fingerprint tools send the host's known name (mDNS, else reverse DNS) as SNI and Host when one exists, with a retry on the IP if the named handshake fails.
 
 ## Review Focus
 
 The five failure modes most likely to bite the Director. Each is pinned to a test in its owning task; the reviewer checks the test exists, fails on the bug, and was not bent to fit the code.
 
-1. **A frozen browser trip turns a live run into a false failure.** Opening a found path sends NetProbe to the background; the cached-apps freezer times out every in-flight read. The run must pause on `ON_STOP`, excuse those failures (not counted, not counted towards the 50 consecutive, no concurrency cut), stop the elapsed clock, and resume on `ON_START`. Pinned: Task 6 `ToolRunnerPauseTest.gate suspends while foreground is false and resumes when true`, `a pause stops the elapsed clock`, `a failure spanning a pause is excused`; Task 10 `DirBruteFlowTest.an excused failure is retried after the resume and never counted`.
+1. **A frozen browser trip turns a live run into a false failure.** Opening a found path sends NetProbe to the background; the cached-apps freezer times out every in-flight read. The run must pause on `ON_STOP`, excuse those failures (not counted, not counted towards the 50 consecutive, no concurrency cut), stop the elapsed clock, and resume on `ON_START`. Pinned: Task 6 `ToolRunnerPauseTest.gate suspends while foreground is false and resumes when true`, `a pause stops the elapsed clock`, `a failure spanning a pause is excused` (driven with `runCurrent`, never `advanceUntilIdle`, plan review G2); Task 3 `ExcusedOnceTest`; Task 10 `DirBruteFlowTest.an excused failure is retried after the resume and never counted`; the companion tools' pause tests in Tasks 11, 12, 13 and 15 (`a ... lost to a pause is retried once ...`).
 2. **The not-found filter fails on a nonce page and every path reads as a hit.** Calibration takes 5 random paths per group, a size band per status, a HEAD/GET agreement check and a runaway check; a nonce-varying catch-all is filtered, a HEAD-404/GET-200 server switches to GET only and still finds its paths, and more than 50 alike in the first 200 ends the run. Pinned: Task 10 `DirBruteCalibrationTest.a nonce varying catch all is filtered by the band`, `a head 404 get 200 server switches to get only and finds its paths`, `DirBruteRunawayTest.more than fifty alike in the first two hundred ends the run`.
 3. **Tool reads starve discovery of IO threads.** Four brute-forces at concurrency 16 must not hold the whole `Dispatchers.IO` pool: `CancellableIo.closing` inherits the caller's dispatcher and the runner uses one 16-thread view. Pinned: Task 3 `CancellableIoTest.a dispatchers io task still runs while sixteen tool reads are blocked` and `tool reads never run on more than TOOL_THREADS threads`.
 4. **Hints keyed by tool, not by (tool, port), silently drop identity evidence.** A fingerprint of port 80 must never hide what a fingerprint of 5000 found, and a STOPPED partial run must never hide a DONE run; tool-triggered writes go through 3A's `setIdentityIfNotWeaker`. Pinned: Task 2 `ToolHintsRuleTest` (all four) and the instrumented `ToolDaoTest.hintsForPicksPerToolAndPort`; Task 7 `DeviceIdentifierToolHintTest`.
-5. **The schema 3 migration touches an existing table and loses marks.** `MIGRATION_2_3` must be additive only: new tables and indices, no `ALTER`, and schema 2's rows read back intact. Pinned: Task 1 `ToolMigrationSqlTest` (all three), `SchemaExportTest.version 3 keeps every version 2 table and column unchanged`; instrumented Task 1 `ToolMigrationTest.schema2RowsSurviveAndTheNewTablesWork` and `oneToThreeInOneChain`, run in Task 18.
+5. **The schema 3 migration touches an existing table and loses marks.** `MIGRATION_2_3` must be additive only: new tables and indices, no `ALTER`, and schema 2's rows read back intact. Pinned: Task 1 `ToolMigrationSqlTest` (all three), `SchemaExportTest.version 3 keeps every version 2 table and column unchanged`; instrumented Task 1 `ToolMigrationTest.schema2RowsSurviveAndTheNewTablesWork` and `oneToThreeInOneChain`, run in Task 20.
 
 ### Review checklist (every task)
 
-- Every blocking socket call runs inside `CancellableIo.closing` (or `Probe.connect`), so Stop ends within about a second during a read, not only during a connect. No tool names `Dispatchers.IO`.
+- Every blocking socket call runs inside `CancellableIo.closing` (or `Probe.connect`), so Stop ends within about a second during a read, not only during a connect. No tool names `Dispatchers.IO`. Every socket is opened through `Probe.connect` or bound through `currentBinder()`, so `BindingPropagationTest` (Task 15) keeps holding.
+- Every request a tool sends is preceded by its own `control.gate()`: one rate token per HTTP request, never one per path.
+- Every test fails on the bug its name states; a test that would pass with the rule removed is rewritten, not kept (plan review G12).
 - Every tool takes its I/O as a constructor parameter (a function type or a small interface), so its JVM test fakes it; the only real sockets in unit tests are the loopback `ServerSocket` / `SSLServerSocket` / `DatagramSocket` fakes the spec's test list names.
 - Every user-visible string is a `ToolCopy` / `WordlistCopy` member with a `ToolCopyTableTest` template; no string literal in a composable or a tool summary.
 - No control that starts or stops a run sits inside a scroll container (the pinned bar, the options-sheet footer, the Wordlists import pill).
@@ -67,38 +72,41 @@ The five failure modes most likely to bite the Director. Each is pinned to a tes
 ```
 app/schemas/com.northwalessolutions.netprobe.data.NetProbeDb/3.json   generated by KSP and committed (Task 1)
 app/src/main/res/raw/
-  wordlist_common_short.txt   300 entries (Task 8)
-  wordlist_admin_panels.txt   160 entries (Task 8)
+  wordlist_common_short.txt   298 entries (Task 8)
+  wordlist_admin_panels.txt   153 entries (Task 8)
   wordlist_api_paths.txt      137 entries (Task 8)
   http_fingerprints.json      framework rules (Task 11)
   identify_rules.json         14 hint rules before `gateway` (Task 7)
 app/src/main/java/com/northwalessolutions/netprobe/
   AppContainer.kt          toolRepo (2), hostBusy, appMessages, foreground, toolDispatcher (4), tools map, toolRunner, toolRunActive,
-                           reidentifyFromTools (6, 7), wordlistStore (9), dirBruteOptions (15)
+                           reidentifyFromTools (6, 7), wordlistStore (9), dirBruteOptions (16)
   MainActivity.kt          a DefaultLifecycleObserver sets AppContainer.foreground (4)
   data/        Entities.kt, Migrations.kt, NetProbeDb.kt (1), Daos.kt (ToolDao), Repositories.kt (ToolRepository, ToolHintsRule) (1, 2)
   engine/common/   CancellableIo.kt (3), RateBucket.kt (4), HttpClient.kt (5)
   engine/tools/    ToolId.kt, ToolApplicability.kt (3), HostBusyRegistry.kt, AppMessages.kt (4), ToolStore.kt, ToolJson.kt, ToolRunner.kt (6),
                    dirbrute/ (DirBruteOptions.kt, AdaptiveLimiter.kt, NotFoundFilter.kt, Calibration.kt, DirBrutePaths.kt, DirBruteforceTool.kt) (10),
                    HttpFingerprintTool.kt, FingerprintRules.kt (11), TlsCertificateTool.kt, CertSummaries.kt (12),
-                   SnmpWalkTool.kt, UdpSnmpExchange.kt (13), smb/ (Md4.kt, Ntlm.kt, Spnego.kt, Smb2.kt, SmbTransport.kt, SmbSessionTool.kt) (14)
+                   SnmpWalkTool.kt, UdpSnmpExchange.kt (13), smb/ (Md4.kt, Ntlm.kt, Spnego.kt (14); Smb2.kt, SmbTransport.kt, SmbSessionTool.kt (15))
   engine/serviceid/ TlsPeek.kt (details, TlsDetails) (12)
   engine/discovery/ Snmp.kt (GETNEXT, unsigned, exceptions, SnmpVarbind) (13)
   engine/identify/  DeviceIdentity.kt, DeviceIdentifier.kt (toolHint) (7)
   wordlists/   WordlistParser.kt (8), BuiltInList.kt, WordlistStore.kt (9)
-  ui/Controls.kt   ScanPill stopDescription (16), BackRow (17)
-  ui/Nav.kt        KeepScreenOn includes tool runs (6), the `wordlists` route (17)
-  ui/tools/    ToolCopy.kt (3), ToolRunOptions.kt, ToolExport.kt, ToolsUiState.kt, DirBruteOptionsStore.kt (15),
-               ToolsBlock.kt, DirBruteSheet.kt, ToolResultsSheet.kt (16)
-  ui/wordlists/ WordlistCopy.kt (3), WordlistsScreen.kt (17)
-  ui/detail/   DetailViewModel.kt (15), DetailContent.kt, DetailComponents.kt, DetailScreen.kt (16)
-  ui/home/     HomeViewModel.kt, HomeContent.kt, HomeComponents.kt, RowText.kt, RadarCollector.kt (7, 17)
-  ui/settings/ SettingsScreen.kt (17)
-app/src/test/java/...            JVM tests mirror the packages above
+  ui/Controls.kt   ScanPill stopDescription (17), BackRow (19)
+  ui/Nav.kt        KeepScreenOn includes tool runs (6), the `wordlists` route (19)
+  ui/tools/    ToolCopy.kt (3), ToolRunOptions.kt, ToolExport.kt, ToolsUiState.kt, DirBruteOptionsStore.kt (16),
+               ToolControls.kt, ToolsBlock.kt (17), DirBruteSheet.kt, ToolResultsSheet.kt (18)
+  ui/wordlists/ WordlistCopy.kt (3), WordlistsScreen.kt (19)
+  ui/detail/   DetailViewModel.kt (2, 7, 16), DetailComponents.kt, DetailScreen.kt (17), DetailContent.kt (17, 18)
+  ui/home/     HomeViewModel.kt, HomeContent.kt, HomeComponents.kt, RowText.kt, RadarCollector.kt (7, 19)
+  ui/settings/ SettingsScreen.kt, ToolsSection.kt (19)
+app/src/test/java/...            JVM tests mirror the packages above, plus engine/tools/BindingPropagationTest.kt (15) and
+                                 engine/tools/smb/NtlmFixtures.kt (14), SmbFixtures.kt (15)
 app/src/test/resources/tls/      keytool PKCS12 fixtures (12)
-app/src/androidTest/java/...     ToolMigrationTest (1), ToolDaoTest (2), ToolsBlockTest, DirBruteSheetTest, ToolResultsSheetTest,
-                                 DetailContentTest additions (16), WordlistsScreenTest, SettingsToolsTest, HomeContentTest additions (17)
-docs/qa/phase3b-on-device.md     Task 18 record (written when the Director is back)
+app/src/androidTest/java/...     ToolMigrationTest, DirectorCopyMigration23Test (1), ToolDaoTest (2), ToolsFakes, ToolsBlockTest,
+                                 DetailContentTest additions (17), DirBruteSheetTest, ToolResultsSheetTest (18), WordlistsScreenTest,
+                                 SettingsToolsTest, HomeContentTest additions (19)
+docs/superpowers/plans/phase3b-base.txt   the 3A commit 3B builds on (Task 1 step 0)
+docs/qa/phase3b-on-device.md     Task 20 record (written when the Director is back)
 ```
 
 ---
@@ -110,7 +118,8 @@ docs/qa/phase3b-on-device.md     Task 18 record (written when the Director is ba
 **Files:**
 - Modify: `app/src/main/java/com/northwalessolutions/netprobe/data/Entities.kt`, `data/NetProbeDb.kt`, `data/Migrations.kt`, `data/Daos.kt` (a minimal ToolDao stub, replaced in Task 2)
 - Generated and committed: `app/schemas/com.northwalessolutions.netprobe.data.NetProbeDb/3.json`
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/data/ToolMigrationSqlTest.kt`, `SchemaExportTest.kt` (append); `app/src/androidTest/java/com/northwalessolutions/netprobe/data/ToolMigrationTest.kt`
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/data/ToolMigrationSqlTest.kt`, `SchemaExportTest.kt` (append); `app/src/androidTest/java/com/northwalessolutions/netprobe/data/ToolMigrationTest.kt`, `DirectorCopyMigration23Test.kt`
+- Create: `docs/superpowers/plans/phase3b-base.txt` (the 3A commit this phase builds on; Step 0)
 
 **Interfaces:**
 - Consumes: 3A's `HostEntity`, `DB_NAME`, `MIGRATION_TEST_DB`, `MIGRATION_1_2`, `@Database(version = 2)`, `app/schemas/.../2.json`.
@@ -125,6 +134,21 @@ val MIGRATION_2_3: Migration
 // data/NetProbeDb.kt
 @Database(version = 3, exportSchema = true) abstract class NetProbeDb      // entities += both; abstract fun tools(): ToolDao
 ```
+
+- [ ] **Step 0: Confirm 3A is finished before anything is built (plan review G17)**
+
+3B edits code in the shape 3A's last tasks leave it (the motion pass, the notice area, the scan bar glide). Check:
+```bash
+git log --oneline -30 | grep -iE "phase 3a|3a " | head -20
+ls docs/superpowers/plans/ | grep -iE "phase3a.*(final|review)"
+git status --short
+```
+Expected: 3A's last implementation task (its deferred device QA aside) is committed, its final review is recorded under `docs/superpowers/plans/`, and the tree has no uncommitted 3A work. If any of the three is not true, stop and report to the controller; do not start 3B. Then record the base:
+```bash
+git rev-parse HEAD > docs/superpowers/plans/phase3b-base.txt
+cat docs/superpowers/plans/phase3b-base.txt
+```
+Task 20 builds the rollback APK from this commit.
 
 - [ ] **Step 1: Write the failing JVM tests**
 
@@ -285,7 +309,7 @@ git status --short app/schemas
 ```
 Expected: `BUILD SUCCESSFUL`; the listing shows `1.json  2.json  3.json`; git shows only `?? .../3.json`. If 1.json or 2.json shows as modified, stop, `git checkout` them and report it. Copy the `createSql` strings from `3.json` and confirm they match `MIGRATION_2_3` and `ToolMigrationSqlTest` character for character.
 
-- [ ] **Step 4: Write the instrumented migration test (compile only, run in Task 18)**
+- [ ] **Step 4: Write the instrumented migration test (compile only, run in Task 20)**
 
 `app/src/androidTest/java/com/northwalessolutions/netprobe/data/ToolMigrationTest.kt`:
 ```kotlin
@@ -370,6 +394,66 @@ class ToolMigrationTest {
 }
 ```
 
+`app/src/androidTest/java/com/northwalessolutions/netprobe/data/DirectorCopyMigration23Test.kt` (plan review G7; it runs only when Task 20 step 2 has pushed a copy of the Director's schema 2 database, and is skipped otherwise):
+```kotlin
+package com.northwalessolutions.netprobe.data
+
+import android.content.Context
+import android.database.Cursor
+import android.database.sqlite.SQLiteDatabase
+import androidx.room.testing.MigrationTestHelper
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.io.File
+
+/** The Director's own data, schema 2 to 3, on a copy. Never opens, creates or deletes DB_NAME; deletes only the copy. */
+@RunWith(AndroidJUnit4::class)
+class DirectorCopyMigration23Test {
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val context: Context = instrumentation.targetContext
+    @get:Rule val helper = MigrationTestHelper(instrumentation, NetProbeDb::class.java)
+
+    private data class Stamp(val exists: Boolean, val length: Long, val modified: Long)
+    private fun stamp(f: File) = if (f.exists()) Stamp(true, f.length(), f.lastModified()) else Stamp(false, -1, -1)
+    private fun rows(query: (String) -> Cursor): List<String> = query(MARKS_SQL).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
+    private fun count(query: (String) -> Cursor, table: String): Int = query("SELECT COUNT(*) FROM $table").use { it.moveToFirst(); it.getInt(0) }
+    @After fun tidy() { listOf("", "-wal", "-shm", "-journal").forEach { context.getDatabasePath(MIGRATION_COPY_DB + it).delete() } }
+
+    @Test fun theDirectorsSchema2CopyMigratesWithEveryMarkNoteAndPort() {
+        val copy = context.getDatabasePath(MIGRATION_COPY_DB)
+        assumeTrue("no pushed copy of the Director's database", copy.exists())
+        assertNotEquals(DB_NAME, MIGRATION_COPY_DB)
+        val appDb = context.getDatabasePath(DB_NAME); val before = stamp(appDb)
+        val v2 = SQLiteDatabase.openDatabase(copy.path, null, SQLiteDatabase.OPEN_READWRITE)
+        assertEquals("the copy must be schema 2 (the 3A build)", 2, v2.version)
+        val marksBefore = rows { v2.rawQuery(it, null) }
+        val hostsBefore = count({ v2.rawQuery(it, null) }, "hosts"); val portsBefore = count({ v2.rawQuery(it, null) }, "ports")
+        v2.close()
+        val v3 = helper.runMigrationsAndValidate(MIGRATION_COPY_DB, 3, true, MIGRATION_2_3)
+        assertEquals(marksBefore, rows { v3.query(it) })
+        assertEquals(hostsBefore, count({ v3.query(it) }, "hosts")); assertEquals(portsBefore, count({ v3.query(it) }, "ports"))
+        assertEquals(0, count({ v3.query(it) }, "tool_runs")); assertEquals(0, count({ v3.query(it) }, "tool_findings"))
+        v3.close()
+        val room = NetProbeDb.open(context, MIGRATION_COPY_DB)     // Room's own validation through the production builder
+        try { runBlocking { assertEquals(portsBefore, room.openHelper.readableDatabase.query("SELECT COUNT(*) FROM ports").use { it.moveToFirst(); it.getInt(0) }) } }
+        finally { room.close() }
+        assertEquals("the app's own database file changed", before, stamp(appDb))
+    }
+
+    private companion object {
+        const val MIGRATION_COPY_DB = "netprobe-migration-copy.db"
+        const val MARKS_SQL = "SELECT id || '|' || status || '|' || note || '|' || IFNULL(customName, '') || '|' || IFNULL(userType, '') FROM hosts ORDER BY id"
+    }
+}
+```
+
 ```bash
 ./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
 ```
@@ -385,8 +469,21 @@ Expected: `ToolMigrationSqlTest` (3) and the new `SchemaExportTest` cases pass w
 
 - [ ] **Step 6: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "Schema 3: tool_runs and tool_findings, MIGRATION_2_3, exported schema and migration tests"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/data/Entities.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/data/NetProbeDb.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/data/Migrations.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/data/Daos.kt \
+  app/schemas/com.northwalessolutions.netprobe.data.NetProbeDb/3.json \
+  app/src/test/java/com/northwalessolutions/netprobe/data/ToolMigrationSqlTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/data/SchemaExportTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/data/ToolMigrationTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/data/DirectorCopyMigration23Test.kt \
+  docs/superpowers/plans/phase3b-base.txt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Schema 3: tool_runs and tool_findings, MIGRATION_2_3, exported schema and migration tests"
 ```
 
 ---
@@ -414,6 +511,7 @@ class ToolRepository(private val db: NetProbeDb) {
     suspend fun findingsOnce(runId: Long): List<ToolFindingEntity>
     suspend fun findingCount(runId: Long): Int
     suspend fun hintsFor(hostId: Long): List<String>                 // one run per (tool, port) by the 4.7 rule
+    suspend fun setOptions(runId: Long, json: String); suspend fun hostsWithRuns(): Set<Long>
     suspend fun snapshot(hostIds: List<Long>): String                // TEMP tables, returns a token
     suspend fun restore(token: String); suspend fun dropSnapshot(token: String)
     companion object { const val KEEP_RUNS_PER_TOOL = 10 }
@@ -488,6 +586,8 @@ Expected: `BUILD FAILED`, `Unresolved reference 'ToolHintsRule'`.
     @Query("SELECT * FROM tool_runs WHERE hostId = :hostId AND status IN ('DONE','STOPPED','INTERRUPTED') ORDER BY startedAt DESC, id DESC")
     suspend fun finishedRunsOnce(hostId: Long): List<ToolRunEntity>
     @Query("SELECT value FROM tool_findings WHERE kind = 'HINT' AND runId IN (:runIds)") suspend fun hintsOf(runIds: List<Long>): List<String>
+    @Query("UPDATE tool_runs SET optionsJson = :json WHERE id = :id") suspend fun setOptions(id: Long, json: String)
+    @Query("SELECT DISTINCT hostId FROM tool_runs") suspend fun hostsWithRuns(): List<Long>
 }
 ```
 
@@ -530,6 +630,10 @@ class ToolRepository(private val db: NetProbeDb) {
     fun findings(runId: Long): Flow<List<ToolFindingEntity>> = dao.findings(runId)
     suspend fun findingsOnce(runId: Long): List<ToolFindingEntity> = dao.findingsOnce(runId)
     suspend fun findingCount(runId: Long): Int = dao.findingCount(runId)
+    /** One UPDATE of a run's optionsJson, used when a tool records a value it learns mid-run (methodUsed, spec 7.1). */
+    suspend fun setOptions(runId: Long, json: String) = dao.setOptions(runId, json)
+    /** Hosts with any tool run: the radar asks hintsFor only for these, so an emission adds no query for the rest (plan review G13). */
+    suspend fun hostsWithRuns(): Set<Long> = dao.hostsWithRuns().toSet()
     suspend fun hintsFor(hostId: Long): List<String> {
         val ids = ToolHintsRule.pick(dao.finishedRunsOnce(hostId))
         return if (ids.isEmpty()) emptyList() else dao.hintsOf(ids)
@@ -565,26 +669,56 @@ class ToolRepository(private val db: NetProbeDb) {
     val toolRepo by lazy { ToolRepository(db) }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt`: in 3A's `removeDevice`, snapshot the host's tool rows into a TEMP table before the delete and restore them on Undo. Replace the body of the `c.hostWriteLock.withLock { ... }` and the `PendingUndo` with:
+`app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt`: an additive edit to the committed `removeDevice` (branch commit aeb3be3), which already marks `removedHostIds` before stopping the scans, pairs the radar skip on `radarScanActive` (3A review M2), and clears both marks in a `finally` inside `hostWriteLock` (3A review M3). Keep every one of those lines exactly; add only the three marked lines. Before the edit (current code):
 ```kotlin
-            val token = c.toolRepo.snapshot(listOf(hostId))
             val snap = c.hostWriteLock.withLock {
                 c.removedHostIds.update { it + hostId }
-                if (c.radarScanNetworkId.value == h.networkId) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
-                c.hosts.snapshot(hostId)?.also { c.hosts.delete(it) }   // the cascade drops this host's tool rows; the TEMP tables hold them
-            } ?: run { c.toolRepo.dropSnapshot(token); return@launch }
+                // Any running radar, even one still resolving its network (review M2): the pair is keyed by network, so another network's scan ignores it.
+                if (c.radarScanActive.value) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
+                c.hosts.snapshot(hostId)?.also { c.hosts.delete(it) }
+            } ?: return@launch
             c.undo.post(PendingUndo(HomeCopy.removed(name),
+                ...
                 restore = {
-                    c.hostWriteLock.withLock { c.hosts.restore(snap) }
-                    c.toolRepo.restore(token)                            // re-inserts the runs and findings with their original ids
-                    c.removedHostIds.update { it - hostId }
-                    c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                    c.hostWriteLock.withLock {
+                        try { c.hosts.restore(snap) }
+                        finally {
+                            c.removedHostIds.update { it - hostId }
+                            c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                        }
+                    }
                 },
-                commit = { c.toolRepo.dropSnapshot(token) }))
+                commit = {}))
 ```
-(The snapshot is taken before `hostWriteLock` because it is its own transaction; a radar emission cannot re-insert this host's tool rows, only host and port rows, which the lock already guards.)
+After the edit:
+```kotlin
+            val token = c.toolRepo.snapshot(listOf(hostId))     // NEW (3B 7.4): the host's tool rows into TEMP tables before the cascade drops them
+            val snap = c.hostWriteLock.withLock {
+                c.removedHostIds.update { it + hostId }
+                // Any running radar, even one still resolving its network (review M2): the pair is keyed by network, so another network's scan ignores it.
+                if (c.radarScanActive.value) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
+                c.hosts.snapshot(hostId)?.also { c.hosts.delete(it) }
+            } ?: run { c.toolRepo.dropSnapshot(token); return@launch }   // NEW: nothing was deleted, so the snapshot is dropped
+            c.undo.post(PendingUndo(HomeCopy.removed(name),
+                // The marks are cleared in finally (the Task 13 pattern), so a failed restore never leaves the host skipped by every later scan,
+                // and inside the lock (review M3), so no radar emission sees the restored row while its ip is still marked and skips its update.
+                // update {} is an atomic read-modify-write that touches only this host's id and pair, so a second Remove's marks are kept.
+                restore = {
+                    c.hostWriteLock.withLock {
+                        try {
+                            c.hosts.restore(snap)
+                            c.toolRepo.restore(token)                    // NEW: runs and findings back with their original ids, after the host row exists
+                        } finally {
+                            c.removedHostIds.update { it - hostId }
+                            c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                        }
+                    }
+                },
+                commit = { c.toolRepo.dropSnapshot(token) }))           // CHANGED from commit = {}: a lapsed Undo drops the TEMP tables
+```
+The `...` in the "before" block stands for the three comment lines shown in full in the "after" block; nothing else in `removeDevice` changes. The snapshot is taken before `hostWriteLock` because it is its own transaction on Room's writer connection, and nothing can write this host's tool rows meanwhile: Remove is disabled while a tool holds the host (Task 16 guards the view model, Task 17 the menu).
 
-- [ ] **Step 4: DAO tests (instrumented, compile only, run in Task 18)**
+- [ ] **Step 4: DAO tests (instrumented, compile only, run in Task 20)**
 
 `app/src/androidTest/java/com/northwalessolutions/netprobe/data/ToolDaoTest.kt`:
 ```kotlin
@@ -671,6 +805,13 @@ class ToolDaoTest {
         assertTrue("Synology DSM" in hints.map { it.substringAfter("=") })
         assertTrue("done" in hints.map { it.substringAfter("=") }); assertFalse("x" in hints.map { it.substringAfter("=") })
     }
+    @Test fun setOptionsRewritesOneRowAndHostsWithRunsListsOnlyHostsThatHaveRuns() = runBlocking {
+        val h = host("10.0.3.66"); host("10.0.3.67")
+        val id = tools.startRun(h, "dir-bruteforce", 5000, 1, "{}")
+        tools.setOptions(id, "{\"methodUsed\":\"GET_ONLY\"}")
+        assertEquals("{\"methodUsed\":\"GET_ONLY\"}", tools.run(id).first()!!.optionsJson)
+        assertEquals(setOf(h), tools.hostsWithRuns())
+    }
     @Test fun snapshotSurvivesSeparateTransactionsAndRestoresIds() = runBlocking {
         val h = host("10.0.3.65"); val id = doneRun(h, "dir-bruteforce", 5000, 1, hints = listOf("http.path=/admin"), shown = 2)
         val token = tools.snapshot(listOf(h))
@@ -703,8 +844,17 @@ Expected: `ToolHintsRuleTest` (4) passes with 3A's data tests; `BUILD SUCCESSFUL
 
 - [ ] **Step 6: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "ToolDao and ToolRepository: history pruning, hintsFor per tool and port, Remove-device tool snapshot"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/data/Daos.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/data/Repositories.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/data/ToolHintsRuleTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/data/ToolDaoTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "ToolDao and ToolRepository: history pruning, hintsFor per tool and port, Remove-device tool snapshot"
 ```
 
 ---
@@ -713,7 +863,7 @@ git add -A && git commit -m "ToolDao and ToolRepository: history pruning, hintsF
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolId.kt`, `engine/tools/ToolApplicability.kt`, `engine/common/CancellableIo.kt`, `ui/tools/ToolCopy.kt`, `ui/wordlists/WordlistCopy.kt`
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolApplicabilityTest.kt`, `engine/common/CancellableIoTest.kt`, `ui/tools/ToolCopyTableTest.kt`
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolApplicabilityTest.kt`, `engine/tools/ExcusedOnceTest.kt`, `engine/common/CancellableIoTest.kt`, `ui/tools/ToolCopyTableTest.kt`
 
 **Interfaces:**
 - Consumes: 3A's `PortUris.guess`, `ServiceIdentifier.HTTP`, `ServiceIdentifier.TLS`, `ServiceInfo`, `HostEntity`, `HomeCopy.devices`; Task 1's `ToolRunStatus`.
@@ -724,7 +874,8 @@ enum class ToolId(val key: String) { DIR_BRUTEFORCE("dir-bruteforce"), HTTP_FING
 enum class FindingKind { PATH, STATUS, HEADER, COOKIE, TITLE, GENERATOR, ROBOTS, SITEMAP, SECURITY_TXT, ERROR_PAGE, FRAMEWORK, CERT_SUBJECT, CERT_ISSUER, CERT_SAN, CERT_VALIDITY, CERT_KEY, CERT_SIGNATURE, CERT_FINGERPRINT, CERT_CHAIN, TLS_SESSION, FLAG, SMB_DIALECT, SMB_SIGNING, SMB_SESSION, SMB_HOST, SNMP_SYSTEM, SNMP_INTERFACE, SNMP_ADDRESS, HINT, OTHER; companion object { fun parse(s: String): FindingKind } }
 data class ToolTarget(val hostId: Long, val ip: Inet4Address, val port: Int, val tls: Boolean, val serverName: String?)
 interface RunControl { suspend fun gate(); val pauseEpoch: Int; fun excused(startEpoch: Int): Boolean }
-interface ToolProgress { fun update(done: Int, total: Int?, found: Int, errors: Int = 0); suspend fun finding(f: Finding) }
+interface ToolProgress { fun update(done: Int, total: Int?, found: Int, errors: Int = 0); suspend fun finding(f: Finding); suspend fun option(key: String, value: String) {} }
+suspend fun <T> RunControl.excusedOnce(failed: (T) -> Boolean, block: suspend () -> T): T
 data class Finding(val kind: FindingKind, val value: String, val detail: String? = null, val url: String? = null, val extra: Map<String, String> = emptyMap())
 data class ToolResult(val status: ToolRunStatus, val summary: String)
 interface Tool { val id: ToolId; val name: String; fun applies(port: Int, service: ServiceInfo): Boolean; fun appliesToHost(host: HostEntity): Boolean = false; suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult }
@@ -800,6 +951,32 @@ class ToolApplicabilityTest {
     @Test fun `finding kind parses leniently`() {
         assertEquals(FindingKind.PATH, FindingKind.parse("PATH")); assertEquals(FindingKind.OTHER, FindingKind.parse("WAT"))
         assertEquals(ToolId.SNMP_WALK, ToolId.byKey("snmp-walk")); assertNull(ToolId.byKey("nope"))
+    }
+}
+```
+
+`app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ExcusedOnceTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.engine.tools
+
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.*
+import org.junit.Test
+
+/** spec 4.8: companion tools retry once a failure that spans a pause; nothing else is retried. */
+class ExcusedOnceTest {
+    private class Control : RunControl { var epoch = 0; var gates = 0
+        override suspend fun gate() { gates++ }; override val pauseEpoch get() = epoch; override fun excused(startEpoch: Int) = startEpoch != epoch }
+
+    @Test fun `a failure that spans a pause is retried once after the gate`() = runTest {
+        val c = Control(); var calls = 0
+        val r = c.excusedOnce({ it == null }) { calls++; if (calls == 1) { c.epoch++; null } else "ok" }
+        assertEquals("ok", r); assertEquals(2, calls); assertEquals(1, c.gates)
+    }
+    @Test fun `a plain failure and a success are not retried`() = runTest {
+        val c = Control(); var calls = 0
+        assertNull(c.excusedOnce({ it == null }) { calls++; null as String? }); assertEquals(1, calls)
+        assertEquals("ok", c.excusedOnce({ it == null }) { calls++; c.epoch++; "ok" }); assertEquals(2, calls)
     }
 }
 ```
@@ -1072,6 +1249,20 @@ interface RunControl {
 interface ToolProgress {
     fun update(done: Int, total: Int?, found: Int, errors: Int = 0)   // total null when unknown (SNMP walk)
     suspend fun finding(f: Finding)                                   // persisted immediately (spec 4.6)
+    /** Records a value learned mid-run into the run's optionsJson, for example methodUsed after calibration (spec 7.1). */
+    suspend fun option(key: String, value: String) {}
+}
+
+/**
+ * spec 4.8, the companion-tool rule: an exchange that failed while a pause began (or is under way) is retried once after the resume.
+ * [failed] says whether a result is a failure; a success, or a failure with no pause involved, is returned as it is.
+ */
+suspend fun <T> RunControl.excusedOnce(failed: (T) -> Boolean, block: suspend () -> T): T {
+    val epoch = pauseEpoch
+    val first = block()
+    if (!failed(first) || !excused(epoch)) return first
+    gate()
+    return block()
 }
 
 data class Finding(val kind: FindingKind, val value: String, val detail: String? = null, val url: String? = null, val extra: Map<String, String> = emptyMap())
@@ -1430,12 +1621,24 @@ object WordlistCopy {
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.*" --tests "com.northwalessolutions.netprobe.engine.common.CancellableIoTest" --tests "com.northwalessolutions.netprobe.ui.tools.*" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `ToolApplicabilityTest` (7), `CancellableIoTest` (4) and `ToolCopyTableTest` (3) pass; `BUILD SUCCESSFUL`.
+Expected: `ToolApplicabilityTest` (7), `ExcusedOnceTest` (2), `CancellableIoTest` (4) and `ToolCopyTableTest` (3) pass; `BUILD SUCCESSFUL`.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "Tool framework interfaces, ToolApplicability, CancellableIo, ToolCopy and WordlistCopy"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolId.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolApplicability.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/common/CancellableIo.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolCopy.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistCopy.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolApplicabilityTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ExcusedOnceTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/common/CancellableIoTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/tools/ToolCopyTableTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Tool framework interfaces, ToolApplicability, CancellableIo, ToolCopy and WordlistCopy"
 ```
 
 ---
@@ -1656,8 +1859,19 @@ Expected: `HostBusyRegistryTest` (3), `AppMessagesTest` (2) and `RateBucketTest`
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "HostBusyRegistry, AppMessages, the per-host rate bucket and the foreground flow"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/HostBusyRegistry.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/AppMessages.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/common/RateBucket.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/MainActivity.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/HostBusyRegistryTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/AppMessagesTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/common/RateBucketTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "HostBusyRegistry, AppMessages, the per-host rate bucket and the foreground flow"
 ```
 
 ---
@@ -1702,6 +1916,7 @@ import kotlin.concurrent.thread
 /** spec 4.6 and 12.1: exact request bytes, framing, caps, failures and cancellation, against loopback ServerSocket scripts. */
 class HttpClientTest {
     private val lo = InetAddress.getByName("127.0.0.1") as Inet4Address
+    private val ip9 = InetAddress.getByName("10.0.3.9") as Inet4Address
     private val servers = mutableListOf<ServerSocket>()
     @After fun tearDown() { servers.forEach { runCatching { it.close() } } }
 
@@ -1729,7 +1944,7 @@ class HttpClientTest {
         client().request(lo, port, tls = false, method = method, path = path, hostName = host)
     }
 
-    @Test fun `get request bytes are exact with the ip host and no port when 80`() {
+    @Test fun `get request bytes are exact with the ip host and its port`() {
         val (port, seen) = serve { ok("hi") }
         result(port, path = "/x")
         assertEquals("GET /x HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nUser-Agent: NetProbe/0.1\r\nAccept: */*\r\nConnection: close\r\n\r\n", seen())
@@ -1801,6 +2016,43 @@ class HttpClientTest {
         val (port, _) = serve { "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/elsewhere\r\nContent-Length: 0\r\n\r\n".toByteArray() }
         val r = result(port) as HttpResult.Ok; assertEquals(302, r.response.status); assertEquals("http://127.0.0.1:1/elsewhere", r.response.header("location"))
     }
+    @Test fun `the host header omits only the default port of the scheme`() {
+        assertEquals("10.0.3.9", HttpClient.hostHeader(ip9, 80, false, null))
+        assertEquals("nas.lan", HttpClient.hostHeader(ip9, 443, true, "nas.lan"))
+        assertEquals("10.0.3.9:443", HttpClient.hostHeader(ip9, 443, false, null))
+        assertEquals("nas.lan:80", HttpClient.hostHeader(ip9, 80, true, "nas.lan"))
+    }
+    @Test fun `a server that accepts tcp but stalls tls times out`() {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { val c = s.accept(); Thread.sleep(5_000); c.close() } }
+        val t0 = System.nanoTime()
+        val r = runBlocking { client(300).request(lo, s.localPort, tls = true, method = "GET", path = "/") }
+        assertEquals(HttpFailure.Timeout, (r as HttpResult.Failed).failure)
+        assertTrue((System.nanoTime() - t0) / 1_000_000 < 1_500)
+    }
+    @Test fun `a server that drips bytes is stopped by the overall deadline`() {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { s.accept().use { c ->
+            c.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n".toByteArray())
+            repeat(100) { c.getOutputStream().write('a'.code); c.getOutputStream().flush(); Thread.sleep(50) }
+        } } }
+        val t0 = System.nanoTime()
+        val r = runBlocking { client(300).request(lo, s.localPort, false, "GET", "/") } as HttpResult.Ok
+        assertTrue((System.nanoTime() - t0) / 1_000_000 < 1_500); assertTrue(r.response.body.size < 100)
+    }
+    @Test fun `no framing on a connection kept open ends at the read timeout with the body so far`() {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { s.accept().use { c ->
+            c.getOutputStream().write("HTTP/1.1 200 OK\r\n\r\npartial".toByteArray()); c.getOutputStream().flush(); Thread.sleep(3_000)
+        } } }
+        val t0 = System.nanoTime()
+        val r = runBlocking { client(300).request(lo, s.localPort, false, "GET", "/") } as HttpResult.Ok
+        assertEquals("partial", String(r.response.body)); assertTrue((System.nanoTime() - t0) / 1_000_000 < 1_500)
+    }
+    @Test fun `a megabyte header line with no lf is malformed, not memory`() {
+        val (port, _) = serve { ("HTTP/1.1 200 OK\r\nX: " + "a".repeat(1_000_000)).toByteArray() }
+        assertEquals(HttpFailure.Malformed, (result(port) as HttpResult.Failed).failure)
+    }
     @Test fun `cancellation mid read closes the socket within a second`() = runBlocking {
         val s = ServerSocket(0, 50, lo); servers += s
         val accepted = java.util.concurrent.CountDownLatch(1)
@@ -1828,7 +2080,9 @@ Expected: `BUILD FAILED`, `Unresolved reference 'HttpClient'`.
 package com.northwalessolutions.netprobe.engine.common
 
 import kotlinx.coroutines.CancellationException
+import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.net.Inet4Address
 import java.net.Socket
@@ -1877,19 +2131,18 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
     }
 
     private fun exchange(raw: Socket, ip: Inet4Address, port: Int, tls: Boolean, method: String, path: String, hostName: String?, sslContext: SSLContext?): HttpResult {
-        val socket: Socket = if (!tls) raw else layerTls(raw, ip, port, hostName, sslContext)
+        // Before the handshake (plan review G4): a device that accepts TCP and never answers the ClientHello times out instead of
+        // hanging the run. The connect itself is bounded by Probe.connect's timeout argument.
+        raw.soTimeout = timeoutMs
+        val socket: Socket = if (!tls) raw else try { layerTls(raw, ip, port, hostName, sslContext) }
+            catch (_: SocketTimeoutException) { return HttpResult.Failed(HttpFailure.Timeout) }
+            catch (_: IOException) { return HttpResult.Failed(HttpFailure.Reset) }
         socket.soTimeout = timeoutMs
         val deadline = System.currentTimeMillis() + 2L * timeoutMs       // overall, so a dripping server still stops
-        val host = hostAndPort(ip, port, tls, hostName)
+        val host = hostHeader(ip, port, tls, hostName)
         val head = "$method $path HTTP/1.1\r\nHost: $host\r\nUser-Agent: $USER_AGENT\r\nAccept: */*\r\nConnection: close\r\n\r\n"
         socket.getOutputStream().apply { write(head.toByteArray(Charsets.ISO_8859_1)); flush() }
-        return try { read(socket.getInputStream(), method, deadline) } catch (_: SocketTimeoutException) { HttpResult.Failed(HttpFailure.Timeout) } catch (_: SocketException) { HttpResult.Failed(HttpFailure.Reset) }
-    }
-
-    private fun hostAndPort(ip: Inet4Address, port: Int, tls: Boolean, hostName: String?): String {
-        val name = hostName ?: ip.hostAddress
-        val defaultPort = if (tls) 443 else 80
-        return if (port == defaultPort) name else "$name:$port"
+        return try { read(BufferedInputStream(socket.getInputStream(), READ_BUFFER), method, deadline) } catch (_: SocketTimeoutException) { HttpResult.Failed(HttpFailure.Timeout) } catch (_: SocketException) { HttpResult.Failed(HttpFailure.Reset) }
     }
 
     private fun layerTls(raw: Socket, ip: Inet4Address, port: Int, hostName: String?, sslContext: SSLContext?): SSLSocket {
@@ -1969,6 +2222,7 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
                 if (System.currentTimeMillis() > deadline) return if (sb.isEmpty()) null else sb.toString()
                 val b = input.read(); if (b < 0) return if (sb.isEmpty()) null else sb.toString()
                 headBytes++
+                if (headBytes > MAX_HEADER_BYTES) return null       // a line with no LF never grows past the header cap (plan review G15)
                 if (b == '\n'.code) return sb.toString()
                 if (b != '\r'.code) sb.append(b.toChar())
             }
@@ -1977,6 +2231,13 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
 
     companion object {
         const val MAX_BODY_BYTES = 65_536; const val MAX_HEADER_BYTES = 16_384; const val USER_AGENT = "NetProbe/0.1"
+        private const val READ_BUFFER = 8192
+        /** The Host header (spec 4.6): the name when given, else the IP, plus ":<port>" unless 80 for http or 443 for https. */
+        fun hostHeader(ip: Inet4Address, port: Int, tls: Boolean, hostName: String?): String {
+            val name = hostName ?: ip.hostAddress
+            val defaultPort = if (tls) 443 else 80
+            return if (port == defaultPort) name else "$name:$port"
+        }
         private val STATUS = Regex("HTTP/1\\.[01] (\\d{3})( .*)?")
         /** Trust-all, used only to read (spec 4.5); the browser launch never uses this. One per run resumes the session cache. */
         fun trustAllContext(): SSLContext = SSLContext.getInstance("TLS").apply {
@@ -1995,12 +2256,17 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.common.HttpClientTest" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: every `HttpClientTest` case passes; `BUILD SUCCESSFUL`. The TLS path (SNI, the retry without a name) is exercised in Task 12 against the committed keystore; it shares this exact code.
+Expected: every `HttpClientTest` case passes, including the TLS stall, drip, keep-open and long-line cases; `BUILD SUCCESSFUL`. The TLS path (SNI, the retry without a name) is exercised in Task 12 against the committed keystore; it shares this exact code.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "HttpClient: raw-socket HTTP/1.1 with CancellableIo, chunked and close framing, the 64 KB cap and trust-all TLS"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/common/HttpClient.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/common/HttpClientTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "HttpClient: raw-socket HTTP/1.1 with CancellableIo, chunked and close framing, the 64 KB cap and trust-all TLS"
 ```
 
 ---
@@ -2023,8 +2289,8 @@ interface ToolStore { val ready: Deferred<Unit>
     suspend fun finish(runId: Long, finishedAt: Long?, status: ToolRunStatus, summary: String)
     suspend fun addFinding(runId: Long, kind: String, value: String, detail: String?, extra: String?): Long
     suspend fun findingCount(runId: Long): Int
-    suspend fun markInterrupted(summaryOf: (found: Int) -> String) }
-object ToolOptionsJson { fun encode(target: ToolTarget, options: ToolOptions): String }      // Task 10 adds the brute-force fields
+    suspend fun markInterrupted(summaryOf: (found: Int) -> String); suspend fun setOptions(runId: Long, json: String) }
+object ToolOptionsJson { fun encode(target: ToolTarget, options: ToolOptions): String; fun withOption(json: String, key: String, value: String): String }   // Task 10 adds the brute-force fields
 object FindingExtraJson { fun encode(f: Finding): String? }                                // url plus extra; null when both empty
 class ToolRunner(scope: CoroutineScope, dispatcher: CoroutineDispatcher, tools: Map<ToolId, Tool>, repo: ToolStore, busy: HostBusyRegistry,
                  messages: AppMessages, env: StateFlow<NetworkEnv?>, foreground: StateFlow<Boolean>,
@@ -2077,6 +2343,8 @@ object ToolRunnerTestSupport {
         override suspend fun addFinding(runId: Long, kind: String, value: String, detail: String?, extra: String?): Long { findings += runId to value; extras += extra; return findings.size.toLong() }
         override suspend fun findingCount(runId: Long) = findings.count { it.first == runId }
         override suspend fun markInterrupted(summaryOf: (Int) -> String) {}
+        val optionWrites = mutableListOf<String>()
+        override suspend fun setOptions(runId: Long, json: String) { optionWrites += json }
     }
     class FakeTool(override val id: ToolId, val body: suspend (RunControl, ToolProgress) -> ToolResult) : Tool {
         override val name = id.key
@@ -2119,7 +2387,7 @@ class ToolRunnerTest {
         val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> gate.await(); ok })
         assertTrue(rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None) is ToolRunner.Start.Started)
         assertEquals(ToolRunner.Start.HostBusy, rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None))
-        gate.complete(Unit); advanceUntilIdle()
+        gate.complete(Unit); runCurrent()
         assertEquals(1, rig.store.finished.size)
     }
     @Test fun `TooMany at four hosts and NoNetwork with no env`() = runTest {
@@ -2128,7 +2396,7 @@ class ToolRunnerTest {
         for (h in 1L..4L) assertTrue(rig.runner.start(target(h), ToolId.DIR_BRUTEFORCE, ToolOptions.None) is ToolRunner.Start.Started)
         assertEquals(ToolRunner.Start.TooMany, rig.runner.start(target(5), ToolId.DIR_BRUTEFORCE, ToolOptions.None))
         assertNull("a refused start never claims the host", rig.busy.busy.value[5])
-        gate.complete(Unit); advanceUntilIdle()
+        gate.complete(Unit); runCurrent()
         rig.env.value = null
         assertEquals(ToolRunner.Start.NoNetwork, rig.runner.start(target(6), ToolId.DIR_BRUTEFORCE, ToolOptions.None))
     }
@@ -2142,14 +2410,14 @@ class ToolRunnerTest {
         val started = async { runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None) }
         runCurrent()
         assertTrue("start must wait for ready", started.isActive); assertTrue(store.started.isEmpty())
-        pending.complete(Unit); advanceUntilIdle()
+        pending.complete(Unit); runCurrent()
         assertTrue(started.await() is ToolRunner.Start.Started)
     }
     @Test fun `a normal return writes the result, releases the host, posts the message and re-identifies`() = runTest {
         val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, p ->
             p.finding(Finding(FindingKind.PATH, "/admin", "200  10 B", "http://10.0.3.9:5000/admin", mapOf("status" to "200")))
             ToolResult(ToolRunStatus.DONE, "1 found in 10 paths") })
-        rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); advanceUntilIdle()
+        rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.DONE, "1 found in 10 paths"), rig.store.finished.single())
         assertEquals(listOf(1L to "/admin"), rig.store.findings)
         assertEquals("{\"url\":\"http://10.0.3.9:5000/admin\",\"status\":\"200\"}", rig.store.extras.single())
@@ -2157,11 +2425,16 @@ class ToolRunnerTest {
         assertEquals("dir-bruteforce finished: 1 found in 10 paths", rig.messages.current.value!!.text)
         assertTrue(rig.runner.active.value.isEmpty())
     }
+    @Test fun `an option the tool records is written into optionsJson`() = runTest {
+        val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, p -> p.option("methodUsed", "GET_ONLY"); ok })
+        rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
+        assertEquals(listOf("{\"tls\":false,\"serverName\":null,\"methodUsed\":\"GET_ONLY\"}"), rig.store.optionWrites)
+    }
     @Test fun `Stop ends a blocked tool and writes STOPPED with the stopped summary`() = runTest {
         val entered = CompletableDeferred<Unit>()
         val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { c, p -> p.update(1234, 4614, 7); entered.complete(Unit); c.gate(); awaitCancellation() })
         rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); entered.await()
-        rig.runner.stop(7); advanceUntilIdle()
+        rig.runner.stop(7); runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.STOPPED, "Stopped after 1234 of 4614, 7 found"), rig.store.finished.single())
         assertNull(rig.busy.busy.value[7])
     }
@@ -2184,23 +2457,23 @@ class ToolRunnerTest {
         val entered = CompletableDeferred<Unit>()
         val rig = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> entered.complete(Unit); awaitCancellation() })
         rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); entered.await()
-        rig.env.value = office; advanceUntilIdle()
+        rig.env.value = office; runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.STOPPED, "Network changed, run stopped"), rig.store.finished.single())
     }
     @Test fun `a bind failure is FAILED with the bind wording and a throwing tool is FAILED with its reason`() = runTest {
         val bound = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> ok }, bind = { _, _, _ -> throw BindFailedException(IllegalStateException("vpn")) })
-        bound.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); advanceUntilIdle()
+        bound.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.FAILED, "Tool skipped: could not bind to Wi-Fi"), bound.store.finished.single())
         val boom = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> throw IllegalStateException("boom") })
-        boom.runner.start(target(8), ToolId.DIR_BRUTEFORCE, ToolOptions.None); advanceUntilIdle()
+        boom.runner.start(target(8), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.FAILED, "Failed: boom"), boom.store.finished.single())
     }
     @Test fun `onFinished is skipped for a FAILED run with no finding and runs for one with a finding`() = runTest {
         val empty = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, _ -> ToolResult(ToolRunStatus.FAILED, "No HTTP response on this port") })
-        empty.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); advanceUntilIdle()
+        empty.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
         assertEquals(emptyList<Long>(), empty.finishedHosts)
         val partial = Rig(backgroundScope, FakeTool(ToolId.DIR_BRUTEFORCE) { _, p -> p.finding(Finding(FindingKind.HINT, "http.path=/a")); ToolResult(ToolRunStatus.FAILED, "x") })
-        partial.runner.start(target(8), ToolId.DIR_BRUTEFORCE, ToolOptions.None); advanceUntilIdle()
+        partial.runner.start(target(8), ToolId.DIR_BRUTEFORCE, ToolOptions.None); runCurrent()
         assertEquals(listOf(8L), partial.finishedHosts)
     }
     @Test fun `the ticker republishes elapsed time while no update arrives`() = runTest {
@@ -2211,7 +2484,7 @@ class ToolRunnerTest {
         val first = rig.runner.active.value.getValue(7).activeMs
         advanceTimeBy(1_000); runCurrent()
         assertTrue("elapsed moved from $first", rig.runner.active.value.getValue(7).activeMs >= first + 800)
-        rig.runner.stop(7); advanceUntilIdle()
+        rig.runner.stop(7); runCurrent()
     }
 }
 ```
@@ -2240,7 +2513,7 @@ class ToolRunnerPauseTest {
         reached.await(); runCurrent()
         assertFalse("the gate must stay closed in the background", passed.isCompleted)
         assertTrue(rig.runner.active.value.getValue(7).paused)
-        rig.foreground.value = true; advanceUntilIdle()
+        rig.foreground.value = true; runCurrent()
         assertTrue(passed.isCompleted)
     }
     @Test fun `a pause stops the elapsed clock`() = runTest {
@@ -2254,7 +2527,7 @@ class ToolRunnerPauseTest {
         assertEquals("a minute in the browser adds nothing", atPause, rig.runner.active.value.getValue(7).activeMs)
         rig.foreground.value = true; advanceTimeBy(1_000); runCurrent()
         assertTrue(rig.runner.active.value.getValue(7).activeMs > atPause)
-        rig.runner.stop(7); advanceUntilIdle()
+        rig.runner.stop(7); runCurrent()
     }
     @Test fun `a failure spanning a pause is excused`() = runTest {
         var excusedAfter = false; var notExcusedFresh = true
@@ -2269,7 +2542,7 @@ class ToolRunnerPauseTest {
         rig.runner.start(target(7), ToolId.DIR_BRUTEFORCE, ToolOptions.None); inRequest.await()
         rig.foreground.value = false; runCurrent()
         rig.foreground.value = true; runCurrent()
-        resume.complete(Unit); advanceUntilIdle()
+        resume.complete(Unit); runCurrent()
         assertTrue(excusedAfter); assertFalse(notExcusedFresh)
     }
 }
@@ -2289,6 +2562,11 @@ class ToolJsonTest {
     @Test fun `options json always carries tls and serverName`() {
         assertEquals("{\"tls\":true,\"serverName\":\"chnas.local\"}", ToolOptionsJson.encode(t, ToolOptions.None))
         assertEquals("{\"tls\":true,\"serverName\":null}", ToolOptionsJson.encode(t.copy(serverName = null), ToolOptions.None))
+    }
+    @Test fun `withOption adds or replaces one key and leaves malformed json alone`() {
+        assertEquals("{\"tls\":false,\"methodUsed\":\"GET_ONLY\"}", ToolOptionsJson.withOption("{\"tls\":false}", "methodUsed", "GET_ONLY"))
+        assertEquals("{\"methodUsed\":\"GET_ONLY\"}", ToolOptionsJson.withOption("{\"methodUsed\":\"HEAD_THEN_GET\"}", "methodUsed", "GET_ONLY"))
+        assertEquals("nope", ToolOptionsJson.withOption("nope", "a", "b"))
     }
     @Test fun `extra json is url then the per kind fields, null when empty`() {
         assertNull(FindingExtraJson.encode(Finding(FindingKind.TITLE, "x")))
@@ -2321,15 +2599,19 @@ interface ToolStore {
     suspend fun addFinding(runId: Long, kind: String, value: String, detail: String?, extra: String?): Long
     suspend fun findingCount(runId: Long): Int
     suspend fun markInterrupted(summaryOf: (found: Int) -> String)
+    suspend fun setOptions(runId: Long, json: String)
 }
 ```
-In `data/Repositories.kt`, change the class line to `class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netprobe.engine.tools.ToolStore {` and add `override` to `ready`, `startRun`, `finish`, `addFinding`, `findingCount` and `markInterrupted`. `findingCount` counts non-HINT rows, which is what `markInterrupted` reports; the runner's "recorded no finding" rule uses its own count of every finding it forwarded (below), hints included.
+In `data/Repositories.kt`, change the class line to `class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netprobe.engine.tools.ToolStore {` and add `override` to `ready`, `startRun`, `finish`, `addFinding`, `findingCount`, `markInterrupted` and `setOptions` (Task 2 defines `setOptions`). `findingCount` counts non-HINT rows, which is what `markInterrupted` reports; the runner's "recorded no finding" rule uses its own count of every finding it forwarded (below), hints included.
 
 `app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolJson.kt`:
 ```kotlin
 package com.northwalessolutions.netprobe.engine.tools
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -2340,6 +2622,9 @@ object ToolOptionsJson {
         put("tls", target.tls)
         put("serverName", target.serverName?.let { JsonPrimitive(it) } ?: JsonNull)
     }.toString()
+    /** [json] with [key] set to [value]; a malformed [json] is returned unchanged. */
+    fun withOption(json: String, key: String, value: String): String =
+        runCatching { JsonObject(Json.parseToJsonElement(json).jsonObject + (key to JsonPrimitive(value))).toString() }.getOrElse { json }
 }
 
 /** tool_findings.extra (spec 7.1): url when present, then the per-kind fields; null when both are empty. */
@@ -2417,18 +2702,22 @@ class ToolRunner(
             if (runs.size >= MAX_ACTIVE_RUNS) return Start.TooMany
             if (!busy.tryClaim(target.hostId, HostBusyRegistry.Work.TOOL)) return Start.HostBusy
             val startedAt = clock()
+            val optionsJson = ToolOptionsJson.encode(target, options)
             val runId = try {
-                repo.startRun(target.hostId, toolId.key, target.port, startedAt, ToolOptionsJson.encode(target, options))
+                repo.startRun(target.hostId, toolId.key, target.port, startedAt, optionsJson)
             } catch (t: Throwable) {
                 busy.release(target.hostId, HostBusyRegistry.Work.TOOL); throw t
             }
-            Run(runId, target.hostId, toolId, target.port, startedAt, NetworkSignature.identityKey(e), e).also {
-                if (!foreground.value) it.pause(startedAt)
-                runs[target.hostId] = it
+            Run(runId, target.hostId, toolId, target.port, startedAt, NetworkSignature.identityKey(e), e, optionsJson).also { r ->
+                if (!foreground.value) r.pause(startedAt)
+                // LAZY, assigned, registered, then started, all inside the lock (plan review G14): a Stop or a network change can never
+                // find the run in `runs` without its job and lose the cancel.
+                val job = scope.launch(dispatcher, start = CoroutineStart.LAZY) { execute(target, tools.getValue(toolId), options, r) }
+                r.job = job
+                runs[target.hostId] = r
+                job.start()
             }
         }
-        val tool = tools.getValue(toolId)
-        run.job = scope.launch(dispatcher) { execute(target, tool, options, run) }
         publish(); ensureTicker()
         return Start.Started(run.runId)
     }
@@ -2442,6 +2731,11 @@ class ToolRunner(
                 run.recorded.incrementAndGet()
                 try { repo.addFinding(run.runId, f.kind.name, f.value, f.detail, FindingExtraJson.encode(f)) }
                 catch (ce: CancellationException) { throw ce } catch (ex: Exception) { log(ex) }   // logged, the run continues (11.12)
+            }
+            override suspend fun option(key: String, value: String) {
+                // One UPDATE of optionsJson (spec 7.1): for example methodUsed after a calibration switch (plan review G8).
+                val json = run.withOption(key, value)
+                try { repo.setOptions(run.runId, json) } catch (ce: CancellationException) { throw ce } catch (ex: Exception) { log(ex) }
             }
         }
         var status = ToolRunStatus.STOPPED; var summary = ""
@@ -2510,7 +2804,9 @@ class ToolRunner(
         override fun excused(startEpoch: Int): Boolean = startEpoch != run.pauseEpoch || !foreground.value
     }
 
-    private inner class Run(val runId: Long, val hostId: Long, val toolId: ToolId, val port: Int, startedAt: Long, val startKey: String, val env: NetworkEnv) {
+    private inner class Run(val runId: Long, val hostId: Long, val toolId: ToolId, val port: Int, startedAt: Long, val startKey: String, val env: NetworkEnv,
+                            private var optionsJson: String) {
+        @Synchronized fun withOption(key: String, value: String): String { optionsJson = ToolOptionsJson.withOption(optionsJson, key, value); return optionsJson }
         val bucket = RateBucket(MAX_REQUESTS_PER_SECOND, RateBucket.BURST, clock)
         val recorded = AtomicInteger(0)
         @Volatile var done = 0; @Volatile var total: Int? = null; @Volatile var found = 0; @Volatile var errors = 0
@@ -2536,7 +2832,7 @@ class ToolRunner(
     /** The registered tools; each tool task (10 to 14) adds its line to toolMap(). A ToolId absent here never gets a chip. */
     val tools: Map<ToolId, Tool> by lazy { toolMap() }
     private fun toolMap(): Map<ToolId, Tool> = buildMap {
-        // Task 10: DIR_BRUTEFORCE. Task 11: HTTP_FINGERPRINT. Task 12: TLS_CERTIFICATE. Task 13: SNMP_WALK. Task 14: SMB_SESSION.
+        // Task 10: DIR_BRUTEFORCE. Task 11: HTTP_FINGERPRINT. Task 12: TLS_CERTIFICATE. Task 13: SNMP_WALK. Task 15: SMB_SESSION.
     }
     /** Reading this lazy is the only place markInterrupted starts; no instrumented test reads it (Global Constraints). */
     val toolRunner: ToolRunner by lazy {
@@ -2567,12 +2863,25 @@ In `toolMap()` the `buildMap` body is empty until Task 10 adds its `put`; the co
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.ToolRunner*" --tests "com.northwalessolutions.netprobe.engine.tools.ToolJsonTest" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `ToolRunnerTest` (10), `ToolRunnerPauseTest` (3) and `ToolJsonTest` (2) pass; `BUILD SUCCESSFUL`. Tests that leave a run blocked use `runCurrent()`, never `advanceUntilIdle()`, so the ticker never spins the virtual clock; every test stops its last run before it ends.
+Expected: `ToolRunnerTest` (11), `ToolRunnerPauseTest` (3) and `ToolJsonTest` (3) pass; `BUILD SUCCESSFUL`. Every runner test drives the runner with `runCurrent()` (and `advanceTimeBy` where a delay or the ticker is involved), never `advanceUntilIdle()`: the runner, its collectors, its runs and its ticker live on `backgroundScope`, and since kotlinx-coroutines-test 1.7 `advanceUntilIdle()` returns as soon as only background work is queued (the same rule `HomeViewModelTest` documents), so it would run none of them (plan review G2). Each test fails on the bug it names: remove the end write, the release, the message, the pause gate or the clock stop and the matching assertion fails. A green result reached any other way, for example by moving the runner off `backgroundScope` or relaxing an assertion, is a bent test: stop and report instead.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "ToolRunner: one run per host, pause gate and rate ceiling, ticker, INTERRUPTED and end states"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolStore.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolJson.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolRunner.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/data/Repositories.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolRunnerTestSupport.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolRunnerTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolRunnerPauseTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolJsonTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "ToolRunner: one run per host, pause gate and rate ceiling, ticker, INTERRUPTED and end states"
 ```
 
 ---
@@ -2584,13 +2893,14 @@ git add -A && git commit -m "ToolRunner: one run per host, pause gate and rate c
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/identify/DeviceIdentifierToolHintTest.kt`
 
 **Interfaces:**
-- Consumes: 3A's `HostEvidence`, `HostEvidenceBuilder.build`, `DeviceIdentifier`, `Rule`, `setIdentityIfNotWeaker`, `ToolRepository.hintsFor` (Task 2).
+- Consumes: 3A's `HostEvidence`, `HostEvidenceBuilder.build`, `DeviceIdentifier`, `Rule`, `setIdentityIfNotWeaker`, `RadarCollector`, `ToolRepository.hintsFor` and `hostsWithRuns` (Task 2).
 - Produces:
 ```kotlin
 data class HostEvidence(..., val toolHints: List<String> = emptyList())
 HostEvidenceBuilder.build(..., toolHints: List<String> = emptyList()): HostEvidence
 // DeviceIdentifier handles field "toolHint", reason "toolHint: <hint>"
 AppContainer.reidentifyFromTools(hostId: Long)   // ToolRunner.onFinished (Task 6) calls it
+class RadarCollector(hosts, ports, identifier, ouiLookup, lock, hintsFor: suspend (Long) -> List<String> = { emptyList() }, removed: () -> Set<Pair<Long, String>>)
 ```
 
 - [ ] **Step 1: Write the failing test**
@@ -2720,7 +3030,27 @@ Wiring (hints only ever add evidence; every path that identifies a stored host p
         }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/home/RadarCollector.kt`: add a hints provider so discovery keeps a host's tool-derived identity (3A discovery always writes, but passing the hints means an unchanged host keeps its tool identity, spec 4.7). Add the constructor parameter `private val hintsFor: suspend (Long) -> List<String> = { emptyList() }` and, in `store`, change the `HostEvidenceBuilder.build(...)` call to pass `toolHints = hintsFor(id)` as the last argument. In `HomeViewModel.discoverOn`, construct the collector with `hintsFor = { c.toolRepo.hintsFor(it) }`. The `RemoveDeviceTest` collector factory (3A androidTest) uses the default empty provider, so it still compiles.
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/RadarCollector.kt`: add a hints provider so discovery keeps a host's tool-derived identity (3A discovery always writes, but passing the hints means an unchanged host keeps its tool identity, spec 4.7). The new parameter goes **before** `removed` (plan review G13): `removed` is passed as a trailing lambda in `HomeViewModel.discoverOn` (line 213) and in 3A's `RemoveDeviceTest.collector()`, and a new last parameter would capture that lambda and break both call sites. With `hintsFor` defaulted and placed before it, both call sites compile unchanged. The constructor becomes:
+```kotlin
+class RadarCollector(
+    private val hosts: HostRepository, private val ports: PortRepository, private val identifier: DeviceIdentifier,
+    private val ouiLookup: (String) -> String?, private val lock: Mutex,
+    private val hintsFor: suspend (Long) -> List<String> = { emptyList() },
+    private val removed: () -> Set<Pair<Long, String>>,
+) {
+```
+and in `store` the evidence line becomes:
+```kotlin
+        val ev = HostEvidenceBuilder.build(hosts.toDiscovered(merged), ports.servicesFor(id), seen, emptyMap(), merged.mac?.let(ouiLookup), hintsFor(id))
+```
+
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt`: in `discoverOn`, replace the collector line with the two lines below. The set of hosts with tool runs is read once per scan, so a host with no runs (nearly all of them) costs no extra query inside `hostWriteLock`, which Remove device waits on (plan review G13); a host whose first run finishes mid-scan is re-identified by `reidentifyFromTools` instead.
+```kotlin
+            val withRuns = c.toolRepo.hostsWithRuns()
+            val collector = RadarCollector(c.hosts, c.ports, c.deviceIdentifier, c.ouiLookup, c.hostWriteLock,
+                hintsFor = { id -> if (id in withRuns) c.toolRepo.hintsFor(id) else emptyList() }) { c.removedDuringScan.value }
+```
+3A's `RemoveDeviceTest.collector()` (`RadarCollector(hosts, ports, DeviceIdentifier(emptyList()), { null }, lock) { removed }`) is not edited: `hintsFor` takes its default and the trailing lambda still binds to `removed`.
 
 - [ ] **Step 4: Run the tests to see them pass, then the task gate**
 
@@ -2732,8 +3062,21 @@ Expected: `DeviceIdentifierToolHintTest` (4) passes; the edited 3A `DeviceIdenti
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "Identification hints: toolHints evidence, the toolHint rule, 14 seed rules, hintsFor wired into every identify path"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/identify/DeviceIdentity.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/identify/DeviceIdentifier.kt \
+  app/src/main/res/raw/identify_rules.json \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/RadarCollector.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/identify/DeviceIdentifierTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/identify/SyntheticEvidence.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/identify/DeviceIdentifierToolHintTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Identification hints: toolHints evidence, the toolHint rule, 14 seed rules, hintsFor wired into every identify path"
 ```
 
 ---
@@ -2744,7 +3087,7 @@ git add -A && git commit -m "Identification hints: toolHints evidence, the toolH
 - Create: `app/src/main/res/raw/wordlist_common_short.txt`, `wordlist_admin_panels.txt`, `wordlist_api_paths.txt` (transcribed from this task), `app/src/main/java/com/northwalessolutions/netprobe/wordlists/WordlistParser.kt`
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/wordlists/WordlistParserTest.kt`, `BundledWordlistsTest.kt`
 
-**Authoring rules (spec 5.6.1):** each file is plain UTF-8, LF line endings, ASCII only, one entry per line, no leading slash, no comments, no blank lines, no duplicates. The lists below are the implementer's own composition from well-known web and device paths, written out in full; they are **globally sorted** with `LC_ALL=C` ordering (so `.`-prefixed entries come first, then the rest alphabetically), which is distinctive and verifiable and reproduces no published list's ordering or headers. Nothing is downloaded. The three lists below were machine-checked for order, uniqueness and count while this plan was written.
+**Authoring rules (spec 5.6.1):** each file is plain UTF-8, LF line endings, ASCII only, one entry per line, no leading slash, no comments, no blank lines, no duplicates. The lists below are the implementer's own composition from well-known web and device paths, written out in full; they are **globally sorted** with `LC_ALL=C` ordering (so `.`-prefixed entries come first, then the rest alphabetically), which is distinctive and verifiable and reproduces no published list's ordering or headers. Nothing is downloaded. The three lists below were machine-checked for order, uniqueness and count while this plan was written. No entry is an action endpoint (plan review G10: `reboot.html`, `upgrade.html`, `apply.cgi`, `setup.cgi`, `webproc`, `cgi-bin/webproc`, `boaform/admin/formLogin`, `logout` and `save` were removed), and `BundledWordlistsTest` holds that line with a deny pattern.
 
 **Interfaces:**
 - Produces:
@@ -2752,306 +3095,10 @@ git add -A && git commit -m "Identification hints: toolHints evidence, the toolH
 data class ParseResult(val entries: List<String>, val skipped: Int)
 object WordlistParser { const val MAX_ENTRY_CHARS = 256; fun parse(input: InputStream): ParseResult }
 ```
-.aws/credentials
-.bash_history
-.bashrc
-.config
-.ds_store
-.env
-.env.bak
-.env.local
-.env.prod
-.git-credentials
-.git/HEAD
-.git/config
-.git/index
-.gitignore
-.htaccess
-.htpasswd
-.npmrc
-.ssh/id_rsa
-.svn/entries
-.well-known/security.txt
-about
-account
-accounts
-actuator
-admin
-admin.php
-administrator
-ajax
-api
-app
-app.js
-application.wadl
-apps
-archive
-assets
-auth
-backend
-backup
-backup.sql
-backup.tar.gz
-backup.zip
-backups
-bin
-blog
-board
-boot
-bower.json
-build
-bundle.js
-cache
-cart
-cgi-bin
-changelog
-changelog.txt
-checkout
-cloud
-cms
-composer.json
-composer.lock
-conf
-config
-config.bak
-config.inc.php
-config.json
-config.php
-config.xml
-console
-contact
-content
-controlpanel
-core
-cron
-crossdomain.xml
-css
-dashboard
-data
-database
-database.sql
-db
-debug
-default
-demo
-deploy
-dev
-dist
-doc
-docker-compose.yml
-dockerfile
-docs
-download
-downloads
-dump
-dump.sql
-editor
-email
-engine
-error
-error_log
-errors
-export
-feed
-file
-files
-forum
-ftp
-gallery
-git
-graphql
-guest
-help
-home
-host
-htdocs
-http
-humans.txt
-icons
-id_rsa
-images
-img
-import
-include
-includes
-index
-index.html
-index.php
-info
-info.php
-install
-install.php
-internal
-intranet
-inventory
-invoice
-js
-json
-knownhosts
-lang
-latest
-lib
-library
-license
-license.txt
-list
-local
-log
-log.txt
-login
-login.php
-logout
-logs
-mail
-main
-main.js
-manage
-manager
-media
-member
-members
-menu
-message
-messages
-meta
-mobile
-modules
-monitor
-my
-mysql
-new
-news
-node_modules
-notes
-oauth
-old
-order
-orders
-out
-package-lock.json
-package.json
-page
-pages
-panel
-password
-passwords
-payment
-payments
-phpinfo.php
-phpmyadmin
-plugins
-portal
-post
-posts
-private
-prod
-product
-products
-profile
-profiles
-public
-query
-readme
-readme.md
-readme.txt
-register
-release
-releases
-remote
-repo
-report
-reports
-resources
-rest
-robots.txt
-root
-rss
-sample
-save
-script
-scripts
-search
-secret
-secrets
-secure
-security
-server-info
-server-status
-service
-services
-session
-sessions
-settings
-setup
-setup.php
-shop
-sitemap
-sitemap.xml
-sites
-slack
-smb
-soap
-software
-source
-sql
-src
-ssh
-ssl
-staff
-stage
-staging
-static
-stats
-status
-storage
-store
-style.css
-styles
-support
-swagger
-sync
-sys
-system
-tag
-tags
-temp
-template
-templates
-test
-test.php
-testing
-tests
-tmp
-token
-tools
-tracking
-upload
-upload.php
-uploads
-user
-users
-util
-utils
-v1
-v2
-var
-vendor
-version
-view
-views
-web
-web.config
-webadmin
-webmail
-webservice
-wp-admin
-wp-config.php
-wp-content
-wp-includes
-wp-login.php
-www
-xml
-xmlrpc.php
+
+- [ ] **Step 1: Write the failing tests**
+
+`app/src/test/java/com/northwalessolutions/netprobe/wordlists/WordlistParserTest.kt`:
 ```kotlin
 package com.northwalessolutions.netprobe.wordlists
 
@@ -3097,8 +3144,15 @@ package com.northwalessolutions.netprobe.wordlists
 import org.junit.Assert.*
 import org.junit.Test
 
-/** spec 5.6.1: each list in its range, parses to itself, ASCII, no leading slash or duplicate, globally sorted. */
+/**
+ * spec 5.6.1: each list in its range, parses to itself, ASCII, no leading slash or duplicate, globally sorted, and (plan review G10)
+ * no entry whose GET can change a device's state: a reboot, firmware or apply handler, a logout, a save. Brute-force sends HEAD and
+ * GET to every entry on the Director's and his clients' devices, so an action endpoint in a bundled list is a footgun.
+ */
 class BundledWordlistsTest {
+    private companion object {
+        val STATE_CHANGING = Regex("(?i)(reboot|restart|shutdown|reset|factory|upgrade|apply|logout|logoff|signout|webproc|formlogin|setup\\.cgi|(^|/)save($|\\.))")
+    }
     private fun read(name: String): String = javaClass.classLoader!!.getResource(name)!!.readText()
     private fun check(name: String, min: Int, max: Int) {
         val text = read(name)
@@ -3109,11 +3163,17 @@ class BundledWordlistsTest {
         assertEquals("$name has duplicates", lines.size, lines.toSet().size)
         lines.forEach { assertFalse("$name entry has a leading slash: $it", it.startsWith("/")) }
         lines.forEach { l -> assertTrue("$name entry not ascii: $l", l.all { it.code in 33..126 }) }
+        lines.forEach { assertFalse("$name entry can change device state: $it", STATE_CHANGING.containsMatchIn(it)) }
         assertEquals("$name is not sorted (LC_ALL=C)", lines.sortedWith(compareBy { it }), lines)
         val parsed = WordlistParser.parse(text.toByteArray(Charsets.UTF_8).inputStream())
         assertEquals("$name does not parse to itself", lines, parsed.entries); assertEquals(0, parsed.skipped)
     }
     @Test fun `common short`() { check("wordlist_common_short.txt", 250, 350) }
+    @Test fun `the deny pattern catches the endpoints it exists for`() {
+        for (bad in listOf("reboot.html", "cgi-bin/webproc", "apply.cgi", "boaform/admin/formLogin", "logout", "save", "admin/factory_reset"))
+            assertTrue(bad, STATE_CHANGING.containsMatchIn(bad))
+        for (fine in listOf("settings", "setup.html", "saved-searches", "firmware")) assertFalse(fine, STATE_CHANGING.containsMatchIn(fine))
+    }
     @Test fun `admin panels`() { check("wordlist_admin_panels.txt", 120, 180) }
     @Test fun `api paths`() { check("wordlist_api_paths.txt", 120, 180) }
 }
@@ -3182,13 +3242,13 @@ object WordlistParser {
 ```
 (The `flush` for a blank or comment line does not count as skipped; only an over-long, control-bearing or non-UTF-8 line counts. A trailing newline flushes an empty final line, which is dropped without counting.)
 
-`app/src/main/res/raw/wordlist_common_short.txt` (transcribe exactly; LF endings; the full list: 300 entries, globally sorted):
+`app/src/main/res/raw/wordlist_common_short.txt` (transcribe exactly; LF endings; the full list: 298 entries, globally sorted):
 ```
+.DS_Store
 .aws/credentials
 .bash_history
 .bashrc
 .config
-.ds_store
 .env
 .env.bak
 .env.local
@@ -3202,6 +3262,7 @@ object WordlistParser {
 .htpasswd
 .npmrc
 .ssh/id_rsa
+.ssh/known_hosts
 .svn/entries
 .well-known/security.txt
 about
@@ -3319,7 +3380,6 @@ inventory
 invoice
 js
 json
-knownhosts
 lang
 latest
 lib
@@ -3332,7 +3392,6 @@ log
 log.txt
 login
 login.php
-logout
 logs
 mail
 main
@@ -3390,16 +3449,15 @@ register
 release
 releases
 remote
+repo
 report
 reports
-repo
 resources
 rest
 robots.txt
 root
 rss
 sample
-save
 script
 scripts
 search
@@ -3486,7 +3544,7 @@ xml
 xmlrpc.php
 ```
 
-`app/src/main/res/raw/wordlist_admin_panels.txt` (device and appliance panels; the full list: 160 entries, globally sorted):
+`app/src/main/res/raw/wordlist_admin_panels.txt` (device and appliance panels; the full list: 153 entries, globally sorted):
 ```
 HNAP1
 account/login
@@ -3517,16 +3575,13 @@ administrator
 administrator/index.php
 adminpanel
 advanced.htm
-apply.cgi
 basic.htm
-boaform/admin/formLogin
 camera
 cgi-bin
 cgi-bin/admin.cgi
 cgi-bin/login.cgi
 cgi-bin/luci
 cgi-bin/status.cgi
-cgi-bin/webproc
 cgi/index
 cli
 cloudcmd
@@ -3606,13 +3661,11 @@ printer
 prometheus
 proxmox
 qnap
-reboot.html
 remote
 router
 rpc
 settings
 setup
-setup.cgi
 setup.html
 status.htm
 status.html
@@ -3626,7 +3679,6 @@ traefik
 ui
 ui/login
 unifi
-upgrade.html
 userRpm
 users
 usg
@@ -3642,7 +3694,6 @@ webfig
 webman
 webmanager
 webpanel
-webproc
 webui
 wireless.htm
 wizard
@@ -3796,12 +3847,21 @@ xmlrpc
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.wordlists.*" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `WordlistParserTest` (6) and `BundledWordlistsTest` (3) pass; `BUILD SUCCESSFUL`. The lists above were checked for order, uniqueness, ASCII and range with `LC_ALL=C sort -c` while writing this plan; a failure here is a transcription error to fix against this task's text.
+Expected: `WordlistParserTest` (6) and `BundledWordlistsTest` (4) pass; `BUILD SUCCESSFUL`. The lists above were checked for order, uniqueness, ASCII and range with `LC_ALL=C sort -c` while writing this plan; a failure here is a transcription error to fix against this task's text.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "Bundled wordlists (common-short, admin-panels, api-paths) and WordlistParser"
+git add \
+  app/src/main/res/raw/wordlist_common_short.txt \
+  app/src/main/res/raw/wordlist_admin_panels.txt \
+  app/src/main/res/raw/wordlist_api_paths.txt \
+  app/src/main/java/com/northwalessolutions/netprobe/wordlists/WordlistParser.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/wordlists/WordlistParserTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/wordlists/BundledWordlistsTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Bundled wordlists (common-short, admin-panels, api-paths) and WordlistParser"
 ```
 
 ---
@@ -3844,6 +3904,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.InputStream
 
 class WordlistStoreTest {
     @get:Rule val tmp = TemporaryFolder()
@@ -3879,30 +3940,63 @@ class WordlistStoreTest {
     }
     @Test fun `too many entries and empty are rejected and keep nothing`() = runTest {
         val s = store()
+        val many = (1..WordlistStore.MAX_ENTRIES + 1).joinToString("\n") { "p$it" }        // about 1.5 MB, under the byte cap
+        assertEquals(ImportResult.TooMany, s.import("m", many.byteInputStream()))
         assertEquals(ImportResult.Empty, s.import("e", "\n\n# only comments".byteInputStream()))
         assertTrue(s.lists.first().isEmpty())
+        assertTrue("nothing written", tmp.root.walk().none { it.isFile && (it.name.endsWith(".txt") || it.name.endsWith(".tmp")) })
     }
     @Test fun `delete removes the file and the entry`() = runTest {
-        val s = store(commons); val m = (s.import("gone", "a\nb") as ImportResult.Imported).meta
+        val s = store(commons); val m = (s.import("gone", "a\nb".byteInputStream()) as ImportResult.Imported).meta
         s.delete(m.id)
         assertNull(s.withEntries(m.id) { it.toList() })
         assertTrue(s.lists.first().none { it.id == m.id })
     }
-    @Test fun `withEntries closes the reader even when the block is cancelled`() = runTest {
-        val s = store(); val m = (s.import("big", (1..1000).joinToString("\n") { "p$it" }) as ImportResult.Imported).meta
-        val got = s.withEntries(m.id) { it.first() }
-        assertEquals("p1", got)   // taking one entry does not read the whole file, and the reader still closes
+    /** Counts close() so a test can see the reader released (plan review G12). */
+    private class Tracking(body: String) : InputStream() {
+        private val inner = body.toByteArray(Charsets.UTF_8).inputStream()
+        @Volatile var closed = false
+        override fun read(): Int = inner.read()
+        override fun read(b: ByteArray, off: Int, len: Int): Int = inner.read(b, off, len)
+        override fun close() { closed = true }
+    }
+    @Test fun `withEntries closes the reader when the block is cancelled`() = runBlocking {
+        var last: Tracking? = null
+        val s = store(BuiltInList("builtin:t", "t") { Tracking((1..1000).joinToString("\n") { "p$it" }).also { last = it } })
+        val entered = CompletableDeferred<String>()
+        val job = launch(Dispatchers.Default) { s.withEntries("builtin:t") { seq -> entered.complete(seq.first()); awaitCancellation() } }
+        assertEquals("p1", entered.await())
+        assertFalse("open while the block runs", last!!.closed)
+        job.cancelAndJoin()
+        assertTrue("the reader must close when the block is cancelled", last!!.closed)
+    }
+    @Test fun `deleting a list during withEntries lets the block finish`() = runTest {
+        val s = store(); val m = (s.import("live", "a\nb\nc".byteInputStream()) as ImportResult.Imported).meta
+        val got = s.withEntries(m.id) { seq ->
+            val it = seq.iterator(); val first = it.next()
+            s.delete(m.id)                                           // spec 12.1: the run that is reading keeps reading
+            listOf(first) + it.asSequence().toList()
+        }
+        assertEquals(listOf("a", "b", "c"), got)
+        assertTrue(s.lists.first().none { it.id == m.id })
+    }
+    @Test fun `concurrent imports keep every index entry`() = runTest {
+        val s = store()
+        (1..8).map { n -> async(Dispatchers.Default) { s.import("l$n", "x$n".byteInputStream()) } }.awaitAll()
+        assertEquals(8, s.lists.first().size)
+        assertEquals(8, WordlistStore(s.dirForTest, emptyList()).lists.first().size)        // the index on disk has all eight
     }
     @Test fun `a corrupt index loads empty and orphan files are removed`() = runTest {
         val dir = tmp.newFolder("corrupt")
-        File(dir, "index.json").writeText("{ not json"); File(dir, "orphan.txt").writeText("x")
+        File(dir, "index.json").writeText("{ not json"); File(dir, "orphan.txt").writeText("x"); File(dir, "half.txt.tmp").writeText("x")
         val s = WordlistStore(dir, listOf(commons))
         assertEquals(listOf("builtin:common-short"), s.lists.first().map { it.id })
         assertFalse(File(dir, "orphan.txt").exists())
+        assertFalse("an interrupted import's temp file is removed (plan review G23)", File(dir, "half.txt.tmp").exists())
     }
 }
 ```
-(`String.byteInputStream()` is the stdlib helper; import accepts a String body via it.)
+(Every `import` call passes an `InputStream`, here from the stdlib `String.byteInputStream()` (plan review G20). The delete test also passes on Windows, where an open file cannot be deleted: the read finishes either way and the next `load()` removes the orphan.)
 
 - [ ] **Step 2: Run the test to see it fail**
 
@@ -3930,6 +4024,8 @@ package com.northwalessolutions.netprobe.wordlists
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -3951,6 +4047,9 @@ sealed interface ImportResult {
  */
 class WordlistStore(private val dir: File, private val builtIns: List<BuiltInList>) {
     private val index = File(dir, "index.json")
+    /** Guards every read-modify-write of index.json and [_lists] (plan review G23); withEntries never takes it. */
+    private val indexLock = Mutex()
+    internal val dirForTest: File get() = dir
     private val builtInMeta: List<WordlistMeta> = builtIns.map { b -> WordlistMeta(b.id, b.name, countOf(b.open()), null, true) }
     private val _lists = MutableStateFlow(load())
     val lists: StateFlow<List<WordlistMeta>> = _lists
@@ -3961,7 +4060,7 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
         // Drop index entries whose file is gone, and delete .txt files with no index entry.
         val present = imported.filter { File(dir, fileName(it.id)).exists() }
         val known = present.map { fileName(it.id) }.toSet() + "index.json"
-        dir.listFiles()?.forEach { if (it.name !in known && it.name.endsWith(".txt")) it.delete() }
+        dir.listFiles()?.forEach { if ((it.name !in known && it.name.endsWith(".txt")) || it.name.endsWith(TMP)) it.delete() }   // orphans and half imports
         if (present.size != imported.size) writeIndex(present)
         return builtInMeta + present.sortedByDescending { it.importedAt ?: 0 }
     }
@@ -3975,22 +4074,25 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
         if (parsed.entries.size > MAX_ENTRIES) return@withContext ImportResult.TooMany
         if (parsed.entries.isEmpty()) return@withContext ImportResult.Empty
         val baseName = (displayName?.substringBeforeLast('.')?.trim().orEmpty()).ifEmpty { com.northwalessolutions.netprobe.ui.wordlists.WordlistCopy.DEFAULT_NAME }
-        val name = uniqueName(baseName)
         val id = "user:" + UUID.randomUUID().toString()
-        val temp = File(dir, "$id.tmp"); temp.writeText(parsed.entries.joinToString("\n"))
         val target = File(dir, fileName(id))
+        val temp = File(dir, fileName(id) + TMP); temp.writeText(parsed.entries.joinToString("\n"))
         if (!temp.renameTo(target)) { temp.delete(); return@withContext ImportResult.Unreadable }
-        val meta = WordlistMeta(id, name, parsed.entries.size, System.currentTimeMillis(), false)
-        val imported = currentImported() + meta
-        writeIndex(imported); _lists.value = builtInMeta + imported.sortedByDescending { it.importedAt ?: 0 }
-        ImportResult.Imported(meta, parsed.skipped)
+        indexLock.withLock {
+            val meta = WordlistMeta(id, uniqueName(baseName), parsed.entries.size, System.currentTimeMillis(), false)
+            val imported = currentImported() + meta
+            writeIndex(imported); _lists.value = builtInMeta + imported.sortedByDescending { it.importedAt ?: 0 }
+            ImportResult.Imported(meta, parsed.skipped)
+        }
     }
 
-    suspend fun delete(id: String) = withContext(Dispatchers.IO) {
+    suspend fun delete(id: String): Unit = withContext(Dispatchers.IO) {
         if (id.startsWith("builtin:")) return@withContext
-        File(dir, fileName(id)).delete()
-        val imported = currentImported().filterNot { it.id == id }
-        writeIndex(imported); _lists.value = builtInMeta + imported.sortedByDescending { it.importedAt ?: 0 }
+        indexLock.withLock {
+            File(dir, fileName(id)).delete()                       // a run reading it keeps its open reader (spec 5.6.3)
+            val imported = currentImported().filterNot { it.id == id }
+            writeIndex(imported); _lists.value = builtInMeta + imported.sortedByDescending { it.importedAt ?: 0 }
+        }
     }
 
     suspend fun <T> withEntries(id: String, block: suspend (Sequence<String>) -> T): T? = withContext(Dispatchers.IO) {
@@ -4022,7 +4124,7 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
         out.toByteArray()
     }
 
-    companion object { const val MAX_IMPORT_BYTES = 10_485_760; const val MAX_ENTRIES = 200_000 }
+    companion object { const val MAX_IMPORT_BYTES = 10_485_760; const val MAX_ENTRIES = 200_000; private const val TMP = ".tmp" }
 }
 ```
 
@@ -4044,12 +4146,19 @@ class WordlistStore(private val dir: File, private val builtIns: List<BuiltInLis
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.wordlists.WordlistStoreTest" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: every `WordlistStoreTest` case passes; `BUILD SUCCESSFUL`.
+Expected: `WordlistStoreTest` (10) passes; `BUILD SUCCESSFUL`. The reviewer confirms the cancellation test fails with the `finally { reader.close() }` removed and the TooMany case fails with the entry check removed.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "WordlistStore: built-ins, SAF import, delete, withEntries and the index"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/wordlists/BuiltInList.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/wordlists/WordlistStore.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/wordlists/WordlistStoreTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "WordlistStore: built-ins, SAF import, delete, withEntries and the index"
 ```
 
 ---
@@ -4099,6 +4208,8 @@ object DirBruteTestSupport {
         var lastDone = 0; var lastTotal: Int? = null; var lastFound = 0; var lastErrors = 0
         override fun update(done: Int, total: Int?, found: Int, errors: Int) { lastDone = done; lastTotal = total; lastFound = found; lastErrors = errors }
         override suspend fun finding(f: Finding) { findings += f }
+        val options = mutableMapOf<String, String>()
+        override suspend fun option(key: String, value: String) { options[key] = value }
         fun paths() = findings.filter { it.kind == FindingKind.PATH }.map { it.value }
     }
     /** Never pauses, never rate-limits; [epoch] lets a test simulate a pause that began during a request. */
@@ -4247,6 +4358,7 @@ class DirBruteCalibrationTest {
         } }
         val (r, p) = run(ex, listOf("home", "admin"))
         assertEquals(ToolRunStatus.DONE, r.status); assertEquals(listOf("/admin"), p.paths())
+        assertEquals("the switch is written back to optionsJson (plan review G8)", "GET_ONLY", p.options["methodUsed"])
     }
     @Test fun `a group with only three responses is calibrated from what it has`() = runTest {
         var gets = 0
@@ -4310,7 +4422,9 @@ package com.northwalessolutions.netprobe.engine.tools.dirbrute
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.common.HttpFailure
 import com.northwalessolutions.netprobe.engine.common.HttpResult
+import com.northwalessolutions.netprobe.engine.common.RateBucket
 import com.northwalessolutions.netprobe.engine.tools.FindingKind
+import com.northwalessolutions.netprobe.engine.tools.RunControl
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSupport.CollectingProgress
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSupport.TestControl
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSupport.options
@@ -4318,13 +4432,14 @@ import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSuppor
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSupport.sized
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSupport.target
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteTestSupport.tool
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
-/** spec 5.2 and 5.3: report-set filtering, fallback, retries, the abort, the cap, order, encoding, load and the excused rule. */
+/** spec 5.2 and 5.3: report-set filtering, fallback, retries, the abort, the cap, order, encoding, load, the rate ceiling and the excused rule. */
 class DirBruteFlowTest {
     private val off = DirBruteOptions(baseline = false, concurrency = 1)
 
@@ -4348,8 +4463,10 @@ class DirBruteFlowTest {
     @Test fun `head 405 re-issues as get and after three switches to get only`() = runTest {
         val heads = AtomicInteger(0); val gets = AtomicInteger(0)
         val ex = Exchange { method, _ -> if (method == "HEAD") { heads.incrementAndGet(); resp(405) } else { gets.incrementAndGet(); resp(404) } }
-        tool(ex, (1..10).map { "p$it" }).run(target(), options(off), TestControl(), CollectingProgress())
+        val p = CollectingProgress()
+        tool(ex, (1..10).map { "p$it" }).run(target(), options(off), TestControl(), p)
         assertEquals(3, heads.get()); assertEquals(10, gets.get())
+        assertNull("spec 5.2: only the calibration switch is written to methodUsed", p.options["methodUsed"])
     }
     @Test fun `head 501 also falls back`() = runTest {
         val ex = Exchange { method, path -> if (method == "HEAD") resp(501) else if (path == "/admin") resp(200, "x") else resp(404) }
@@ -4395,13 +4512,47 @@ class DirBruteFlowTest {
         tool(Exchange { _, path -> seen += path; resp(404) }, listOf("a b", "c%20d", "e/f", "caf\u00e9")).run(target(), options(off), TestControl(), CollectingProgress())
         assertEquals(listOf("/a%20b", "/c%20d", "/e/f", "/caf%C3%A9"), seen)
     }
-    @Test fun `the load limiter never exceeds the chosen concurrency`() = runTest {
-        val inFlight = AtomicInteger(0); val max = AtomicInteger(0)
-        val ex = Exchange { _, _ -> val n = inFlight.incrementAndGet(); max.updateAndGet { maxOf(it, n) }; yield(); inFlight.decrementAndGet(); resp(404) }
-        for (c in listOf(1, 8, 16)) {
-            inFlight.set(0); max.set(0)
-            tool(ex, (1..60).map { "p$it" }).run(target(), options(DirBruteOptions(baseline = false, concurrency = c)), TestControl(), CollectingProgress())
-            assertTrue("c=$c max=${max.get()}", max.get() in 1..c)
+    @Test fun `after an injected timeout the in-flight peak drops to the halved limit`() = runTest {
+        // Eight workers always exist, so only the limiter can hold the peak at 4 once the first timeout halves it (plan review G12).
+        // Every fifth path times out once (its retry succeeds); each timeout resets the recovery count, and the fixed clock keeps
+        // every later timeout in the first window, so the limit stays at 4 for the rest of the run.
+        val inFlight = AtomicInteger(0); val peakBefore = AtomicInteger(0); val peakAfter = AtomicInteger(0)
+        val timeouts = AtomicInteger(0); val startsAfter = AtomicInteger(0); val failedOnce = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val ex = Exchange { _, path ->
+            val n = inFlight.incrementAndGet()
+            if (timeouts.get() == 0) peakBefore.updateAndGet { maxOf(it, n) }
+            else if (startsAfter.incrementAndGet() > 1) peakAfter.updateAndGet { maxOf(it, n) }   // the first start after was admitted at 8
+            try {
+                yield(); yield()
+                if (path.removePrefix("/p").toInt() % 5 == 0 && failedOnce.add(path)) { timeouts.incrementAndGet(); HttpResult.Failed(HttpFailure.Timeout) }
+                else resp(404)
+            } finally { inFlight.decrementAndGet() }
+        }
+        val p = CollectingProgress()
+        val r = tool(ex, (1..120).map { "p$it" }).run(target(), options(DirBruteOptions(baseline = false, method = DirMethod.GET_ONLY, concurrency = 8)), TestControl(), p)
+        assertEquals(ToolRunStatus.DONE, r.status); assertEquals(0, p.lastErrors)
+        assertEquals("all eight run before the first timeout", 8, peakBefore.get())
+        assertTrue("peak after the halving ${peakAfter.get()}", peakAfter.get() in 1..4)
+    }
+    @Test fun `the rate ceiling is taken per request, so a head 200 catch all stays at one hundred a second`() = runTest {
+        // HEAD 200 on every path means every path sends HEAD and GET (plan review G3). A gate per path would let 200 a second through.
+        val bucket = RateBucket { testScheduler.currentTime }
+        val control = object : RunControl {
+            override suspend fun gate() { while (true) { val d = bucket.acquireDelayMs(); if (d == 0L) return; delay(d) } }
+            override val pauseEpoch: Int get() = 0
+            override fun excused(startEpoch: Int) = false
+        }
+        val stamps = java.util.Collections.synchronizedList(mutableListOf<Long>()); var n = 0
+        val ex = Exchange { method, _ ->
+            stamps += testScheduler.currentTime
+            if (method == "HEAD") sized(200, 0) else sized(200, (n++ % 400) * 100 + 10)   // sizes spread, so no runaway
+        }
+        tool(ex, (1..300).map { "p$it" }).run(target(), options(DirBruteOptions(baseline = false, concurrency = 16)), control, CollectingProgress())
+        assertEquals(600, stamps.size)
+        assertTrue("first second ${stamps.count { it < 1000 }}", stamps.count { it < 1000 } <= 110)   // the window plus the initial burst
+        for (w in 1L..stamps.max() / 1000) {
+            val inWindow = stamps.count { it >= w * 1000 && it < (w + 1) * 1000 }
+            assertTrue("window $w: $inWindow", inWindow <= 100)
         }
     }
     @Test fun `a server that times out above two concurrent completes with no counted errors once the limit drops`() = runTest {
@@ -4449,7 +4600,7 @@ object ToolOptionsJson {
             val o = options.options
             put("wordlistId", o.wordlistId); put("wordlistName", options.wordlistName); put("wordlistEntries", options.wordlistEntries)
             put("extensions", JsonArray(o.extensions.map { JsonPrimitive(it) }))
-            put("method", o.method.name); put("methodUsed", o.method.name)   // the chosen method at run start (Self-Review deviation 4)
+            put("method", o.method.name); put("methodUsed", o.method.name)   // the chosen method; the calibration switch rewrites methodUsed (spec 5.2, G8)
             put("concurrency", o.concurrency); put("timeoutS", o.timeoutS)
             put("statusCodes", JsonArray(o.statusCodes.map { JsonPrimitive(it) })); put("baseline", o.baseline)
         }
@@ -4720,8 +4871,8 @@ fun interface Exchange { suspend fun request(method: String, path: String): Http
 data class LoadedWordlist(val id: String, val name: String, val count: Int, val stream: suspend (collect: suspend (String) -> Unit) -> Unit)
 
 /**
- * Directory brute-force (spec 5). The wordlist streams through a channel to [DirBruteOptions.concurrency] workers. Every request first
- * passes control.gate() (pause and rate ceiling), then the adaptive limiter. HEAD then GET with the 405/501 fallback, the calibrated
+ * Directory brute-force (spec 5). The wordlist streams through a channel to [DirBruteOptions.concurrency] workers. Every path first
+ * takes an adaptive-limiter permit, and every request it sends (HEAD and GET each) first passes control.gate() (pause and rate ceiling). HEAD then GET with the 405/501 fallback, the calibrated
  * filter per group, one retry for Timeout and Reset, the 50-in-a-row abort, the 500 cap and the runaway check. Excused failures
  * (a pause began during the request) are retried after the resume and never counted.
  */
@@ -4748,6 +4899,8 @@ class DirBruteforceTool(
         @Synchronized fun endWith(r: ToolResult) { if (end == null) end = r }
         @Synchronized fun sample(status: Int, size: Long?) { samples += status to size }
         @Synchronized fun snapshot(): List<Pair<Int, Long?>> = samples.toList()
+        /** [found] counts claimed slots, which can pass the cap by the few dropped claims (plan review G22). */
+        fun foundCount(): Int = minOf(found.get(), MAX_FINDINGS)
     }
 
     override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
@@ -4762,7 +4915,7 @@ class DirBruteforceTool(
         val calibration = if (o.baseline) Calibrator.calibrate(listOf("") + o.extensions, exchange, control, random) else null
         if (calibration != null) {
             if (!calibration.anyResponse) return ToolResult(ToolRunStatus.FAILED, ToolCopy.BRUTE_NO_ANSWER)
-            if (calibration.forceGetOnly) getOnly = true
+            if (calibration.forceGetOnly && !getOnly) { getOnly = true; progress.option(METHOD_USED, DirMethod.GET_ONLY.name) }
         }
         val state = State(getOnly)
         val limiter = AdaptiveLimiter(o.concurrency, clock, timeoutMs.toLong())
@@ -4791,7 +4944,7 @@ class DirBruteforceTool(
         }
 
         state.end?.let { return it }
-        return ToolResult(ToolRunStatus.DONE, ToolCopy.bruteDone(state.found.get(), state.done.get(), state.errors.get()))
+        return ToolResult(ToolRunStatus.DONE, ToolCopy.bruteDone(state.foundCount(), state.done.get(), state.errors.get()))
     }
 
     private suspend fun handle(item: Item, target: ToolTarget, exchange: Exchange, control: RunControl, limiter: AdaptiveLimiter, reportSet: Set<Int>,
@@ -4807,18 +4960,22 @@ class DirBruteforceTool(
                     state.endWith(ToolResult(ToolRunStatus.FAILED, ToolCopy.bruteStoppedAnswering(d)))
             }
         }
-        progress.update(d, total, state.found.get(), state.errors.get())
+        progress.update(d, total, state.foundCount(), state.errors.get())
         if (d == RUNAWAY_AFTER && runaway(state.snapshot())) state.endWith(ToolResult(ToolRunStatus.DONE, ToolCopy.BRUTE_RUNAWAY))
     }
 
-    /** One path to a counted outcome: excused failures retry after the resume; Timeout and Reset retry once after RETRY_DELAY_MS. */
+    /**
+     * One path to a counted outcome: excused failures retry after the resume; Timeout and Reset retry once after RETRY_DELAY_MS.
+     * The gate is not taken here: [attempt] takes it before every request, so a HEAD then GET costs two rate tokens (plan review G3).
+     * The epoch is read before the first gate, so a pause that starts while this path waits at the gate also excuses its failure:
+     * at worst one uncounted extra try, never a counted error the Director caused.
+     */
     private suspend fun attemptCounted(path: String, exchange: Exchange, control: RunControl, limiter: AdaptiveLimiter, reportSet: Set<Int>, state: State): Outcome {
         var retried = false
         while (true) {
             val epoch = control.pauseEpoch
-            control.gate()
             limiter.acquire()
-            val outcome = try { attempt(path, exchange, reportSet, state) } finally { limiter.release() }
+            val outcome = try { attempt(path, exchange, control, reportSet, state) } finally { limiter.release() }
             if (outcome !is Outcome.Failure) { limiter.onSuccess(); return outcome }
             if (control.excused(epoch)) continue                         // spec 4.8: not counted, no limiter change, run again after the resume
             val transient = outcome.f == HttpFailure.Timeout || outcome.f == HttpFailure.Reset
@@ -4830,8 +4987,10 @@ class DirBruteforceTool(
         }
     }
 
-    private suspend fun attempt(path: String, exchange: Exchange, reportSet: Set<Int>, state: State): Outcome {
+    /** HEAD then GET, or GET only; [RunControl.gate] (pause, then one rate token) runs before each request it sends. */
+    private suspend fun attempt(path: String, exchange: Exchange, control: RunControl, reportSet: Set<Int>, state: State): Outcome {
         if (!state.getOnly) {
+            control.gate()
             when (val head = exchange.request("HEAD", path)) {
                 is HttpResult.Failed -> return Outcome.Failure(head.failure)
                 is HttpResult.Ok -> {
@@ -4841,6 +5000,7 @@ class DirBruteforceTool(
                 }
             }
         }
+        control.gate()
         return when (val get = exchange.request("GET", path)) {
             is HttpResult.Failed -> Outcome.Failure(get.failure)
             is HttpResult.Ok -> if (get.response.status in reportSet) Outcome.Hit(get.response) else Outcome.Miss
@@ -4853,19 +5013,21 @@ class DirBruteforceTool(
         val baseline = calibration?.baselines?.get(item.group)
         if (baseline != null && NotFoundFilter.isHidden(baseline, r.status, normalised, NotFoundFilter.normaliseLocation(location, item.path))) return
         if (state.end != null) return
+        val slot = state.found.incrementAndGet()                   // claim the slot first, so concurrent hits never pass the cap (G22)
+        if (slot > MAX_FINDINGS) return
         state.sample(r.status, normalised)
         val truncatedUnknown = r.bodyTruncated && r.contentLength == null
         val bytes = if (truncatedUnknown) null else (r.contentLength ?: r.body.size.toLong())
         val extra = buildMap { put("status", r.status.toString()); put("size", bytes?.toString() ?: ""); location?.let { put("location", it) } }
         progress.finding(Finding(FindingKind.PATH, item.path, ToolCopy.pathDetail(r.status, ToolCopy.size(bytes, truncatedUnknown), location), urlOf(target, item.path), extra))
         if (r.status == 200 || r.status == 204 || r.status == 401) progress.finding(Finding(FindingKind.HINT, "http.path=${item.path}"))
-        if (state.found.incrementAndGet() >= MAX_FINDINGS) state.endWith(ToolResult(ToolRunStatus.DONE, ToolCopy.BRUTE_CAP))
+        if (slot == MAX_FINDINGS) state.endWith(ToolResult(ToolRunStatus.DONE, ToolCopy.BRUTE_CAP))
     }
 
     companion object {
         const val MAX_FINDINGS = 500; const val MAX_CONSECUTIVE_FAILURES = 50; const val HEAD_FALLBACK_SWITCH = 3
         const val RETRY_DELAY_MS = 250L; const val RUNAWAY_AFTER = 200; const val RUNAWAY_MIN_ALIKE = 50; const val RUNAWAY_BAND = 64L
-        private const val CHANNEL_CAPACITY = 16; private const val MS_PER_S = 1000
+        private const val CHANNEL_CAPACITY = 16; private const val MS_PER_S = 1000; private const val METHOD_USED = "methodUsed"
 
         /** spec 5.4.3: true when more than RUNAWAY_MIN_ALIKE findings share one status and their sizes lie within RUNAWAY_BAND bytes. */
         fun runaway(samples: List<Pair<Int, Long?>>): Boolean {
@@ -4911,12 +5073,20 @@ class DirBruteforceTool(
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.dirbrute.*" --console=plain 2>&1 | tail -30
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `DirBruteOptionsTest` (4), `AdaptiveLimiterTest` (2), `DirBruteCalibrationTest` (7), `DirBruteRunawayTest` (3) and `DirBruteFlowTest` (12) pass; `BUILD SUCCESSFUL`. The reviewer confirms each Review Focus 2 test fails when its rule is removed (drop the band, drop the HEAD/GET check, drop the runaway call).
+Expected: `DirBruteOptionsTest` (4), `AdaptiveLimiterTest` (2), `DirBruteCalibrationTest` (7), `DirBruteRunawayTest` (3) and `DirBruteFlowTest` (13) pass; `BUILD SUCCESSFUL`. The reviewer confirms each Review Focus 2 test fails when its rule is removed (drop the band, drop the HEAD/GET check, drop the runaway call), that the rate test fails with the gate moved back to once per path, and that the limiter test fails with `limiter.acquire()` removed.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "Directory brute-force: options, calibration, the not-found filter, adaptive concurrency and the request flow"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/dirbrute \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolId.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolJson.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/dirbrute
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Directory brute-force: options, calibration, the not-found filter, adaptive concurrency and the request flow"
 ```
 
 ---
@@ -4943,7 +5113,7 @@ class HttpFingerprintTool(getFor: (ToolTarget) -> HttpGet, rules: List<Fingerpri
 
 - [ ] **Step 1: Write the failing tests**
 
-`app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolTestSupport.kt` (shared by the companion-tool tests of Tasks 11 to 14; test code):
+`app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolTestSupport.kt` (shared by the companion-tool tests of Tasks 11 to 15; test code):
 ```kotlin
 package com.northwalessolutions.netprobe.engine.tools
 
@@ -4960,6 +5130,13 @@ object ToolTestSupport {
         fun hints() = of(FindingKind.HINT).map { it.value }
     }
     fun control() = object : RunControl { override suspend fun gate() {}; override val pauseEpoch = 0; override fun excused(startEpoch: Int) = false }
+    /** A test bumps [epoch] inside a fake exchange to simulate a pause that began while that exchange was in flight (spec 4.8). */
+    class EpochControl : RunControl {
+        var epoch = 0
+        override suspend fun gate() {}
+        override val pauseEpoch: Int get() = epoch
+        override fun excused(startEpoch: Int) = startEpoch != epoch
+    }
     fun ip(s: String) = InetAddress.getByName(s) as Inet4Address
 }
 ```
@@ -5034,6 +5211,16 @@ class HttpFingerprintTest {
         val p = CollectingProgress(); return HttpFingerprintTool({ get }, rules) { "abcdef012345" }.run(t, ToolOptions.None, control(), p) to p
     }
 
+    @Test fun `a root GET lost to a pause is retried once after the resume`() = runTest {
+        val c = ToolTestSupport.EpochControl(); var roots = 0
+        val get = HttpGet { _, _, path ->
+            if (path == "/" && roots++ == 0) { c.epoch++; HttpResult.Failed(HttpFailure.Timeout) }      // a pause began mid-request
+            else if (path == "/") ok(200, "<title>NAS</title>") else ok(404)
+        }
+        val p = CollectingProgress()
+        val r = HttpFingerprintTool({ get }, rules) { "abcdef012345" }.run(target(), ToolOptions.None, c, p)
+        assertEquals(ToolRunStatus.DONE, r.status); assertEquals("200 OK", p.of(FindingKind.STATUS).first().value)
+    }
     @Test fun `names synology from the title and strips the version in the framework hint`() = runTest {
         val (r, p) = run(HttpGet { _, _, path -> if (path == "/") ok(200, "<title>Synology DiskStation 7</title>", listOf("Server" to "nginx/1.25")) else ok(404, reason = "Not Found") })
         assertEquals(ToolRunStatus.DONE, r.status)
@@ -5221,7 +5408,9 @@ class HttpFingerprintTool(
         suspend fun emit(f: Finding) { n.found++; progress.finding(f); progress.update(n.done, n.total, n.found) }
         suspend fun hint(v: String) { progress.finding(Finding(FindingKind.HINT, v)) }
         suspend fun fetch(tls: Boolean, port: Int, path: String): HttpResult {
-            control.gate(); val r = get.get(tls, port, path); n.done++; progress.update(n.done, n.total, n.found); return r
+            control.gate()
+            val r = control.excusedOnce<HttpResult>({ it is HttpResult.Failed }) { get.get(tls, port, path) }   // spec 4.8 (plan review G5)
+            n.done++; progress.update(n.done, n.total, n.found); return r
         }
 
         val root = (fetch(target.tls, target.port, "/") as? HttpResult.Ok)?.response ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.FINGERPRINT_NO_RESPONSE)
@@ -5342,12 +5531,22 @@ class HttpFingerprintTool(
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTest" --tests "com.northwalessolutions.netprobe.engine.tools.FingerprintRulesTest" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `FingerprintRulesTest` (5) and `HttpFingerprintTest` (9) pass; `BUILD SUCCESSFUL`.
+Expected: `FingerprintRulesTest` (5) and `HttpFingerprintTest` (10) pass; `BUILD SUCCESSFUL`. The pause test fails with the `excusedOnce` wrapper removed (the run ends FAILED "No HTTP response on this port").
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "HTTP fingerprint tool and the framework rules"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/FingerprintRules.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/HttpFingerprintTool.kt \
+  app/src/main/res/raw/http_fingerprints.json \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolTestSupport.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/FingerprintRulesTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/HttpFingerprintTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "HTTP fingerprint tool and the framework rules"
 ```
 
 ---
@@ -5497,6 +5696,14 @@ class TlsCertificateToolTest {
     @Test fun `no handshake is FAILED`() = runTest {
         val r = TlsCertificateTool({ _, _ -> null }).run(target, ToolOptions.None, control(), CollectingProgress())
         assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("No TLS handshake on this port", r.summary)
+    }
+    @Test fun `a handshake lost to a pause is retried once after the resume`() = runTest {
+        val c = ToolTestSupport.EpochControl(); var calls = 0
+        val r = TlsCertificateTool({ _, name ->
+            calls++
+            if (calls == 1) { c.epoch++; null } else TlsDetails("TLSv1.2", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", listOf(leaf()), name)
+        }, { leaf().notBefore.time + 1 }).run(target, ToolOptions.None, c, CollectingProgress())
+        assertEquals(ToolRunStatus.DONE, r.status); assertEquals(2, calls)
     }
     @Test fun `a handshake reports its findings, passes the target name and summarises`() = runTest {
         var asked: String? = "unset"
@@ -5735,7 +5942,8 @@ class TlsCertificateTool(
 
     override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
         control.gate()
-        val details = peek(target, target.serverName) ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.TLS_NO_HANDSHAKE)
+        val details = control.excusedOnce<TlsDetails?>({ it == null }) { peek(target, target.serverName) }   // spec 4.8 (plan review G5)
+            ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.TLS_NO_HANDSHAKE)
         val at = now()
         var shown = 0
         for (f in CertSummaries.of(details, at)) {
@@ -5759,12 +5967,23 @@ Where `serverNameSent` matters (the results header "as <name>"), the runner alre
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.CertSummariesTest" --tests "com.northwalessolutions.netprobe.engine.tools.TlsCertificateToolTest" --tests "com.northwalessolutions.netprobe.engine.serviceid.TlsLoopbackTest" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `CertSummariesTest` (7), `TlsCertificateToolTest` (2) and `TlsLoopbackTest` (3) pass, with 3A's `TlsSubjectTest` and `CancellationTest` still green; `BUILD SUCCESSFUL`.
+Expected: `CertSummariesTest` (7), `TlsCertificateToolTest` (3) and `TlsLoopbackTest` (3) pass, with 3A's `TlsSubjectTest` and `CancellationTest` still green; `BUILD SUCCESSFUL`.
 
 - [ ] **Step 6: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "TLS certificate tool, TlsPeek.details and the CertSummaries mapper"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/CertSummaries.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/TlsCertificateTool.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/serviceid/TlsPeek.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/test/resources/tls \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/CertSummariesTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/TlsCertificateToolTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/serviceid/TlsLoopbackTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "TLS certificate tool, TlsPeek.details and the CertSummaries mapper"
 ```
 
 ---
@@ -5913,6 +6132,18 @@ class SnmpWalkTest {
         val p = CollectingProgress(); return SnmpWalkTool { ex }.run(target, ToolOptions.None, control(), p) to p
     }
 
+    @Test fun `a request lost to a pause is retried once and the walk continues`() = runTest {
+        val c = ToolTestSupport.EpochControl(); val agent = SnmpTestAgent.exchange(system + interfaces + addresses); var first = true
+        val ex = object : SnmpExchange {
+            override suspend fun getNext(oids: List<String>): SnmpStep {
+                if (first) { first = false; c.epoch++; return SnmpStep.Timeout }                           // a pause began mid-request
+                return agent.getNext(oids)
+            }
+            override suspend fun get(oids: List<String>) = agent.get(oids)
+        }
+        val r = SnmpWalkTool { ex }.run(target, ToolOptions.None, c, CollectingProgress())
+        assertEquals("gw, 3 interfaces", r.summary)
+    }
     @Test fun `no system answer is FAILED`() = runTest {
         val (r, _) = run(object : SnmpExchange { override suspend fun getNext(oids: List<String>) = SnmpStep.Timeout; override suspend fun get(oids: List<String>) = SnmpStep.Timeout })
         assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("No SNMP answer to public", r.summary)
@@ -6175,8 +6406,10 @@ class SnmpWalkTool(private val exchangeFor: (ToolTarget) -> SnmpExchange) : Tool
         var requests = 0; var done = 0; var found = 0
         suspend fun next(oids: List<String>, get: Boolean = false): List<SnmpVarbind>? {
             if (requests >= SNMP_MAX_REQUESTS) return null
-            control.gate(); requests++
-            val step = if (get) ex.get(oids) else ex.getNext(oids)
+            control.gate()
+            val step = control.excusedOnce<SnmpStep>({ it !is SnmpStep.Ok }) {                // spec 4.8 (plan review G5)
+                requests++; if (get) ex.get(oids) else ex.getNext(oids)
+            }
             done++; progress.update(done, null, found)
             return (step as? SnmpStep.Ok)?.varbinds
         }
@@ -6297,31 +6530,39 @@ class SnmpWalkTool(private val exchangeFor: (ToolTarget) -> SnmpExchange) : Tool
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.discovery.*" --tests "com.northwalessolutions.netprobe.engine.tools.SnmpWalkTest" --tests "com.northwalessolutions.netprobe.engine.tools.UdpSnmpExchangeTest" --console=plain 2>&1 | tail -20
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `SnmpPduTest` (4), `SnmpWalkTest` (7) and `UdpSnmpExchangeTest` (3) pass, with the existing `SnmpTest` unchanged and green; `BUILD SUCCESSFUL`.
+Expected: `SnmpPduTest` (4), `SnmpWalkTest` (8) and `UdpSnmpExchangeTest` (3) pass, with the existing `SnmpTest` unchanged and green; `BUILD SUCCESSFUL`.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "SNMP walk tool, GET and GETNEXT PDUs, BER extensions and the UDP exchange"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/SnmpWalkTool.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/UdpSnmpExchange.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/Snmp.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/SnmpPduTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/SnmpTestAgent.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/SnmpWalkTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/UdpSnmpExchangeTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "SNMP walk tool, GET and GETNEXT PDUs, BER extensions and the UDP exchange"
 ```
 
 ---
 
-### Task 14: SMB session probe: MD4, NTLMv2, SPNEGO, the SMB2 NEGOTIATE and SESSION_SETUP messages, framing and the sequence
+### Task 14: SMB part 1: MD4, NTLMv2 and SPNEGO
 
-**Roles:** built after the other tools, with its own review (spec 15.2.4). Not the stronger model, but the reviewer reads every byte layout below against MS-SMB2 (2.2.1, 2.2.3, 2.2.4, 2.2.5, 2.2.6), MS-NLMP (2.2.1.1, 2.2.1.2, 2.2.1.3, 2.2.2.1, 3.3.2) and MS-SPNG / RFC 4178, and confirms the crypto against the published vectors in the tests.
+**Roles:** built after the other tools, with its own review (spec 15.2.4). Not the stronger model, but the reviewer reads every byte layout below against MS-SMB2 (2.2.1, 2.2.3, 2.2.4, 2.2.5, 2.2.6), MS-NLMP (2.2.1.1, 2.2.1.2, 2.2.1.3, 2.2.2.1, 3.3.2) and MS-SPNG / RFC 4178, and confirms the crypto against the published vectors in the tests. Split from the single SMB task at plan review G16: this task is pure byte code with no sockets; Task 15 builds the SMB2 messages, the framing and the probe on it.
 
-**Scope (spec 6.3):** NEGOTIATE and SESSION_SETUP only; each connection is closed after its last SESSION_SETUP reply. Nothing else is ever sent (no TREE_CONNECT, CREATE, READ, WRITE, IOCTL or LOGOFF), and a test asserts it. Share listing is Phase 3C.
-
-**Confidence note for the reviewer:** every request this task builds is pinned to bytes written out in `SmbBytesTest` and `NtlmTest`; the layouts follow the specifications section by section. The NTLM crypto is checked against published vectors (RFC 1320 for MD4, MS-NLMP 4.2.2 and 4.2.4 for NTOWFv1, NTOWFv2, LMv2 and NTProofStr), which I transcribed from memory of those documents. If any published-vector assertion fails, the implementer stops and reports it to the controller with the computed value; the vector is never edited to match, and the guest leg (the only user of NTLMv2) is then dropped from the task as a recorded reduction rather than shipped unverified. The parsers are tested on fixtures built from the same reading of the specifications, so, as the spec says, the Task 18 device check against the CHNAS and a Windows machine is the real proof.
+**Confidence note for the reviewer:** every request this task and Task 15 build is pinned to bytes written out in `NtlmTest`, `SpnegoBytesTest` and `SmbBytesTest`; the layouts follow the specifications section by section. The NTLM crypto is checked against published vectors (RFC 1320 for MD4, MS-NLMP 4.2.2 and 4.2.4 for NTOWFv1, NTOWFv2, LMv2 and NTProofStr), which I transcribed from memory of those documents. If any published-vector assertion fails, the implementer stops and reports it to the controller with the computed value; the vector is never edited to match, and the guest leg (the only user of NTLMv2) is then dropped from the task as a recorded reduction rather than shipped unverified. The parsers are tested on fixtures built from the same reading of the specifications, so, as the spec says, the Task 20 device check against the CHNAS and a Windows machine is the real proof.
 
 **Files:**
-- Create (all under `app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/`): `Md4.kt`, `Ntlm.kt`, `Spnego.kt`, `Smb2.kt`, `SmbTransport.kt`, `SmbSessionTool.kt`
-- Modify: `AppContainer.kt` (the SMB_SESSION entry in `toolMap()`)
-- Test (under `app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/`): `Md4Test.kt`, `NtlmTest.kt`, `SmbBytesTest.kt`, `SmbFixtures.kt`, `SmbFramingTest.kt`, `SmbSessionTest.kt`
+- Create (all under `app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/`): `Md4.kt`, `Ntlm.kt`, `Spnego.kt`
+- Test (under `app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/`): `Md4Test.kt`, `NtlmTest.kt`, `SpnegoBytesTest.kt`, `NtlmFixtures.kt`
 
 **Interfaces:**
-- Consumes: 3A's `Probe.connect`, `CancellableIo.closing` (Task 3), Task 3 framework types and `ToolCopy`, `ToolApplicability`.
+- Consumes: the JDK only (`java.nio`, `javax.crypto.Mac` for HMAC-MD5).
 - Produces:
 ```kotlin
 object Md4 { fun digest(input: ByteArray): ByteArray }
@@ -6335,11 +6576,6 @@ object Ntlm { const val NEGOTIATE_UNICODE..NEGOTIATE_56; fun negotiateFlags(anon
     fun authenticate(user: String, domain: String, lm: ByteArray, nt: ByteArray, flags: Int): ByteArray; fun filetime(ms: Long): ByteArray }
 object Der { fun len(n: Int): ByteArray; fun tlv(tag: Int, content: ByteArray): ByteArray; fun oid(dotted: String): ByteArray }
 object Spnego { fun negTokenInit(ntlm: ByteArray): ByteArray; fun negTokenResp(ntlm: ByteArray): ByteArray; fun extractNtlm(blob: ByteArray): ByteArray? }
-object Smb2 { /* constants; header, negotiate, sessionSetup builders; parseHeader, parseNegotiate, parseSessionSetup */ }
-interface SmbTransport { suspend fun exchange(request: ByteArray): ByteArray?; fun close() }
-object SmbFraming { const val MAX_MESSAGE = 65_536; fun frame(message: ByteArray): ByteArray; fun readFrame(input: InputStream): ByteArray? }
-class TcpSmbTransport(socket: Socket, timeoutMs: Int) : SmbTransport
-class SmbSessionTool(connect: suspend (ToolTarget) -> SmbTransport?, randomBytes: (Int) -> ByteArray = ..., clock: () -> Long = ...) : Tool { companion object { const val SMB_TIMEOUT_MS = 3000 } }
 ```
 
 - [ ] **Step 1: Write the failing tests**
@@ -6420,40 +6656,29 @@ class NtlmTest {
         assertEquals("guest", String(a.copyOfRange(72, 82), Charsets.UTF_16LE))
     }
     @Test fun `a challenge parses its names, timestamp and os build`() {
-        val c = Ntlm.parseChallenge(SmbFixtures.challenge())!!
+        val c = Ntlm.parseChallenge(NtlmFixtures.challenge())!!
         assertEquals("0123456789abcdef", hex(c.serverChallenge))
         assertEquals("Server", c.names.netbiosComputer); assertEquals("Domain", c.names.netbiosDomain); assertEquals("srv.lan", c.names.dnsComputer)
         assertNull(c.names.dnsDomain); assertEquals("0102030405060708", hex(c.names.timestamp!!)); assertEquals("10.0.19041", c.names.osBuild)
     }
     @Test fun `garbage and truncated challenges are null`() {
-        assertNull(Ntlm.parseChallenge(ByteArray(10))); assertNull(Ntlm.parseChallenge(SmbFixtures.challenge().copyOf(60)))
-        assertNull(Ntlm.parseChallenge(SmbFixtures.challenge().also { it[8] = 3 }))
+        assertNull(Ntlm.parseChallenge(ByteArray(10))); assertNull(Ntlm.parseChallenge(NtlmFixtures.challenge().copyOf(60)))
+        assertNull(Ntlm.parseChallenge(NtlmFixtures.challenge().also { it[8] = 3 }))
     }
 }
 ```
 
-`SmbBytesTest.kt` (every request byte written out):
+`SpnegoBytesTest.kt` (every DER byte written out):
 ```kotlin
 package com.northwalessolutions.netprobe.engine.tools.smb
 
 import org.junit.Assert.*
 import org.junit.Test
 
-/** MS-SMB2 and MS-SPNG layouts pinned to bytes; parsers of each response form; garbage never throws. */
-class SmbBytesTest {
+/** MS-SPNG / RFC 4178 wrapping and the DER helpers pinned to bytes. */
+class SpnegoBytesTest {
     private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
-    private val zeros16 = "00".repeat(16)
 
-    @Test fun `negotiate request bytes`() {
-        val header = "fe534d42" + "4000" + "0000" + "00000000" + "0000" + "0100" + "00000000" + "00000000" + "0000000000000000" + "00000000" + "00000000" + "0000000000000000" + zeros16
-        val body = "2400" + "0400" + "0100" + "0000" + "00000000" + "11".repeat(16) + "0000000000000000" + "0202" + "1002" + "0003" + "0203"
-        assertEquals(header + body, hex(Smb2.negotiate(messageId = 0, clientGuid = ByteArray(16) { 0x11 })))
-    }
-    @Test fun `session setup request bytes`() {
-        val header = "fe534d42" + "4000" + "0100" + "00000000" + "0100" + "0100" + "00000000" + "00000000" + "0100000000000000" + "00000000" + "00000000" + "8877665544332211" + zeros16
-        val body = "1900" + "00" + "01" + "00000000" + "00000000" + "5800" + "0300" + "0000000000000000" + "010203"
-        assertEquals(header + body, hex(Smb2.sessionSetup(messageId = 1, sessionId = 0x1122334455667788L, creditCharge = 1, securityBlob = byteArrayOf(1, 2, 3))))
-    }
     @Test fun `spnego negTokenInit and negTokenResp bytes`() {
         assertEquals("6023" + "06062b0601050502" + "a019" + "3017" + "a00e" + "300c" + "060a2b06010401823702020a" + "a205" + "0403010203",
             hex(Spnego.negTokenInit(byteArrayOf(1, 2, 3))))
@@ -6468,66 +6693,21 @@ class SmbBytesTest {
         assertEquals(hex(ntlm), hex(Spnego.extractNtlm(Spnego.negTokenInit(ntlm))!!))
         assertNull(Spnego.extractNtlm(byteArrayOf(1, 2, 3)))
     }
-    @Test fun `negotiate responses give dialect and the signing bit`() {
-        val required = Smb2.parseNegotiate(SmbFixtures.negotiateResponse(dialect = 0x0302, securityMode = 0x0003))!!
-        assertEquals(0, required.status); assertEquals(0x0302, required.dialect); assertTrue(required.signingRequired)
-        val enabled = Smb2.parseNegotiate(SmbFixtures.negotiateResponse(dialect = 0x0210, securityMode = 0x0001))!!
-        assertEquals(0x0210, enabled.dialect); assertFalse(enabled.signingRequired)
-        for (d in listOf(0x0202, 0x0300)) assertEquals(d, Smb2.parseNegotiate(SmbFixtures.negotiateResponse(d, 1))!!.dialect)
-        val refused = Smb2.parseNegotiate(SmbFixtures.errorResponse(Smb2.NEGOTIATE, 0xC00000BB.toInt()))!!
-        assertEquals(0xC00000BB.toInt(), refused.status)
-    }
-    @Test fun `session setup responses give status, session id, flags and the blob`() {
-        val more = Smb2.parseSessionSetup(SmbFixtures.challengeResponse(sessionId = 0x55L))!!
-        assertEquals(Smb2.STATUS_MORE_PROCESSING_REQUIRED, more.status); assertEquals(0x55L, more.sessionId)
-        assertNotNull(Ntlm.parseChallenge(Spnego.extractNtlm(more.securityBlob)!!))
-        val nullSession = Smb2.parseSessionSetup(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x55L, Smb2.SESSION_FLAG_IS_NULL))!!
-        assertEquals(Smb2.SESSION_FLAG_IS_NULL, nullSession.sessionFlags)
-        val guest = Smb2.parseSessionSetup(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x56L, Smb2.SESSION_FLAG_IS_GUEST))!!
-        assertEquals(Smb2.SESSION_FLAG_IS_GUEST, guest.sessionFlags)
-        for (status in listOf(SmbFixtures.STATUS_LOGON_FAILURE, SmbFixtures.STATUS_ACCOUNT_DISABLED)) {
-            val failed = Smb2.parseSessionSetup(SmbFixtures.errorResponse(Smb2.SESSION_SETUP, status))!!
-            assertEquals(status, failed.status); assertEquals(0, failed.sessionFlags); assertEquals(0, failed.securityBlob.size)
-        }
-    }
-    @Test fun `truncated or foreign messages parse to null`() {
-        assertNull(Smb2.parseNegotiate(ByteArray(10))); assertNull(Smb2.parseSessionSetup(ByteArray(64)))
-        assertNull(Smb2.parseHeader(byteArrayOf(0xFF.toByte(), 'S'.code.toByte(), 'M'.code.toByte(), 'B'.code.toByte()) + ByteArray(60)))   // SMB1, not SMB2
-        assertNull(Smb2.parseSessionSetup(SmbFixtures.sessionSetupResponse(0, 1, 0).copyOf(70)))
-    }
 }
 ```
 
-`SmbFixtures.kt` (test code; responses built from the same layouts, documented field by field):
+`NtlmFixtures.kt` (test code; the CHALLENGE message laid out field by field, shared with Task 15's `SmbFixtures`):
 ```kotlin
 package com.northwalessolutions.netprobe.engine.tools.smb
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-object SmbFixtures {
-    const val STATUS_LOGON_FAILURE = 0xC000006D.toInt()
-    const val STATUS_ACCOUNT_DISABLED = 0xC0000072.toInt()
-    const val STATUS_ACCESS_DENIED = 0xC0000022.toInt()
+object NtlmFixtures {
     private fun le() = ByteOrder.LITTLE_ENDIAN
-    private fun withStatus(header: ByteArray, status: Int): ByteArray = header.also { ByteBuffer.wrap(it).order(le()).putInt(8, status) }
     private fun utf16(s: String) = s.toByteArray(Charsets.UTF_16LE)
     private fun av(id: Int, value: ByteArray) = ByteBuffer.allocate(4 + value.size).order(le()).putShort(id.toShort()).putShort(value.size.toShort()).put(value).array()
 
-    /** NEGOTIATE response (MS-SMB2 2.2.4): StructureSize 65, SecurityMode, DialectRevision, then zeros to a 64-byte fixed part. */
-    fun negotiateResponse(dialect: Int, securityMode: Int): ByteArray {
-        val body = ByteBuffer.allocate(64).order(le()).putShort(65).putShort(securityMode.toShort()).putShort(dialect.toShort()).array()
-        return withStatus(Smb2.header(Smb2.NEGOTIATE, 0, 0, 0), Smb2.STATUS_SUCCESS) + body
-    }
-    /** SMB2 ERROR response (MS-SMB2 2.2.2): StructureSize 9, ErrorContextCount 0, Reserved, ByteCount 0, one ErrorData byte. */
-    fun errorResponse(command: Int, status: Int): ByteArray =
-        withStatus(Smb2.header(command, 0, 0, 0), status) + ByteBuffer.allocate(9).order(le()).putShort(9).array()
-    /** SESSION_SETUP response (MS-SMB2 2.2.6): StructureSize 9, SessionFlags, SecurityBufferOffset 72, SecurityBufferLength, buffer. */
-    fun sessionSetupResponse(status: Int, sessionId: Long, flags: Int, blob: ByteArray = ByteArray(0)): ByteArray {
-        val body = ByteBuffer.allocate(8 + blob.size).order(le()).putShort(9).putShort(flags.toShort()).putShort(72).putShort(blob.size.toShort()).put(blob).array()
-        return withStatus(Smb2.header(Smb2.SESSION_SETUP, 1, sessionId, 0), status) + body
-    }
-    fun challengeResponse(sessionId: Long) = sessionSetupResponse(Smb2.STATUS_MORE_PROCESSING_REQUIRED, sessionId, 0, Spnego.negTokenResp(challenge()))
     /**
      * NTLM CHALLENGE (MS-NLMP 2.2.1.2): signature, type 2, empty TargetName at 56, flags with NEGOTIATE_VERSION, ServerChallenge
      * 0123456789abcdef, Reserved, TargetInfo fields (offset 56), Version 10.0 build 19041, then AV pairs: NbDomain "Domain",
@@ -6548,159 +6728,12 @@ object SmbFixtures {
 }
 ```
 
-`SmbFramingTest.kt`:
-```kotlin
-package com.northwalessolutions.netprobe.engine.tools.smb
-
-import kotlinx.coroutines.runBlocking
-import org.junit.After
-import org.junit.Assert.*
-import org.junit.Test
-import java.net.InetAddress
-import java.net.ServerSocket
-import java.net.Socket
-import kotlin.concurrent.thread
-
-/** Direct-TCP framing (MS-SMB2 2.1): a zero byte, a 24-bit big-endian length, the message; replies over 64 KB are refused. */
-class SmbFramingTest {
-    private val lo = InetAddress.getByName("127.0.0.1")
-    private val servers = mutableListOf<ServerSocket>()
-    @After fun tearDown() { servers.forEach { runCatching { it.close() } } }
-    private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
-
-    @Test fun `frame bytes`() {
-        assertEquals("00000003010203", hex(SmbFraming.frame(byteArrayOf(1, 2, 3))))
-        assertEquals("00010000", hex(SmbFraming.frame(ByteArray(65_536)).copyOf(4)))
-    }
-    @Test fun `read frame rejects a non zero first byte, a short stream and an oversized length`() {
-        assertEquals("0102", hex(SmbFraming.readFrame(byteArrayOf(0, 0, 0, 2, 1, 2).inputStream())!!))
-        assertNull(SmbFraming.readFrame(byteArrayOf(1, 0, 0, 2, 1, 2).inputStream()))
-        assertNull(SmbFraming.readFrame(byteArrayOf(0, 0, 0, 5, 1).inputStream()))
-        assertNull(SmbFraming.readFrame(byteArrayOf(0, 0x01, 0, 1).inputStream()))     // 65537 bytes declared
-    }
-    @Test fun `the tcp transport sends one frame and reads one reply`() = runBlocking {
-        val s = ServerSocket(0, 50, lo); servers += s
-        thread(isDaemon = true) { runCatching { s.accept().use { c ->
-            val got = SmbFraming.readFrame(c.getInputStream())!!
-            c.getOutputStream().write(SmbFraming.frame(got.reversedArray())); c.getOutputStream().flush()
-        } } }
-        val t = TcpSmbTransport(Socket(lo, s.localPort), 1000)
-        assertEquals("030201", hex(t.exchange(byteArrayOf(1, 2, 3))!!))
-        t.close()
-    }
-    @Test fun `no reply is null`() = runBlocking {
-        val s = ServerSocket(0, 50, lo); servers += s
-        thread(isDaemon = true) { runCatching { s.accept().use { Thread.sleep(2_000) } } }
-        val t = TcpSmbTransport(Socket(lo, s.localPort), 200)
-        assertNull(t.exchange(byteArrayOf(1))); t.close()
-    }
-}
-```
-
-`SmbSessionTest.kt`:
-```kotlin
-package com.northwalessolutions.netprobe.engine.tools.smb
-
-import com.northwalessolutions.netprobe.data.ToolRunStatus
-import com.northwalessolutions.netprobe.engine.tools.*
-import com.northwalessolutions.netprobe.engine.tools.ToolTestSupport.CollectingProgress
-import com.northwalessolutions.netprobe.engine.tools.ToolTestSupport.control
-import kotlinx.coroutines.test.runTest
-import org.junit.Assert.*
-import org.junit.Test
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-
-/** spec 6.3 and 12.1: the sequence over scripted connections, the summaries, header sequencing, and nothing past SESSION_SETUP. */
-class SmbSessionTest {
-    private val target = ToolTarget(7, ToolTestSupport.ip("10.0.3.59"), 445, false, null)
-    private class Script(vararg replies: ByteArray?) : SmbTransport {
-        val sent = mutableListOf<ByteArray>(); var closed = false
-        private val queue = ArrayDeque(replies.toList())
-        override suspend fun exchange(request: ByteArray): ByteArray? { sent += request; return queue.removeFirstOrNull() }
-        override fun close() { closed = true }
-    }
-    private fun le16(b: ByteArray, at: Int) = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).getShort(at).toInt() and 0xFFFF
-    private fun le64(b: ByteArray, at: Int) = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).getLong(at)
-    private suspend fun run(vararg connections: Script?): Triple<ToolResult, CollectingProgress, List<Script?>> {
-        val queue = ArrayDeque(connections.toList()); val p = CollectingProgress()
-        val r = SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L }).run(target, ToolOptions.None, control(), p)
-        return Triple(r, p, connections.toList())
-    }
-    private fun anonymous(final: ByteArray) = Script(SmbFixtures.negotiateResponse(0x0302, 3), SmbFixtures.challengeResponse(0x77), final)
-    private fun guest(dialect: Int, final: ByteArray) = Script(SmbFixtures.negotiateResponse(dialect, 1), SmbFixtures.challengeResponse(0x78), final)
-
-    @Test fun `anonymous allowed, guest refused, signing required`() = runTest {
-        val (r, p, conns) = run(anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)),
-            guest(0x0302, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE)))
-        assertEquals(ToolRunStatus.DONE, r.status)
-        assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest refused", r.summary)
-        assertEquals(listOf("SMB 3.0.2"), p.of(FindingKind.SMB_DIALECT).map { it.value }); assertEquals("Required", p.of(FindingKind.SMB_SIGNING).single().value)
-        assertEquals(listOf("Anonymous allowed", "Guest refused"), p.of(FindingKind.SMB_SESSION).map { it.value })
-        assertEquals(listOf("NetBIOS name" to "Server", "NetBIOS domain" to "Domain", "DNS name" to "srv.lan", "OS build (NTLM)" to "10.0.19041"),
-            p.of(FindingKind.SMB_HOST).map { it.detail to it.value })
-        assertEquals(listOf("smb.netbiosName=Server", "smb.dnsName=srv.lan", "smb.domain=Domain", "smb.osBuild=10.0.19041"), p.hints())
-        assertTrue(conns.all { it!!.closed })
-    }
-    @Test fun `guest only, mapped to guest, reads as allowed`() = runTest {
-        val (r, p, _) = run(anonymous(SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_ACCESS_DENIED)),
-            guest(0x0302, SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x78, Smb2.SESSION_FLAG_IS_GUEST)))
-        assertEquals(listOf("Anonymous refused", "Guest mapped to guest"), p.of(FindingKind.SMB_SESSION).map { it.value })
-        assertEquals("SMB 3.0.2, signing required, anonymous refused, guest allowed", r.summary)
-    }
-    @Test fun `both refused on smb 2_1 without required signing`() = runTest {
-        val first = Script(SmbFixtures.negotiateResponse(0x0210, 1), SmbFixtures.challengeResponse(0x77), SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_ACCESS_DENIED))
-        val (r, _, _) = run(first, guest(0x0210, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_ACCOUNT_DISABLED)))
-        assertEquals("SMB 2.1, signing not required, anonymous refused, guest refused", r.summary)
-    }
-    @Test fun `guest allowed without the guest flag`() = runTest {
-        val (r, p, _) = run(anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)),
-            guest(0x0302, SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x78, 0)))
-        assertEquals("Guest allowed", p.of(FindingKind.SMB_SESSION).last().value); assertTrue(r.summary.endsWith("guest allowed"))
-    }
-    @Test fun `headers sequence message ids, carry the session id and charge credits by dialect`() = runTest {
-        val first = anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL))
-        val second = guest(0x0202, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE))
-        run(first, second)
-        assertEquals(listOf(0L, 1L, 2L), first.sent.map { le64(it, 24) })
-        assertEquals(listOf(0L, 0L, 0x77L), first.sent.map { le64(it, 40) })
-        assertEquals(listOf(0, 1, 1), first.sent.map { le16(it, 6) })            // 3.0.2: CreditCharge 1 after NEGOTIATE
-        assertEquals(listOf(0, 0, 0), second.sent.map { le16(it, 6) })           // 2.0.2: CreditCharge 0
-        assertEquals(listOf(1, 1, 1), first.sent.map { le16(it, 14) })           // CreditRequest 1
-    }
-    @Test fun `the anonymous leg sends the exact anonymous authenticate`() = runTest {
-        val first = anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL))
-        run(first, null)
-        val sentAuth = Spnego.extractNtlm(first.sent[2].copyOfRange(88, first.sent[2].size))!!
-        assertArrayEquals(Ntlm.authenticate("", "", byteArrayOf(0), ByteArray(0), Ntlm.negotiateFlags(true)), sentAuth)
-    }
-    @Test fun `nothing but negotiate and session setup is ever written`() = runTest {
-        val first = anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL))
-        val second = guest(0x0302, SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x78, Smb2.SESSION_FLAG_IS_GUEST))
-        run(first, second)
-        val commands = (first.sent + second.sent).map { le16(it, 12) }
-        assertEquals(listOf(0, 1, 1, 0, 1, 1), commands)
-        assertTrue((first.sent + second.sent).all { Smb2.parseHeader(it) != null })
-    }
-    @Test fun `no connection or no reply is FAILED with no response`() = runTest {
-        assertEquals("No SMB response on this port", run(null).first.summary)
-        val silent = Script()
-        val (r, _, _) = run(silent)
-        assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("No SMB response on this port", r.summary); assertTrue(silent.closed)
-    }
-    @Test fun `a refused negotiate is no dialect in common`() = runTest {
-        val (r, _, _) = run(Script(SmbFixtures.errorResponse(Smb2.NEGOTIATE, 0xC00000BB.toInt())))
-        assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("No SMB2 dialect in common", r.summary)
-    }
-}
-```
-
 - [ ] **Step 2: Run the tests to see them fail**
 
 ```bash
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.smb.*" --console=plain 2>&1 | tail -20
 ```
-Expected: `BUILD FAILED`, `Unresolved reference 'Md4'`, `'Ntlm'`, `'Smb2'`, `'Spnego'`, `'SmbFraming'`, `'SmbSessionTool'`.
+Expected: `BUILD FAILED`, `Unresolved reference 'Md4'`, `'Ntlm'`, `'Spnego'`, `'Der'`.
 
 - [ ] **Step 3: Implement**
 
@@ -6912,6 +6945,423 @@ object Spnego {
 ```
 (`extractNtlm` returns the rest of the buffer from the signature; `parseChallenge` reads only within its own declared offsets, so trailing DER bytes such as a mechListMIC are ignored.)
 
+- [ ] **Step 4: Run the tests to see them pass, then the task gate**
+
+```bash
+./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.smb.*" --console=plain 2>&1 | tail -30
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
+```
+Expected: `Md4Test` (2), `NtlmTest` (9) and `SpnegoBytesTest` (3) pass; `BUILD SUCCESSFUL`. A failing published-vector assertion follows the confidence note above: stop, report, do not edit the vector.
+
+- [ ] **Step 5: Commit**
+
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
+```bash
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/Md4.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/Ntlm.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/Spnego.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/Md4Test.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/NtlmTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/SpnegoBytesTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/NtlmFixtures.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "SMB part 1: MD4, NTLMv2 and SPNEGO"
+```
+
+---
+
+### Task 15: SMB part 2: SMB2 NEGOTIATE and SESSION_SETUP, framing, the session probe and binding propagation
+
+**Roles:** built after the other tools, with its own review (spec 15.2.4). Not the stronger model, but the reviewer reads every byte layout below against MS-SMB2 (2.2.1, 2.2.3, 2.2.4, 2.2.5, 2.2.6), and the AUTHENTICATE use of MS-NLMP 3.3.2; Task 14 already confirmed the crypto against the published vectors.
+
+**Scope (spec 6.3):** NEGOTIATE and SESSION_SETUP only; each connection is closed after its last SESSION_SETUP reply. Nothing else is ever sent (no TREE_CONNECT, CREATE, READ, WRITE, IOCTL or LOGOFF), and a test asserts it. Share listing is Phase 3C.
+
+**Files:**
+- Create (all under `app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/`): `Smb2.kt`, `SmbTransport.kt`, `SmbSessionTool.kt`
+- Modify: `AppContainer.kt` (the SMB_SESSION entry in `toolMap()`)
+- Test (under `app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/`): `SmbBytesTest.kt`, `SmbFixtures.kt`, `SmbFramingTest.kt`, `SmbSessionTest.kt`; and `app/src/test/java/com/northwalessolutions/netprobe/engine/tools/BindingPropagationTest.kt`
+
+**Interfaces:**
+- Consumes: Task 14 (`Ntlm`, `Spnego`, `Der`, and the test fixture `NtlmFixtures`), 3A's `Probe.connect`, `BoundNetwork`, `SocketBinder`, `CancellableIo.closing` (Task 3), `HttpClient` (Task 5), the `ToolRunnerTestSupport.Rig` (Task 6), `HttpFingerprintTool` / `HttpGet` (Task 11), `TlsPeek.details` (Task 12), `UdpSnmpExchange` (Task 13), Task 3 framework types and `ToolCopy`, `ToolApplicability`.
+- Produces:
+```kotlin
+object Smb2 { /* constants; header, negotiate, sessionSetup builders; parseHeader, parseNegotiate, parseSessionSetup */ }
+interface SmbTransport { suspend fun exchange(request: ByteArray): ByteArray?; fun close() }
+object SmbFraming { const val MAX_MESSAGE = 65_536; fun frame(message: ByteArray): ByteArray; fun readFrame(input: InputStream): ByteArray? }
+class TcpSmbTransport(socket: Socket, timeoutMs: Int) : SmbTransport
+class SmbSessionTool(connect: suspend (ToolTarget) -> SmbTransport?, randomBytes: (Int) -> ByteArray = ..., clock: () -> Long = ...) : Tool { companion object { const val SMB_TIMEOUT_MS = 3000 } }
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+`SmbBytesTest.kt` (every request byte written out):
+```kotlin
+package com.northwalessolutions.netprobe.engine.tools.smb
+
+import org.junit.Assert.*
+import org.junit.Test
+
+/** MS-SMB2 layouts pinned to bytes; parsers of each response form; garbage never throws. */
+class SmbBytesTest {
+    private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
+    private val zeros16 = "00".repeat(16)
+
+    @Test fun `negotiate request bytes`() {
+        val header = "fe534d42" + "4000" + "0000" + "00000000" + "0000" + "0100" + "00000000" + "00000000" + "0000000000000000" + "00000000" + "00000000" + "0000000000000000" + zeros16
+        val body = "2400" + "0400" + "0100" + "0000" + "00000000" + "11".repeat(16) + "0000000000000000" + "0202" + "1002" + "0003" + "0203"
+        assertEquals(header + body, hex(Smb2.negotiate(messageId = 0, clientGuid = ByteArray(16) { 0x11 })))
+    }
+    @Test fun `session setup request bytes`() {
+        val header = "fe534d42" + "4000" + "0100" + "00000000" + "0100" + "0100" + "00000000" + "00000000" + "0100000000000000" + "00000000" + "00000000" + "8877665544332211" + zeros16
+        val body = "1900" + "00" + "01" + "00000000" + "00000000" + "5800" + "0300" + "0000000000000000" + "010203"
+        assertEquals(header + body, hex(Smb2.sessionSetup(messageId = 1, sessionId = 0x1122334455667788L, creditCharge = 1, securityBlob = byteArrayOf(1, 2, 3))))
+    }
+    @Test fun `negotiate responses give dialect and the signing bit`() {
+        val required = Smb2.parseNegotiate(SmbFixtures.negotiateResponse(dialect = 0x0302, securityMode = 0x0003))!!
+        assertEquals(0, required.status); assertEquals(0x0302, required.dialect); assertTrue(required.signingRequired)
+        val enabled = Smb2.parseNegotiate(SmbFixtures.negotiateResponse(dialect = 0x0210, securityMode = 0x0001))!!
+        assertEquals(0x0210, enabled.dialect); assertFalse(enabled.signingRequired)
+        for (d in listOf(0x0202, 0x0300)) assertEquals(d, Smb2.parseNegotiate(SmbFixtures.negotiateResponse(d, 1))!!.dialect)
+        val refused = Smb2.parseNegotiate(SmbFixtures.errorResponse(Smb2.NEGOTIATE, 0xC00000BB.toInt()))!!
+        assertEquals(0xC00000BB.toInt(), refused.status)
+    }
+    @Test fun `session setup responses give status, session id, flags and the blob`() {
+        val more = Smb2.parseSessionSetup(SmbFixtures.challengeResponse(sessionId = 0x55L))!!
+        assertEquals(Smb2.STATUS_MORE_PROCESSING_REQUIRED, more.status); assertEquals(0x55L, more.sessionId)
+        assertNotNull(Ntlm.parseChallenge(Spnego.extractNtlm(more.securityBlob)!!))
+        val nullSession = Smb2.parseSessionSetup(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x55L, Smb2.SESSION_FLAG_IS_NULL))!!
+        assertEquals(Smb2.SESSION_FLAG_IS_NULL, nullSession.sessionFlags)
+        val guest = Smb2.parseSessionSetup(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x56L, Smb2.SESSION_FLAG_IS_GUEST))!!
+        assertEquals(Smb2.SESSION_FLAG_IS_GUEST, guest.sessionFlags)
+        for (status in listOf(SmbFixtures.STATUS_LOGON_FAILURE, SmbFixtures.STATUS_ACCOUNT_DISABLED)) {
+            val failed = Smb2.parseSessionSetup(SmbFixtures.errorResponse(Smb2.SESSION_SETUP, status))!!
+            assertEquals(status, failed.status); assertEquals(0, failed.sessionFlags); assertEquals(0, failed.securityBlob.size)
+        }
+    }
+    @Test fun `truncated or foreign messages parse to null`() {
+        assertNull(Smb2.parseNegotiate(ByteArray(10))); assertNull(Smb2.parseSessionSetup(ByteArray(64)))
+        assertNull(Smb2.parseHeader(byteArrayOf(0xFF.toByte(), 'S'.code.toByte(), 'M'.code.toByte(), 'B'.code.toByte()) + ByteArray(60)))   // SMB1, not SMB2
+        assertNull(Smb2.parseSessionSetup(SmbFixtures.sessionSetupResponse(0, 1, 0).copyOf(70)))
+    }
+}
+```
+
+`SmbFixtures.kt` (test code; every response header and DER byte laid out by hand, never by `Smb2` or `Spnego`, so a layout bug in the code under test cannot cancel itself out: plan review G19):
+```kotlin
+package com.northwalessolutions.netprobe.engine.tools.smb
+
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+object SmbFixtures {
+    const val STATUS_LOGON_FAILURE = 0xC000006D.toInt()
+    const val STATUS_ACCOUNT_DISABLED = 0xC0000072.toInt()
+    const val STATUS_ACCESS_DENIED = 0xC0000022.toInt()
+    private const val STATUS_MORE_PROCESSING = 0xC0000016.toInt()
+    private const val COMMAND_NEGOTIATE = 0x0000
+    private const val COMMAND_SESSION_SETUP = 0x0001
+    private fun le() = ByteOrder.LITTLE_ENDIAN
+    private fun hex(s: String) = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+    private fun le16(v: Int) = ByteBuffer.allocate(2).order(le()).putShort(v.toShort()).array()
+    private fun le32(v: Int) = ByteBuffer.allocate(4).order(le()).putInt(v).array()
+    private fun le64(v: Long) = ByteBuffer.allocate(8).order(le()).putLong(v).array()
+
+    /**
+     * A response SYNC header (MS-SMB2 2.2.1.2), 64 bytes: ProtocolId fe 'S' 'M' 'B', StructureSize 64, CreditCharge 0, Status,
+     * Command, CreditResponse 1, Flags SERVER_TO_REDIR, NextCommand 0, MessageId, Reserved 0, TreeId 0, SessionId, Signature zero.
+     */
+    private fun header(command: Int, status: Int, messageId: Long, sessionId: Long): ByteArray =
+        hex("fe534d42" + "4000" + "0000") + le32(status) + le16(command) + hex("0100" + "01000000" + "00000000") + le64(messageId) +
+            hex("00000000" + "00000000") + le64(sessionId) + ByteArray(16)
+
+    /** NEGOTIATE response (MS-SMB2 2.2.4): StructureSize 65, SecurityMode, DialectRevision, then zeros to a 64-byte fixed part. */
+    fun negotiateResponse(dialect: Int, securityMode: Int): ByteArray {
+        val body = ByteBuffer.allocate(64).order(le()).putShort(65).putShort(securityMode.toShort()).putShort(dialect.toShort()).array()
+        return header(COMMAND_NEGOTIATE, 0, 0, 0) + body
+    }
+    /** SMB2 ERROR response (MS-SMB2 2.2.2): StructureSize 9, ErrorContextCount 0, Reserved, ByteCount 0, one ErrorData byte. */
+    fun errorResponse(command: Int, status: Int): ByteArray =
+        header(command, status, 0, 0) + ByteBuffer.allocate(9).order(le()).putShort(9).array()
+    /** SESSION_SETUP response (MS-SMB2 2.2.6): StructureSize 9, SessionFlags, SecurityBufferOffset 72, SecurityBufferLength, buffer. */
+    fun sessionSetupResponse(status: Int, sessionId: Long, flags: Int, blob: ByteArray = ByteArray(0)): ByteArray {
+        val body = ByteBuffer.allocate(8 + blob.size).order(le()).putShort(9).putShort(flags.toShort()).putShort(72).putShort(blob.size.toShort()).put(blob).array()
+        return header(COMMAND_SESSION_SETUP, status, 1, sessionId) + body
+    }
+    /**
+     * The challenge reply: a negTokenResp (RFC 4178 4.2.2) around the 122-byte CHALLENGE, its DER written out:
+     * a1 81 80 (128 bytes) { 30 7e { a2 7c { 04 7a <CHALLENGE> } } }.
+     */
+    fun challengeResponse(sessionId: Long): ByteArray {
+        val ntlm = NtlmFixtures.challenge()
+        check(ntlm.size == CHALLENGE_BYTES) { "the DER lengths below assume a $CHALLENGE_BYTES-byte CHALLENGE, got ${ntlm.size}" }
+        return sessionSetupResponse(STATUS_MORE_PROCESSING, sessionId, 0, hex("a18180" + "307e" + "a27c" + "047a") + ntlm)
+    }
+    private const val CHALLENGE_BYTES = 122
+}
+```
+
+`SmbFramingTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.engine.tools.smb
+
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Test
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import kotlin.concurrent.thread
+
+/** Direct-TCP framing (MS-SMB2 2.1): a zero byte, a 24-bit big-endian length, the message; replies over 64 KB are refused. */
+class SmbFramingTest {
+    private val lo = InetAddress.getByName("127.0.0.1")
+    private val servers = mutableListOf<ServerSocket>()
+    @After fun tearDown() { servers.forEach { runCatching { it.close() } } }
+    private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
+
+    @Test fun `frame bytes`() {
+        assertEquals("00000003010203", hex(SmbFraming.frame(byteArrayOf(1, 2, 3))))
+        assertEquals("00010000", hex(SmbFraming.frame(ByteArray(65_536)).copyOf(4)))
+    }
+    @Test fun `read frame rejects a non zero first byte, a short stream and an oversized length`() {
+        assertEquals("0102", hex(SmbFraming.readFrame(byteArrayOf(0, 0, 0, 2, 1, 2).inputStream())!!))
+        assertNull(SmbFraming.readFrame(byteArrayOf(1, 0, 0, 2, 1, 2).inputStream()))
+        assertNull(SmbFraming.readFrame(byteArrayOf(0, 0, 0, 5, 1).inputStream()))
+        assertNull(SmbFraming.readFrame(byteArrayOf(0, 0x01, 0, 1).inputStream()))     // 65537 bytes declared
+    }
+    @Test fun `the tcp transport sends one frame and reads one reply`() = runBlocking {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { s.accept().use { c ->
+            val got = SmbFraming.readFrame(c.getInputStream())!!
+            c.getOutputStream().write(SmbFraming.frame(got.reversedArray())); c.getOutputStream().flush()
+        } } }
+        val t = TcpSmbTransport(Socket(lo, s.localPort), 1000)
+        assertEquals("030201", hex(t.exchange(byteArrayOf(1, 2, 3))!!))
+        t.close()
+    }
+    @Test fun `no reply is null`() = runBlocking {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { s.accept().use { Thread.sleep(2_000) } } }
+        val t = TcpSmbTransport(Socket(lo, s.localPort), 200)
+        assertNull(t.exchange(byteArrayOf(1))); t.close()
+    }
+}
+```
+
+`SmbSessionTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.engine.tools.smb
+
+import com.northwalessolutions.netprobe.data.ToolRunStatus
+import com.northwalessolutions.netprobe.engine.tools.*
+import com.northwalessolutions.netprobe.engine.tools.ToolTestSupport.CollectingProgress
+import com.northwalessolutions.netprobe.engine.tools.ToolTestSupport.control
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.*
+import org.junit.Test
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/** spec 6.3 and 12.1: the sequence over scripted connections, the summaries, header sequencing, and nothing past SESSION_SETUP. */
+class SmbSessionTest {
+    private val target = ToolTarget(7, ToolTestSupport.ip("10.0.3.59"), 445, false, null)
+    private class Script(vararg replies: ByteArray?) : SmbTransport {
+        val sent = mutableListOf<ByteArray>(); var closed = false
+        private val queue = ArrayDeque(replies.toList())
+        override suspend fun exchange(request: ByteArray): ByteArray? { sent += request; return queue.removeFirstOrNull() }
+        override fun close() { closed = true }
+    }
+    private fun le16(b: ByteArray, at: Int) = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).getShort(at).toInt() and 0xFFFF
+    private fun le64(b: ByteArray, at: Int) = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).getLong(at)
+    private suspend fun run(vararg connections: Script?): Triple<ToolResult, CollectingProgress, List<Script?>> {
+        val queue = ArrayDeque(connections.toList()); val p = CollectingProgress()
+        val r = SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L }).run(target, ToolOptions.None, control(), p)
+        return Triple(r, p, connections.toList())
+    }
+    private fun anonymous(final: ByteArray) = Script(SmbFixtures.negotiateResponse(0x0302, 3), SmbFixtures.challengeResponse(0x77), final)
+    private fun guest(dialect: Int, final: ByteArray) = Script(SmbFixtures.negotiateResponse(dialect, 1), SmbFixtures.challengeResponse(0x78), final)
+
+    @Test fun `a negotiate lost to a pause is retried once on a fresh connection`() = runTest {
+        val c = ToolTestSupport.EpochControl()
+        val frozen = object : SmbTransport {
+            var closed = false
+            override suspend fun exchange(request: ByteArray): ByteArray? { c.epoch++; return null }        // a pause began mid-read
+            override fun close() { closed = true }
+        }
+        val queue = ArrayDeque<SmbTransport?>(listOf(frozen, anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)),
+            guest(0x0302, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE))))
+        val r = SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L })
+            .run(target, ToolOptions.None, c, CollectingProgress())
+        assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest refused", r.summary); assertTrue(frozen.closed)
+    }
+    @Test fun `anonymous allowed, guest refused, signing required`() = runTest {
+        val (r, p, conns) = run(anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)),
+            guest(0x0302, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE)))
+        assertEquals(ToolRunStatus.DONE, r.status)
+        assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest refused", r.summary)
+        assertEquals(listOf("SMB 3.0.2"), p.of(FindingKind.SMB_DIALECT).map { it.value }); assertEquals("Required", p.of(FindingKind.SMB_SIGNING).single().value)
+        assertEquals(listOf("Anonymous allowed", "Guest refused"), p.of(FindingKind.SMB_SESSION).map { it.value })
+        assertEquals(listOf("NetBIOS name" to "Server", "NetBIOS domain" to "Domain", "DNS name" to "srv.lan", "OS build (NTLM)" to "10.0.19041"),
+            p.of(FindingKind.SMB_HOST).map { it.detail to it.value })
+        assertEquals(listOf("smb.netbiosName=Server", "smb.dnsName=srv.lan", "smb.domain=Domain", "smb.osBuild=10.0.19041"), p.hints())
+        assertTrue(conns.all { it!!.closed })
+    }
+    @Test fun `guest only, mapped to guest, reads as allowed`() = runTest {
+        val (r, p, _) = run(anonymous(SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_ACCESS_DENIED)),
+            guest(0x0302, SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x78, Smb2.SESSION_FLAG_IS_GUEST)))
+        assertEquals(listOf("Anonymous refused", "Guest mapped to guest"), p.of(FindingKind.SMB_SESSION).map { it.value })
+        assertEquals("SMB 3.0.2, signing required, anonymous refused, guest allowed", r.summary)
+    }
+    @Test fun `both refused on smb 2_1 without required signing`() = runTest {
+        val first = Script(SmbFixtures.negotiateResponse(0x0210, 1), SmbFixtures.challengeResponse(0x77), SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_ACCESS_DENIED))
+        val (r, _, _) = run(first, guest(0x0210, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_ACCOUNT_DISABLED)))
+        assertEquals("SMB 2.1, signing not required, anonymous refused, guest refused", r.summary)
+    }
+    @Test fun `guest allowed without the guest flag`() = runTest {
+        val (r, p, _) = run(anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)),
+            guest(0x0302, SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x78, 0)))
+        assertEquals("Guest allowed", p.of(FindingKind.SMB_SESSION).last().value); assertTrue(r.summary.endsWith("guest allowed"))
+    }
+    @Test fun `headers sequence message ids, carry the session id and charge credits by dialect`() = runTest {
+        val first = anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL))
+        val second = guest(0x0202, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE))
+        run(first, second)
+        assertEquals(listOf(0L, 1L, 2L), first.sent.map { le64(it, 24) })
+        assertEquals(listOf(0L, 0L, 0x77L), first.sent.map { le64(it, 40) })
+        assertEquals(listOf(0, 1, 1), first.sent.map { le16(it, 6) })            // 3.0.2: CreditCharge 1 after NEGOTIATE
+        assertEquals(listOf(0, 0, 0), second.sent.map { le16(it, 6) })           // 2.0.2: CreditCharge 0
+        assertEquals(listOf(1, 1, 1), first.sent.map { le16(it, 14) })           // CreditRequest 1
+    }
+    @Test fun `the anonymous leg sends the exact anonymous authenticate`() = runTest {
+        val first = anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL))
+        run(first, null)
+        val sentAuth = Spnego.extractNtlm(first.sent[2].copyOfRange(88, first.sent[2].size))!!
+        assertArrayEquals(Ntlm.authenticate("", "", byteArrayOf(0), ByteArray(0), Ntlm.negotiateFlags(true)), sentAuth)
+    }
+    @Test fun `nothing but negotiate and session setup is ever written`() = runTest {
+        val first = anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL))
+        val second = guest(0x0302, SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x78, Smb2.SESSION_FLAG_IS_GUEST))
+        run(first, second)
+        val commands = (first.sent + second.sent).map { le16(it, 12) }
+        assertEquals(listOf(0, 1, 1, 0, 1, 1), commands)
+        assertTrue((first.sent + second.sent).all { Smb2.parseHeader(it) != null })
+    }
+    @Test fun `no connection or no reply is FAILED with no response`() = runTest {
+        assertEquals("No SMB response on this port", run(null).first.summary)
+        val silent = Script()
+        val (r, _, _) = run(silent)
+        assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("No SMB response on this port", r.summary); assertTrue(silent.closed)
+    }
+    @Test fun `a refused negotiate is no dialect in common`() = runTest {
+        val (r, _, _) = run(Script(SmbFixtures.errorResponse(Smb2.NEGOTIATE, 0xC00000BB.toInt())))
+        assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("No SMB2 dialect in common", r.summary)
+    }
+}
+```
+
+`app/src/test/java/com/northwalessolutions/netprobe/engine/tools/BindingPropagationTest.kt` (spec 12.1 "Binding propagation", plan review G6):
+```kotlin
+package com.northwalessolutions.netprobe.engine.tools
+
+import com.northwalessolutions.netprobe.data.ToolRunStatus
+import com.northwalessolutions.netprobe.engine.common.BoundNetwork
+import com.northwalessolutions.netprobe.engine.common.HttpClient
+import com.northwalessolutions.netprobe.engine.common.Probe
+import com.northwalessolutions.netprobe.engine.common.SocketBinder
+import com.northwalessolutions.netprobe.engine.serviceid.TlsPeek
+import com.northwalessolutions.netprobe.engine.tools.ToolRunnerTestSupport.Rig
+import com.northwalessolutions.netprobe.engine.tools.smb.TcpSmbTransport
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Test
+import java.io.Closeable
+import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.URL
+import java.net.URLConnection
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
+
+/**
+ * Every tool socket is bound through the BoundNetwork on the coroutine context, which is how ScanBinding.run routes a run over
+ * Wi-Fi past a VPN on a client's network. The four calls below are exactly the socket seams AppContainer's tool factories use:
+ * HttpClient.request (dir-bruteforce, fingerprint), TlsPeek.details (tls-certificate), UdpSnmpExchange (snmp-walk) and
+ * Probe.connect into TcpSmbTransport (smb-session). A refactor that drops the context (a stray withContext(EmptyCoroutineContext
+ * + Dispatchers.IO), a socket opened without Probe.connect) fails the first test.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class BindingPropagationTest {
+    private val lo = InetAddress.getByName("127.0.0.1") as Inet4Address
+    private val closers = mutableListOf<Closeable>()
+    @After fun closeAll() { closers.forEach { runCatching { it.close() } } }
+
+    private class RecordingBinder : SocketBinder {
+        val tcp = AtomicInteger(0); val udp = AtomicInteger(0)
+        override fun bind(socket: Socket) { tcp.incrementAndGet() }
+        override fun bind(socket: DatagramSocket) { udp.incrementAndGet() }
+        override fun openConnection(url: URL): URLConnection = throw UnsupportedOperationException("tools never open a URLConnection")
+    }
+    /** A VPN in lockdown: every bind is refused. */
+    private object RefusingBinder : SocketBinder {
+        override fun bind(socket: Socket): Unit = throw SecurityException("vpn lockdown")
+        override fun bind(socket: DatagramSocket): Unit = throw SecurityException("vpn lockdown")
+        override fun openConnection(url: URL): URLConnection = throw SecurityException("vpn lockdown")
+    }
+    /** A loopback server that answers every connection with an empty 404 and counts the connections it accepted. */
+    private fun http404(accepted: AtomicInteger = AtomicInteger(0)): ServerSocket {
+        val s = ServerSocket(0, 50, lo); closers += s
+        thread(isDaemon = true) {
+            while (!s.isClosed) runCatching {
+                s.accept().use { c -> accepted.incrementAndGet(); c.getOutputStream().write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".toByteArray()) }
+            }
+        }
+        return s
+    }
+
+    @Test fun `http, tls, snmp and smb sockets all reach the context binder`() = runBlocking {
+        val binder = RecordingBinder(); val tcp = http404()
+        val udp = DatagramSocket(0, lo); closers += udp                               // never answers: the exchange times out after binding
+        withContext(BoundNetwork(binder)) {
+            HttpClient(500).request(lo, tcp.localPort, false, "GET", "/")
+            TlsPeek().details(lo, tcp.localPort, "nas.lan", 500)                    // the named handshake fails on plain HTTP, then the IP retry
+            UdpSnmpExchange(lo, udp.localPort, 200).getNext(listOf("1.3.6.1.2.1.1"))
+            (Probe.connect(lo, tcp.localPort, 500, keepOpen = true) as? Probe.Outcome.Connected)?.socket?.let { TcpSmbTransport(it, 500).close() }
+        }
+        assertEquals("http 1, tls 2 (named, then IP), smb 1", 4, binder.tcp.get())
+        assertEquals("snmp 1", 1, binder.udp.get())
+    }
+    @Test fun `a refusing binder fails the run with the bind wording and opens no unbound socket`() = runTest {
+        val accepted = AtomicInteger(0); val tcp = http404(accepted)
+        val tool = HttpFingerprintTool({ t -> HttpGet { tls, port, path -> HttpClient(500).request(t.ip, port, tls, "GET", path) } }, emptyList())
+        val rig = Rig(backgroundScope, tool, bind = { _, _, block -> withContext(BoundNetwork(RefusingBinder)) { block() } })
+        rig.runner.start(ToolTarget(7, lo, tcp.localPort, tls = false, serverName = null), ToolId.HTTP_FINGERPRINT, ToolOptions.None); runCurrent()
+        assertEquals(Triple(1L, ToolRunStatus.FAILED, "Tool skipped: could not bind to Wi-Fi"), rig.store.finished.single())
+        Thread.sleep(SETTLE_MS)
+        assertEquals("no connection reached the server", 0, accepted.get())
+    }
+    private companion object { const val SETTLE_MS = 200L }
+}
+```
+
+- [ ] **Step 2: Run the tests to see them fail**
+
+```bash
+./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.smb.*" --tests "com.northwalessolutions.netprobe.engine.tools.BindingPropagationTest" --console=plain 2>&1 | tail -20
+```
+Expected: `BUILD FAILED`, `Unresolved reference 'Smb2'`, `'SmbFraming'`, `'SmbSessionTool'`, `'TcpSmbTransport'`.
+
+- [ ] **Step 3: Implement**
+
 `smb/Smb2.kt`:
 ```kotlin
 package com.northwalessolutions.netprobe.engine.tools.smb
@@ -7076,6 +7526,22 @@ class SmbSessionTool(
 
     private class Leg(val allowed: Boolean, val names: Ntlm.TargetInfoNames?)
     private enum class Guest { ALLOWED, MAPPED, REFUSED }
+    private sealed interface Opened {
+        object NoResponse : Opened
+        object NoDialect : Opened
+        class Ok(val neg: Smb2.NegotiateResponse, val anonymous: Leg) : Opened
+    }
+
+    /** The first connection: NEGOTIATE, then the anonymous SESSION_SETUP pair; the connection is always closed. */
+    private suspend fun open(target: ToolTarget, control: RunControl): Opened {
+        val conn = connect(target) ?: return Opened.NoResponse
+        try {
+            val n = negotiate(conn) ?: return Opened.NoResponse
+            if (n.status != Smb2.STATUS_SUCCESS || n.dialect !in Smb2.DIALECTS) return Opened.NoDialect
+            control.gate()
+            return Opened.Ok(n, sessionLeg(conn, n, anonymousLeg = true))
+        } finally { conn.close() }
+    }
 
     override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
         var found = 0
@@ -7083,13 +7549,12 @@ class SmbSessionTool(
         suspend fun hint(value: String) { progress.finding(Finding(FindingKind.HINT, value)) }
 
         control.gate()
-        val first = connect(target) ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.SMB_NO_RESPONSE)
-        val (neg, anonymous) = try {
-            val n = negotiate(first) ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.SMB_NO_RESPONSE)
-            if (n.status != Smb2.STATUS_SUCCESS || n.dialect !in Smb2.DIALECTS) return ToolResult(ToolRunStatus.FAILED, ToolCopy.SMB_NO_DIALECT)
-            control.gate()
-            n to sessionLeg(first, n, anonymousLeg = true)
-        } finally { first.close() }
+        // spec 4.8 (plan review G5): a first connection that got no reply while a pause began is retried once, on a fresh connection.
+        val (neg, anonymous) = when (val opened = control.excusedOnce<Opened>({ it === Opened.NoResponse }) { open(target, control) }) {
+            Opened.NoResponse -> return ToolResult(ToolRunStatus.FAILED, ToolCopy.SMB_NO_RESPONSE)
+            Opened.NoDialect -> return ToolResult(ToolRunStatus.FAILED, ToolCopy.SMB_NO_DIALECT)
+            is Opened.Ok -> opened.neg to opened.anonymous
+        }
 
         val dialect = ToolCopy.dialectName(neg.dialect)!!
         emit(FindingKind.SMB_DIALECT, dialect, ToolCopy.DIALECT)
@@ -7104,12 +7569,14 @@ class SmbSessionTool(
         emit(FindingKind.SMB_SESSION, if (anonymous.allowed) ToolCopy.ANONYMOUS_ALLOWED else ToolCopy.ANONYMOUS_REFUSED, ToolCopy.SESSION)
 
         control.gate()
-        val guest = connect(target)?.let { conn ->
-            try {
-                val again = negotiate(conn)
-                if (again == null || again.status != Smb2.STATUS_SUCCESS || again.dialect !in Smb2.DIALECTS) Guest.REFUSED else guestLeg(conn, again)
-            } finally { conn.close() }
-        } ?: Guest.REFUSED
+        val guest = control.excusedOnce<Guest>({ it == Guest.REFUSED }) {
+            connect(target)?.let { conn ->
+                try {
+                    val again = negotiate(conn)
+                    if (again == null || again.status != Smb2.STATUS_SUCCESS || again.dialect !in Smb2.DIALECTS) Guest.REFUSED else guestLeg(conn, again)
+                } finally { conn.close() }
+            } ?: Guest.REFUSED
+        }
         emit(FindingKind.SMB_SESSION, when (guest) { Guest.ALLOWED -> ToolCopy.GUEST_ALLOWED; Guest.MAPPED -> ToolCopy.GUEST_MAPPED; Guest.REFUSED -> ToolCopy.GUEST_REFUSED }, ToolCopy.SESSION)
 
         anonymous.names?.let { n ->
@@ -7161,7 +7628,7 @@ class SmbSessionTool(
     }
 }
 ```
-(The early `return`s inside the `try` expression still run `finally`, so the first connection is always closed.)
+(The early `return`s inside `open`'s `try` still run `finally`, so the first connection is always closed, including on the excused retry.)
 
 `AppContainer.kt`: in `toolMap()` add (imports `com.northwalessolutions.netprobe.engine.common.Probe`, `com.northwalessolutions.netprobe.engine.tools.smb.*`):
 ```kotlin
@@ -7175,20 +7642,32 @@ class SmbSessionTool(
 - [ ] **Step 4: Run the tests to see them pass, then the task gate**
 
 ```bash
-./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.smb.*" --console=plain 2>&1 | tail -30
+./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.tools.smb.*" --tests "com.northwalessolutions.netprobe.engine.tools.BindingPropagationTest" --console=plain 2>&1 | tail -30
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `Md4Test` (2), `NtlmTest` (9), `SmbBytesTest` (8), `SmbFramingTest` (4) and `SmbSessionTest` (9) pass; `BUILD SUCCESSFUL`. A failing published-vector assertion follows the confidence note at the top of this task: stop, report, do not edit the vector.
+Expected: `SmbBytesTest` (5), `SmbFramingTest` (4), `SmbSessionTest` (10) and `BindingPropagationTest` (2) pass, with Task 14's `Md4Test`, `NtlmTest` and `SpnegoBytesTest` still green; `BUILD SUCCESSFUL`. The reviewer confirms the first binding test fails when `HttpClient.request` opens its socket with a plain `Socket()` instead of `Probe.connect`.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "SMB session probe: MD4, NTLMv2, SPNEGO, SMB2 negotiate and session setup, framing and the sequence"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/Smb2.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/SmbTransport.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/engine/tools/smb/SmbSessionTool.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/SmbBytesTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/SmbFixtures.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/SmbFramingTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/smb/SmbSessionTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/engine/tools/BindingPropagationTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "SMB part 2: SMB2 negotiate and session setup, framing, the session probe and binding propagation"
 ```
 
 ---
 
-### Task 15: The pure Tools UI model, the export text, the options store, and the Detail view-model wiring
+### Task 16: The pure Tools UI model, the export text, the options store, and the Detail view-model wiring
 
 **Files:**
 - Create: `ui/tools/ToolRunOptions.kt`, `ui/tools/ToolExport.kt`, `ui/tools/ToolsUiState.kt`, `ui/tools/DirBruteOptionsStore.kt` (all under `app/src/main/java/com/northwalessolutions/netprobe/`)
@@ -7803,7 +8282,7 @@ Edits to 3A code in the same file:
             } finally { c.hostBusy.release(hostId, HostBusyRegistry.Work.PORT_SCAN) }
         }
 ```
-- `removeDevice`: add as its first line `if (c.hostBusy.busy.value[hostId] == HostBusyRegistry.Work.TOOL) return` (the menu item is also disabled in Task 16, spec 4.3).
+- `removeDevice`: add as its first line `if (c.hostBusy.busy.value[hostId] == HostBusyRegistry.Work.TOOL) return` (the menu item is also disabled in Task 17, spec 4.3).
 
 Imports also needed in the file: `com.northwalessolutions.netprobe.ui.home.ScanController` (already), `com.northwalessolutions.netprobe.wordlists.WordlistMeta`, `kotlinx.coroutines.flow.filter`, `kotlinx.coroutines.flow.map`, `kotlinx.coroutines.flow.first`.
 
@@ -7817,21 +8296,38 @@ Expected: `ToolRunOptionsTest` (4), `ToolExportTest` (3), `ToolsUiModelTest` (5)
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "Tools UI model, export text, options store and the Detail view-model wiring"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolRunOptions.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolExport.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolsUiState.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/DirBruteOptionsStore.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailViewModel.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/actions/AndroidActionRunner.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/tools/ToolRunOptionsTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/tools/ToolExportTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/tools/ToolsUiModelTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/tools/ToolResultsModelTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/tools/DirBruteOptionsStoreTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Tools UI model, export text, options store and the Detail view-model wiring"
 ```
 
 ---
 
-### Task 16: Device screen: the Tools block, the pinned bar during a run, the port-sheet tool group, the options sheet and the results sheet
+### Task 17: Device screen part 1: the Tools block, the pinned bar during a run and the port-sheet tool group
+
+Split from the single Device screen task at plan review G16; Task 18 adds the two sheets.
 
 **Files:**
-- Create (under `app/src/main/java/com/northwalessolutions/netprobe/ui/tools/`): `ToolControls.kt` (`ActionPill`, `ToolActions`), `ToolsBlock.kt`, `DirBruteSheet.kt`, `ToolResultsSheet.kt`
-- Modify: `ui/Controls.kt` (`ScanPill` gains `stopDescription`), `ui/detail/DetailComponents.kt` (`ScanBar` tool mode, `PortSheet` tool group, `DetailMenu` remove enabled flag), `ui/detail/DetailContent.kt` (the Tools block as the first list item, the sheets, the app-message snackbar), `ui/detail/DetailScreen.kt` (wiring)
-- Test (compile only, run in Task 18): `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/ToolsBlockTest.kt`, `DirBruteSheetTest.kt`, `ToolResultsSheetTest.kt`, additions to `ui/detail/DetailContentTest.kt`
+- Create (under `app/src/main/java/com/northwalessolutions/netprobe/ui/tools/`): `ToolControls.kt` (`ActionPill`, `ToolActions`), `ToolsBlock.kt`
+- Modify: `ui/Controls.kt` (`ScanPill` gains `stopDescription`), `ui/detail/DetailComponents.kt` (`ScanBar` tool mode, `PortSheet` tool group, `DetailMenu` remove enabled flag), `ui/detail/DetailContent.kt` (the Tools block as the first list item, the app-message snackbar), `ui/detail/DetailScreen.kt` (wiring)
+- Test (compile only, run in Task 20): `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/ToolsFakes.kt`, `ToolsBlockTest.kt`, `ToolsFakesForDetail.kt`, additions to `ui/detail/DetailContentTest.kt`
 
 **Interfaces:**
-- Consumes: `DetailToolsState`, `ToolsUiState`, `ToolBlock`, `ToolChip`, `ToolRunBar`, `ToolResultsState`, `FindingRow`, `DirBruteSheetState` (Task 15), `ToolCopy`, `ToolApplicability`, `ToolId` (Task 3), `DirBruteOptions`, `DirBruteParse`, `FieldError`, `DirMethod` (Task 10), `WordlistMeta` (Task 9), 3A's `ScanPill`, `PinnedSegmented`, `npFieldColors`, `StepSlider`, `SwitchRow`, `DetailMenu`, `PortSheet`, `ScanBar`, `DetailContent`, `DetailActions`, tokens, `LocalReducedMotion`.
+- Consumes: `DetailToolsState`, `ToolsUiState`, `ToolBlock`, `ToolChip`, `ToolRunBar`, and for the shared fakes `ToolResultsState`, `FindingRow`, `DirBruteSheetState` (Task 16), `ToolCopy`, `ToolApplicability`, `ToolId` (Task 3), `DirBruteOptions` (Task 10), `WordlistMeta` (Task 9), 3A's `ScanPill`, `PinnedSegmented`, `DetailMenu`, `PortSheet`, `ScanBar`, `DetailContent`, `DetailActions`, tokens, `LocalReducedMotion`.
 - Produces:
 ```kotlin
 @Composable fun ActionPill(label: String, enabled: Boolean, onClick: () -> Unit, tag: String, modifier: Modifier = Modifier)
@@ -7840,16 +8336,18 @@ data class ToolActions(val onRunTool: (ToolId, Int) -> Unit = { _, _ -> }, val o
     val onCloseResults: () -> Unit = {}, val onShare: () -> Unit = {}, val onCopyFinding: (FindingRow) -> Unit = {}, val onOpenFinding: (FindingRow) -> Unit = {},
     val onStopTool: () -> Unit = {}, val onDismissAppMessage: (Long) -> Unit = {})
 @Composable fun ToolsBlock(state: ToolsUiState, expanded: Boolean, busy: Boolean, onToggle: () -> Unit, onRunChip: (ToolId, Int) -> Unit, onResults: (ToolId) -> Unit)
-@Composable fun DirBruteSheet(state: DirBruteSheetState, onRun: (DirBruteOptions) -> Unit, onManageWordlists: () -> Unit, onDismiss: () -> Unit)
-@Composable fun ToolResultsSheet(state: ToolResultsState, onOlder: () -> Unit, onNewer: () -> Unit, onCopy: (FindingRow) -> Unit, onOpen: (FindingRow) -> Unit, onShare: () -> Unit, onDismiss: () -> Unit)
 fun ScanPill(scanning: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, stopDescription: String? = null)
 fun ScanBar(..., toolBar: ToolRunBar? = null, onStopTool: () -> Unit = {})
 fun PortSheet(ip: String, p: PortRow, onAction, onVulns, onClose, tools: List<ToolId> = emptyList(), toolsBusy: Boolean = false, onTool: (ToolId) -> Unit = {})
 fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null, removeEnabled: Boolean = true)
 fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false, toolState: DetailToolsState = DetailToolsState(), toolActions: ToolActions = ToolActions())
-// tags: toolsHeader, toolChip:<toolId>:<port>, toolResults:<toolId>, sheetTool:<toolId>, toolRunPill, dirBruteBody, extensionsField, codesField, filterSwitch,
-//       wordlist:<id>, manageWordlists, resultsList, finding:<id>, open:<id>, copy:<id>, olderRun, newerRun, shareRun, toolBarLabel, toolBarProgress
+object ToolsFakes   // androidTest: chip, tools, lists, sheet, results; Task 18's sheet tests use it
+// tags: toolsHeader, toolChip:<toolId>:<port>, toolResults:<toolId>, sheetTool:<toolId>, toolBarLabel, toolBarProgress
 ```
+
+- [ ] **Step 0: Re-read the 3A files this task edits (plan review G17)**
+
+3A's motion task (Task 18 of the 3A plan) edits `ui/Controls.kt`, `ui/detail/DetailComponents.kt` and `ui/detail/DetailContent.kt` and may land after this plan was written. Before editing, read the current `ScanPill`, `ScanBar`, `PortSheet`, `DetailMenu` and `DetailContent` on the branch. The edits below are additive (new parameters with defaults, one new list item, new branches inside existing `when`s); apply them to the code as it stands, keep every 3A modifier and animation, and if a signature named here has changed, stop and report it rather than reshaping 3A code.
 
 - [ ] **Step 1: Write the failing Compose tests (compile only)**
 
@@ -7866,7 +8364,7 @@ object ToolsFakes {
     fun tools(hasRun: Boolean = true) = ToolsUiState(2, "Last run 2 hours ago: Directory brute-force on 5000, 7 found in 4614 paths", listOf(
         ToolBlock(ToolId.DIR_BRUTEFORCE, ToolCopy.DIR_BRUTEFORCE, hasRun, "Last run 2 hours ago on 5000: 7 found in 4614 paths", listOf(chip(ToolId.DIR_BRUTEFORCE, 5000), chip(ToolId.DIR_BRUTEFORCE, 5001))),
         ToolBlock(ToolId.HTTP_FINGERPRINT, ToolCopy.HTTP_FINGERPRINT, false, ToolCopy.NOT_RUN_YET, listOf(chip(ToolId.HTTP_FINGERPRINT, 5000)))))
-    val lists = listOf(WordlistMeta("builtin:common-short", "common-short", 300, null, true), WordlistMeta("builtin:admin-panels", "admin-panels", 160, null, true),
+    val lists = listOf(WordlistMeta("builtin:common-short", "common-short", 298, null, true), WordlistMeta("builtin:admin-panels", "admin-panels", 153, null, true),
         WordlistMeta("builtin:api-paths", "api-paths", 137, null, true))
     fun sheet(busyReason: String? = null) = DirBruteSheetState(5000, "http://10.0.3.10:5000/", lists, DirBruteOptions(), busyReason)
     fun results(findings: List<FindingRow> = listOf(FindingRow(1, "/admin", "200  1.2 KB", "http://10.0.3.10:5000/admin"), FindingRow(2, "Pi-hole", "Page title", null)),
@@ -7935,136 +8433,12 @@ class ToolsBlockTest {
         show(ToolsFakes.tools(), busy = true)
         rule.onNodeWithTag("toolsHeader").performClick()
         rule.onNodeWithTag("toolChip:dir-bruteforce:5000").performClick()
-        assertEquals(listOf(ToolId.DIR_BRUTEFORCE to 5000), ran)   // the view model answers a held host with its busy snackbar (Task 15)
+        assertEquals(listOf(ToolId.DIR_BRUTEFORCE to 5000), ran)   // the view model answers a held host with its busy snackbar (Task 16)
     }
 }
 ```
 
-`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/DirBruteSheetTest.kt`:
-```kotlin
-package com.northwalessolutions.netprobe.ui.tools
-
-import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
-import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
-import org.junit.Assert.*
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
-
-/** spec 12.2 item 4. */
-@RunWith(AndroidJUnit4::class)
-class DirBruteSheetTest {
-    @get:Rule val rule = createComposeRule()
-    private val runs = mutableListOf<DirBruteOptions>(); private var manage = 0
-    private fun show(state: DirBruteSheetState = ToolsFakes.sheet(), fontScale: Float = 1f) = rule.setContent {
-        NetProbeTheme { DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(fontScale) then DeviceConfigurationOverride.ForcedSize(DpSize(412.dp, 820.dp))) {
-            DirBruteSheet(state, onRun = { runs += it }, onManageWordlists = { manage++ }, onDismiss = {})
-        } }
-    }
-
-    @Test fun defaultsAreShownAndRunReturnsThem() {
-        show()
-        rule.onNodeWithText("Directory brute-force").assertIsDisplayed(); rule.onNodeWithText("http://10.0.3.10:5000/").assertIsDisplayed()
-        rule.onNodeWithTag("wordlist:builtin:common-short").assertIsSelected()
-        rule.onNodeWithText("300 paths").assertIsDisplayed()
-        rule.onNodeWithTag("toolRunPill").assertIsEnabled().performClick()
-        assertEquals(listOf(DirBruteOptions()), runs)
-    }
-    @Test fun extensionsMultiplyTheTotalAndInvalidInputDisablesRun() {
-        show()
-        rule.onNodeWithTag("extensionsField").performTextInput("php, html")
-        rule.onNodeWithText("900 paths").assertIsDisplayed()
-        rule.onNodeWithTag("extensionsField").performTextClearance(); rule.onNodeWithTag("extensionsField").performTextInput("ph p")
-        rule.onNodeWithText("Use letters and digits only, for example php, html").assertExists()
-        rule.onNodeWithTag("toolRunPill").assertIsNotEnabled()
-        rule.onNodeWithTag("extensionsField").performTextClearance()
-        rule.onNodeWithTag("codesField").performTextClearance(); rule.onNodeWithTag("codesField").performTextInput("99")
-        rule.onNodeWithText("Use codes from 100 to 599, for example 200, 301, 403").assertExists()
-        rule.onNodeWithTag("toolRunPill").assertIsNotEnabled()
-        rule.onNodeWithTag("codesField").performTextClearance()
-        rule.onNodeWithText("Add at least one status code").assertExists()
-    }
-    @Test fun aBusyHostShowsItsReasonAndDisablesRun() {
-        show(ToolsFakes.sheet(busyReason = ToolCopy.BUSY_TOO_MANY))
-        rule.onNodeWithText("Four tools are already running, stop one first").assertIsDisplayed()
-        rule.onNodeWithTag("toolRunPill").assertIsNotEnabled()
-    }
-    @Test fun theFooterAndRunPillStayVisibleWithTheBodyScrolledToTheEndAtFontScale13() {
-        show(fontScale = 1.3f)
-        rule.onNodeWithTag("filterSwitch").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithTag("toolRunPill").assertIsDisplayed()
-        rule.onNodeWithText("Directory brute-force").assertIsDisplayed()
-        val pill = rule.onNodeWithTag("toolRunPill").fetchSemanticsNode()
-        val body = rule.onNodeWithTag("dirBruteBody").fetchSemanticsNode()
-        assertFalse("the Run pill must not be inside the scrolling body", generateSequence(pill.parent) { it.parent }.any { it.id == body.id })
-    }
-    @Test fun manageWordlistsFiresItsLambda() {
-        show(); rule.onNodeWithTag("manageWordlists").performClick(); assertEquals(1, manage)
-    }
-}
-```
-
-`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/ToolResultsSheetTest.kt`:
-```kotlin
-package com.northwalessolutions.netprobe.ui.tools
-
-import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.unit.dp
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
-import org.junit.Assert.*
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
-
-/** spec 12.2 item 5. */
-@RunWith(AndroidJUnit4::class)
-class ToolResultsSheetTest {
-    @get:Rule val rule = createComposeRule()
-    private val events = mutableListOf<String>()
-    private fun show(state: ToolResultsState) = rule.setContent {
-        NetProbeTheme { ToolResultsSheet(state, onOlder = { events += "older" }, onNewer = { events += "newer" }, onCopy = { events += "copy ${it.id}" },
-            onOpen = { events += "open ${it.id}" }, onShare = { events += "share" }, onDismiss = {}) }
-    }
-
-    @Test fun openWithOnlyWithAUrlCopyAlwaysAndEveryTargetIs48dp() {
-        show(ToolsFakes.results())
-        rule.onNodeWithTag("open:1").assert(hasContentDescription("Open http://10.0.3.10:5000/admin with")).assertHeightIsAtLeast(48.dp).performClick()
-        rule.onNodeWithTag("open:2").assertDoesNotExist()
-        rule.onNodeWithTag("copy:2").assert(hasContentDescription("Copy Pi-hole")).assertHeightIsAtLeast(48.dp).performClick()
-        rule.onNodeWithTag("copy:1").assertHeightIsAtLeast(48.dp)
-        assertEquals(listOf("open 1", "copy 2"), events)
-    }
-    @Test fun theRunSwitcherIsBoundedAtBothEnds() {
-        show(ToolsFakes.results(index = 1, count = 3))
-        rule.onNodeWithText("Run 1 of 3").assertIsDisplayed()
-        rule.onNodeWithTag("newerRun").assertIsNotEnabled(); rule.onNodeWithTag("olderRun").assertIsEnabled().performClick()
-        assertEquals(listOf("older"), events)
-    }
-    @Test fun theOldestRunCannotGoOlder() {
-        show(ToolsFakes.results(index = 3, count = 3))
-        rule.onNodeWithTag("olderRun").assertIsNotEnabled(); rule.onNodeWithTag("newerRun").assertIsEnabled()
-    }
-    @Test fun emptyStatesAndShareDisabledWhileRunning() {
-        show(ToolsFakes.results(findings = emptyList(), active = true))
-        rule.onNodeWithText("Running, findings appear as they are found").assertIsDisplayed()
-        rule.onNodeWithTag("shareRun").assertIsNotEnabled()
-    }
-    @Test fun aFinishedRunWithNothingSaysNoFindingsAndShares() {
-        show(ToolsFakes.results(findings = emptyList()))
-        rule.onNodeWithText("No findings").assertIsDisplayed()
-        rule.onNodeWithTag("shareRun").assertIsEnabled().performClick(); assertEquals(listOf("share"), events)
-    }
-}
-```
-
-Append to `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/detail/DetailContentTest.kt` (spec 12.2 items 2, 3, 10; the "sheet closes when its run is removed" behaviour lives in the view model, which sets `results` to null, and is covered on the device in Task 18 step 8):
+Append to `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/detail/DetailContentTest.kt` (spec 12.2 items 2, 3, 10; the "sheet closes when its run is removed" behaviour lives in the view model, which sets `results` to null, and is covered on the device in Task 20 step 8):
 ```kotlin
     private fun showTools(state: DetailUiState, tools: com.northwalessolutions.netprobe.ui.tools.DetailToolsState,
                           toolActions: com.northwalessolutions.netprobe.ui.tools.ToolActions = com.northwalessolutions.netprobe.ui.tools.ToolActions()) = rule.setContent {
@@ -8119,7 +8493,7 @@ object ToolsFakesForDetail { val tools: ToolsUiState get() = ToolsFakes.tools() 
 ```bash
 ./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
 ```
-Expected: `BUILD FAILED`, `Unresolved reference 'ToolsBlock'`, `'DirBruteSheet'`, `'ToolResultsSheet'`, `'ToolActions'`, `No parameter with name 'toolState'`.
+Expected: `BUILD FAILED`, `Unresolved reference 'ToolsBlock'`, `'ToolActions'`, `No parameter with name 'toolState'`.
 
 - [ ] **Step 3: Implement**
 
@@ -8169,7 +8543,7 @@ fun ActionPill(label: String, enabled: Boolean, onClick: () -> Unit, tag: String
     }
 }
 
-/** Every tool action the Device screen fires; DetailScreen wires them to DetailViewModel (Task 15). */
+/** Every tool action the Device screen fires; DetailScreen wires them to DetailViewModel (Task 16). */
 data class ToolActions(
     val onRunTool: (ToolId, Int) -> Unit = { _, _ -> }, val onStartDirBrute: (DirBruteOptions) -> Unit = {}, val onCloseDirBrute: () -> Unit = {},
     val onManageWordlists: () -> Unit = {}, val onOpenResults: (ToolId) -> Unit = {}, val onOlderRun: () -> Unit = {}, val onNewerRun: () -> Unit = {},
@@ -8272,6 +8646,280 @@ fun ToolsBlock(state: ToolsUiState, expanded: Boolean, busy: Boolean, onToggle: 
     }
 }
 ```
+
+`ui/detail/DetailComponents.kt`:
+- `DetailMenu` (3A): add the parameter `removeEnabled: Boolean = true` and pass `enabled = removeEnabled` to the "Remove device" `DropdownMenuItem`.
+- `ScanBar` (3A): add the parameters `toolBar: ToolRunBar? = null, onStopTool: () -> Unit = {}` at the end. Then:
+  - the profile `PinnedSegmented` gets `enabled = !scanning && toolBar == null`;
+  - the pill becomes
+```kotlin
+            if (toolBar != null) ScanPill(scanning = true, enabled = true, onClick = onStopTool, stopDescription = ToolCopy.STOP_DESCRIPTION)
+            else ScanPill(scanning, enabled = enabled && !(profile is ScanProfile.Custom && customError != null), onClick = onScan)
+```
+  - the reserved progress `Box` becomes (same reserved height, no height added, spec 8.2):
+```kotlin
+        Box(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).heightIn(min = progressHeight), contentAlignment = Alignment.CenterEnd) {
+            when {
+                toolBar != null -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(toolBar.label, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).testTag("toolBarLabel"))
+                    Text(toolBar.progress, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, modifier = Modifier.padding(start = 8.dp).testTag("toolBarProgress"))
+                }
+                scanning -> Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
+            }
+        }
+```
+  - the 2 dp line `Box` becomes:
+```kotlin
+        val toolFraction = toolBar?.fraction
+        Box(Modifier.fillMaxWidth().height(2.dp)) {
+            when {
+                toolFraction != null -> LinearProgressIndicator(progress = { toolFraction }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
+                    trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})
+                toolBar != null -> LinearProgressIndicator(modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface, gapSize = 0.dp)
+                scanning -> LinearProgressIndicator(progress = { detailFraction(progress, identified) }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
+                    trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})
+            }
+        }
+```
+  (3A's Task 18 progress glide animates the scanning fraction; keep its animated value in the `scanning` branch exactly as 3A left it, and leave the tool branches unanimated, which also satisfies reduced motion.)
+- `PortSheet` (3A): add the parameters `tools: List<ToolId> = emptyList(), toolsBusy: Boolean = false, onTool: (ToolId) -> Unit = {}` and, between the `tail.forEach { ... }` rows and the vulnerabilities `SheetRow`, insert:
+```kotlin
+            if (tools.isNotEmpty()) {
+                Text(ToolCopy.RUN_TOOL, style = NetProbeText.caption, color = NetProbeColors.textMuted, modifier = Modifier.padding(top = 4.dp))
+                tools.forEach { tool ->
+                    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button) { onTool(tool); onClose() }.testTag("sheetTool:${tool.key}"),
+                        contentAlignment = Alignment.CenterStart) {
+                        Text(ToolCopy.toolName(tool), style = NetProbeText.secondary, color = if (toolsBusy) NetProbeColors.textMuted else NetProbeColors.signal)
+                    }
+                }
+            }
+```
+(imports `com.northwalessolutions.netprobe.engine.tools.ToolId`, `com.northwalessolutions.netprobe.ui.tools.ToolCopy`, `com.northwalessolutions.netprobe.ui.tools.ToolRunBar`. A held host's row still reports the tap; the view model answers with the busy snackbar, spec 8.3.)
+
+`ui/detail/DetailContent.kt`:
+- Signature: `fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false, toolState: DetailToolsState = DetailToolsState(), toolActions: ToolActions = ToolActions())`.
+- After the existing `LaunchedEffect(state.message)`, add the app-message snackbar (spec 4.3: the visible screen shows it and then dismisses it):
+```kotlin
+    LaunchedEffect(toolState.appMessage?.id) {
+        toolState.appMessage?.let { m -> snackbar.showSnackbar(m.text); toolActions.onDismissAppMessage(m.id) }
+    }
+    var toolsExpanded by rememberSaveable(state.host?.id) { mutableStateOf(false) }
+```
+- `DetailMenu(...)` in the back row gets `removeEnabled = toolState.busy != HostBusyRegistry.Work.TOOL`.
+- `ScanBar(...)` gets `toolBar = toolState.bar, onStopTool = toolActions.onStopTool`.
+- Replace the list part (`if (state.ports.isEmpty()) EmptyState(...) else LazyColumn(...) { items(...) }`) with:
+```kotlin
+        val tools = toolState.tools
+        if (state.ports.isEmpty() && tools == null) EmptyState(if (state.scanning) "Scanning ports" else "No open ports yet, run a scan", pad)
+        else LazyColumn(Modifier.padding(pad).fillMaxSize()
+            .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
+            .testTag("portList")) {
+            tools?.let { t ->
+                item(key = "tools") {
+                    ToolsBlock(t, toolsExpanded, busy = toolState.busy != null, onToggle = { toolsExpanded = !toolsExpanded },
+                        onRunChip = toolActions.onRunTool, onResults = toolActions.onOpenResults)
+                }
+            }
+            items(state.ports, key = { it.port }) { p -> PortRowItem(ip, p, onAction = actions.onAction, onLongPress = { sheetPort = p.port }) }
+        }
+```
+  (keep 3A's Task 18 row-arrival modifiers on `PortRowItem` exactly as they are; only the `tools` item and the empty condition are new. The two empty-state strings are 3A's.)
+- The `PortSheet(...)` call gets `tools = ToolApplicability.toolsFor(p.port, p.service), toolsBusy = toolState.busy != null, onTool = { toolActions.onRunTool(it, p.port) }`.
+- imports: `com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry`, `com.northwalessolutions.netprobe.engine.tools.ToolApplicability`, `com.northwalessolutions.netprobe.ui.tools.*`.
+
+`ui/detail/DetailScreen.kt`: add the parameter `onOpenWordlists: () -> Unit = {}` and pass the tool state and actions:
+```kotlin
+    val tools by vm.toolState.collectAsStateWithLifecycle()
+    DetailContent(s, DetailActions(/* 3A's existing actions, unchanged */), toolState = tools, toolActions = ToolActions(
+        onRunTool = vm::runTool, onStartDirBrute = vm::startDirBrute, onCloseDirBrute = vm::closeDirBrute, onManageWordlists = onOpenWordlists,
+        onOpenResults = vm::openResults, onOlderRun = vm::olderRun, onNewerRun = vm::newerRun, onCloseResults = vm::closeResults, onShare = vm::shareRun,
+        onCopyFinding = vm::copyFinding, onOpenFinding = vm::openFinding, onStopTool = vm::stopTool, onDismissAppMessage = vm::dismissAppMessage))
+```
+(Task 19 passes `onOpenWordlists = { nav.navigate("wordlists") }` from `NetProbeNav`.)
+
+- [ ] **Step 4: Compile the androidTest sources, then the task gate**
+
+```bash
+./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
+```
+Expected: `BUILD SUCCESSFUL`. Reviewer checks: the Stop for a tool run is the pinned bar's pill, never a control inside `portList`; every new target is at least 48 dp; no string literal appears in these composables except 3A's two empty-state strings. The tool chips start a run from inside the scrolling list, as spec 8.1 places them, while Stop stays pinned; that tension with the standing pinned-controls rule is listed for the Director's ruling in Task 20 (plan review G25).
+
+- [ ] **Step 5: Commit**
+
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
+```bash
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolControls.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolsBlock.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/Controls.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailComponents.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailContent.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailScreen.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/ToolsFakes.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/ToolsBlockTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/ToolsFakesForDetail.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/detail/DetailContentTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Device screen part 1: Tools block, pinned bar during a run, port-sheet tool group"
+```
+
+---
+
+### Task 18: Device screen part 2: the brute-force options sheet and the results sheet
+
+Split from the single Device screen task at plan review G16.
+
+**Files:**
+- Create (under `app/src/main/java/com/northwalessolutions/netprobe/ui/tools/`): `DirBruteSheet.kt`, `ToolResultsSheet.kt`
+- Modify: `ui/detail/DetailContent.kt` (the two sheets)
+- Test (compile only, run in Task 20): `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/DirBruteSheetTest.kt`, `ToolResultsSheetTest.kt`
+
+**Interfaces:**
+- Consumes: `DetailToolsState`, `ToolResultsState`, `FindingRow`, `DirBruteSheetState` (Task 16), `ToolCopy` (Task 3), `DirBruteOptions`, `DirBruteParse`, `FieldError`, `DirMethod` (Task 10), `WordlistMeta` (Task 9), `ActionPill`, `ToolActions`, `ToolsFakes` (Task 17), 3A's `PinnedSegmented`, `npFieldColors`, `StepSlider`, `SwitchRow`, tokens.
+- Produces:
+```kotlin
+@Composable fun DirBruteSheet(state: DirBruteSheetState, onRun: (DirBruteOptions) -> Unit, onManageWordlists: () -> Unit, onDismiss: () -> Unit)
+@Composable fun ToolResultsSheet(state: ToolResultsState, onOlder: () -> Unit, onNewer: () -> Unit, onCopy: (FindingRow) -> Unit, onOpen: (FindingRow) -> Unit, onShare: () -> Unit, onDismiss: () -> Unit)
+// tags: toolRunPill, dirBruteBody, extensionsField, codesField, filterSwitch, wordlist:<id>, manageWordlists, resultsList, finding:<id>, open:<id>, copy:<id>,
+//       olderRun, newerRun, shareRun
+```
+
+- [ ] **Step 1: Write the failing Compose tests (compile only)**
+
+`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/DirBruteSheetTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.ui.tools
+
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
+import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/** spec 12.2 item 4. */
+@RunWith(AndroidJUnit4::class)
+class DirBruteSheetTest {
+    @get:Rule val rule = createComposeRule()
+    private val runs = mutableListOf<DirBruteOptions>(); private var manage = 0
+    private fun show(state: DirBruteSheetState = ToolsFakes.sheet(), fontScale: Float = 1f) = rule.setContent {
+        NetProbeTheme { DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(fontScale) then DeviceConfigurationOverride.ForcedSize(DpSize(412.dp, 820.dp))) {
+            DirBruteSheet(state, onRun = { runs += it }, onManageWordlists = { manage++ }, onDismiss = {})
+        } }
+    }
+
+    @Test fun defaultsAreShownAndRunReturnsThem() {
+        show()
+        rule.onNodeWithText("Directory brute-force").assertIsDisplayed(); rule.onNodeWithText("http://10.0.3.10:5000/").assertIsDisplayed()
+        rule.onNodeWithTag("wordlist:builtin:common-short").assertIsSelected()
+        rule.onNodeWithText("298 paths").assertIsDisplayed()
+        rule.onNodeWithTag("toolRunPill").assertIsEnabled().performClick()
+        assertEquals(listOf(DirBruteOptions()), runs)
+    }
+    @Test fun extensionsMultiplyTheTotalAndInvalidInputDisablesRun() {
+        show()
+        rule.onNodeWithTag("extensionsField").performTextInput("php, html")
+        rule.onNodeWithText("894 paths").assertIsDisplayed()
+        rule.onNodeWithTag("extensionsField").performTextClearance(); rule.onNodeWithTag("extensionsField").performTextInput("ph p")
+        rule.onNodeWithText("Use letters and digits only, for example php, html").assertExists()
+        rule.onNodeWithTag("toolRunPill").assertIsNotEnabled()
+        rule.onNodeWithTag("extensionsField").performTextClearance()
+        rule.onNodeWithTag("codesField").performTextClearance(); rule.onNodeWithTag("codesField").performTextInput("99")
+        rule.onNodeWithText("Use codes from 100 to 599, for example 200, 301, 403").assertExists()
+        rule.onNodeWithTag("toolRunPill").assertIsNotEnabled()
+        rule.onNodeWithTag("codesField").performTextClearance()
+        rule.onNodeWithText("Add at least one status code").assertExists()
+    }
+    @Test fun aBusyHostShowsItsReasonAndDisablesRun() {
+        show(ToolsFakes.sheet(busyReason = ToolCopy.BUSY_TOO_MANY))
+        rule.onNodeWithText("Four tools are already running, stop one first").assertIsDisplayed()
+        rule.onNodeWithTag("toolRunPill").assertIsNotEnabled()
+    }
+    @Test fun theFooterAndRunPillStayVisibleWithTheBodyScrolledToTheEndAtFontScale13() {
+        show(fontScale = 1.3f)
+        rule.onNodeWithTag("filterSwitch").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithTag("toolRunPill").assertIsDisplayed()
+        rule.onNodeWithText("Directory brute-force").assertIsDisplayed()
+        val pill = rule.onNodeWithTag("toolRunPill").fetchSemanticsNode()
+        val body = rule.onNodeWithTag("dirBruteBody").fetchSemanticsNode()
+        assertFalse("the Run pill must not be inside the scrolling body", generateSequence(pill.parent) { it.parent }.any { it.id == body.id })
+    }
+    @Test fun manageWordlistsFiresItsLambda() {
+        show(); rule.onNodeWithTag("manageWordlists").performClick(); assertEquals(1, manage)
+    }
+}
+```
+
+`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/ToolResultsSheetTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.ui.tools
+
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/** spec 12.2 item 5. */
+@RunWith(AndroidJUnit4::class)
+class ToolResultsSheetTest {
+    @get:Rule val rule = createComposeRule()
+    private val events = mutableListOf<String>()
+    private fun show(state: ToolResultsState) = rule.setContent {
+        NetProbeTheme { ToolResultsSheet(state, onOlder = { events += "older" }, onNewer = { events += "newer" }, onCopy = { events += "copy ${it.id}" },
+            onOpen = { events += "open ${it.id}" }, onShare = { events += "share" }, onDismiss = {}) }
+    }
+
+    @Test fun openWithOnlyWithAUrlCopyAlwaysAndEveryTargetIs48dp() {
+        show(ToolsFakes.results())
+        rule.onNodeWithTag("open:1").assert(hasContentDescription("Open http://10.0.3.10:5000/admin with")).assertHeightIsAtLeast(48.dp).performClick()
+        rule.onNodeWithTag("open:2").assertDoesNotExist()
+        rule.onNodeWithTag("copy:2").assert(hasContentDescription("Copy Pi-hole")).assertHeightIsAtLeast(48.dp).performClick()
+        rule.onNodeWithTag("copy:1").assertHeightIsAtLeast(48.dp)
+        assertEquals(listOf("open 1", "copy 2"), events)
+    }
+    @Test fun theRunSwitcherIsBoundedAtBothEnds() {
+        show(ToolsFakes.results(index = 1, count = 3))
+        rule.onNodeWithText("Run 1 of 3").assertIsDisplayed()
+        rule.onNodeWithTag("newerRun").assertIsNotEnabled(); rule.onNodeWithTag("olderRun").assertIsEnabled().performClick()
+        assertEquals(listOf("older"), events)
+    }
+    @Test fun theOldestRunCannotGoOlder() {
+        show(ToolsFakes.results(index = 3, count = 3))
+        rule.onNodeWithTag("olderRun").assertIsNotEnabled(); rule.onNodeWithTag("newerRun").assertIsEnabled()
+    }
+    @Test fun emptyStatesAndShareDisabledWhileRunning() {
+        show(ToolsFakes.results(findings = emptyList(), active = true))
+        rule.onNodeWithText("Running, findings appear as they are found").assertIsDisplayed()
+        rule.onNodeWithTag("shareRun").assertIsNotEnabled()
+    }
+    @Test fun aFinishedRunWithNothingSaysNoFindingsAndShares() {
+        show(ToolsFakes.results(findings = emptyList()))
+        rule.onNodeWithText("No findings").assertIsDisplayed()
+        rule.onNodeWithTag("shareRun").assertIsEnabled().performClick(); assertEquals(listOf("share"), events)
+    }
+}
+```
+
+- [ ] **Step 2: Compile to see them fail**
+
+```bash
+./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
+```
+Expected: `BUILD FAILED`, `Unresolved reference 'DirBruteSheet'`, `'ToolResultsSheet'`.
+
+- [ ] **Step 3: Implement**
 
 `ui/tools/DirBruteSheet.kt`:
 ```kotlin
@@ -8511,101 +9159,12 @@ private fun FindingRowItem(row: FindingRow, onCopy: (FindingRow) -> Unit, onOpen
 }
 ```
 
-`ui/detail/DetailComponents.kt`:
-- `DetailMenu` (3A): add the parameter `removeEnabled: Boolean = true` and pass `enabled = removeEnabled` to the "Remove device" `DropdownMenuItem`.
-- `ScanBar` (3A): add the parameters `toolBar: ToolRunBar? = null, onStopTool: () -> Unit = {}` at the end. Then:
-  - the profile `PinnedSegmented` gets `enabled = !scanning && toolBar == null`;
-  - the pill becomes
-```kotlin
-            if (toolBar != null) ScanPill(scanning = true, enabled = true, onClick = onStopTool, stopDescription = ToolCopy.STOP_DESCRIPTION)
-            else ScanPill(scanning, enabled = enabled && !(profile is ScanProfile.Custom && customError != null), onClick = onScan)
-```
-  - the reserved progress `Box` becomes (same reserved height, no height added, spec 8.2):
-```kotlin
-        Box(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).heightIn(min = progressHeight), contentAlignment = Alignment.CenterEnd) {
-            when {
-                toolBar != null -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(toolBar.label, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).testTag("toolBarLabel"))
-                    Text(toolBar.progress, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, modifier = Modifier.padding(start = 8.dp).testTag("toolBarProgress"))
-                }
-                scanning -> Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
-            }
-        }
-```
-  - the 2 dp line `Box` becomes:
-```kotlin
-        val toolFraction = toolBar?.fraction
-        Box(Modifier.fillMaxWidth().height(2.dp)) {
-            when {
-                toolFraction != null -> LinearProgressIndicator(progress = { toolFraction }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
-                    trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})
-                toolBar != null -> LinearProgressIndicator(modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface, gapSize = 0.dp)
-                scanning -> LinearProgressIndicator(progress = { detailFraction(progress, identified) }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
-                    trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})
-            }
-        }
-```
-  (3A's Task 18 progress glide animates the scanning fraction; keep its animated value in the `scanning` branch exactly as 3A left it, and leave the tool branches unanimated, which also satisfies reduced motion.)
-- `PortSheet` (3A): add the parameters `tools: List<ToolId> = emptyList(), toolsBusy: Boolean = false, onTool: (ToolId) -> Unit = {}` and, between the `tail.forEach { ... }` rows and the vulnerabilities `SheetRow`, insert:
-```kotlin
-            if (tools.isNotEmpty()) {
-                Text(ToolCopy.RUN_TOOL, style = NetProbeText.caption, color = NetProbeColors.textMuted, modifier = Modifier.padding(top = 4.dp))
-                tools.forEach { tool ->
-                    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button) { onTool(tool); onClose() }.testTag("sheetTool:${tool.key}"),
-                        contentAlignment = Alignment.CenterStart) {
-                        Text(ToolCopy.toolName(tool), style = NetProbeText.secondary, color = if (toolsBusy) NetProbeColors.textMuted else NetProbeColors.signal)
-                    }
-                }
-            }
-```
-(imports `com.northwalessolutions.netprobe.engine.tools.ToolId`, `com.northwalessolutions.netprobe.ui.tools.ToolCopy`, `com.northwalessolutions.netprobe.ui.tools.ToolRunBar`. A held host's row still reports the tap; the view model answers with the busy snackbar, spec 8.3.)
-
 `ui/detail/DetailContent.kt`:
-- Signature: `fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false, toolState: DetailToolsState = DetailToolsState(), toolActions: ToolActions = ToolActions())`.
-- After the existing `LaunchedEffect(state.message)`, add the app-message snackbar (spec 4.3: the visible screen shows it and then dismisses it):
-```kotlin
-    LaunchedEffect(toolState.appMessage?.id) {
-        toolState.appMessage?.let { m -> snackbar.showSnackbar(m.text); toolActions.onDismissAppMessage(m.id) }
-    }
-    var toolsExpanded by rememberSaveable(state.host?.id) { mutableStateOf(false) }
-```
-- `DetailMenu(...)` in the back row gets `removeEnabled = toolState.busy != HostBusyRegistry.Work.TOOL`.
-- `ScanBar(...)` gets `toolBar = toolState.bar, onStopTool = toolActions.onStopTool`.
-- Replace the list part (`if (state.ports.isEmpty()) EmptyState(...) else LazyColumn(...) { items(...) }`) with:
-```kotlin
-        val tools = toolState.tools
-        if (state.ports.isEmpty() && tools == null) EmptyState(if (state.scanning) "Scanning ports" else "No open ports yet, run a scan", pad)
-        else LazyColumn(Modifier.padding(pad).fillMaxSize()
-            .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
-            .testTag("portList")) {
-            tools?.let { t ->
-                item(key = "tools") {
-                    ToolsBlock(t, toolsExpanded, busy = toolState.busy != null, onToggle = { toolsExpanded = !toolsExpanded },
-                        onRunChip = toolActions.onRunTool, onResults = toolActions.onOpenResults)
-                }
-            }
-            items(state.ports, key = { it.port }) { p -> PortRowItem(ip, p, onAction = actions.onAction, onLongPress = { sheetPort = p.port }) }
-        }
-```
-  (keep 3A's Task 18 row-arrival modifiers on `PortRowItem` exactly as they are; only the `tools` item and the empty condition are new. The two empty-state strings are 3A's.)
-- The `PortSheet(...)` call gets `tools = ToolApplicability.toolsFor(p.port, p.service), toolsBusy = toolState.busy != null, onTool = { toolActions.onRunTool(it, p.port) }`.
 - After the `VulnSheet` line, add:
 ```kotlin
     toolState.dirBrute?.let { DirBruteSheet(it, onRun = toolActions.onStartDirBrute, onManageWordlists = { toolActions.onCloseDirBrute(); toolActions.onManageWordlists() }, onDismiss = toolActions.onCloseDirBrute) }
     toolState.results?.let { ToolResultsSheet(it, toolActions.onOlderRun, toolActions.onNewerRun, toolActions.onCopyFinding, toolActions.onOpenFinding, toolActions.onShare, toolActions.onCloseResults) }
 ```
-- imports: `com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry`, `com.northwalessolutions.netprobe.engine.tools.ToolApplicability`, `com.northwalessolutions.netprobe.ui.tools.*`.
-
-`ui/detail/DetailScreen.kt`: add the parameter `onOpenWordlists: () -> Unit = {}` and pass the tool state and actions:
-```kotlin
-    val tools by vm.toolState.collectAsStateWithLifecycle()
-    DetailContent(s, DetailActions(/* 3A's existing actions, unchanged */), toolState = tools, toolActions = ToolActions(
-        onRunTool = vm::runTool, onStartDirBrute = vm::startDirBrute, onCloseDirBrute = vm::closeDirBrute, onManageWordlists = onOpenWordlists,
-        onOpenResults = vm::openResults, onOlderRun = vm::olderRun, onNewerRun = vm::newerRun, onCloseResults = vm::closeResults, onShare = vm::shareRun,
-        onCopyFinding = vm::copyFinding, onOpenFinding = vm::openFinding, onStopTool = vm::stopTool, onDismissAppMessage = vm::dismissAppMessage))
-```
-(Task 17 passes `onOpenWordlists = { nav.navigate("wordlists") }` from `NetProbeNav`.)
 
 - [ ] **Step 4: Compile the androidTest sources, then the task gate**
 
@@ -8613,25 +9172,33 @@ private fun FindingRowItem(row: FindingRow, onCopy: (FindingRow) -> Unit, onOpen
 ./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
-Expected: `BUILD SUCCESSFUL`. Reviewer checks: the Run pill and Share sit outside the scrolling body (the `DirBruteSheetTest` ancestry assertion pins Run); the Stop for a tool run is the pinned bar's pill; every new target is at least 48 dp; no string literal appears in these composables except 3A's two empty-state strings.
+Expected: `BUILD SUCCESSFUL`. Reviewer checks: the Run pill and Share sit outside the scrolling body (the `DirBruteSheetTest` ancestry assertion pins Run); every new target is at least 48 dp; no string literal appears in these composables.
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "Device screen: Tools block, pinned bar during a run, port-sheet tool group, options and results sheets"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/DirBruteSheet.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolResultsSheet.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/detail/DetailContent.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/DirBruteSheetTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/tools/ToolResultsSheetTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Device screen part 2: brute-force options sheet and results sheet"
 ```
 
 ---
 
-### Task 17: Wordlists screen, the Settings Tools section, navigation, the Home running marker, the app-message notice and Quick scan all skipping
+### Task 19: Wordlists screen, the Settings Tools section, navigation, the Home running marker, the app-message notice and Quick scan all skipping
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreen.kt`, `ui/settings/ToolsSection.kt`
 - Modify: `ui/Controls.kt` (`BackRow`), `ui/Nav.kt` (the `wordlists` route and two entry points), `ui/settings/SettingsScreen.kt` (the Tools section), `ui/detail/DetailScreen.kt` caller in Nav, `ui/home/HomeViewModel.kt` (`HostRow` fields, `HomeUiState` fields, the busy and app-message overlay, `dismissAppMessage`, Quick scan all claim and skip), `ui/home/RowText.kt` (description suffix), `ui/home/HomeComponents.kt` (`Notice.app`, `NoticeArea` app dismiss, `HostRowItem` marker), `ui/home/HomeContent.kt` (notice priority, `HomeActions.onDismissApp`), `ui/home/HomeScreen.kt` (wiring)
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/home/RowTextToolsTest.kt`; compile only (run in Task 18): `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreenTest.kt`, `ui/settings/SettingsToolsTest.kt`, additions to `ui/home/HomeContentTest.kt`
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/home/RowTextToolsTest.kt`; compile only (run in Task 20): `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreenTest.kt`, `ui/settings/SettingsToolsTest.kt`, additions to `ui/home/HomeContentTest.kt`
 
 **Interfaces:**
-- Consumes: `WordlistStore`, `WordlistMeta`, `ImportResult` (Task 9), `WordlistCopy`, `ToolCopy` (Task 3), `ActionPill` (Task 16), `HostBusyRegistry`, `AppMessages`, `AppMessage` (Task 4), 3A's `BackToHome`, `Section`, `HomeUiState`, `HostRow`, `RowText`, `HostRowItem`, `Notice`, `NoticeArea`, `NoticeLine`, `HomeActions`, `quickScanAllBody`, `QuickScanAllLoop`, `RelativeTime`, `HomeGroups`, `NetProbeNavHost` transitions.
+- Consumes: `WordlistStore`, `WordlistMeta`, `ImportResult` (Task 9), `WordlistCopy`, `ToolCopy` (Task 3), `ActionPill` (Task 17), `HostBusyRegistry`, `AppMessages`, `AppMessage` (Task 4), 3A's `BackToHome`, `Section`, `HomeUiState`, `HostRow`, `RowText`, `HostRowItem`, `Notice`, `NoticeArea`, `NoticeLine`, `HomeActions`, `quickScanAllBody`, `QuickScanAllLoop`, `RelativeTime`, `HomeGroups`, `NetProbeNavHost` transitions.
 - Produces:
 ```kotlin
 @Composable fun BackRow(label: String, onBack: () -> Unit)
@@ -8642,10 +9209,15 @@ object WordlistImport { fun message(result: ImportResult): String }
 @Composable internal fun ToolsSection(imported: Int, onOpenWordlists: () -> Unit)    // tag wordlistsRow
 SettingsScreen(container, onBack, onOpenWordlists: () -> Unit = {})
 HostRow(..., val running: Boolean = false, val runningIsScan: Boolean = false)
-HomeUiState(..., val appMessage: String? = null, val appMessageId: Long? = null)
+HomeUiState(..., val appMessage: String? = null, val appMessageId: Long? = null, val toolRunningOnNetwork: Boolean = false)
 data class Notice(val text: String, val undo: Boolean, val app: Boolean = false); NoticeArea(..., onDismissApp: () -> Unit = {})
 HomeActions(..., val onDismissApp: () -> Unit = {}); HomeViewModel.dismissAppMessage()
+// HomeContent: forgetEnabled also needs !state.toolRunningOnNetwork; HomeViewModel.forgetNetwork returns early while it is true
 ```
+
+- [ ] **Step 0: Re-read the 3A files this task edits (plan review G17)**
+
+3A's motion task (Task 18 of the 3A plan) edits `ui/home/HomeContent.kt`, `HomeComponents.kt` (`NoticeArea`, `HostRowItem`) and `ui/Controls.kt`, and may land after this plan was written. Before editing, read the current `HomeMenu` call and its `forgetEnabled` expression, the notice `when`, `NoticeArea`, `HostRowItem`, `HomeViewModel.state`, `forgetNetwork` and `quickScanAllBody` on the branch. Every edit below adds to that code; keep 3A's modifiers, animations and guards, and if a named signature has changed, stop and report it rather than reshaping 3A code.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -8701,7 +9273,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class WordlistsScreenTest {
     @get:Rule val rule = createComposeRule()
-    private val builtIns = listOf(WordlistMeta("builtin:common-short", "common-short", 300, null, true), WordlistMeta("builtin:admin-panels", "admin-panels", 160, null, true))
+    private val builtIns = listOf(WordlistMeta("builtin:common-short", "common-short", 298, null, true), WordlistMeta("builtin:admin-panels", "admin-panels", 153, null, true))
     private val mine = WordlistMeta("user:1", "my list", 4614, 0L, false)
     private val deleted = mutableListOf<WordlistMeta>(); private var imports = 0
     private fun show(lists: List<WordlistMeta>, importing: Boolean = false) = rule.setContent {
@@ -8710,7 +9282,7 @@ class WordlistsScreenTest {
 
     @Test fun builtInRowsHaveNoDelete() {
         show(builtIns)
-        rule.onNodeWithText("300 entries, built in").assertIsDisplayed()
+        rule.onNodeWithText("298 entries, built in").assertIsDisplayed()
         rule.onAllNodesWithText("Delete").assertCountEquals(0)
         rule.onNodeWithText("No imported wordlists yet").assertIsDisplayed()
     }
@@ -8765,7 +9337,7 @@ class SettingsToolsTest {
 }
 ```
 
-Append to `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeContentTest.kt` (spec 12.2 item 8):
+Append to `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeContentTest.kt` (spec 12.2 item 8, and plan review G9 for Forget):
 ```kotlin
     @Test fun aHeldHostShowsRunningInPlaceOfItsPortCount() {
         val base = HomeFakes.settled()
@@ -8774,6 +9346,13 @@ Append to `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/Hom
         rule.onNodeWithTag("rowRunning").assertTextEquals("running")
         rule.onAllNodesWithTag("hostRow")[0].assert(hasContentDescription("tool running", substring = true))
         rule.onNodeWithText("3 open").assertDoesNotExist()
+    }
+    @Test fun forgetThisNetworkIsDisabledWhileAToolRunsOnIt() {
+        var st by mutableStateOf(HomeFakes.settled().copy(networkId = 1, toolRunningOnNetwork = true))
+        rule.setContent { NetProbeTheme { HomeContent(st, rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro") } }
+        rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithText("Forget this network").assertIsNotEnabled()
+        st = st.copy(toolRunningOnNetwork = false); rule.waitForIdle()
+        rule.onNodeWithText("Forget this network").assertIsEnabled()
     }
     @Test fun anAppMessageShowsBelowAnUndoAndIsDismissedThroughItsOwnAction() {
         var dismissed = 0
@@ -9009,17 +9588,22 @@ internal fun ToolsSection(imported: Int, onOpenWordlists: () -> Unit) {
 
 `ui/home/HomeViewModel.kt`:
 - `HostRow`: append `val running: Boolean = false, val runningIsScan: Boolean = false`.
-- `HomeUiState`: append `val appMessage: String? = null, val appMessageId: Long? = null`.
+- `HomeUiState`: append `val appMessage: String? = null, val appMessageId: Long? = null, val toolRunningOnNetwork: Boolean = false`.
 - Rename the existing `val state: StateFlow<HomeUiState> = combine(...) { ... }.stateIn(...)` to keep its combine body and `stateIn` but feed an overlay: change its declaration to `private val baseState: Flow<HomeUiState> = combine(...) { ... }` (drop its `.stateIn(...)`), and add:
 ```kotlin
     /** Rows held by a port scan or a tool show "running"; the newest end-of-run message is offered to the notice line (spec 4.3, 8.8). */
-    val state: StateFlow<HomeUiState> = combine(baseState, c.hostBusy.busy, c.appMessages.current) { s, busy, message ->
+    /** Rows held by a port scan or a tool show "running"; the newest end-of-run message is offered to the notice line (spec 4.3, 8.8).
+     *  [HomeUiState.toolRunningOnNetwork] reads the 3A `hosts` flow (every host of the shown network, not only the filtered rows), so
+     *  Forget this network stays disabled while a tool holds any of them (plan review G9). */
+    val state: StateFlow<HomeUiState> = combine(baseState, c.hostBusy.busy, c.appMessages.current, hosts) { s, busy, message, hs ->
         val rows = s.rows.map { r -> busy[r.id]?.let { w -> r.copy(running = true, runningIsScan = w == HostBusyRegistry.Work.PORT_SCAN) } ?: r }
-        s.copy(rows = rows, groups = HomeGroups.of(rows), appMessage = message?.text, appMessageId = message?.id)
+        s.copy(rows = rows, groups = HomeGroups.of(rows), appMessage = message?.text, appMessageId = message?.id,
+            toolRunningOnNetwork = hs.any { busy[it.id] == HostBusyRegistry.Work.TOOL })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
 
     fun dismissAppMessage() { state.value.appMessageId?.let { c.appMessages.dismiss(it) } }
 ```
+- `forgetNetwork()`: extend its first guard to `if (controller.isRunning || quick.isRunning || state.value.toolRunningOnNetwork) return` (plan review G9). A Forget during a run would soft-delete the network while the run's end writes and re-identification still target its host; the menu item is disabled for the same state below, and the guard covers a tap that races the flow.
 - In `quickScanAllBody`, declare `var skipped = 0` next to `failed` and `unbound`, and change the `QuickScanAllLoop.run(...)` body lambda to (label it `scanOne@`):
 ```kotlin
                 scanOne@{ h ->
@@ -9062,6 +9646,7 @@ internal fun ToolsSection(imported: Int, onOpenWordlists: () -> Unit) {
 
 `ui/home/HomeContent.kt`:
 - `HomeActions`: append `val onDismissApp: () -> Unit = {}`.
+- `HomeMenu(...)`: its `forgetEnabled` argument becomes `state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.toolRunningOnNetwork`.
 - The notice `when` (3A Task 18 form) becomes:
 ```kotlin
             val notice = when {
@@ -9086,53 +9671,97 @@ Expected: `RowTextToolsTest` (2) passes with 3A's Home tests; `BUILD SUCCESSFUL`
 
 - [ ] **Step 5: Commit**
 
+Stage only this task's files, never `git add -A`: another agent may be working in the same tree (plan review G21).
 ```bash
-git add -A && git commit -m "Wordlists screen, Settings Tools section, navigation, Home running marker, app-message notice and Quick scan all skipping"
+git add \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreen.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/settings/ToolsSection.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/Controls.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/settings/SettingsScreen.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/RowText.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeContent.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeScreen.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/home/RowTextToolsTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreenTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/settings/SettingsToolsTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeContentTest.kt
+git status --short   # plan review G21: only the paths above may show as staged (first column); anything else staged is unstaged and reported
+git commit -m "Wordlists screen, Settings Tools section, navigation, Home running marker, app-message notice and Quick scan all skipping"
 ```
 
 ---
 
-### Task 18: Deferred on-device QA (executed later, when the Director returns with the Pixel)
+### Task 20: Deferred on-device QA (executed later, when the Director returns with the Pixel)
 
-This task is NOT executed during the plan. Tasks 1 to 17 end with JVM tests green and every instrumented test compiled; no task has device evidence. When the Director is back with the Pixel 7 Pro (`28221FDH300AP9`) on his LAN, Bugsy runs every item below in order and records each result, pass or fail, in `docs/qa/phase3b-on-device.md`. Per the standing QA rule, Bugsy builds, installs on the device and smoke tests every core flow; a green suite is not a substitute, and code review is not QA. If any step fails, stop, record it, and tell the Director; never fix anything on his live database. The migration here is schema 2 to 3 and is additive (new tables only).
+This task is NOT executed during the plan. Tasks 1 to 19 end with JVM tests green and every instrumented test compiled; no task has device evidence. When the Director is back with the Pixel 7 Pro (`28221FDH300AP9`) on his LAN, Bugsy runs every item below in order and records each result, pass or fail, in `docs/qa/phase3b-on-device.md`. Per the standing QA rule, Bugsy builds, installs on the device and smoke tests every core flow; a green suite is not a substitute, and code review is not QA. If any step fails, stop, record it, and tell the Director; never fix anything on his live database. The migration here is schema 2 to 3 and is additive (new tables only).
 
-Why the order is safe: building `AppContainer` touches no database; the only startup database work is `ToolRepository.markInterrupted` on `appScope`, which runs off the main thread and opens the file the app already opens. The migration tests never open `DB_NAME`.
+Why the order is safe: building `AppContainer` touches no database; the only startup database work is `ToolRepository.markInterrupted`, launched on `appScope` the first time something reads `toolRunner`. `NetProbeNav` reads `toolRunActive`, so only an instrumented class that launches the real activity reaches it, and the only such class is 3A's `HomeScreenTest` (plan review G26). Steps 3 and 5 therefore never open `netprobe.db`, step 3's "unchanged" check is real, and `HomeScreenTest` runs last, after the in-place migration of step 4.
 
 **Files:**
 - Create (at execution time): `docs/qa/phase3b-on-device.md`, `docs/qa/shots/phase3b/*.png`, `docs/qa/shots/phase3b/*.mp4`
 - Backups and the rollback APK go OUTSIDE the repository (they hold the Director's network inventory): `K:/claude/netprobe_db_backup/phase3b/`
 
-Common setup (as 3A Task 19):
+Common setup (as the 3A plan's device QA task):
 ```bash
 ADB="/c/Users/blastdav/AppData/Local/Android/Sdk/platform-tools/adb.exe"
-DEV=28221FDH300AP9; PKG=com.northwalessolutions.netprobe; BK=/k/claude/netprobe_db_backup/phase3b
+DEV=28221FDH300AP9
+PKG=com.northwalessolutions.netprobe
+BK=/k/claude/netprobe_db_backup/phase3b
+BASE=$(cat docs/superpowers/plans/phase3b-base.txt)    # the 3A commit recorded in Task 1 step 0
 mkdir -p "$BK" docs/qa/shots/phase3b
 run() { ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
   -Pandroid.testInstrumentationRunnerArguments.class="$1" --console=plain 2>&1 | tail -12; }
 ```
+If `leaveApksInstalledAfterRun` is rejected by this AGP version, stop and ask the Director before running any instrumented test without it.
 
 - [ ] **Step 0: Back up the live database, before anything is installed or any instrumented test runs**
-The installed build is schema 2 (the 3A build). Force-stop first so nothing writes during the copy:
+
+The installed build is schema 2 (the 3A build). Force-stop the app first so nothing writes during the copy:
 ```bash
 "$ADB" -s $DEV shell am force-stop $PKG
-for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV exec-out run-as $PKG cat databases/$f > "$BK/$f.bak"; done
+for f in netprobe.db netprobe.db-wal netprobe.db-shm; do
+  "$ADB" -s $DEV exec-out run-as $PKG cat databases/$f > "$BK/$f.bak"
+done
 ls -l "$BK"
 ```
-Expected: `netprobe.db.bak` non-empty. If empty, stop.
+Expected: three files; `netprobe.db.bak` non-empty (the `-wal` and `-shm` files may be empty if the last session checkpointed; record their sizes). If `netprobe.db.bak` is empty, stop.
 
 - [ ] **Step 1: Build the schema 2 rollback APK from the local tree (no downloads)**
-Build the last 3A commit in a throwaway worktree, offline, and keep the APK in `$BK` (the way back if the Director rejects 3B). If Gradle reports anything missing offline, stop and ask the Director; never drop `--offline`.
 
-- [ ] **Step 2: Put the copy for the migration chain in place**
-Stream the schema 2 backup into the app data dir as `netprobe-migration-copy.db` (as 3A, through `run-as sh -c 'cat > ...'`), for a 2-to-3 migration on a copy.
+The Phase 3B install replaces the schema 2 build; keep a way back. Build the recorded base commit in a throwaway worktree, offline:
+```bash
+RB=/k/claude/netprobe_rollback_${BASE:0:7}
+git worktree add "$RB" "$BASE"
+cp local.properties "$RB/"
+(cd "$RB" && ./gradlew :app:assembleDebug --offline --console=plain 2>&1 | tail -3)
+cp "$RB/app/build/outputs/apk/debug/app-debug.apk" "$BK/netprobe-schema2-${BASE:0:7}.apk"
+git worktree remove --force "$RB"
+ls -l "$BK"
+```
+Expected: `BUILD SUCCESSFUL` and the APK in `$BK`. If Gradle reports anything missing offline, stop and ask the Director; never drop `--offline`.
+
+- [ ] **Step 2: Put the copy for DirectorCopyMigration23Test in place (plan review G7)**
+
+Streamed straight into the app's data directory, so no SELinux rule on `/data/local/tmp` can block it; SQLite rebuilds the `-shm` file:
+```bash
+for f in netprobe.db netprobe.db-wal; do
+  "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/${f/netprobe.db/netprobe-migration-copy.db}'" < "$BK/$f.bak"
+done
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/
+```
+Expected: `netprobe.db*` untouched; `netprobe-migration-copy.db` the same size as `netprobe.db.bak`.
 
 - [ ] **Step 3: The migration tests first (they install the new APKs but never open `netprobe.db`)**
 ```bash
 "$ADB" -s $DEV shell run-as $PKG ls -l databases/ > "$BK/before-tests.txt"
 run com.northwalessolutions.netprobe.data.ToolMigrationTest
+run com.northwalessolutions.netprobe.data.DirectorCopyMigration23Test
 "$ADB" -s $DEV shell run-as $PKG ls -l databases/
 ```
-Expected: `ToolMigrationTest` passes (the 2-to-3 case and the 1-to-3 chain); `netprobe.db` and its `-wal` unchanged in size and time from `before-tests.txt`. If it fails, stop: do not open the app.
+Expected: both pass. `ToolMigrationTest` covers the 2-to-3 case and the 1-to-3 chain on synthetic data; `DirectorCopyMigration23Test` reports 1 test (not an assumption failure, which would mean the copy was not found) and proves the Director's own schema 2 data migrates with every mark, note, host and port. `netprobe.db` and its `-wal` have the same size and time as in `before-tests.txt`; the copy is gone (the test deletes it). If either fails, stop: do not open the app.
 
 - [ ] **Step 4: In-place migration of the real database (install over, never clean)**
 ```bash
@@ -9141,24 +9770,31 @@ Expected: `ToolMigrationTest` passes (the 2-to-3 case and the 1-to-3 chain); `ne
 "$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3b/q00-after-migration.png
 "$ADB" -s $DEV logcat -d | grep -E "AndroidRuntime|FATAL|IllegalStateException: Migration|Room" | tail -10
 ```
-Check on screen: every host, mark, note and override survives (the tables are additive, but confirm). Record pass or fail. If anything is missing, stop and tell the Director; the restore procedure below is his call.
+Check on screen: every host the Director marked shows its mark; open two marked hosts and confirm their notes, custom names and open ports. Record pass or fail. If anything is missing, stop and tell the Director; the restore procedure below is his call.
 
-- [ ] **Step 5: The rest of the instrumented suite** (DAO and Compose tests use in-memory databases or fake state):
+- [ ] **Step 5: The rest of the instrumented suite** (DAO and Compose tests use in-memory databases or fake state; 3A's classes run again because 3B edits the screens they cover):
 ```bash
-for c in data.ToolDaoTest ui.tools.ToolsBlockTest ui.tools.DirBruteSheetTest ui.tools.ToolResultsSheetTest \
-         ui.wordlists.WordlistsScreenTest ui.settings.SettingsToolsTest ui.home.HomeContentTest ui.detail.DetailContentTest; do
+for c in data.ToolDaoTest data.DaoTest data.RemoveDeviceTest \
+         ui.tools.ToolsBlockTest ui.tools.DirBruteSheetTest ui.tools.ToolResultsSheetTest ui.wordlists.WordlistsScreenTest ui.settings.SettingsToolsTest \
+         ui.home.RadarBlockTest ui.home.HomeContentTest ui.home.RadarStateTest ui.detail.DetailContentTest \
+         ui.NavTransitionTest ui.ControlsMotionTest ui.ListMotionTest ui.settings.SettingsRowsTest ui.settings.ExtendedSectionTest \
+         ui.theme.TypographyTest ui.KeepScreenOnTest; do
   run com.northwalessolutions.netprobe.$c
 done
+run com.northwalessolutions.netprobe.ui.HomeScreenTest   # last (plan review G26): it launches the real activity, which opens netprobe.db and runs markInterrupted
 ```
-Plus the end-to-end loopback tool tests that the implementer added in Tasks 5, 12, 13 and 14 if they were written as instrumented (they are JVM, so they already ran green). Record each class's count.
+Expected: every class passes. Record each class's count. A class name that does not exist on the branch (3A renamed or merged it) is recorded and skipped, not invented. Timing tests on a real frame clock that fail are recorded with their message, not retried into a pass and not relaxed.
 
 - [ ] **Step 6: Screen recordings** (10 to 20 s each):
-1. `r1-brute-force`: a directory brute-force of the CHNAS on 5000 with common-short from the Tools block: chips, the options sheet, the run, findings arriving, Stop ending it within about a second.
-2. `r2-browser-roundtrip`: during a brute-force, "Open with..." a found path, read it for 60 s, return; the run continues and ends DONE with no counted errors (Review Focus 1).
-3. `r3-results`: the results sheet, the run switcher, Share.
-4. `r4-home-running`: start a run, go Home: the row shows "running"; Quick scan all skips it and says so; the end message on Home's notice line.
+```bash
+rec() { "$ADB" -s $DEV shell screenrecord --time-limit "$2" /sdcard/$1.mp4; "$ADB" -s $DEV pull /sdcard/$1.mp4 docs/qa/shots/phase3b/$1.mp4; "$ADB" -s $DEV shell rm /sdcard/$1.mp4; }
+```
+1. `rec r1-brute-force 20`: a directory brute-force of the CHNAS on 5000 with common-short from the Tools block: chips, the options sheet, the run, findings arriving, Stop ending it within about a second.
+2. `rec r2-browser-roundtrip 20`: during a brute-force, "Open with..." a found path, read it for 60 s, return; the run continues and ends DONE with no counted errors (Review Focus 1).
+3. `rec r3-results 15`: the results sheet, the run switcher, Share.
+4. `rec r4-home-running 15`: start a run, go Home: the row shows "running"; Quick scan all skips it and says so; Forget this network is disabled while it runs; the end message on Home's notice line.
 
-- [ ] **Step 7: Screenshots** (font scale 1.0 and 1.3):
+- [ ] **Step 7: Screenshots** (`"$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3b/<name>.png`, at font scale 1.0 and again at 1.3 via `"$ADB" -s $DEV shell settings put system font_scale 1.3`, restored to 1.0 afterwards):
 5. `s05-tools-collapsed` and `s05b-expanded` the Tools block.
 6. `s06-options` the brute-force options sheet (footer and Run pill visible at 1.3 with the body scrolled).
 7. `s07-fingerprint` the HTTP fingerprint results on the Pi-hole naming Pi-hole; `s07b-identity` the identity line with the `toolHint` reason.
@@ -9168,7 +9804,7 @@ Plus the end-to-end loopback tool tests that the implementer added in Tasks 5, 1
 11. `s11-wordlists` the Wordlists screen with an imported list.
 
 - [ ] **Step 8: Behaviour checks, each recorded pass or fail** (spec 12.3 items 1 to 17):
-- 1 Install over the 3A build; existing data survives.
+- 1 Install over the 3A build; existing data survives (step 4).
 - 2 CHNAS brute-force common-short and defaults: DSM paths appear (for example `/webman`), catch-all noise filtered, Stop within about a second; a second run with admin-panels finishes. Times against 5.7.
 - 3 Mid-run browser round trip: continues, ends DONE, never "The server stopped answering" (Review Focus 1).
 - 4 CHNAS HTTP fingerprint on 5000 names Synology DSM and the identity line shows Synology NAS with a `toolHint` reason; TLS certificate on 5001 shows subject, SANs, expiry, the self-signed flag, and "as <name>".
@@ -9178,58 +9814,87 @@ Plus the end-to-end loopback tool tests that the implementer added in Tasks 5, 1
 - 8 Pi-hole admin: HTTP fingerprint names Pi-hole; a brute-force with admin-panels finds `/admin`.
 - 9 UniFi gateway: TLS on 443; fingerprint names UniFi OS; a brute-force with api-paths finishes with its catch-all redirect filtered.
 - 10 Hue bridge off-subnet (`10.0.4.20`, extended on): fingerprint names Philips Hue; a brute-force completes without stalling (adaptive concurrency); the run is bound to Wi-Fi.
-- 11 Start a brute-force, go Home: the row shows "running"; Quick scan all skips it and says so; the end message on Home.
+- 11 Start a brute-force, go Home: the row shows "running"; Quick scan all skips it and says so; Forget this network is disabled until the run ends (plan review G9); the end message on Home.
 - 12 Import a wordlist on the phone; check name, count, date; run with it; delete it and check the saved options fall back with the notice.
 - 13 Switch Wi-Fi mid-run: it stops with "Network changed, run stopped".
 - 14 Results: Copy copies the URL; Share produces the 7.5 text.
 - 15 Force-stop mid-run and relaunch: the run shows "Interrupted" with its findings.
 - 16 Remove a device with tool history, Undo: the history is back. Remove again and let the Undo lapse: the history is gone.
 - 17 Font scale 1.3: the Device screen budget (8.9) and the options sheet footer.
-- Janky frames under 5 percent during a brute-force with the results sheet open (`dumpsys gfxinfo`).
+- Janky frames under 5 percent during a brute-force with the results sheet open:
+```bash
+"$ADB" -s $DEV shell dumpsys gfxinfo $PKG reset
+# run a brute-force with the results sheet open until it ends
+"$ADB" -s $DEV shell dumpsys gfxinfo $PKG | grep -E "Total frames rendered|Janky frames"
+```
 
-- [ ] **Step 9: Record and hand over**: write `docs/qa/phase3b-on-device.md` with the date, build commit, every step's result, the test counts per class, the screenshot and recording names, the gfxinfo numbers, the 5.7 timings (correct the table if off by more than 50 percent), and for the Director to rule on: the section 13 assumptions (1 to 15), the section 14 open items, and the plan deviations listed in the Self-Review Notes. Commit only the QA record and shots; the backups and rollback APK are never committed.
+- [ ] **Step 9: Record and hand over**
 
-**Restore procedure (only on the Director's say-so).** Put the schema 2 build and the step 0 backup back together, app stopped, all three database files replaced together (a stale `-wal`/`-shm` next to a restored file can corrupt it), as 3A Task 19's restore.
+Write `docs/qa/phase3b-on-device.md`: the date, build commit, every step's result, the test counts per class, the screenshot and recording names, the gfxinfo numbers, the 5.7 timings (correct the table if off by more than 50 percent), and for the Director to rule on: the spec section 13 assumptions (1 to 15), the section 14 open items, the plan deviations and rulings listed in the Self-Review Notes, and these two plan-review items:
+- **Tools leave traces on the hosts they probe (plan review G18).** The SMB session probe's anonymous and guest SESSION_SETUP attempts are logon attempts: a Windows host records them in its Security event log (event 4625 for a refused logon, 4624 for an accepted anonymous or guest one), and a Synology NAS logs them in its connection log. A directory brute-force fills the target's web access log with hundreds of 404s, and the HTTP fingerprint and TLS certificate tools appear there as ordinary requests. Nothing is changed on the host, but on a client's network these entries are visible to its administrator and can trip an intrusion alert, so run the tools on client hosts only where the engagement allows it.
+- **Tool chips start runs from inside the scrolling list (plan review G25).** Spec 8.1 puts the Run-tool chips in the Tools block, which is the first item of the scrolling port list, while the standing rule says Run and Stop controls never live in a scroll container. Stop is pinned (the scan bar pill), which is what the rule protects, so the plan follows the spec; the Director rules whether the chips may stay where they are.
+
+Then commit only the QA record and its shots:
+```bash
+git add docs/qa/phase3b-on-device.md docs/qa/shots/phase3b
+git status --short    # nothing else may be staged
+git commit -m "Phase 3B on-device QA record"
+```
+The backups and the rollback APK in `K:/claude/netprobe_db_backup/phase3b/` are never committed.
+
+**Restore procedure (only on the Director's say-so).** This puts the schema 2 build and the step 0 backup back together. All three database files are replaced with the app stopped, because a stale `-wal` or `-shm` next to a restored file can corrupt it:
+```bash
+"$ADB" -s $DEV shell am force-stop $PKG
+"$ADB" -s $DEV install -r -d "$BK/netprobe-schema2-${BASE:0:7}.apk"   # -r keeps the data directory; -d allows going back to the older build
+for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV shell run-as $PKG rm -f databases/$f; done
+for f in netprobe.db netprobe.db-wal; do "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/$f'" < "$BK/$f.bak"; done
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/
+ls -l "$BK"
+"$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
+```
+Expected: `netprobe.db` and `netprobe.db-wal` the same sizes as their backups; the app opens on the schema 2 build with every mark and note. Record what was restored and why.
 
 ---
-
 ## Plan Self-Review Notes
 
 **Spec coverage, by section:**
-- Section 2 scope: the framework (2.1 item 1) is Tasks 3, 4 and 6; brute-force with wordlists (item 2) Tasks 8, 9 and 10; the four companions (item 3) Tasks 11 to 14; the raw-socket `HttpClient` (item 4) Task 5; the Wordlists screen (item 5) Task 17; identification hints (item 6) Task 7; schema 2 to 3 (item 7) Task 1; the Home "running" marker (item 8) Task 17. Non-goals (2.2) are honoured: no recursion, proxies, custom Host, scheduling, keep-alive, SNMPv3, SMB past SESSION_SETUP, downloads, wordlist editing or history clearing. Build constraints (2.3) are in Global Constraints.
-- Section 3 decisions: one framework (Tasks 3, 6); Tools block plus port-sheet group (Task 16); one run per host, four at once, a 16-thread view (Tasks 3, 6); `HostBusyRegistry` consulted by Quick scan all, the Detail scan and the runner (Tasks 4, 6, 15, 17); runs on `appScope` (Task 6); pause on ON_STOP (Tasks 4, 6); app-level messages (Tasks 4, 16, 17); Stop only in the pinned bar (Task 16); cancellation through `CancellableIo` (Task 3); raw-socket client (Task 5); binding through `Probe.connect` and `ScanBinding.run` (Tasks 5, 6, 12 to 14); adaptive concurrency and 100 per second (Tasks 4, 10); calibration (Task 10); HEAD then GET (Task 10); wordlist source and storage (Tasks 8, 9); two tables (Task 1); 10 runs (Task 2); 500 findings (Task 10); options only for brute-force (Task 16); hints per (tool, port) (Tasks 2, 7); SNMP gate (Task 3); SMB depth (Task 14); name sent (Tasks 3, 11, 12, 15); removal and Undo (Task 2, deviation 1); export (Task 15).
-- Section 4: 4.1 Task 3; 4.2 Task 3; 4.3 Tasks 4, 15, 16, 17; 4.4 Task 6; 4.5 Tasks 5, 12, 14; 4.6 Tasks 3, 5; 4.7 Tasks 2, 7; 4.8 Tasks 4, 6, 10; 4.9 Tasks 3, 11, 12, 15.
-- Section 5: 5.1 Tasks 10, 15, 16; 5.2 Task 10; 5.3 Tasks 4, 10; 5.4 Task 10; 5.5 Tasks 3, 10; 5.6 Tasks 8, 9, 17; 5.7 Task 18.
-- Section 6: 6.1 Task 11; 6.2 Task 12; 6.3 Task 14; 6.4 Task 13.
-- Section 7: 7.1 Tasks 1, 6, 10, 15; 7.2 Task 2 (with the REPLACE guard test); 7.3 Task 1; 7.4 Task 2 (deviation 1); 7.5 Task 15.
-- Section 8: 8.1 to 8.5 Task 16 (model in Task 15); 8.6 Task 17; 8.7 Task 17; 8.8 Task 17; 8.9 Tasks 16, 17 and Task 18 step 8.
+- Section 2 scope: the framework (2.1 item 1) is Tasks 3, 4 and 6; brute-force with wordlists (item 2) Tasks 8, 9 and 10; the four companions (item 3) Tasks 11 to 15; the raw-socket `HttpClient` (item 4) Task 5; the Wordlists screen (item 5) Task 19; identification hints (item 6) Task 7; schema 2 to 3 (item 7) Task 1; the Home "running" marker (item 8) Task 19. Non-goals (2.2) are honoured: no recursion, proxies, custom Host, scheduling, keep-alive, SNMPv3, SMB past SESSION_SETUP, downloads, wordlist editing or history clearing. Build constraints (2.3) are in Global Constraints.
+- Section 3 decisions: one framework (Tasks 3, 6); Tools block plus port-sheet group (Task 17); one run per host, four at once, a 16-thread view (Tasks 3, 6); `HostBusyRegistry` consulted by Quick scan all, the Detail scan and the runner (Tasks 4, 6, 16, 19); runs on `appScope` (Task 6); pause on ON_STOP (Tasks 4, 6); app-level messages (Tasks 4, 17, 19); Stop only in the pinned bar (Task 17); cancellation through `CancellableIo` (Task 3); raw-socket client (Task 5); binding through `Probe.connect` and `ScanBinding.run` (Tasks 5, 6, 12, 13, 15, pinned by `BindingPropagationTest` in Task 15); adaptive concurrency and 100 per second (Tasks 4, 10); calibration (Task 10); HEAD then GET (Task 10); wordlist source and storage (Tasks 8, 9); two tables (Task 1); 10 runs (Task 2); 500 findings (Task 10); options only for brute-force (Task 18); hints per (tool, port) (Tasks 2, 7); SNMP gate (Task 3); SMB depth (Task 15); name sent (Tasks 3, 11, 12, 16); removal and Undo (Task 2, deviation 1); export (Task 16).
+- Section 4: 4.1 Task 3; 4.2 Task 3; 4.3 Tasks 4, 16, 17, 19; 4.4 Task 6; 4.5 Tasks 5, 12, 13, 15; 4.6 Tasks 3, 5; 4.7 Tasks 2, 7; 4.8 Tasks 3 (`excusedOnce`), 4, 6, 10, 11, 12, 13, 15; 4.9 Tasks 3, 11, 12, 16.
+- Section 5: 5.1 Tasks 10, 16, 18; 5.2 Task 10; 5.3 Tasks 4, 10; 5.4 Task 10; 5.5 Tasks 3, 10; 5.6 Tasks 8, 9, 19; 5.7 Task 20.
+- Section 6: 6.1 Task 11; 6.2 Task 12; 6.3 Tasks 14 and 15; 6.4 Task 13.
+- Section 7: 7.1 Tasks 1, 6, 10, 16; 7.2 Task 2 (with the REPLACE guard test); 7.3 Task 1; 7.4 Task 2 (deviation 1); 7.5 Task 16.
+- Section 8: 8.1 to 8.5 Tasks 17 and 18 (model in Task 16); 8.6 Task 19; 8.7 Task 19; 8.8 Task 19; 8.9 Tasks 17, 19 and Task 20 step 8.
 - Section 9: every string is a `ToolCopy` or `WordlistCopy` member (Task 3), pinned by `ToolCopyTableTest`, which runs every helper over an input matrix and also rejects em-dashes.
-- Sections 10 to 12: the data flow is realised across Tasks 6, 15, 16, 17; the edge cases 11.1 to 11.16 map to Tasks 5 (11.2 HTTP), 6 (11.3, 11.4, 11.5, 11.12), 9 (11.9, 11.10, 11.11), 10 (11.1, 11.6, 11.7, 11.8), 11 to 14 (11.2, 11.13, 11.14), 15 (11.15), 17 (11.16); the JVM tests of 12.1 are in each task, the instrumented tests of 12.2 are compiled in Tasks 1, 2, 16, 17 and run in Task 18, and 12.3 is Task 18 step 8. Sections 13 to 15 go to the Director in the Task 18 record.
+- Sections 10 to 12: the data flow is realised across Tasks 6, 16, 17, 19; the edge cases 11.1 to 11.16 map to Tasks 5 (11.2 HTTP), 6 (11.3, 11.4, 11.5, 11.12), 9 (11.9, 11.10, 11.11), 10 (11.1, 11.6, 11.7, 11.8), 11 to 15 (11.2, 11.13, 11.14), 15 (11.15), 17 (11.16); the JVM tests of 12.1 are in each task, the 12.1 binding-propagation test is Task 15's `BindingPropagationTest`, the instrumented tests of 12.2 are compiled in Tasks 1, 2, 17, 18, 19 and run in Task 20, and 12.3 is Task 20 step 8. Sections 13 to 15 go to the Director in the Task 20 record.
 
-**Placeholder scan (re-run after the completion pass):** `grep -nE "TBD|TODO|similar to Task|implementer (completes|finishes|adds|tops)|stub|placeholder|no-op placeholder" docs/superpowers/plans/2026-10-20-netprobe-phase3b.md` was run on the assembled file. Every remaining hit is one of these, and none is unwritten code: (a) the empty `reidentifyFromTools` function and the empty `toolMap()` body in Task 6, which Tasks 7 and 10 to 14 fill in order (until then no tool is registered, so neither is reachable); (b) the word "stub" in Task 1's minimal `ToolDao`, which Task 2 replaces with the full DAO; (c) the Compose `placeholder =` parameter of the extensions field in Task 16; (d) this note. Every task gives its failing tests, complete production code, exact names, exact commands and the gate. The three engine stubs of the first draft (the brute-force runaway and outcome lines, the fingerprint `urlOf` and header emitter) are replaced by real code in Tasks 10 and 11. Every composable (Tools block, options sheet, results sheet, Wordlists screen, Settings section, the Detail and Home edits) is written in full in Tasks 16 and 17. The SMB2, NTLM and SPNEGO byte layouts, the direct-TCP framing and the SNMP UDP exchange are written in full in Tasks 13 and 14, each request pinned to bytes written out in a test.
+**Placeholder scan (re-run after the Gruff plan review pass):** `grep -nE "TBD|TODO|similar to Task|implementer (completes|finishes|adds|tops)|stub|placeholder|no-op placeholder|<[a-z ]+>" docs/superpowers/plans/2026-10-20-netprobe-phase3b.md` was run on the assembled file. Every remaining hit is one of these, and none is unwritten code: (a) the empty `reidentifyFromTools` function and the empty `toolMap()` body in Task 6, which Tasks 7, 10 to 13 and 15 fill in order (until then no tool is registered, so neither is reachable); (b) the word "stub" in Task 1's minimal `ToolDao`, which Task 2 replaces with the full DAO; (c) the Compose `placeholder =` parameter of the extensions field in Task 18; (d) test-tag and copy patterns written with angle brackets (`toolChip:<toolId>:<port>`, "as <name>"), which name a value, not missing code; (e) this note. Every task gives its failing tests, complete production code, exact names, exact commands, the gate and an explicit staging list. Every composable is written in full in Tasks 17, 18 and 19; the SMB2, NTLM and SPNEGO byte layouts, the direct-TCP framing and the SNMP UDP exchange are written in full in Tasks 13, 14 and 15, each request pinned to bytes written out in a test and each response fixture laid out by hand.
 
 **Type consistency:**
-- `ToolRunStatus` (Task 1) is used by `ToolResult` (Task 3), `ToolStore` and the runner (Task 6), `ToolCopy.statusLabel` (Task 3) and the UI model (Task 15). `FindingKind` and `ToolId` (Task 3) are stored as TEXT keys (`kind`, `toolId`) and parsed back with `FindingKind.parse` / `ToolId.byKey`.
-- `ToolOptions` ships with `None` in Task 3; Task 10 adds `DirBrute(options, wordlistName, wordlistEntries)` and extends `ToolOptionsJson` (Task 6); `ToolRunOptions.parse` (Task 15) reads every field back with defaults, and `ToolRunOptionsTest` round-trips the encoder into the decoder.
+- `ToolRunStatus` (Task 1) is used by `ToolResult` (Task 3), `ToolStore` and the runner (Task 6), `ToolCopy.statusLabel` (Task 3) and the UI model (Task 16). `FindingKind` and `ToolId` (Task 3) are stored as TEXT keys (`kind`, `toolId`) and parsed back with `FindingKind.parse` / `ToolId.byKey`.
+- `ToolOptions` ships with `None` in Task 3; Task 10 adds `DirBrute(options, wordlistName, wordlistEntries)` and extends `ToolOptionsJson` (Task 6); `ToolRunOptions.parse` (Task 16) reads every field back with defaults, and `ToolRunOptionsTest` round-trips the encoder into the decoder.
 - `ToolStore` (Task 6) is implemented by `ToolRepository` (Task 2, `override`s added in Task 6); `ready` completes in a `finally` (Task 2), so a failed `markInterrupted` can never block `start`.
-- `CancellableIo.closing` (Task 3) is used by `HttpClient` (Task 5), `TlsPeek.details` (Task 12), `UdpSnmpExchange` (Task 13) and `TcpSmbTransport` (Task 14); none names `Dispatchers.IO`.
+- `CancellableIo.closing` (Task 3) is used by `HttpClient` (Task 5), `TlsPeek.details` (Task 12), `UdpSnmpExchange` (Task 13) and `TcpSmbTransport` (Task 15); none names `Dispatchers.IO`.
 - `HttpClient.request(..., hostName = null, sslContext = null)` (Task 5) is called with both arguments by Tasks 10 and 11 and with defaults by the Task 5 tests; `HttpClient.trustAllContext()` is reused by Task 12.
-- Injected I/O per tool: `Exchange` (Task 10), `HttpGet` (Task 11), `peek: suspend (ToolTarget, String?) -> TlsDetails?` (Task 12), `SnmpExchange` with `getNext` and `get` (Task 13), `SmbTransport` with `exchange` and `close` (Task 14). Each `AppContainer.toolMap()` entry builds the production implementation.
-- The tool test helpers are `DirBruteTestSupport` (package `dirbrute`, Task 10) and `ToolTestSupport` (package `engine.tools`, Task 11, reused by Tasks 12 to 14); `ToolRunnerTestSupport` serves Task 6 only.
-- `HostEvidence.toolHints` and `HostEvidenceBuilder.build(..., toolHints)` (Task 7) have defaults, so every 3A call site compiles; the four identify paths pass `hintsFor`.
-- `DetailToolsState` and `ToolActions` (Tasks 15, 16) are new `DetailContent` parameters with defaults, so every 3A `DetailContentTest` call still compiles; `HostRow.running`, `HomeUiState.appMessage`, `Notice.app`, `NoticeArea(onDismissApp)` and `HomeActions.onDismissApp` (Task 17) all have defaults, so 3A's Home tests compile unchanged.
-- `ScanPill(stopDescription)`, `ScanBar(toolBar, onStopTool)`, `PortSheet(tools, toolsBusy, onTool)` and `DetailMenu(removeEnabled)` (Task 16) add defaulted parameters to 3A composables.
-- `ActionPill` (Task 16) is reused by the Wordlists screen (Task 17); `StepSlider`, `SwitchRow` and `Section` are 3A/MVP `internal` composables in `ui/settings`, visible module-wide.
+- Injected I/O per tool: `Exchange` (Task 10), `HttpGet` (Task 11), `peek: suspend (ToolTarget, String?) -> TlsDetails?` (Task 12), `SnmpExchange` with `getNext` and `get` (Task 13), `SmbTransport` with `exchange` and `close` (Task 15). Each `AppContainer.toolMap()` entry builds the production implementation.
+- The tool test helpers are `DirBruteTestSupport` (package `dirbrute`, Task 10) and `ToolTestSupport` (package `engine.tools`, Task 11, with `EpochControl` for the pause tests, reused by Tasks 12, 13 and 15); `ToolRunnerTestSupport` serves Task 6 and Task 15's `BindingPropagationTest`.
+- `ToolProgress.option(key, value)` (Task 3, default no-op) is implemented by the runner (Task 6) through `ToolStore.setOptions`, which `ToolRepository.setOptions` (Task 2) implements over `ToolDao.setOptions`; `ToolOptionsJson.withOption` (Task 6) patches the stored JSON. `RunControl.excusedOnce` (Task 3) is called by Tasks 11, 12, 13 and 15.
+- `ToolRepository.hostsWithRuns(): Set<Long>` (Task 2) feeds the per-scan cache in `HomeViewModel.discoverOn` (Task 7).
+- `HostEvidence.toolHints` and `HostEvidenceBuilder.build(..., toolHints)` (Task 7) have defaults, so every 3A call site compiles; the four identify paths pass `hintsFor`. `RadarCollector`'s new `hintsFor` parameter sits before `removed`, checked against the branch: `HomeViewModel.kt` line 213 and 3A's `RemoveDeviceTest.collector()` both pass `removed` as a trailing lambda and compile unchanged.
+- `DetailToolsState` and `ToolActions` (Tasks 16, 17) are new `DetailContent` parameters with defaults, so every 3A `DetailContentTest` call still compiles; `HostRow.running`, `HomeUiState.appMessage`, `HomeUiState.toolRunningOnNetwork`, `Notice.app`, `NoticeArea(onDismissApp)` and `HomeActions.onDismissApp` (Task 19) all have defaults, so 3A's Home tests compile unchanged.
+- `ScanPill(stopDescription)`, `ScanBar(toolBar, onStopTool)`, `PortSheet(tools, toolsBusy, onTool)` and `DetailMenu(removeEnabled)` (Task 17) add defaulted parameters to 3A composables.
+- Checked against the committed 3A code on the branch: `DetailViewModel.removeDevice` (commit aeb3be3: `removedHostIds` marked first, `radarScanActive` pairing, marks cleared in a `finally` inside `hostWriteLock`), which Task 2 extends without rewriting; `Probe.connect(ip, port, timeoutMs, keepOpen, binder)`, `BoundNetwork`, `SocketBinder` and `currentBinder()` as Task 15's binding test uses them; the Home `forgetEnabled` expression and `forgetNetwork` guard that Task 19 extends.
+- `ActionPill` (Task 17) is reused by the options sheet (Task 18) and the Wordlists screen (Task 19); `StepSlider`, `SwitchRow` and `Section` are 3A/MVP `internal` composables in `ui/settings`, visible module-wide.
 
 **Deviations flagged for the Director (3B spec vs 3A plan or code; the 3A plan wins):**
 1. **Forget this network takes no tool snapshot (3B spec 7.4 vs 3A plan).** Spec 7.4 assumes Forget deletes hosts at once and needs a TEMP-table snapshot. The 3A plan makes Forget a soft delete that deletes only when the Undo commits, so tool rows survive the Undo window and the commit's cascade removes them for good. Only Remove device snapshots tool rows (Task 2).
 2. **`ToolStore` interface.** The spec names `ToolRepository` in the runner's constructor; the runner depends on a `ToolStore` interface that `ToolRepository` implements, to meet the spec's own "fake repository" test requirement without Room on the JVM.
 3. **`markInterrupted` at first use of the runner.** It is the only startup database work, launched on `appScope` when the `toolRunner` lazy is first read, a documented exception to 3A's "building `AppContainer` touches no database".
-4. **`optionsJson.methodUsed` records the chosen method at run start**, not the post-calibration GET-only switch. The export can therefore print "GET only (HEAD and GET disagree)" only if a later change writes the switch back; adding a small row update after calibration is a follow-up for the Director to approve.
-5. **The bundled wordlists are one globally sorted file each** (300, 160 and 137 entries), not per-category blocks, so the order is machine-checked by `BundledWordlistsTest` and reproduces no published list's ordering. Per-category order remains a reviewer concern only.
+4. **Withdrawn (plan review G8).** `optionsJson.methodUsed` now follows spec 5.2: the calibration switch writes GET_ONLY back through `ToolProgress.option` and `ToolRepository.setOptions` (Tasks 2, 6, 10), so the export's "GET only (HEAD and GET disagree)" is reachable. The 405/501 fallback switch does not write it, as the spec names only the calibration switch.
+5. **The bundled wordlists are one globally sorted file each** (298, 153 and 137 entries after plan review G10 removed the action endpoints), not per-category blocks, so the order is machine-checked by `BundledWordlistsTest` and reproduces no published list's ordering. Per-category order remains a reviewer concern only.
 6. **3A test edits.** Task 7 changes 3A's `DeviceIdentifierTest` rule count (118 to 132) and gateway-index assertions, and adds a `toolHint` case to `SyntheticEvidence`.
 7. **Minimal `ToolDao` in Task 1**, replaced wholesale in Task 2, so Task 1 can export `3.json` on its own.
-8. **SMB verification.** The SMB2, NTLM and SPNEGO messages are pinned to bytes written from the specifications; the crypto is checked against published vectors (RFC 1320, MS-NLMP 4.2.2 and 4.2.4) that I transcribed from memory. If any published-vector assertion fails, the implementer stops and reports it; the vector is never edited, and the guest leg (the only NTLMv2 user) would then be removed as a recorded reduction. No reduction was needed to write the plan: the full session probe (NEGOTIATE, anonymous and guest SESSION_SETUP) is specified. The Task 18 device check is the real proof, as the spec says.
+8. **SMB verification.** The SMB2, NTLM and SPNEGO messages are pinned to bytes written from the specifications; the crypto is checked against published vectors (RFC 1320, MS-NLMP 4.2.2 and 4.2.4) that I transcribed from memory. If any published-vector assertion fails, the implementer stops and reports it; the vector is never edited, and the guest leg (the only NTLMv2 user) would then be removed as a recorded reduction. No reduction was needed to write the plan: the full session probe (NEGOTIATE, anonymous and guest SESSION_SETUP) is specified. The Task 20 device check is the real proof, as the spec says.
 9. **The results header's "as <name>"** shows the name the run attempted (from `optionsJson`), even when the TLS handshake fell back to the IP.
 10. **The rate bucket admits its burst on top of the rate**, so a fresh run can make up to 110 requests in its first second and then holds 100 per second; `RateBucketTest` pins this. The spec's "at or under 100 in every 1 s window (burst 10)" cannot hold literally with a burst; the Director may prefer no initial burst.
 11. **`SnmpExchange` has `get` as well as `getNext`, and `SnmpStep` has `Error`**, because the ifHighSpeed substitution is a GET and an error-status reply must end a step (spec 6.4, 12.1).
@@ -9239,10 +9904,45 @@ Plus the end-to-end loopback tool tests that the implementer added in Tasks 5, 1
 15. **The server name is sanitised**: trailing dot removed, and a name that is not DNS-shaped is not sent.
 16. **The Quick scan all end message's old "device(s)" wording** is replaced by `ToolCopy.quickEnd`'s plural forms (spec 9).
 17. **Spec file location.** The task brief named the Gruff review under `plans/`; it is `docs/superpowers/specs/2026-10-20-phase3b-gruff-review.md`.
+18. **Binding propagation is tested at the socket seams, not through `AppContainer.toolMap()` (plan review G6, a recorded reduction).** `toolMap()` is private and needs an Android `Context`, so a JVM test cannot build it. `BindingPropagationTest` drives the exact four calls the factories make (`HttpClient.request`, `TlsPeek.details`, `UdpSnmpExchange`, `Probe.connect` into `TcpSmbTransport`) under a recording binder, and a refusing binder through the real runner. A factory that bypassed those seams would not be caught; the review checklist covers that.
+19. **Brute-force reads the pause epoch before the first gate**, so a pause that begins while a path waits at the gate also excuses that path's failure: at worst one uncounted extra try, never a counted error the Director caused.
+20. **Tasks 14 and 16 of the first draft are split (plan review G16).** SMB is Tasks 14 (MD4, NTLM, SPNEGO) and 15 (SMB2, framing, the probe); the Device screen is Tasks 17 (Tools block, pinned bar, port sheet) and 18 (the two sheets). The plan now has 20 tasks, the deferred device QA last.
+21. **For the Director's ruling, also listed in the Task 20 hand-over:** the Run-tool chips start runs from inside the scrolling port list as spec 8.1 places them, while Stop stays pinned (plan review G25); and the SMB and brute-force tools leave visible entries in target logs, including Windows Security events 4624/4625 (plan review G18).
 
 **Review Focus mapping:**
-1. Frozen browser trip: Task 6 `ToolRunnerPauseTest` (all three), Task 10 `DirBruteFlowTest.an excused failure is retried after the resume and never counted`; device check Task 18 step 8 item 3.
-2. Not-found filter: Task 10 `DirBruteCalibrationTest` (nonce band, path echo, redirect, extension group, HEAD-404/GET-200, three responses, failed calibration) and `DirBruteRunawayTest` (three).
+1. Frozen browser trip: Task 6 `ToolRunnerPauseTest` (all three, driven with `runCurrent`), Task 3 `ExcusedOnceTest`, Task 10 `DirBruteFlowTest.an excused failure is retried after the resume and never counted`, the pause tests of Tasks 11, 12, 13 and 15; device check Task 20 step 8 item 3.
+2. Not-found filter: Task 10 `DirBruteCalibrationTest` (nonce band, path echo, redirect, extension group, HEAD-404/GET-200 with its `methodUsed` write, three responses, failed calibration) and `DirBruteRunawayTest` (three).
 3. IO starvation: Task 3 `CancellableIoTest` (four, including the caller's dispatcher).
 4. Hints per (tool, port): Task 2 `ToolHintsRuleTest` (four) and instrumented `ToolDaoTest.hintsForPicksPerToolAndPort`; Task 7 `DeviceIdentifierToolHintTest`.
-5. Additive migration: Task 1 `ToolMigrationSqlTest` (three), `SchemaExportTest` version-3 cases; instrumented `ToolMigrationTest` (two), run first in Task 18.
+5. Additive migration: Task 1 `ToolMigrationSqlTest` (three), `SchemaExportTest` version-3 cases; instrumented `ToolMigrationTest` (two) and `DirectorCopyMigration23Test` on a copy of the Director's own database, both run first in Task 20.
+
+## Gruff plan review response
+
+One line per finding of `docs/superpowers/plans/2026-10-20-phase3b-plan-gruff-review.md`. Applied unless marked otherwise.
+
+- G1 (BLOCKING) Applied. Task 2 extends the committed `removeDevice` (aeb3be3) in place: the tool snapshot is taken before `hostWriteLock`, `removedHostIds` is still marked first, the `radarScanActive` pairing is kept, and the restore runs inside the lock with the marks cleared in its `finally`.
+- G2 (BLOCKING) Applied. Every `ToolRunnerTest` and `ToolRunnerPauseTest` step uses `runCurrent()` (with `advanceTimeBy` for the ticker and the pause clock); the Task 6 note records why and that each test fails on its bug.
+- G3 (BLOCKING) Applied. `attempt` calls `control.gate()` before the HEAD and before the GET; `DirBruteFlowTest` adds the HEAD-200 catch-all rate test (at most 110 in the first second, at most 100 in each later second).
+- G4 (BLOCKING) Applied. `HttpClient` sets `soTimeout` on the raw socket before the TLS handshake (the connect is bounded by `Probe.connect`'s timeout); a stalled handshake test is added.
+- G5 Applied. `RunControl.excusedOnce` (Task 3, with `ExcusedOnceTest`) wraps every exchange of the fingerprint, TLS, SNMP and SMB tools, with one fake-epoch test per tool.
+- G6 Applied, with a recorded reduction (deviation 18). `BindingPropagationTest` in Task 15 checks all four socket seams under a recording binder and a refusing binder through the runner.
+- G7 Applied. `DirectorCopyMigration23Test` (Task 1) migrates a copy of the Director's schema 2 database; Task 20 pushes the copy, runs it before the in-place install, builds the rollback APK from `phase3b-base.txt` and writes the restore commands in full.
+- G8 Applied. `ToolProgress.option`, `ToolStore.setOptions` and `ToolRepository.setOptions` write `methodUsed` after the calibration switch; deviation 4 is withdrawn.
+- G9 Applied. `HomeUiState.toolRunningOnNetwork` disables Forget this network and `forgetNetwork` returns early while a tool holds a host of the shown network, with a `HomeContentTest` case.
+- G10 Applied. The action endpoints (`reboot.html`, `upgrade.html`, `apply.cgi`, `setup.cgi`, `webproc`, `cgi-bin/webproc`, `boaform/admin/formLogin`, `logout`, `save`) are removed and `BundledWordlistsTest` enforces a deny pattern.
+- G11 Applied. Task 8 is rebuilt: the stray list is gone, Step 1 is restored, and all three lists are re-sorted with `LC_ALL=C` and machine-checked.
+- G12 Applied. The `withEntries` cancellation test uses a closing-tracking stream, a delete-during-read test and a 200,001-entry TooMany case are added, the limiter test asserts the peak drops to 4 after a timeout, and the Host header, drip and keep-open cases are added to `HttpClientTest`.
+- G13 Applied. `RadarCollector.hintsFor` sits before `removed`, and `discoverOn` passes hints only for hosts in a per-scan `hostsWithRuns()` set.
+- G14 Applied. `ToolRunner.start` launches the job LAZY inside `startLock`, assigns it, registers the run and starts it there.
+- G15 Applied. The response stream is buffered and `line()` stops at the header cap even with no line feed; a 1 MB header-line test is added.
+- G16 Applied. Tasks 14 and 16 are each split in two; the plan has 20 tasks and every cross-reference was renumbered.
+- G17 Applied. Task 1 Step 0 checks 3A is finished and records the base commit; Tasks 17 and 19 open with a Step 0 that re-reads the 3A files they edit.
+- G18 Applied. The Task 20 hand-over tells the Director about the logon events and access-log entries the tools leave.
+- G19 Applied. `SmbFixtures` lays out every response header and the negTokenResp DER by hand; `NtlmFixtures` holds the CHALLENGE.
+- G20 Applied. Both `WordlistStoreTest` calls pass `.byteInputStream()`.
+- G21 Applied. Every commit step stages its task's files by path and checks `git status --short`; no `git add -A` remains.
+- G22 Applied. A finding claims its slot with `found.incrementAndGet()` first and is dropped above 500.
+- G23 Applied. `load()` deletes `*.tmp`, and import and delete hold a `Mutex` around the index read-modify-write, with a concurrent-import test.
+- G24 Applied. `.DS_Store` and `.ssh/known_hosts` replace the misspelt entries.
+- G25 Applied as a hand-over item: the chips stay where spec 8.1 puts them and the question goes to the Director in Task 20.
+- G26 Applied. The Global Constraint now says only `HomeScreenTest` reaches the production `toolRunner`, and Task 20 runs it last, after the in-place migration.
