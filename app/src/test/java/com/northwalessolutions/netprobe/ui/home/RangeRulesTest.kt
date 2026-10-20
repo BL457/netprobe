@@ -20,4 +20,10 @@ class RangeRulesTest {
     @Test fun `an unswept off subnet host falls back to its slash 24`() { assertEquals("10.0.7.0/24" to true, RangeRules.groupFor("10.0.7.3", listOf(local), emptyList())) }
     @Test fun `with no local range known the slash 24 is not off subnet`() { assertEquals("10.0.7.0/24" to false, RangeRules.groupFor("10.0.7.3", emptyList(), emptyList())) }
     @Test fun `garbage is never resolved`() { assertEquals("nas.local" to false, RangeRules.groupFor("nas.local", listOf(local), emptyList())) }
+    @Test fun `a manual only range groups its host as off subnet`() {
+        assertEquals("10.0.4.16/28" to true, RangeRules.groupFor("10.0.4.20", listOf(local), listOf(net("10.0.4.16/28"))))
+    }
+    @Test fun `a swept slash 24 listed before a manual slash 28 inside it wins`() {
+        assertEquals("10.0.4.0/24" to true, RangeRules.groupFor("10.0.4.20", listOf(local, net("10.0.4.0/24")), listOf(net("10.0.4.16/28"))))
+    }
 }
