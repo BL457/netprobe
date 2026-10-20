@@ -64,15 +64,20 @@ object ToolsUiModel {
 }
 
 object ToolResultsModel {
+    /** Rows are mapped once per findings change by the caller (Detail), not on every progress tick. */
+    fun rows(findings: List<ToolFindingEntity>): List<FindingRow> = findings.map { FindingRow(it.id, it.value, it.detail, FindingExtra.decode(it.extra)["url"]) }
+
     /** The results sheet (spec 8.5) for [run], positioned in [sameTool] (newest first, this host and tool). */
     fun of(run: ToolRunEntity, sameTool: List<ToolRunEntity>, ip: String, findings: List<ToolFindingEntity>, active: ToolRunner.Active?, now: Long,
-           formatDate: (Long) -> String = RelativeTime::defaultDate): ToolResultsState {
+           formatDate: (Long) -> String = RelativeTime::defaultDate): ToolResultsState = ofRows(run, sameTool, ip, rows(findings), active, now, formatDate)
+
+    fun ofRows(run: ToolRunEntity, sameTool: List<ToolRunEntity>, ip: String, rows: List<FindingRow>, active: ToolRunner.Active?, now: Long,
+               formatDate: (Long) -> String = RelativeTime::defaultDate): ToolResultsState {
         val tool = ToolId.byKey(run.toolId) ?: ToolId.DIR_BRUTEFORCE
         val live = active?.takeIf { it.runId == run.id }
         val status = if (live != null) ToolCopy.resultsRunning(ToolsUiModel.bar(live).progress)
                      else ToolCopy.resultsStatus(ToolCopy.statusLabel(run.status), RelativeTime.of(run.startedAt, now, formatDate), ToolRunOptions.parse(run.optionsJson).serverName)
         val index = sameTool.indexOfFirst { it.id == run.id }.let { if (it < 0) 1 else it + 1 }
-        return ToolResultsState(run.id, ToolCopy.resultsTitle(ToolCopy.toolName(tool), ip, run.port), status, run.summary, index, maxOf(sameTool.size, 1),
-            findings.map { FindingRow(it.id, it.value, it.detail, FindingExtra.decode(it.extra)["url"]) }, live != null)
+        return ToolResultsState(run.id, ToolCopy.resultsTitle(ToolCopy.toolName(tool), ip, run.port), status, run.summary, index, maxOf(sameTool.size, 1), rows, live != null)
     }
 }

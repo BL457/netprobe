@@ -86,8 +86,8 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     private val dirBrutePort = MutableStateFlow<Int?>(null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private val resultsSource: Flow<Pair<ToolRunEntity, List<ToolFindingEntity>>?> = resultsRunId.flatMapLatest { id ->
-        if (id == null) flowOf(null) else combine(c.toolRepo.run(id), c.toolRepo.findings(id)) { r, f -> r?.let { it to f } }
+    private val resultsSource: Flow<Pair<ToolRunEntity, List<FindingRow>>?> = resultsRunId.flatMapLatest { id ->
+        if (id == null) flowOf(null) else combine(c.toolRepo.run(id), c.toolRepo.findings(id)) { r, f -> r?.let { it to ToolResultsModel.rows(f) } }
     }
     /** The wordlist store does resource I/O on first use, so it is first touched inside this flow, which runs on Dispatchers.Default (toolState's flowOn). */
     private val wordlists: Flow<List<WordlistMeta>> = flow { emitAll(c.wordlistStore.lists) }
@@ -99,7 +99,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         @Suppress("UNCHECKED_CAST") val runs = arr[2] as List<ToolRunEntity>
         @Suppress("UNCHECKED_CAST") val activeMap = arr[3] as Map<Long, ToolRunner.Active>
         @Suppress("UNCHECKED_CAST") val busyMap = arr[4] as Map<Long, HostBusyRegistry.Work>
-        @Suppress("UNCHECKED_CAST") val results = arr[5] as Pair<ToolRunEntity, List<ToolFindingEntity>>?
+        @Suppress("UNCHECKED_CAST") val results = arr[5] as Pair<ToolRunEntity, List<FindingRow>>?
         @Suppress("UNCHECKED_CAST") val lists = arr[7] as List<WordlistMeta>
         val h = arr[0] as HostEntity?; val sheetPort = arr[6] as Int?; val appMessage = arr[8] as AppMessage?
         val active = activeMap[hostId]
@@ -110,7 +110,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             bar = active?.let(ToolsUiModel::bar),
             busy = busy,
             results = if (h == null) null else results?.let { (run, findings) ->
-                ToolResultsModel.of(run, runs.filter { it.toolId == run.toolId }, h.ip, findings, active, now)
+                ToolResultsModel.ofRows(run, runs.filter { it.toolId == run.toolId }, h.ip, findings, active, now)
             },
             dirBrute = if (h == null) null else sheetPort?.let { port -> dirBruteSheet(h, port, ports, lists, busy, activeMap.size) },
             appMessage = appMessage,
@@ -136,11 +136,10 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
 
     /** A chip or port-sheet row (spec 8.1, 8.3): brute-force opens its sheet, the others start at once; a held host shows its reason. */
     fun runTool(toolId: ToolId, port: Int) {
-        val busy = c.hostBusy.busy.value[hostId]
-        if (busy != null) { message.value = ToolsUiModel.busyMessage(busy); return }
+        DetailBusyRules.toolRefusal(c.hostBusy.busy.value, hostId)?.let { message.value = it; return }
         if (toolId == ToolId.DIR_BRUTEFORCE) {
             // Off the main thread: the first wordlistStore access reads the built-in lists.
-            viewModelScope.launch(Dispatchers.Default) {
+            c.appScope.launch(Dispatchers.Default) {
                 val saved = c.dirBruteOptions.load()
                 if (c.wordlistStore.lists.value.none { it.id == saved.wordlistId }) message.value = ToolCopy.WORDLIST_FALLBACK
                 dirBrutePort.value = port
@@ -154,7 +153,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val port = dirBrutePort.value ?: return
         val options = o.coerced()
         dirBrutePort.value = null
-        viewModelScope.launch(Dispatchers.Default) {
+        c.appScope.launch(Dispatchers.Default) {
             c.dirBruteOptions.save(options)
             val meta = c.wordlistStore.lists.value.firstOrNull { it.id == options.wordlistId }
             start(ToolId.DIR_BRUTEFORCE, port, ToolOptions.DirBrute(options, meta?.name ?: "", meta?.entries ?: 0))
@@ -221,11 +220,11 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val h = state.value.host ?: return
         val prof = profile.value
         val resolved = if (prof is ScanProfile.Custom) ProfileParser.parse(customText.value).getOrElse { customError.value = it.message; return } else prof
-        if (c.hostBusy.busy.value[hostId] == HostBusyRegistry.Work.TOOL) { message.value = ToolCopy.SCAN_REFUSED; return }
+        DetailBusyRules.scanRefusal(c.hostBusy.busy.value, hostId)?.let { message.value = it; return }
         scan.start { e ->
             // One run per host across port scans and tools (spec 4.3): claim before scanning, release whatever happens.
             if (!c.hostBusy.tryClaim(hostId, HostBusyRegistry.Work.PORT_SCAN)) {
-                message.value = c.hostBusy.busy.value[hostId]?.let(ToolsUiModel::busyMessage) ?: ToolCopy.SCAN_REFUSED
+                message.value = DetailBusyRules.scanRefusal(c.hostBusy.busy.value, hostId) ?: ToolCopy.SCAN_REFUSED
                 return@start
             }
             try {
@@ -281,7 +280,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
      * the screen never cancels it. Undo restores under the same lock, through a restore that clears anything a late scan wrote.
      */
     fun removeDevice() {
-        if (c.hostBusy.busy.value[hostId] == HostBusyRegistry.Work.TOOL) return   // spec 4.3: a running tool run keeps the device
+        if (!DetailBusyRules.removeAllowed(c.hostBusy.busy.value, hostId)) return   // spec 4.3: a running tool run keeps the device
         val h = state.value.host ?: return
         val name = state.value.displayName
         c.appScope.launch(Dispatchers.Main.immediate) {
