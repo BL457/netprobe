@@ -6311,6 +6311,16 @@ DEV=28221FDH300AP9
 PKG=com.northwalessolutions.netprobe
 BK=/k/claude/netprobe_db_backup/phase3a
 mkdir -p "$BK" docs/qa/shots/phase3a
+# Binary-safe copy into the app's data directory, then an MD5 check (device QA finding F5). Never stream a file with
+# `adb shell ... < file`: on this PC it truncates binary stdin (4220 of 323584 bytes written). `exec-in` is the form
+# the device QA proved byte for byte. Usage: put <local file> <path under the app's data directory>
+put() {
+  "$ADB" -s $DEV exec-in run-as $PKG sh -c "cat > $2" < "$1"
+  local want got
+  want=$(md5sum < "$1" | cut -d' ' -f1)
+  got=$("$ADB" -s $DEV exec-out run-as $PKG md5sum "$2" | cut -d' ' -f1)
+  if [ "$want" = "$got" ]; then echo "MD5 OK $2 $got"; else echo "MD5 MISMATCH $2: PC $want, phone $got"; return 1; fi
+}
 run() { ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
   -Pandroid.testInstrumentationRunnerArguments.class="$1" --console=plain 2>&1 | tail -12; }
 ```
@@ -6345,14 +6355,14 @@ Expected: `BUILD SUCCESSFUL` and the APK in `$BK`. If Gradle reports anything mi
 
 - [ ] **Step 2: Put the copy for DirectorCopyMigrationTest in place**
 
-Streamed straight into the app's data directory, so no SELinux rule on `/data/local/tmp` can block it (G15); SQLite rebuilds the `-shm` file:
+Written straight into the app's data directory with `put` (`adb exec-in`, never `adb shell ... < file`, F5), so no SELinux rule on `/data/local/tmp` can block it (G15); SQLite rebuilds the `-shm` file. Each file's MD5 is compared with its backup before anything else runs:
 ```bash
 for f in netprobe.db netprobe.db-wal; do
-  "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/${f/netprobe.db/netprobe-migration-copy.db}'" < "$BK/$f.bak"
+  put "$BK/$f.bak" "databases/${f/netprobe.db/netprobe-migration-copy.db}" || break
 done
 "$ADB" -s $DEV shell run-as $PKG ls -l databases/
 ```
-Expected: `netprobe.db*` untouched; `netprobe-migration-copy.db` the same size as `netprobe.db.bak`.
+Expected: `MD5 OK` for both files; `netprobe.db*` untouched; `netprobe-migration-copy.db` the same size as `netprobe.db.bak`. On any `MD5 MISMATCH`, stop: do not run step 3.
 
 - [ ] **Step 3: The migration tests first (they install the new APKs but never open `netprobe.db`)**
 ```bash
@@ -6401,12 +6411,15 @@ Expected: four files; `netprobe.db.bak` and `netprobe.xml.bak` non-empty. If eit
 ```bash
 "$ADB" -s $DEV shell am force-stop $PKG
 for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV shell run-as $PKG rm -f databases/$f; done
-for f in netprobe.db netprobe.db-wal; do "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/$f'" < "$BK/schema2/$f.bak"; done
-"$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > shared_prefs/netprobe.xml'" < "$BK/schema2/netprobe.xml.bak"
+for f in netprobe.db netprobe.db-wal; do put "$BK/schema2/$f.bak" databases/$f || break; done
+put "$BK/schema2/netprobe.xml.bak" shared_prefs/netprobe.xml
 "$ADB" -s $DEV shell run-as $PKG ls -l databases/ shared_prefs/
+```
+Check: `MD5 OK` for all three files before going on. On any `MD5 MISMATCH`, do not start the app: run the same `put` again for that file, and if it still mismatches, stop and tell the Director (the backup on the PC is intact). Only then:
+```bash
 "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 ```
-Expected: `netprobe.db`, `netprobe.db-wal` and `netprobe.xml` the same sizes as their `schema2` backups; every mark, note and manual range is back. The schema 1 rollback at the end of this task is a different procedure and is used only if the migration itself failed.
+Expected: `netprobe.db`, `netprobe.db-wal` and `netprobe.xml` the same sizes and MD5s as their `schema2` backups; every mark, note and manual range is back. The schema 1 rollback at the end of this task is a different procedure and is used only if the migration itself failed.
 
 - [ ] **Step 7: Screen recordings** (10 to 20 s each; motion on unless stated):
 ```bash
@@ -6468,13 +6481,16 @@ The backups and the rollback APK in `K:/claude/netprobe_db_backup/phase3a/` are 
 "$ADB" -s $DEV shell am force-stop $PKG
 "$ADB" -s $DEV install -r -d "$BK/netprobe-schema1-b37db04.apk"   # -r keeps the data directory; -d allows going back to the older build
 for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV shell run-as $PKG rm -f databases/$f; done
-for f in netprobe.db netprobe.db-wal; do "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/$f'" < "$BK/$f.bak"; done
-"$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > shared_prefs/netprobe.xml'" < "$BK/netprobe.xml.bak"
+for f in netprobe.db netprobe.db-wal; do put "$BK/$f.bak" databases/$f || break; done
+put "$BK/netprobe.xml.bak" shared_prefs/netprobe.xml
 "$ADB" -s $DEV shell run-as $PKG ls -l databases/ shared_prefs/
 ls -l "$BK"
+```
+Check: `MD5 OK` for all three files before going on. On any `MD5 MISMATCH`, do not start the app: run the same `put` again for that file, and if it still mismatches, stop and tell the Director (the backup on the PC is intact). Only then:
+```bash
 "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 ```
-Expected: `netprobe.db`, `netprobe.db-wal` and `netprobe.xml` the same sizes as their backups; the app opens on the schema 1 build with every mark, note and manual range. Record what was restored and why.
+Expected: `netprobe.db`, `netprobe.db-wal` and `netprobe.xml` the same sizes and MD5s as their backups; the app opens on the schema 1 build with every mark, note and manual range. Record what was restored and why.
 
 ---
 
