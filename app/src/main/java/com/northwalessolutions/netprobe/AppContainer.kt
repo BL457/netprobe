@@ -54,6 +54,7 @@ class AppContainer(val context: Context) {
     val hosts by lazy { HostRepository(db) }
     val ports by lazy { PortRepository(db) }
     val vulnCache by lazy { VulnCacheRepository(db) }
+    val toolRepo by lazy { ToolRepository(db) }
     val networkEnvMonitor by lazy { NetworkEnvMonitor(context) }
     val portTable by lazy { PortTable.fromJson(RawResources.read(context, R.raw.ports)) }
     val mdnsTypes by lazy { RawResources.lines(RawResources.read(context, R.raw.mdns_types)) }

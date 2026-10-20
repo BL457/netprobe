@@ -71,5 +71,21 @@ data class PortCount(val hostId: Long, val n: Int)
 /** Minimal stub so NetProbeDb.tools() compiles and KSP exports the tool tables; replaced wholesale in Task 2. */
 @Dao interface ToolDao {
     @Insert suspend fun insertRun(r: ToolRunEntity): Long
+    @Query("UPDATE tool_runs SET finishedAt = :at, status = :status, summary = :summary WHERE id = :id")
+    suspend fun finish(id: Long, at: Long?, status: ToolRunStatus, summary: String)
+    @Query("DELETE FROM tool_runs WHERE hostId = :hostId AND toolId = :toolId AND id NOT IN " +
+        "(SELECT id FROM tool_runs WHERE hostId = :hostId AND toolId = :toolId ORDER BY startedAt DESC, id DESC LIMIT :keep)")
+    suspend fun prune(hostId: Long, toolId: String, keep: Int)
+    @Query("SELECT * FROM tool_runs WHERE status = 'RUNNING'") suspend fun runningOnce(): List<ToolRunEntity>
     @Insert suspend fun insertFinding(f: ToolFindingEntity): Long
+    @Query("SELECT * FROM tool_runs WHERE hostId = :hostId ORDER BY startedAt DESC, id DESC") fun runsForHost(hostId: Long): Flow<List<ToolRunEntity>>
+    @Query("SELECT * FROM tool_runs WHERE id = :id") fun run(id: Long): Flow<ToolRunEntity?>
+    @Query("SELECT * FROM tool_findings WHERE runId = :runId AND kind != 'HINT' ORDER BY id") fun findings(runId: Long): Flow<List<ToolFindingEntity>>
+    @Query("SELECT * FROM tool_findings WHERE runId = :runId AND kind != 'HINT' ORDER BY id") suspend fun findingsOnce(runId: Long): List<ToolFindingEntity>
+    @Query("SELECT COUNT(*) FROM tool_findings WHERE runId = :runId AND kind != 'HINT'") suspend fun findingCount(runId: Long): Int
+    @Query("SELECT * FROM tool_runs WHERE hostId = :hostId AND status IN ('DONE','STOPPED','INTERRUPTED') ORDER BY startedAt DESC, id DESC")
+    suspend fun finishedRunsOnce(hostId: Long): List<ToolRunEntity>
+    @Query("SELECT value FROM tool_findings WHERE kind = 'HINT' AND runId IN (:runIds)") suspend fun hintsOf(runIds: List<Long>): List<String>
+    @Query("UPDATE tool_runs SET optionsJson = :json WHERE id = :id") suspend fun setOptions(id: Long, json: String)
+    @Query("SELECT DISTINCT hostId FROM tool_runs") suspend fun hostsWithRuns(): List<Long>
 }

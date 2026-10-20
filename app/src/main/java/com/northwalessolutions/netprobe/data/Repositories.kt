@@ -9,6 +9,8 @@ import com.northwalessolutions.netprobe.engine.identify.DeviceIdentity
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
@@ -201,4 +203,74 @@ class VulnCacheRepository(private val db: NetProbeDb) {
     suspend fun getAny(query: String): VulnCacheEntity? = db.vulnCache().get(query)
     suspend fun put(query: String, json: String) = db.vulnCache().put(VulnCacheEntity(query, json, System.currentTimeMillis()))
     suspend fun clear() = db.vulnCache().clear()
+}
+
+/** Pure (tool, port) selection for hints (spec 4.7, Review Focus 4): newest DONE per group, else the newest STOPPED or INTERRUPTED. */
+object ToolHintsRule {
+    fun pick(finished: List<ToolRunEntity>): List<Long> {
+        // [finished] is already newest-first (startedAt DESC, id DESC).
+        val byGroup = finished.groupBy { it.toolId to it.port }
+        return byGroup.values.mapNotNull { runs -> (runs.firstOrNull { it.status == ToolRunStatus.DONE } ?: runs.firstOrNull())?.id }
+    }
+}
+
+class ToolRepository(private val db: NetProbeDb) {
+    private val dao get() = db.tools()
+    private val _ready = CompletableDeferred<Unit>()
+    /** Completed by [markInterrupted]; ToolRunner.start awaits it so a run started at launch is never marked INTERRUPTED. */
+    val ready: Deferred<Unit> = _ready
+
+    suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String): Long = db.withTransaction {
+        val id = dao.insertRun(ToolRunEntity(hostId = hostId, toolId = toolId, port = port, startedAt = startedAt,
+            finishedAt = null, status = ToolRunStatus.RUNNING, optionsJson = optionsJson, summary = ""))
+        dao.prune(hostId, toolId, KEEP_RUNS_PER_TOOL)
+        id
+    }
+    suspend fun finish(runId: Long, finishedAt: Long?, status: ToolRunStatus, summary: String) = dao.finish(runId, finishedAt, status, summary)
+    suspend fun addFinding(runId: Long, kind: String, value: String, detail: String?, extra: String?): Long =
+        dao.insertFinding(ToolFindingEntity(runId = runId, kind = kind, value = value, detail = detail, extra = extra))
+    /** Process death left a RUNNING row: mark each INTERRUPTED with its finding count, in one transaction, then complete [ready] (spec 4.4 rule 5). */
+    suspend fun markInterrupted(summaryOf: (found: Int) -> String) {
+        try {
+            db.withTransaction {
+                for (r in dao.runningOnce()) dao.finish(r.id, null, ToolRunStatus.INTERRUPTED, summaryOf(dao.findingCount(r.id)))
+            }
+        } finally { _ready.complete(Unit) }   // a failure here must never leave ToolRunner.start waiting forever
+    }
+    fun runsForHost(hostId: Long): Flow<List<ToolRunEntity>> = dao.runsForHost(hostId)
+    fun run(id: Long): Flow<ToolRunEntity?> = dao.run(id)
+    fun findings(runId: Long): Flow<List<ToolFindingEntity>> = dao.findings(runId)
+    suspend fun findingsOnce(runId: Long): List<ToolFindingEntity> = dao.findingsOnce(runId)
+    suspend fun findingCount(runId: Long): Int = dao.findingCount(runId)
+    /** One UPDATE of a run's optionsJson, used when a tool records a value it learns mid-run (methodUsed, spec 7.1). */
+    suspend fun setOptions(runId: Long, json: String) = dao.setOptions(runId, json)
+    /** Hosts with any tool run: the radar asks hintsFor only for these, so an emission adds no query for the rest (plan review G13). */
+    suspend fun hostsWithRuns(): Set<Long> = dao.hostsWithRuns().toSet()
+    suspend fun hintsFor(hostId: Long): List<String> {
+        val ids = ToolHintsRule.pick(dao.finishedRunsOnce(hostId))
+        return if (ids.isEmpty()) emptyList() else dao.hintsOf(ids)
+    }
+
+    /**
+     * Remove device snapshots a host's tool rows into SQLite TEMP tables before the cascade drops them (spec 7.4), so Undo can bring
+     * them back. TEMP tables live on Room's single writer connection and die with the process, matching 3A's memory-only Undo lifetime.
+     * [token] is digits only, so the host id list and the table names can never be injected.
+     */
+    suspend fun snapshot(hostIds: List<Long>): String = db.withTransaction {
+        val token = tokenSeq.incrementAndGet().toString()
+        val inList = hostIds.joinToString(",") { it.toString() }.ifEmpty { "NULL" }
+        exec("CREATE TEMP TABLE undo_runs_$token AS SELECT * FROM tool_runs WHERE hostId IN ($inList)")
+        exec("CREATE TEMP TABLE undo_findings_$token AS SELECT * FROM tool_findings WHERE runId IN (SELECT id FROM undo_runs_$token)")
+        token
+    }
+    suspend fun restore(token: String) = db.withTransaction {
+        exec("INSERT INTO tool_runs SELECT * FROM undo_runs_$token")
+        exec("INSERT INTO tool_findings SELECT * FROM undo_findings_$token")
+        drop(token)
+    }
+    suspend fun dropSnapshot(token: String) = db.withTransaction { drop(token) }
+    private fun drop(token: String) { exec("DROP TABLE IF EXISTS undo_findings_$token"); exec("DROP TABLE IF EXISTS undo_runs_$token") }
+    private fun exec(sql: String) = db.openHelper.writableDatabase.execSQL(sql)
+
+    companion object { const val KEEP_RUNS_PER_TOOL = 10; private val tokenSeq = java.util.concurrent.atomic.AtomicLong(0) }
 }

@@ -129,26 +129,29 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             c.removedHostIds.update { it + hostId }
             scan.stopAndJoin()
             c.hostScanJobs[hostId]?.cancelAndJoin()
+            val token = c.toolRepo.snapshot(listOf(hostId))     // NEW (3B 7.4): the host's tool rows into TEMP tables before the cascade drops them
             val snap = c.hostWriteLock.withLock {
                 c.removedHostIds.update { it + hostId }
                 // Any running radar, even one still resolving its network (review M2): the pair is keyed by network, so another network's scan ignores it.
                 if (c.radarScanActive.value) c.removedDuringScan.update { RemovedHosts.added(it, h.networkId, h.ip) }
                 c.hosts.snapshot(hostId)?.also { c.hosts.delete(it) }
-            } ?: return@launch
+            } ?: run { c.toolRepo.dropSnapshot(token); return@launch }   // NEW: nothing was deleted, so the snapshot is dropped
             c.undo.post(PendingUndo(HomeCopy.removed(name),
                 // The marks are cleared in finally (the Task 13 pattern), so a failed restore never leaves the host skipped by every later scan,
                 // and inside the lock (review M3), so no radar emission sees the restored row while its ip is still marked and skips its update.
                 // update {} is an atomic read-modify-write that touches only this host's id and pair, so a second Remove's marks are kept.
                 restore = {
                     c.hostWriteLock.withLock {
-                        try { c.hosts.restore(snap) }
-                        finally {
+                        try {
+                            c.hosts.restore(snap)
+                            c.toolRepo.restore(token)                    // NEW: runs and findings back with their original ids, after the host row exists
+                        } finally {
                             c.removedHostIds.update { it - hostId }
                             c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
                         }
                     }
                 },
-                commit = {}))
+                commit = { c.toolRepo.dropSnapshot(token) }))           // CHANGED from commit = {}: a lapsed Undo drops the TEMP tables
         }
     }
     fun setStatus(s: HostStatus) { viewModelScope.launch { c.hosts.setStatus(hostId, s) } }
