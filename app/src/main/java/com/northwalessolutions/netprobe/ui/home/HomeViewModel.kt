@@ -29,7 +29,8 @@ enum class StatusFilter(val label: String) { ALL("All"), INTERESTING("Interestin
 data class HostRow(val id: Long, val ip: String, val displayName: String, val identityLine: String, val type: DeviceType, val openPorts: Int, val status: HostStatus, val isGateway: Boolean, val stale: Boolean, val mac: String?,
                    val otherSubnet: String? = null) { val offSubnet: Boolean get() = otherSubnet != null }
 data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = false, val status: DiscoveryStatus? = null, val rows: List<HostRow> = emptyList(),
-                       val filter: StatusFilter = StatusFilter.ALL, val query: String = "", val message: String? = null, val networkName: String? = null, val quickScanning: Boolean = false)
+                       val filter: StatusFilter = StatusFilter.ALL, val query: String = "", val message: String? = null, val networkName: String? = null, val quickScanning: Boolean = false,
+                       val lastScanAt: Long? = null, val totalHosts: Int = 0, val otherSubnetHosts: Int = 0, val scanStartedAt: Long? = null, val scanFinishedAt: Long? = null)
 
 object IdentityLine {
     val DeviceType.label: String get() = when (this) { DeviceType.ROUTER -> "Router"; DeviceType.PHONE -> "Phone"; DeviceType.COMPUTER -> "Computer"; DeviceType.PRINTER -> "Printer"
@@ -97,6 +98,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val filter = MutableStateFlow(StatusFilter.ALL); private val query = MutableStateFlow("")
     private val networkId = MutableStateFlow<Long?>(null); private val latestRun = MutableStateFlow(0L)
     private val extraMessage = MutableStateFlow<String?>(null)
+    private val finishedAt = MutableStateFlow<Long?>(null)
     private val controller = ScanController(viewModelScope, env) { e -> discover(e) }
     /** Quick scan all is network-bound like discovery: a Wi-Fi switch or loss cancels it, and Stop cancels it. */
     private val quick = ScanController(viewModelScope, env) { quickScanAllOn() }
@@ -104,19 +106,30 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
 
     private val hosts: Flow<List<HostEntity>> = networkId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
 
-    val state: StateFlow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts) { arr ->
+    val state: StateFlow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts, finishedAt) { arr ->
         @Suppress("UNCHECKED_CAST")
         val hs = arr[3] as List<HostEntity>
         @Suppress("UNCHECKED_CAST")
         val pc = arr[9] as Map<Long, Int>
         val e = arr[0] as NetworkEnv?; val cs = arr[1] as ScanController.State; val st = arr[2] as DiscoveryStatus
         val f = arr[4] as StatusFilter; val q = arr[5] as String; val run = arr[6] as Long; val qs = arr[7] as ScanController.State; val msg = arr[8] as String?
+        val done = arr[10] as Long?
         val maxPrefix = c.settings.state.value.maxPrefix
-        val rows = hs.map { h -> RowRules.row(h, e, maxPrefix, pc[h.id] ?: 0, stale = run > 0 && h.lastDiscoveryRun < run) }
-        HomeUiState(e, cs.scanning, if (cs.scanning) st else null, HomeFilter.apply(rows, f, q), f, q, cs.message ?: qs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs.scanning)
+        val all = hs.map { h -> RowRules.row(h, e, maxPrefix, pc[h.id] ?: 0, stale = run > 0 && h.lastDiscoveryRun < run) }
+        val stats = HomeStats.of(hs, all, done)
+        HomeUiState(e, cs.scanning, if (cs.scanning) st else null, HomeFilter.apply(all, f, q), f, q, cs.message ?: qs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs.scanning,
+            lastScanAt = stats.lastScanAt, totalHosts = stats.totalHosts, otherSubnetHosts = stats.otherSubnetHosts,
+            scanStartedAt = run.takeIf { it > 0 }, scanFinishedAt = done)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
 
     init {
+        viewModelScope.launch {
+            var was = false
+            controller.state.collect { st ->
+                finishedAt.value = ScanFinish.next(was, st.scanning, finishedAt.value, System.currentTimeMillis())
+                was = st.scanning
+            }
+        }
         viewModelScope.launch { c.networkEnvMonitor.env.collect { env.value = it } }
         viewModelScope.launch {
             env.collectLatest { e ->
