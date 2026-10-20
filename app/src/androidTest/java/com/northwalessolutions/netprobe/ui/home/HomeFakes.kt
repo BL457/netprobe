@@ -15,14 +15,14 @@ object HomeFakes {
     /** The one place a fake HostRow is built; Task 16 changes the subnet fields here only. */
     fun row(id: Long, ip: String, name: String = "host$id", identity: String = "Synology DS220+", type: DeviceType = DeviceType.NAS, open: Int = 0,
             status: HostStatus = HostStatus.UNMARKED, gateway: Boolean = false, stale: Boolean = false, mac: String? = null, other: String? = null) =
-        HostRow(id, ip, name, identity, type, open, status, gateway, stale, mac, other)
+        HostRow(id, ip, name, identity, type, open, status, gateway, stale, mac, other ?: "10.0.3.0/24", other != null)
 
     fun rows(local: Int, other: Int = 0): List<HostRow> =
         (1..local).map { row(it.toLong(), "10.0.3.$it", name = if (it == 1) "Ubiquiti gateway" else "host$it", type = if (it == 1) DeviceType.ROUTER else DeviceType.NAS, gateway = it == 1) } +
         (1..other).map { row(100L + it, "10.0.4.${it + 10}", type = DeviceType.IOT, other = "10.0.4.0/24") }
 
     fun settled(rows: List<HostRow> = rows(20), filter: StatusFilter = StatusFilter.ALL, query: String = "", message: String? = null) =
-        HomeUiState(env = env, rows = rows, filter = filter, query = query, networkName = "Home", message = message, lastScanAt = 1_000L, totalHosts = rows.size)
+        HomeUiState(env = env, rows = rows, filter = filter, query = query, networkName = "Home", message = message, lastScanAt = 1_000L, totalHosts = rows.size, groups = HomeGroups.of(rows))
 
     fun scanning(rows: List<HostRow> = rows(5), filter: StatusFilter = StatusFilter.ALL, query: String = "") =
         settled(rows, filter, query).copy(scanning = true, status = DiscoveryStatus(probed = 171, total = 254, found = rows.size), scanStartedAt = 1_000L)

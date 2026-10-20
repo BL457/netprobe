@@ -64,11 +64,14 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             }
         }
     }) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
-            when {
-                mode == RadarMode.HERO -> HeroPlaceholder()
-                state.rows.isEmpty() -> EmptyState(emptyText(state))
-                else -> DeviceList(HomeGroups.of(state.rows, localSubnet), state, actions, ownModel)
+        Column(Modifier.padding(pad).fillMaxSize()) {
+            if (mode == RadarMode.SETTLED) RangeSummary(state.lastRunRanges)   // nothing when the last run had no extra ranges
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    mode == RadarMode.HERO -> HeroPlaceholder()
+                    state.rows.isEmpty() -> EmptyState(emptyText(state))
+                    else -> DeviceList(state.groups, state, actions, ownModel)
+                }
             }
         }
     }

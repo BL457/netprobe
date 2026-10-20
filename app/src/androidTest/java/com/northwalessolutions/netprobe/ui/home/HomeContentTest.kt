@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.data.HostStatus
+import com.northwalessolutions.netprobe.engine.discovery.*
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.ui.theme.EdgeColors
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
@@ -26,6 +27,29 @@ class HomeContentTest {
     @get:Rule val rule = createComposeRule()
     private val rec = RecordingHomeActions()
     private fun show(state: HomeUiState) = rule.setContent { NetProbeTheme { HomeContent(state, rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro") } }
+
+    private val lastRun = listOf(RangeProgress("10.0.3.0/24", null, RangeState.DONE, 254, 254, 12),
+        RangeProgress("10.0.4.0/24", RangeSource.EVIDENCE, RangeState.DONE, 254, 254, 3),
+        RangeProgress("10.0.7.0/24", RangeSource.MANUAL, RangeState.DONE, 254, 254, 0))
+
+    @Test fun rangeSummaryExpandsToOneLinePerRange() {   // extended spec 8.2: a swept but empty range is a finding and must not vanish
+        show(HomeFakes.settled().copy(lastRunRanges = lastRun))
+        rule.onNodeWithText("2 other ranges checked").assertIsDisplayed()
+        rule.onNodeWithTag("rangeLines").assertDoesNotExist()
+        rule.onNodeWithText("2 other ranges checked").performClick()
+        rule.onNodeWithText("10.0.4.0/24  evidence  swept, 3 found").assertIsDisplayed()
+        rule.onNodeWithText("10.0.7.0/24  manual  swept, nothing reachable").assertIsDisplayed()
+        rule.onNodeWithTag("deviceList").assertIsDisplayed()
+    }
+    @Test fun rangeSummaryIsAbsentWhileScanningAndWithoutAnExtendedRun() {
+        rule.mainClock.autoAdvance = false
+        show(HomeFakes.scanning().copy(lastRunRanges = lastRun)); rule.mainClock.advanceTimeBy(1_000)
+        rule.onNodeWithTag("rangeSummary").assertDoesNotExist()
+    }
+    @Test fun rangeSummaryIsAbsentWithoutAnExtendedRun() {
+        show(HomeFakes.settled())
+        rule.onNodeWithTag("rangeSummary").assertDoesNotExist()
+    }
 
     @Test fun pinnedHeaderStaysWhileTheListScrolls() {   // spec 10.2 test 1, first half
         show(HomeFakes.settled(HomeFakes.rows(40)))

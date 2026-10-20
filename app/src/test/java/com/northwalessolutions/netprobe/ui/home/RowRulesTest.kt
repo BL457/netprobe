@@ -1,5 +1,8 @@
 package com.northwalessolutions.netprobe.ui.home
 
+import com.northwalessolutions.netprobe.netenv.CidrParser
+import com.northwalessolutions.netprobe.netenv.NetworkEnv
+import com.northwalessolutions.netprobe.netenv.Transport
 import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
@@ -10,13 +13,20 @@ import java.net.Inet4Address
 import java.net.InetAddress
 
 class RowRulesTest {
-    private val scanned = SubnetMath.of(InetAddress.getByAddress(byteArrayOf(10, 0, 3, 242.toByte())) as Inet4Address, 24)
 
-    @Test fun `host inside the scanned subnet is not flagged`() { assertNull(RowRules.otherSubnet("10.0.3.7", scanned)) }
-    @Test fun `host outside the scanned subnet reports its own slash 24`() { assertEquals("10.0.4.0/24", RowRules.otherSubnet("10.0.4.20", scanned)) }
+    private val env3 = NetworkEnv(RowRules.parseIpv4("10.0.3.242")!!, 24, RowRules.parseIpv4("10.0.3.1")!!, emptyList(), null, null, Transport.WIFI)
+    @Test fun `host inside the swept range is local`() {
+        val r = RowRules.row(host("10.0.3.7"), env3, 22, 0, false); assertEquals("10.0.3.0/24", r.subnet); assertFalse(r.offSubnet)
+    }
+    @Test fun `host outside the swept range reports its own slash 24`() {
+        val r = RowRules.row(host("10.0.4.20"), env3, 22, 0, false); assertEquals("10.0.4.0/24", r.subnet); assertTrue(r.offSubnet)
+    }
+    @Test fun `a swept extra or manual range groups its hosts`() {
+        assertEquals("10.0.4.16/28", RowRules.row(host("10.0.4.20"), env3, 22, 0, false, extraRanges = listOf(CidrParser.subnetOf("10.0.4.16/28")!!)).subnet)
+        assertEquals("10.0.4.16/28", RowRules.row(host("10.0.4.20"), env3, 22, 0, false, manualRanges = listOf(CidrParser.subnetOf("10.0.4.16/28")!!)).subnet)
+    }
     @Test fun `garbage ip is not flagged and never resolved`() {
-        // parseIpv4 is a pure literal parser: none of these may trigger a name lookup.
-        for (bad in listOf("not-an-ip", "10.0.3", "10.0.3.256", "1.2.3.4.5", "", "a.b.c.d")) { assertNull(bad, RowRules.parseIpv4(bad)); assertNull(RowRules.otherSubnet(bad, scanned)) }
+        for (bad in listOf("not-an-ip", "10.0.3", "10.0.3.256", "1.2.3.4.5", "", "a.b.c.d")) { assertNull(bad, RowRules.parseIpv4(bad)); assertFalse(RowRules.row(host(bad), env3, 22, 0, false).offSubnet) }
         assertEquals("10.0.3.7", RowRules.parseIpv4("10.0.3.7")!!.hostAddress)
     }
     private fun host(ip: String, customName: String? = null, vendor: String? = "Google", type: DeviceType = DeviceType.MEDIA) = HostEntity(

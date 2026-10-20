@@ -43,12 +43,12 @@ object HomeGroups {
     private fun networkKey(cidr: String): Long =
         RowRules.parseIpv4(cidr.substringBefore('/'))?.let { SubnetMath.toInt(it).toLong() and UNSIGNED_MASK } ?: Long.MAX_VALUE
 
-    /** Local group first, then other groups by network address ascending; rows keep their input order (spec 4.2). */
-    fun of(rows: List<HostRow>, localSubnet: String?): List<HostGroup> {
-        val local = rows.filter { it.otherSubnet == null }
-        val others = rows.filter { it.otherSubnet != null }.groupBy { it.otherSubnet!! }.entries.sortedBy { networkKey(it.key) }
+    /** Local group first, then other ranges by network address ascending; rows keep their input order (Radar spec 4.2, extended spec 8.1). */
+    fun of(rows: List<HostRow>): List<HostGroup> {
+        val local = rows.filter { !it.offSubnet }
+        val others = rows.filter { it.offSubnet }.groupBy { it.subnet }.entries.sortedBy { networkKey(it.key) }
         return buildList {
-            if (local.isNotEmpty()) add(HostGroup(localSubnet.orEmpty(), true, local))
+            if (local.isNotEmpty()) add(HostGroup(local.first().subnet, true, local))
             others.forEach { (subnet, rs) -> add(HostGroup(subnet, false, rs)) }
         }
     }

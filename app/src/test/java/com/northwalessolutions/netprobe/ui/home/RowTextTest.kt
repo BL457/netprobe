@@ -8,7 +8,7 @@ import org.junit.Test
 class RowTextTest {
     private fun row(ip: String = "10.0.3.59", name: String = "CHNAS", identity: String = "Synology DS220+", mac: String? = "00:11:32:9a:1f:e4",
                     other: String? = null, status: HostStatus = HostStatus.UNMARKED, gateway: Boolean = false, stale: Boolean = false, open: Int = 0, id: Long = 1) =
-        HostRow(id, ip, name, identity, DeviceType.NAS, open, status, gateway, stale, mac, other)
+        HostRow(id, ip, name, identity, DeviceType.NAS, open, status, gateway, stale, mac, other ?: "10.0.3.0/24", other != null)
 
     @Test fun `ip with identity uses two spaces`() { assertEquals("10.0.3.59  Synology DS220+", RowText.dataLine(row(), null)) }
     @Test fun `unknown identity falls back to the mac`() {
@@ -39,13 +39,13 @@ class RowTextTest {
     @Test fun `groups put local first then others by network address`() {
         val rows = listOf(row(id = 1, ip = "10.0.3.1", gateway = true), row(id = 2, ip = "10.0.10.5", other = "10.0.10.0/24"),
             row(id = 3, ip = "10.0.3.9"), row(id = 4, ip = "10.0.4.20", other = "10.0.4.0/24"))
-        val g = HomeGroups.of(rows, "10.0.3.0/24")
+        val g = HomeGroups.of(rows)
         assertEquals(listOf("10.0.3.0/24", "10.0.4.0/24", "10.0.10.0/24"), g.map { it.subnet })
         assertEquals(listOf(true, false, false), g.map { it.local })
         assertEquals(listOf(1L, 3L), g[0].rows.map { it.id })   // input order (gateway first, then IP) is kept
     }
     @Test fun `a single group still has its header and empty groups are omitted`() {
-        assertEquals(listOf("10.0.3.0/24"), HomeGroups.of(listOf(row(ip = "10.0.3.9")), "10.0.3.0/24").map { it.subnet })
-        assertEquals(emptyList<HostGroup>(), HomeGroups.of(emptyList(), "10.0.3.0/24"))
+        assertEquals(listOf("10.0.3.0/24"), HomeGroups.of(listOf(row(ip = "10.0.3.9"))).map { it.subnet })
+        assertEquals(emptyList<HostGroup>(), HomeGroups.of(emptyList()))
     }
 }

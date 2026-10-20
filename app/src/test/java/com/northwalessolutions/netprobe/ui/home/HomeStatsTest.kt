@@ -11,7 +11,7 @@ class HomeStatsTest {
         upnpName = null, upnpManufacturer = null, upnpModel = null, vendor = null, deviceType = DeviceType.UNKNOWN, customName = null, identVendor = null,
         identModel = null, identOs = null, identConfidence = 0, identReasons = emptyList(), snmpSysDescr = null, httpTitle = null, mdnsTxtJson = null,
         status = HostStatus.UNMARKED, note = "", isGateway = false, firstSeen = 0, lastSeen = 0, lastPortScan = null, lastDiscoveryRun = run)
-    private fun row(id: Long, other: String?, stale: Boolean) = HostRow(id, "10.0.4.$id", "h$id", "x", DeviceType.UNKNOWN, 0, HostStatus.UNMARKED, false, stale, null, other)
+    private fun row(id: Long, other: String?, stale: Boolean) = HostRow(id, "10.0.4.$id", "h$id", "x", DeviceType.UNKNOWN, 0, HostStatus.UNMARKED, false, stale, null, other ?: "10.0.3.0/24", other != null)
 
     @Test fun `counts are unfiltered and other subnet excludes stale hosts`() {
         val hosts = listOf(host("10.0.3.1", 100), host("10.0.4.2", 250), host("10.0.4.3", 90))

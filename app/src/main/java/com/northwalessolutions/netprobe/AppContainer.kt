@@ -13,9 +13,12 @@ import com.northwalessolutions.netprobe.engine.portscan.PortTable
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.vulns.*
 import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Manual dependency container of lazily-created singletons. */
 class AppContainer(val context: Context) {
+    /** The network row Home resolved for the current env; Settings edits that network's manual ranges (extended spec 8.3 item 4). */
+    val currentNetwork = MutableStateFlow<NetworkEntity?>(null)
     val settings by lazy { AppSettings(context) }
     val db by lazy { NetProbeDb.open(context) }
     val networks by lazy { NetworkRepository(db) }

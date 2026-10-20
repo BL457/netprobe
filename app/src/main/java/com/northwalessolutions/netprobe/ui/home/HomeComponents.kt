@@ -7,14 +7,18 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -26,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.northwalessolutions.netprobe.data.HostStatus
+import com.northwalessolutions.netprobe.engine.discovery.RangeProgress
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.netenv.Transport
@@ -199,5 +204,25 @@ fun HeroPlaceholder() {
         HorizontalDivider(thickness = 1.dp, color = NetProbeColors.surface)
         Text(HomeCopy.EMPTY_HERO, style = NetProbeText.caption, color = NetProbeColors.textMuted,
             modifier = Modifier.padding(start = Dimens.gutter, top = 10.dp, end = Dimens.gutter))
+    }
+}
+
+private val RANGE_LIST_MAX = 160.dp
+
+/** The last extended run's ranges (extended spec 8.2): "3 other ranges checked", tap for one line per range. Scrolls inside its own cap, so a long list never pushes the devices away. */
+@Composable
+fun RangeSummary(ranges: List<RangeProgress>) {
+    val others = ranges.size - 1
+    if (others < 1) return
+    var open by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().testTag("rangeSummary")) {
+        Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClickLabel = if (open) "Hide ranges" else "Show ranges", role = Role.Button) { open = !open }
+            .padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
+            Text(RangeSummaryText.headline(others), style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.weight(1f))
+            Icon(if (open) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = NetProbeColors.textMuted)
+        }
+        if (open) Column(Modifier.heightIn(max = RANGE_LIST_MAX).verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter).testTag("rangeLines")) {
+            RangeSummaryText.lines(ranges).forEach { Text(it, style = NetProbeText.data, color = NetProbeColors.textSecondary, modifier = Modifier.padding(vertical = 2.dp)) }
+        }
     }
 }
