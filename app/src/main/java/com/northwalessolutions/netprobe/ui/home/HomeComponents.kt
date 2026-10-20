@@ -96,13 +96,15 @@ fun NetworkLine(env: NetworkEnv?, networkName: String?, onRequestLocation: () ->
 }
 
 @Composable
-fun HomeMenu(quickEnabled: Boolean, quickScanning: Boolean, onQuick: () -> Unit, onStopQuick: () -> Unit, onSettings: () -> Unit) {
+fun HomeMenu(quickEnabled: Boolean, quickScanning: Boolean, onQuick: () -> Unit, onStopQuick: () -> Unit, onSettings: () -> Unit,
+             forgetEnabled: Boolean = false, onForget: () -> Unit = {}) {
     Box {
         var open by remember { mutableStateOf(false) }
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("homeMenu")) { Icon(Icons.Default.MoreVert, "Menu", tint = NetProbeColors.textSecondary) }
         DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
             DropdownMenuItem(text = { Text(if (quickScanning) "Stop quick scan" else "Quick scan all") }, enabled = quickEnabled,
                 onClick = { open = false; if (quickScanning) onStopQuick() else onQuick() })
+            DropdownMenuItem(text = { Text(HomeCopy.FORGET_NETWORK) }, enabled = forgetEnabled, onClick = { open = false; onForget() })
             DropdownMenuItem(text = { Text("Settings") }, onClick = { open = false; onSettings() })
         }
     }
@@ -136,11 +138,15 @@ fun SearchField(query: String, onQuery: (String) -> Unit) {
         shape = RoundedCornerShape(SEGMENT_RADIUS), colors = npFieldColors())
 }
 
-/** One notice line under the radar for every transient message (D17), with a 48 dp dismiss target. */
+/** One notice line under the radar for every transient message (D17), with a 48 dp dismiss target; [onUndo] adds the Undo word (spec 5.3). */
 @Composable
-fun NoticeLine(text: String, onDismiss: () -> Unit) {
+fun NoticeLine(text: String, onDismiss: () -> Unit, onUndo: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(start = Dimens.gutter).testTag("notice"), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = NOTICE_MAX_LINES, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        if (onUndo != null) Box(Modifier.heightIn(min = Dimens.touch).widthIn(min = Dimens.touch).clickable(onClick = onUndo)
+            .semantics { contentDescription = HomeCopy.UNDO; role = Role.Button }.testTag("noticeUndo"), contentAlignment = Alignment.Center) {
+            Text(HomeCopy.UNDO, style = NetProbeText.action, color = NetProbeColors.signal)
+        }
         Box(Modifier.size(Dimens.touch).clickable(onClick = onDismiss).semantics { contentDescription = "Dismiss notice"; role = Role.Button },
             contentAlignment = Alignment.Center) {
             Icon(Icons.Default.Close, null, tint = NetProbeColors.textMuted, modifier = Modifier.size(ICON_SMALL))

@@ -183,4 +183,38 @@ class HomeContentTest {
         show(HomeFakes.settled().copy(scanStartedAt = 1_000L, scanFinishedAt = 13_000L, scanCompleted = false))
         rule.onNodeWithText("Stopped after 12 s").assertIsDisplayed()
     }
+
+    @Test fun undoNoticeShowsAndAnEarlierNoticeReturnsAfterIt() {
+        var undos = 0
+        var st by mutableStateOf(HomeFakes.settled(message = "Stopped at 10.0.4.0/24").copy(undoText = "Removed DiskStation"))
+        rule.setContent { NetProbeTheme { HomeContent(st, HomeActions(onUndo = { undos++ }), now = 121_000L, ownModel = "Pixel 7 Pro") } }
+        rule.onNodeWithText("Removed DiskStation").assertIsDisplayed(); rule.onNodeWithText("Stopped at 10.0.4.0/24").assertDoesNotExist()
+        rule.onNodeWithTag("noticeUndo").assert(hasContentDescription("Undo")).performClick(); assertEquals(1, undos)
+        st = st.copy(undoText = null); rule.waitForIdle()
+        rule.onNodeWithText("Stopped at 10.0.4.0/24").assertIsDisplayed()
+    }
+    @Test fun dismissingTheUndoNoticeCommitsItAndKeepsTheEarlierNotice() {
+        var commits = 0; var dismissals = 0
+        rule.setContent { NetProbeTheme {
+            HomeContent(HomeFakes.settled(message = "Stopped at 10.0.4.0/24").copy(undoText = "Removed DiskStation"),
+                HomeActions(onDismissUndo = { commits++ }, onDismissMessage = { dismissals++ }), now = 121_000L, ownModel = "Pixel 7 Pro")
+        } }
+        rule.onNodeWithContentDescription("Dismiss notice").performClick()
+        assertEquals(1, commits); assertEquals(0, dismissals)
+    }
+    @Test fun forgetThisNetworkIsDisabledWhileARadarOrQuickScanRuns() {
+        var st by mutableStateOf(HomeFakes.scanning().copy(networkId = 1))
+        rule.setContent { NetProbeTheme { HomeContent(st, rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro") } }
+        rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithText("Forget this network").assertIsNotEnabled()
+        st = HomeFakes.settled().copy(networkId = 1, quickScanning = true); rule.waitForIdle()
+        rule.onNodeWithText("Forget this network").assertIsNotEnabled()
+    }
+    @Test fun forgetThisNetworkRunsWhenIdleAndNeedsANetworkRow() {
+        var forgets = 0
+        var st by mutableStateOf(HomeFakes.settled().copy(networkId = null))
+        rule.setContent { NetProbeTheme { HomeContent(st, HomeActions(onForget = { forgets++ }), now = 121_000L, ownModel = "Pixel 7 Pro") } }
+        rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithText("Forget this network").assertIsNotEnabled()
+        st = st.copy(networkId = 1); rule.waitForIdle()
+        rule.onNodeWithText("Forget this network").assertIsEnabled().performClick(); assertEquals(1, forgets)
+    }
 }

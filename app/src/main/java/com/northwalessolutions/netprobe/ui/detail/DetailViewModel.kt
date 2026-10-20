@@ -69,7 +69,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         val resolved = if (prof is ScanProfile.Custom) ProfileParser.parse(customText.value).getOrElse { customError.value = it.message; return } else prof
         scan.start { e ->
             // An off-subnet row that cannot be bound to Wi-Fi is not scanned at all (final review I2): say so, never scan it unbound.
-            try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = DetailCopy.SCAN_BIND_FAILED }
+            c.undo.committedBefore { try { scanHost(h, resolved, e) } catch (_: BindFailedException) { message.value = DetailCopy.SCAN_BIND_FAILED } }
         }
     }
 
@@ -89,7 +89,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             val sem = Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)
             c.portScanEngine.scan(ip, profile, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
                 identify.update { it.copy(pending = it.pending + 1) }
-                launch {
+                launch(start = CoroutineStart.ATOMIC) {
                     try {
                         sem.withPermit {
                             val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), mode)

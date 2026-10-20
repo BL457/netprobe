@@ -18,6 +18,10 @@ object HomeCopy {
     const val NETWORK_CHANGED = "Network changed, scan stopped"
     const val JUST_NOW = "just now"
     const val YESTERDAY = "yesterday"
+    const val FORGET_NETWORK = "Forget this network"
+    const val UNDO = "Undo"
+    fun forgot(network: String) = "Forgot $network"
+    fun removed(device: String) = "Removed $device"
 
     const val NO_EXTRA_RANGES = "Extended discovery: no extra ranges to sweep"
     const val GATEWAY_FOUND_NONE = "Gateway probe found no other ranges"

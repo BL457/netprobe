@@ -43,7 +43,8 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettin
         state = s,
         actions = HomeActions(onScan = vm::startScan, onStop = vm::stopScan, onOpenHost = onOpenHost, onDismissMessage = vm::dismissMessage,
             onFilter = vm::setFilter, onQuery = vm::setQuery, onQuickScanAll = vm::quickScanAll, onStopQuickScan = vm::stopQuickScan,
-            onOpenSettings = onOpenSettings, onRequestLocation = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }),
+            onOpenSettings = onOpenSettings, onRequestLocation = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+            onForget = vm::forgetNetwork, onUndo = vm::undo, onDismissUndo = vm::dismissUndo),
         progress = latched, now = now,
     )
 }

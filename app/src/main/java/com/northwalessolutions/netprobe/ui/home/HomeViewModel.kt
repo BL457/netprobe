@@ -3,6 +3,7 @@ package com.northwalessolutions.netprobe.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.northwalessolutions.netprobe.AppContainer
+import com.northwalessolutions.netprobe.PendingUndo
 import com.northwalessolutions.netprobe.data.*
 import android.util.Log
 import com.northwalessolutions.netprobe.engine.common.BindFailedException
@@ -37,7 +38,7 @@ data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = fals
                        val filter: StatusFilter = StatusFilter.ALL, val query: String = "", val message: String? = null, val networkName: String? = null, val quickScanning: Boolean = false,
                        val lastScanAt: Long? = null, val totalHosts: Int = 0, val otherSubnetHosts: Int = 0, val scanStartedAt: Long? = null, val scanFinishedAt: Long? = null,
                        val groups: List<HostGroup> = emptyList(), val lastRunRanges: List<RangeProgress> = emptyList(),
-                       val scanCompleted: Boolean = true)
+                       val scanCompleted: Boolean = true, val networkId: Long? = null, val undoText: String? = null)
 
 object IdentityLine {
     val DeviceType.label: String get() = when (this) { DeviceType.ROUTER -> "Router"; DeviceType.PHONE -> "Phone"; DeviceType.COMPUTER -> "Computer"; DeviceType.PRINTER -> "Printer"
@@ -115,10 +116,11 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val quick = ScanController(viewModelScope, env) { e -> quickScanAllOn(e) }
     private val portCounts: Flow<Map<Long, Int>> = c.ports.counts()
 
-    private val hosts: Flow<List<HostEntity>> = networkId.flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
+    private val hosts: Flow<List<HostEntity>> = combine(networkId, c.forgottenNetworkId) { id, gone -> id?.takeIf { it != gone } }
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
 
     val state: StateFlow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts,
-        finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress, lastRunCompleted) { arr ->
+        finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress, lastRunCompleted, networkId, c.undo.pending) { arr ->
         @Suppress("UNCHECKED_CAST")
         val hs = arr[3] as List<HostEntity>
         @Suppress("UNCHECKED_CAST")
@@ -138,7 +140,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         HomeUiState(e, cs.scanning, if (cs.scanning) st else null, shown, f, q, cs.message ?: qs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs.scanning,
             lastScanAt = stats.lastScanAt, totalHosts = stats.totalHosts, otherSubnetHosts = stats.otherSubnetHosts,
             scanStartedAt = run.takeIf { it > 0 }, scanFinishedAt = done, groups = HomeGroups.of(shown),
-            lastRunRanges = lastRun, scanCompleted = arr[14] as Boolean)
+            lastRunRanges = lastRun, scanCompleted = arr[14] as Boolean,
+            networkId = arr[15] as Long?, undoText = (arr[16] as PendingUndo?)?.text)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
 
     init {
@@ -152,7 +155,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         }
         viewModelScope.launch { c.networkEnvMonitor.env.collect { env.value = it } }
         viewModelScope.launch {
-            env.collectLatest { e ->
+            combine(env, c.networkEpoch) { e, _ -> e }.collectLatest { e ->
                 val net = try { e?.let { c.networks.ensure(it, GatewayMac.lookup(it.gateway)) } } catch (ce: CancellationException) { throw ce } catch (_: Exception) { null }
                 // "Scanned in N s" and the range list describe one network: a different network id clears both (ruling 1).
                 val kept = RunMemory(finishedAt.value, lastRunRanges.value, lastRunProgress.value).afterNetworkChange(networkId.value, net?.id)
@@ -175,8 +178,12 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun setQuery(q: String) { query.value = q }
     fun dismissMessage() { controller.dismissMessage(); quick.dismissMessage(); extraMessage.value = null }
 
-    private suspend fun discover(e: NetworkEnv) {
-        // null only while this network's Forget is pending; Task 13 commits a pending Undo before this line.
+    /** A pending Undo is final before the scan's first lookup (spec 5.3, Review Focus 4). */
+    private suspend fun discover(e: NetworkEnv) { c.undo.committedBefore { discoverOn(e) } }
+    private suspend fun quickScanAllOn(e: NetworkEnv) { c.undo.committedBefore { quickScanAllBody(e) } }
+
+    private suspend fun discoverOn(e: NetworkEnv) {
+        // null only while this network's Forget is pending, which committedBefore has already ended; the guard stays for a Forget racing in.
         val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return
         networkId.value = net.id; c.currentNetwork.value = net
         val runId = System.currentTimeMillis(); latestRun.value = runId
@@ -207,7 +214,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         } finally {
             c.extendedRunActive.value = false
             c.locks.release()
-            StaleRun.toPersist(completed, runId)?.let { id -> withContext(NonCancellable) { c.networks.markRun(net.id, id) } }
+            // runCatching: a database error here must not skip the RunEnd publication below.
+            StaleRun.toPersist(completed, runId)?.let { id -> withContext(NonCancellable) { runCatching { c.networks.markRun(net.id, id) } } }
             // Also on Stop or a network change: the engine has already marked unfinished ranges CANCELLED.
             val st = c.discoveryEngine.status.value
             st.gatewayProbe?.let { Log.i(EXT_LOG_TAG, "gateway probe: ${it.done} of ${it.total} units, ${it.attempts} connect attempts") }   // read by Task 20 check 3
@@ -219,10 +227,32 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /** Home overflow "Forget this network": a soft delete until the Undo ends; the UI disables it while a scan or the settle runs (spec 5.3). */
+    fun forgetNetwork() {
+        if (controller.isRunning || quick.isRunning) return
+        val net = c.currentNetwork.value ?: return
+        c.appScope.launch {
+            c.networks.setForgotten(net.id, System.currentTimeMillis())
+            c.forgottenNetworkId.value = net.id
+            c.networkEpoch.update { it + 1 }                // ensure() now returns null for this network: Home shows it empty
+            // The lambdas touch only process-wide state, so an Undo still works after the activity is recreated (G4).
+            c.undo.post(PendingUndo(HomeCopy.forgot(net.displayName),
+                restore = { c.networks.setForgotten(net.id, null); c.forgottenNetworkId.value = null; c.networkEpoch.update { it + 1 } },
+                commit = {
+                    c.settings.manual.set(net.id, emptyList())   // key first: a crash after the cascade then leaves no stray key
+                    c.networks.deleteNetworkCascade(net.id)
+                    c.forgottenNetworkId.value = null; c.networkEpoch.update { it + 1 }   // Home then inserts a fresh row for the current env
+                }))
+        }
+    }
+    fun undo() { c.appScope.launch { c.undo.undo() } }
+    /** Dismissing the Undo notice commits it; a notice showing before it is not dismissed (spec 5.3). */
+    fun dismissUndo() { c.appScope.launch { c.undo.commit() } }
+
     fun quickScanAll() { if (!quick.isRunning) quick.start() }
     fun stopQuickScan() = quick.stop()
 
-    private suspend fun quickScanAllOn(e: NetworkEnv) {
+    private suspend fun quickScanAllBody(e: NetworkEnv) {
         var failed = 0; var unbound = 0
         try {
             val net = networkId.value ?: return

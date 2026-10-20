@@ -23,6 +23,7 @@ data class HomeActions(
     val onScan: () -> Unit = {}, val onStop: () -> Unit = {}, val onOpenHost: (Long) -> Unit = {}, val onDismissMessage: () -> Unit = {},
     val onFilter: (StatusFilter) -> Unit = {}, val onQuery: (String) -> Unit = {}, val onQuickScanAll: () -> Unit = {},
     val onStopQuickScan: () -> Unit = {}, val onOpenSettings: () -> Unit = {}, val onRequestLocation: () -> Unit = {},
+    val onForget: () -> Unit = {}, val onUndo: () -> Unit = {}, val onDismissUndo: () -> Unit = {},
 )
 
 private const val MS_PER_S = 1000L
@@ -52,13 +53,18 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             .padding(top = Dimens.gutter, bottom = 10.dp)) {
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
                 HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && state.totalHosts > 0 && state.env != null),
-                    quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan, onSettings = actions.onOpenSettings)
+                    quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan, onSettings = actions.onOpenSettings,
+                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning, onForget = actions.onForget)
             }
             RadarBlock(mode, progress?.found ?: 0, ProgressLine.of(progress, elapsedS), summary, canScan = state.env != null,
                 onScan = { actions.onDismissMessage(); actions.onScan() }, onStop = actions.onStop, modifier = Modifier.padding(top = 12.dp),
                 heroSubnet = localSubnet, quickScanning = state.quickScanning, onStopQuick = actions.onStopQuickScan,
                 scanCompleted = state.scanCompleted)
-            state.message?.let { NoticeLine(it, actions.onDismissMessage) }
+            // While an Undo is pending it takes the notice line; an earlier notice was not dismissed and shows again afterwards (spec 5.3).
+            when {
+                state.undoText != null -> NoticeLine(state.undoText, actions.onDismissUndo, onUndo = actions.onUndo)
+                state.message != null -> NoticeLine(state.message, actions.onDismissMessage)
+            }
             if (HeaderRules.showFilters(mode, state.filter, state.query)) {
                 FilterRow(state.filter, actions.onFilter)
                 SearchField(state.query, actions.onQuery)

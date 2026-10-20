@@ -13,6 +13,8 @@ import com.northwalessolutions.netprobe.engine.portscan.PortTable
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.vulns.*
 import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Manual dependency container of lazily-created singletons. */
@@ -21,9 +23,16 @@ class AppContainer(val context: Context) {
     val currentNetwork = MutableStateFlow<NetworkEntity?>(null)
     /** True from the start of an extended run until its discover() returns, whatever screen is showing. */
     val extendedRunActive = MutableStateFlow(false)
+    /** Deletes and restores run here, so leaving a screen never cancels them; failures are logged, never thrown (spec 5.3). */
+    val appScope: CoroutineScope = AppScopes.create(AppScopes.handler { Log.e(AppScopes.LOG_TAG, "background task failed", it) })
+    val undo = UndoStore()
+    /** The network whose Forget is pending; Home shows it empty until Undo or the commit (spec 5.3). Process-wide, not per ViewModel (G4). */
+    val forgottenNetworkId = MutableStateFlow<Long?>(null)
+    /** Bumped after Forget, Undo or the commit so Home resolves the network row again, whichever HomeViewModel is alive (G4). */
+    val networkEpoch = MutableStateFlow(0)
     val settings by lazy { AppSettings(context) }
     val db by lazy { NetProbeDb.open(context) }
-    val networks by lazy { NetworkRepository(db) }
+    val networks by lazy { NetworkRepository(db) { settings.manual.set(it, emptyList()) } }
     val hosts by lazy { HostRepository(db) }
     val ports by lazy { PortRepository(db) }
     val vulnCache by lazy { VulnCacheRepository(db) }

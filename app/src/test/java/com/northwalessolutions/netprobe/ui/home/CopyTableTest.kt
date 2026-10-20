@@ -20,6 +20,7 @@ import org.junit.Test
 class CopyTableTest {
     private val date = "3 Jan 2026"
     private val templates: List<Regex> = listOf(
+        "Forget this network", "Forgot .+", "Removed .+", "Undo",
         "Scan", "Stop", "found", "No devices found", "\\d+ devices?",
         "Last scan (just now|\\d+ seconds ago|\\d+ minutes? ago|\\d+ hours? ago|yesterday|$date)",
         "(Scanned in|Stopped after) \\d+ s(, \\d+ on another subnet)?",
@@ -45,6 +46,11 @@ class CopyTableTest {
     /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
     private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", templates.any { it.matches(s) })
     private fun detailOk(s: String, blankAllowed: Boolean) = if (s.isEmpty()) assertTrue("blank detail where text is expected", blankAllowed) else inTable(s)
+
+    @Test fun `forget and undo strings`() {
+        listOf(HomeCopy.FORGET_NETWORK, HomeCopy.UNDO, HomeCopy.forgot("Home"), HomeCopy.removed("DiskStation")).forEach { inTable(it) }
+        assertEquals("Forgot Home", HomeCopy.forgot("Home")); assertEquals("Removed DiskStation", HomeCopy.removed("DiskStation"))
+    }
 
     @Test fun `progress states`() {
         val statuses = listOf(null, DiscoveryStatus(), DiscoveryStatus(probed = 0, total = 254), DiscoveryStatus(probed = 171, total = 254, found = 9),
