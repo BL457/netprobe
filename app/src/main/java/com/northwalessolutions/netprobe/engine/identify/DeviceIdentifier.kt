@@ -87,6 +87,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
                 "netbiosName" -> first(listOfNotNull(h.netbiosName))
                 "ports" -> if (r.ports != null && e.openPorts.containsAll(r.ports)) Hit(r.ports.joinToString(","), null, null) else null
                 "anyPort" -> r.anyPort?.firstOrNull { it in e.openPorts }?.let { Hit(it.toString(), null, null) }
+                "toolHint" -> e.toolHints.firstNotNullOfOrNull { c -> re?.find(c)?.let { m -> Hit(c, null, group1Of(m)) } }
                 "gateway" -> if (h.isGateway) Hit("default gateway", null, null) else null
                 else -> null
             }

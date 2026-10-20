@@ -41,6 +41,7 @@ object SyntheticEvidence {
             "service" -> onPort(ServiceInfo(sample, confidence = Confidence.CONFIRMED))
             "ports", "anyPort" -> ev(h, ports = (r.ports ?: r.anyPort).orEmpty().toSet())
             "gateway" -> ev(h.copy(isGateway = true))
+            "toolHint" -> HostEvidence(h, emptySet(), emptyMap(), null, toolHints = listOf(sample))
             else -> error("no synthetic evidence for field ${r.field} (rule ${r.id})")
         }
     }

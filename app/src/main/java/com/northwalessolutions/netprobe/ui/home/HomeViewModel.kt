@@ -210,7 +210,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         try {
             // Inside the try (Task 19 M1): if anything before here throws, the window is never left holding FLAG_KEEP_SCREEN_ON.
             if (ext.enabled) c.extendedRunActive.value = true
-            val collector = RadarCollector(c.hosts, c.ports, c.deviceIdentifier, c.ouiLookup, c.hostWriteLock) { c.removedDuringScan.value }
+            val withRuns = c.toolRepo.hostsWithRuns()
+            val collector = RadarCollector(c.hosts, c.ports, c.deviceIdentifier, c.ouiLookup, c.hostWriteLock,
+                hintsFor = { id -> if (id in withRuns) c.toolRepo.hintsFor(id) else emptyList() }) { c.removedDuringScan.value }
             c.discoveryEngine.discover(e, opts, binder).collect { h -> collector.store(net.id, h, runId) }
             completed = true; lastRunCompleted.value = true
         } finally {
@@ -303,7 +305,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         }
         c.ports.markScanned(h.id)
         c.hosts.byIdOnce(h.id)?.let { e ->
-            val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(e), c.ports.servicesFor(h.id), found.keys.toSet(), found, e.mac?.let(c.ouiLookup))
+            val ev = HostEvidenceBuilder.build(c.hosts.toDiscovered(e), c.ports.servicesFor(h.id), found.keys.toSet(), found, e.mac?.let(c.ouiLookup), c.toolRepo.hintsFor(h.id))
             c.hosts.setIdentityIfNotWeaker(h.id, c.deviceIdentifier.identify(ev))
         }
     }

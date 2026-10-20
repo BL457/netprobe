@@ -17,7 +17,9 @@ import kotlinx.coroutines.sync.withLock
  */
 class RadarCollector(
     private val hosts: HostRepository, private val ports: PortRepository, private val identifier: DeviceIdentifier,
-    private val ouiLookup: (String) -> String?, private val lock: Mutex, private val removed: () -> Set<Pair<Long, String>>,
+    private val ouiLookup: (String) -> String?, private val lock: Mutex,
+    private val hintsFor: suspend (Long) -> List<String> = { emptyList() },
+    private val removed: () -> Set<Pair<Long, String>>,
 ) {
     /** Ports seen open per IP during this run: later emissions for the host carry none. */
     private val openPorts = HashMap<String, MutableSet<Int>>()
@@ -31,7 +33,7 @@ class RadarCollector(
         val merged = hosts.byIdOnce(id) ?: return@withLock true
         val seen = openPorts.getOrPut(ip) { HashSet() }.also { it += h.probedOpenPorts }.toSet()
         // Stored port findings are part of the evidence, so a rediscovery never downgrades an identity a port scan established.
-        val ev = HostEvidenceBuilder.build(hosts.toDiscovered(merged), ports.servicesFor(id), seen, emptyMap(), merged.mac?.let(ouiLookup))
+        val ev = HostEvidenceBuilder.build(hosts.toDiscovered(merged), ports.servicesFor(id), seen, emptyMap(), merged.mac?.let(ouiLookup), hintsFor(id))
         val identity = identifier.identify(ev)
         // F1: the same device never loses identity to a radar run (a rule change or thinner evidence); a new MAC on the IP is a new device.
         // A neighbour-table MAC is compared as seen, so a stored MAC of another rank can never mask a new device on the IP.

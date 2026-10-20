@@ -7,6 +7,7 @@ import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.common.Locks
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
+import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
 import com.northwalessolutions.netprobe.engine.identify.IdentifyRules
 import com.northwalessolutions.netprobe.engine.portscan.PortScanEngine
 import com.northwalessolutions.netprobe.engine.portscan.PortTable
@@ -96,9 +97,12 @@ class AppContainer(val context: Context) {
     }
     /** True while any tool run is live; Nav keeps the screen on for it (spec 4.4). */
     val toolRunActive: StateFlow<Boolean> by lazy { toolRunner.active.map { it.isNotEmpty() }.stateIn(appScope, SharingStarted.Eagerly, false) }
-    /** Filled in Task 7 (identification from tool hints). */
-    @Suppress("UNUSED_PARAMETER")
-    private suspend fun reidentifyFromTools(hostId: Long) { }
+    /** ToolRunner.onFinished: re-identify from stored ports plus the host's tool hints, never lowering the identity (spec 4.7). */
+    private suspend fun reidentifyFromTools(hostId: Long) {
+        val h = hosts.byIdOnce(hostId) ?: return
+        val ev = HostEvidenceBuilder.build(hosts.toDiscovered(h), ports.servicesFor(hostId), emptySet(), emptyMap(), h.mac?.let(ouiLookup), toolRepo.hintsFor(hostId))
+        hosts.setIdentityIfNotWeaker(hostId, deviceIdentifier.identify(ev))
+    }
     val networkEnvMonitor by lazy { NetworkEnvMonitor(context) }
     val portTable by lazy { PortTable.fromJson(RawResources.read(context, R.raw.ports)) }
     val mdnsTypes by lazy { RawResources.lines(RawResources.read(context, R.raw.mdns_types)) }
