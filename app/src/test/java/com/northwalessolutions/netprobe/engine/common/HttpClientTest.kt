@@ -160,4 +160,92 @@ class HttpClientTest {
         val t0 = System.nanoTime(); job.cancelAndJoin()
         assertTrue("cancel took ${(System.nanoTime() - t0) / 1_000_000} ms", (System.nanoTime() - t0) / 1_000_000 <= 1000)
     }
+
+    // ---- Task 5 fix round 1 ----
+
+    /** Accepts one connection, writes [head] at once, then holds the socket open for [holdMs] without closing it. */
+    private fun holdOpen(head: String, holdMs: Long = 3_000): Int {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { s.accept().use { c -> c.getOutputStream().write(head.toByteArray(Charsets.ISO_8859_1)); c.getOutputStream().flush(); Thread.sleep(holdMs) } } }
+        return s.localPort
+    }
+    /** Accepts one connection and writes [bytes] one at a time, [gapMs] apart. */
+    private fun drip(bytes: ByteArray, gapMs: Long): Int {
+        val s = ServerSocket(0, 50, lo); servers += s
+        thread(isDaemon = true) { runCatching { s.accept().use { c -> for (b in bytes) { c.getOutputStream().write(b.toInt()); c.getOutputStream().flush(); Thread.sleep(gapMs) } } } }
+        return s.localPort
+    }
+    private fun elapsedMs(t0: Long) = (System.nanoTime() - t0) / 1_000_000
+
+    @Test fun `an overstated content length held open keeps the status headers and the partial body`() {
+        val port = holdOpen("HTTP/1.1 200 OK\r\nServer: lwip\r\nContent-Length: 100\r\n\r\n0123456789")
+        val r = runBlocking { client(300).request(lo, port, false, "GET", "/") }
+        val ok = r as? HttpResult.Ok ?: throw AssertionError("expected Ok, got $r")
+        assertEquals(200, ok.response.status); assertEquals("lwip", ok.response.header("Server")); assertEquals(100L, ok.response.contentLength)
+        assertEquals("0123456789", String(ok.response.body, Charsets.ISO_8859_1))
+    }
+    @Test fun `a chunked body stalled mid chunk keeps the partial body`() {
+        val port = holdOpen("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n10\r\nped")
+        val r = runBlocking { client(300).request(lo, port, false, "GET", "/") }
+        val ok = r as? HttpResult.Ok ?: throw AssertionError("expected Ok, got $r")
+        assertEquals("Wikiped", String(ok.response.body, Charsets.ISO_8859_1))
+    }
+    @Test fun `a drip fed tls handshake is stopped by the overall bound`() {
+        // A TLS record header announcing 16 KB, then one byte every 200 ms: every read beats soTimeout, so only an overall bound ends it.
+        val bytes = byteArrayOf(0x16, 0x03, 0x03, 0x40, 0x00) + ByteArray(60) { 0x02 }
+        val port = drip(bytes, 200)
+        val t0 = System.nanoTime()
+        val r = runBlocking { client(300).request(lo, port, tls = true, method = "GET", path = "/") }
+        assertEquals(HttpFailure.Timeout, (r as HttpResult.Failed).failure)
+        assertTrue("took ${elapsedMs(t0)} ms", elapsedMs(t0) < 1_500)
+    }
+    @Test fun `a cr lf in the path is refused as malformed before connecting`() {
+        val (port, seen) = serve { ok("hi") }
+        val r = result(port, path = "/a\r\nX-Injected: 1")
+        assertEquals(HttpFailure.Malformed, (r as HttpResult.Failed).failure); assertEquals("", seen())
+    }
+    @Test fun `a cr lf in the host name is refused as malformed`() {
+        val (port, _) = serve { ok("hi") }
+        assertEquals(HttpFailure.Malformed, (result(port, host = "nas.lan\r\nX-Injected: 1") as HttpResult.Failed).failure)
+    }
+    @Test fun `a raw space in the path is refused as malformed`() {
+        val (port, _) = serve { ok("hi") }
+        assertEquals(HttpFailure.Malformed, (result(port, path = "/a b") as HttpResult.Failed).failure)
+    }
+    @Test fun `a control or non ascii character in the method is refused as malformed`() {
+        val (port, _) = serve { ok("hi") }
+        assertEquals(HttpFailure.Malformed, (result(port, method = "GET\u007f") as HttpResult.Failed).failure)
+        assertEquals(HttpFailure.Malformed, (result(port, path = "/café") as HttpResult.Failed).failure)
+    }
+    @Test fun `a status line dripped past the deadline is a timeout not malformed`() {
+        val port = drip("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".toByteArray(), 50)
+        val r = runBlocking { client(300).request(lo, port, false, "GET", "/") }
+        assertEquals(HttpFailure.Timeout, (r as HttpResult.Failed).failure)
+    }
+    @Test fun `a negative content length falls back to reading until close`() {
+        val (port, _) = serve { "HTTP/1.1 200 OK\r\nContent-Length: -5\r\n\r\nabc".toByteArray() }
+        val r = result(port) as HttpResult.Ok
+        assertEquals("abc", String(r.response.body, Charsets.ISO_8859_1)); assertNull(r.response.contentLength)
+    }
+    @Test fun `five thousand one byte chunks come through intact`() {
+        val body = StringBuilder(); val wire = StringBuilder("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        repeat(5_000) { val c = 'a' + it % 26; body.append(c); wire.append("1\r\n").append(c).append("\r\n") }
+        wire.append("0\r\n\r\n")
+        val (port, _) = serve { wire.toString().toByteArray(Charsets.ISO_8859_1) }
+        val r = result(port) as HttpResult.Ok
+        assertEquals(body.toString(), String(r.response.body, Charsets.ISO_8859_1)); assertFalse(r.response.bodyTruncated)
+    }
+    @Test fun `a cancelled caller receives a cancellation exception not a result`() = runBlocking {
+        val s = ServerSocket(0, 50, lo); servers += s
+        val accepted = java.util.concurrent.CountDownLatch(1)
+        thread(isDaemon = true) { runCatching { s.accept().use { c -> accepted.countDown(); c.getOutputStream().write("HTTP/1.1 200 OK\r\n".toByteArray()); c.getOutputStream().flush(); Thread.sleep(10_000) } } }
+        val returned = java.util.concurrent.atomic.AtomicReference<HttpResult?>(null)
+        val threw = java.util.concurrent.atomic.AtomicBoolean(false)
+        val job = launch(Dispatchers.IO) {
+            try { returned.set(client(10_000).request(lo, s.localPort, false, "GET", "/")) } catch (e: CancellationException) { threw.set(true); throw e }
+        }
+        assertTrue(accepted.await(2, java.util.concurrent.TimeUnit.SECONDS)); delay(300)
+        job.cancelAndJoin()
+        assertNull("request returned ${returned.get()} after cancel", returned.get()); assertTrue(threw.get())
+    }
 }

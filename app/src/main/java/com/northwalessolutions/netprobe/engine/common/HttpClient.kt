@@ -3,6 +3,7 @@ package com.northwalessolutions.netprobe.engine.common
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -12,6 +13,7 @@ import java.net.Socket
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.security.cert.X509Certificate
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
@@ -39,13 +41,24 @@ sealed interface HttpResult { data class Ok(val response: HttpResponse) : HttpRe
  */
 class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY_BYTES) {
     suspend fun request(ip: Inet4Address, port: Int, tls: Boolean, method: String, path: String, hostName: String? = null, sslContext: SSLContext? = null): HttpResult {
+        // Header-injection guard: Location paths come from devices and names from mDNS or reverse DNS (fix round 1).
+        if (!isToken(method) || !isToken(path) || (hostName != null && !isToken(hostName))) return HttpResult.Failed(HttpFailure.Malformed)
         val outcome = Probe.connect(ip, port, timeoutMs, keepOpen = true)
         val raw = (outcome as? Probe.Outcome.Connected)?.socket ?: return HttpResult.Failed(failureOf(outcome))
+        val tlsSocket = AtomicReference<SSLSocket?>(null)
         val result = try {
-            CancellableIo.closing(raw) { exchange(raw, ip, port, tls, method, path, hostName, sslContext) }
+            // One hard bound over handshake and read: a drip-fed handshake beats every per-read soTimeout. The timeout cancels the
+            // closing scope, whose watcher closes the socket, so the blocked call ends at once.
+            withTimeoutOrNull(DEADLINE_FACTOR * timeoutMs + timeoutMs) {
+                CancellableIo.closing(raw) { exchange(raw, ip, port, tls, method, path, hostName, sslContext, tlsSocket) }
+            } ?: HttpResult.Failed(HttpFailure.Timeout)
         } catch (e: CancellationException) { throw e
         } catch (_: Exception) { HttpResult.Failed(HttpFailure.Reset)
-        } finally { runCatching { raw.close() } }
+        } finally {
+            // The SSLSocket first, so the provider frees its native state now rather than in a finalizer; autoClose closes raw too.
+            tlsSocket.get()?.let { s -> runCatching { s.close() } }
+            runCatching { raw.close() }
+        }
         // A cancel that closed the socket mid-read surfaces as a SocketException; the caller sees the cancellation, not a Reset.
         currentCoroutineContext().ensureActive()
         return result
@@ -57,11 +70,11 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
         else -> HttpFailure.Reset
     }
 
-    private fun exchange(raw: Socket, ip: Inet4Address, port: Int, tls: Boolean, method: String, path: String, hostName: String?, sslContext: SSLContext?): HttpResult {
+    private fun exchange(raw: Socket, ip: Inet4Address, port: Int, tls: Boolean, method: String, path: String, hostName: String?, sslContext: SSLContext?, tlsSocket: AtomicReference<SSLSocket?>): HttpResult {
         // Before the handshake (plan review G4): a device that accepts TCP and never answers the ClientHello times out instead of
         // hanging the run. The connect itself is bounded by Probe.connect's timeout argument.
         raw.soTimeout = timeoutMs
-        val socket: Socket = if (!tls) raw else try { layerTls(raw, ip, port, hostName, sslContext) }
+        val socket: Socket = if (!tls) raw else try { layerTls(raw, ip, port, hostName, sslContext, tlsSocket) }
             catch (e: IOException) { return HttpResult.Failed(if (isTimeout(e)) HttpFailure.Timeout else HttpFailure.Reset) }
         socket.soTimeout = timeoutMs
         val deadline = System.currentTimeMillis() + DEADLINE_FACTOR * timeoutMs       // overall, so a dripping server still stops
@@ -78,10 +91,11 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
         return false
     }
 
-    private fun layerTls(raw: Socket, ip: Inet4Address, port: Int, hostName: String?, sslContext: SSLContext?): SSLSocket {
+    private fun layerTls(raw: Socket, ip: Inet4Address, port: Int, hostName: String?, sslContext: SSLContext?, tlsSocket: AtomicReference<SSLSocket?>): SSLSocket {
         val ctx = sslContext ?: trustAllContext()
         val sni = hostName ?: ip.hostAddress
         val s = ctx.socketFactory.createSocket(raw, sni, port, true) as SSLSocket
+        tlsSocket.set(s)   // before the handshake, so a failed or timed-out handshake still closes it explicitly
         // Enable every protocol and cipher so old TLS 1.0/1.1 and RSA/3DES-only devices can still be read; each setter is wrapped (spec 4.5).
         runCatching { s.enabledProtocols = s.supportedProtocols }
         runCatching { s.enabledCipherSuites = s.supportedCipherSuites }
@@ -91,23 +105,25 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
 
     private fun read(input: InputStream, method: String, deadline: Long): HttpResult {
         val reader = HeadReader(input, deadline)
-        var statusLine = reader.line() ?: return HttpResult.Failed(HttpFailure.Malformed)
+        // A head line that ends without a line means the deadline passed (a slow drip, so Timeout) or the stream ended or overflowed.
+        val cut = { HttpResult.Failed(if (reader.deadlineHit) HttpFailure.Timeout else HttpFailure.Malformed) }
+        var statusLine = reader.line() ?: return cut()
         var m = STATUS.matchEntire(statusLine) ?: return HttpResult.Failed(HttpFailure.Malformed)
         while (m.groupValues[1].toInt() in 100..199) {                   // skip an interim 1xx head, headers and all, then read the next status
-            while (true) { val h = reader.line() ?: return HttpResult.Failed(HttpFailure.Malformed); if (h.isEmpty()) break }
-            statusLine = reader.line() ?: return HttpResult.Failed(HttpFailure.Malformed)
+            while (true) { val h = reader.line() ?: return cut(); if (h.isEmpty()) break }
+            statusLine = reader.line() ?: return cut()
             m = STATUS.matchEntire(statusLine) ?: return HttpResult.Failed(HttpFailure.Malformed)
         }
         val status = m.groupValues[1].toInt(); val reason = m.groupValues[2].trim()
         val headers = ArrayList<Pair<String, String>>()
         while (true) {
-            val h = reader.line() ?: return HttpResult.Failed(HttpFailure.Malformed)
+            val h = reader.line() ?: return cut()
             if (h.isEmpty()) break
             if (reader.headBytes > MAX_HEADER_BYTES) return HttpResult.Failed(HttpFailure.Malformed)
             val i = h.indexOf(':'); if (i > 0) headers += h.substring(0, i).trim() to h.substring(i + 1).trim()
         }
         if (reader.headBytes > MAX_HEADER_BYTES) return HttpResult.Failed(HttpFailure.Malformed)
-        val contentLength = headers.firstOrNull { it.first.equals("Content-Length", true) }?.second?.toLongOrNull()
+        val contentLength = headers.firstOrNull { it.first.equals("Content-Length", true) }?.second?.toLongOrNull()?.takeIf { it >= 0 }
         val chunked = headers.any { it.first.equals("Transfer-Encoding", true) && it.second.contains("chunked", true) }
         val bodyless = method == "HEAD" || status in 100..199 || status == 204 || status == 304
         if (bodyless) return HttpResult.Ok(HttpResponse(status, reason, headers, ByteArray(0), false, contentLength))
@@ -119,9 +135,12 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
         return HttpResult.Ok(HttpResponse(status, reason, headers, body, truncated, contentLength))
     }
 
+    // Every body reader treats a read timeout as the end of the body: the status, headers and bytes so far are kept (fix round 1).
     private fun readFixed(r: HeadReader, length: Long, deadline: Long): Pair<ByteArray, Boolean> {
         val out = ByteArrayOutputStream(); var remaining = minOf(length, maxBody.toLong()).toInt()
-        while (remaining > 0 && System.currentTimeMillis() <= deadline) { val b = r.readByte() ?: break; out.write(b); remaining-- }
+        try {
+            while (remaining > 0 && System.currentTimeMillis() <= deadline) { val b = r.readByte() ?: break; out.write(b); remaining-- }
+        } catch (_: SocketTimeoutException) { return out.toByteArray() to false }
         return out.toByteArray() to (length > maxBody)
     }
     /** No framing: read until close, the cap or the overall deadline; a read timeout ends the body, it does not fail the exchange. */
@@ -134,30 +153,39 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
     }
     private fun readChunked(r: HeadReader, deadline: Long): Pair<ByteArray, Boolean> {
         val out = ByteArrayOutputStream(); var truncated = false
-        while (System.currentTimeMillis() <= deadline) {
-            r.resetHeadBytes()   // each chunk-size line gets its own 16 KB bound; many small chunks must not add up to the head cap
-            val sizeLine = r.line() ?: break
-            val size = sizeLine.substringBefore(';').trim().toIntOrNull(16) ?: break
-            if (size == 0) { while (true) { r.resetHeadBytes(); val t = r.line(); if (t == null || t.isEmpty()) break }; break }   // trailers then end
-            var left = size
-            while (left > 0) { val b = r.readByte() ?: return out.toByteArray() to truncated; if (out.size() < maxBody) out.write(b) else truncated = true; left-- }
-            r.resetHeadBytes(); r.line()   // the CRLF after the chunk data
-        }
+        try {
+            while (System.currentTimeMillis() <= deadline) {
+                r.resetHeadBytes()   // each chunk-size line gets its own 16 KB bound; many small chunks must not add up to the head cap
+                val sizeLine = r.line() ?: break
+                val size = sizeLine.substringBefore(';').trim().toIntOrNull(16) ?: break
+                if (size == 0) { while (true) { r.resetHeadBytes(); val t = r.line(); if (t == null || t.isEmpty()) break }; break }   // trailers then end
+                var left = size
+                while (left > 0) { val b = r.readByte() ?: return out.toByteArray() to truncated; if (out.size() < maxBody) out.write(b) else truncated = true; left-- }
+                r.resetHeadBytes(); r.line()   // the CRLF after the chunk data
+            }
+        } catch (_: SocketTimeoutException) { return out.toByteArray() to truncated }
         return out.toByteArray() to truncated
     }
 
     /** Reads a byte-oriented stream a line at a time (CRLF or bare LF) and single bytes, counting head bytes for the 16 KB cap. */
     private class HeadReader(private val input: InputStream, private val deadline: Long) {
         var headBytes = 0; private set
+        /** True once a read stopped because the overall deadline passed, so a cut head reads as Timeout, not Malformed. */
+        var deadlineHit = false; private set
         fun resetHeadBytes() { headBytes = 0 }
+        private fun pastDeadline(): Boolean {
+            if (System.currentTimeMillis() > deadline) deadlineHit = true
+            return deadlineHit
+        }
         fun readByte(): Int? {
-            if (System.currentTimeMillis() > deadline) return null
+            if (pastDeadline()) return null
             val b = input.read(); return if (b < 0) null else b
         }
+        /** One line, or null at EOF before any byte, past the deadline (a partial line is never returned), or past the header cap. */
         fun line(): String? {
             val sb = StringBuilder()
             while (true) {
-                if (System.currentTimeMillis() > deadline) return if (sb.isEmpty()) null else sb.toString()
+                if (pastDeadline()) return null
                 val b = input.read(); if (b < 0) return if (sb.isEmpty()) null else sb.toString()
                 headBytes++
                 if (headBytes > MAX_HEADER_BYTES) return null       // a line with no LF never grows past the header cap (plan review G15)
@@ -175,6 +203,10 @@ class HttpClient(private val timeoutMs: Int, private val maxBody: Int = MAX_BODY
         private const val MAX_CAUSE_DEPTH = 8
         private const val HTTP_PORT = 80
         private const val HTTPS_PORT = 443
+        private const val FIRST_VISIBLE_ASCII = 0x21
+        private const val LAST_VISIBLE_ASCII = 0x7E
+        /** True when every char is visible ASCII: no space, control, DEL or non-ASCII, so nothing can split the request head. */
+        private fun isToken(s: String): Boolean = s.isNotEmpty() && s.all { it.code in FIRST_VISIBLE_ASCII..LAST_VISIBLE_ASCII }
         /** The Host header (spec 4.6): the name when given, else the IP, plus ":<port>" unless 80 for http or 443 for https. */
         fun hostHeader(ip: Inet4Address, port: Int, tls: Boolean, hostName: String?): String {
             val name = hostName ?: ip.hostAddress
