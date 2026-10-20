@@ -68,7 +68,7 @@ class ToolCopyTableTest {
         "Back", "Wordlists", "Import wordlist", "Importing", "Built in", "Imported", "\\d+ entr(y|ies), built in", "\\d+ entr(y|ies), imported $date",
         "Delete", "Delete .+\\?", "Cancel", "No imported wordlists yet", "Delete .+", "Imported .+, \\d+ entr(y|ies)( \\(\\d+ skipped\\))?",
         "That file is too large \\(limit 10 MB\\)", "That file has more than 200000 entries", "That file has no entries", "Could not read that file",
-        "Imported list", "Recovered list \\d+", "3 built in, \\d+ imported",
+        "Expand", " s", "Wordlist not found, common-short used", "Imported list", "Recovered list \\d+", "3 built in, \\d+ imported",
     ).map { Regex(it) }
     private fun inTable(s: String) = assertTrue("not in the tool copy table: '$s'", templates.any { it.matches(s) })
 
@@ -119,7 +119,7 @@ class ToolCopyTableTest {
         addAll(listOf(ToolCopy.WORDLIST, ToolCopy.entries(1), ToolCopy.entries(312), ToolCopy.MANAGE_WORDLISTS, ToolCopy.EXTENSIONS, ToolCopy.EXTENSIONS_PLACEHOLDER,
             ToolCopy.EXTENSIONS_SUPPORT, ToolCopy.METHOD, ToolCopy.HEAD_THEN_GET, ToolCopy.GET_ONLY, ToolCopy.CONCURRENCY, ToolCopy.TIMEOUT, ToolCopy.seconds(3),
             ToolCopy.REPORT_CODES, ToolCopy.DEFAULT_CODES_TEXT, ToolCopy.FILTER, ToolCopy.FILTER_SUPPORT, ToolCopy.paths(1), ToolCopy.paths(312), ToolCopy.RUN,
-            ToolCopy.ERR_EXT_CHARS, ToolCopy.ERR_EXT_TOO_MANY, ToolCopy.ERR_CODE_RANGE, ToolCopy.ERR_CODE_EMPTY, ToolCopy.WORDLIST_FALLBACK))
+            ToolCopy.ERR_EXT_CHARS, ToolCopy.ERR_EXT_TOO_MANY, ToolCopy.ERR_CODE_RANGE, ToolCopy.ERR_CODE_EMPTY, ToolCopy.WORDLIST_FALLBACK, ToolCopy.BRUTE_FALLBACK_PREFIX, ToolCopy.EXPAND, ToolCopy.SECONDS_UNIT))
         addAll(listOf(ToolCopy.resultsTitle(ToolCopy.DIR_BRUTEFORCE, "10.0.3.10", 5000), ToolCopy.resultsStatus("Done", "2 hours ago", null),
             ToolCopy.resultsStatus("Done", "2 hours ago", "chnas.local"), ToolCopy.resultsRunning("12 of 300, 2 found  3 s"), ToolCopy.runOf(1, 3),
             ToolCopy.OLDER_RUN, ToolCopy.NEWER_RUN, ToolCopy.OPEN_WITH, ToolCopy.COPY, ToolCopy.SHARE, ToolCopy.COPIED, ToolCopy.EMPTY_RUNNING, ToolCopy.NO_FINDINGS,

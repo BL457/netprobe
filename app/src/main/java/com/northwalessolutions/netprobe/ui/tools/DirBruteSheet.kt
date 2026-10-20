@@ -98,7 +98,7 @@ fun DirBruteSheet(state: DirBruteSheetState, onRun: (DirBruteOptions) -> Unit, o
                         activeFill = NetProbeColors.background, activeText = NetProbeColors.text, modifier = Modifier.fillMaxWidth())
                 }
                 StepSlider(ToolCopy.CONCURRENCY, concurrency, DirBruteOptions.MIN_CONCURRENCY, DirBruteOptions.MAX_CONCURRENCY, 1, "") { concurrency = it }
-                StepSlider(ToolCopy.TIMEOUT, timeoutS, DirBruteOptions.MIN_TIMEOUT_S, DirBruteOptions.MAX_TIMEOUT_S, 1, " s") { timeoutS = it }
+                StepSlider(ToolCopy.TIMEOUT, timeoutS, DirBruteOptions.MIN_TIMEOUT_S, DirBruteOptions.MAX_TIMEOUT_S, 1, ToolCopy.SECONDS_UNIT) { timeoutS = it }
                 Group(ToolCopy.REPORT_CODES) {
                     OutlinedTextField(codesText, { codesText = it }, Modifier.fillMaxWidth().testTag("codesField"), singleLine = true, textStyle = NetProbeText.data,
                         isError = codesError != null, supportingText = codesError?.let { e -> { Text(e, color = NetProbeColors.error) } },

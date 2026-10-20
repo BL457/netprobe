@@ -28,6 +28,24 @@ class ToolResultsSheetTest {
         rule.onNodeWithTag("copy:1").assertHeightIsAtLeast(48.dp)
         assertEquals(listOf("open 1", "copy 2"), events)
     }
+    @Test fun longPressOnAFindingCopiesIt() {
+        show(ToolsFakes.results())
+        rule.onNodeWithTag("finding:1").performTouchInput { longClick() }
+        assertEquals(listOf("copy 1"), events)
+    }
+    @Test fun theFallbackPrefixIsItsOwnLineAboveTheRestOfTheSummary() {
+        val s = ToolsFakes.results().copy(summary = ToolCopy.bruteFallback("7 found in 300 paths"))
+        show(s)
+        rule.onNodeWithTag("fallbackLine").assertIsDisplayed().assertTextEquals(ToolCopy.BRUTE_FALLBACK_PREFIX)
+        rule.onNodeWithText("7 found in 300 paths").assertIsDisplayed()
+    }
+    @Test fun theHeaderShowsTitleStatusAndSummary() {
+        show(ToolsFakes.results())
+        rule.onNodeWithText("Directory brute-force  10.0.3.10:5000").assertIsDisplayed()
+        rule.onNodeWithText("Done, 2 hours ago").assertIsDisplayed()
+        rule.onNodeWithText("7 found in 300 paths").assertIsDisplayed()
+        rule.onNodeWithTag("fallbackLine").assertDoesNotExist()
+    }
     @Test fun theRunSwitcherIsBoundedAtBothEnds() {
         show(ToolsFakes.results(index = 1, count = 3))
         rule.onNodeWithText("Run 1 of 3").assertIsDisplayed()

@@ -83,7 +83,7 @@ fun ToolResultsSheet(state: ToolResultsState, onOlder: () -> Unit, onNewer: () -
 private fun FindingRowItem(row: FindingRow, onCopy: (FindingRow) -> Unit, onOpen: (FindingRow) -> Unit) {
     var expanded by rememberSaveable(row.id) { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter, vertical = ROW_VERTICAL).testTag("finding:${row.id}"), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).combinedClickable(onLongClick = { onCopy(row) }, onClick = { expanded = !expanded })) {
+        Column(Modifier.weight(1f).combinedClickable(onLongClick = { onCopy(row) }, onLongClickLabel = ToolCopy.COPY, onClickLabel = ToolCopy.EXPAND, onClick = { expanded = !expanded })) {
             Text(row.value, style = NetProbeText.data, color = NetProbeColors.text, maxLines = if (expanded) Int.MAX_VALUE else VALUE_COLLAPSED_LINES, overflow = TextOverflow.Ellipsis)
             row.detail?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }

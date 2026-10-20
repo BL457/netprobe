@@ -121,7 +121,8 @@ object ToolCopy {
     const val ERR_CODE_EMPTY = "Add at least one status code"
     const val WORDLIST_FALLBACK = "Wordlist not found, using common-short"
     fun entries(n: Int) = if (n == 1) "1 entry" else "$n entries"
-    fun seconds(n: Int) = "$n s"
+    const val SECONDS_UNIT = " s"
+    fun seconds(n: Int) = "$n$SECONDS_UNIT"
     fun paths(n: Int) = if (n == 1) "1 path" else "$n paths"
 
     // Results sheet (8.5)
@@ -129,6 +130,7 @@ object ToolCopy {
     const val NEWER_RUN = "Newer run"
     const val OPEN_WITH = "Open with..."
     const val COPY = "Copy"
+    const val EXPAND = "Expand"
     const val SHARE = "Share"
     const val COPIED = "Copied"
     const val EMPTY_RUNNING = "Running, findings appear as they are found"

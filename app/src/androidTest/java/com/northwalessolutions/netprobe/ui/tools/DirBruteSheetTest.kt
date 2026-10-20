@@ -59,6 +59,15 @@ class DirBruteSheetTest {
         val body = rule.onNodeWithTag("dirBruteBody").fetchSemanticsNode()
         assertFalse("the Run pill must not be inside the scrolling body", generateSequence(pill.parent) { it.parent }.any { it.id == body.id })
     }
+    @Test fun aChosenListAndTypedExtensionReachRun() {
+        show()
+        rule.onNodeWithTag("wordlist:builtin:admin-panels").performClick()
+        rule.onNodeWithTag("extensionsField").performTextInput("php")
+        rule.onNodeWithTag("toolRunPill").assertIsEnabled().performClick()
+        assertEquals(1, runs.size)
+        assertEquals("builtin:admin-panels", runs[0].wordlistId)
+        assertEquals(listOf("php"), runs[0].extensions)
+    }
     @Test fun manageWordlistsFiresItsLambda() {
         show(); rule.onNodeWithTag("manageWordlists").performClick(); assertEquals(1, manage)
     }
