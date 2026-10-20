@@ -9703,6 +9703,32 @@ Why the order is safe: building `AppContainer` touches no database; the only sta
 **Files:**
 - Create (at execution time): `docs/qa/phase3b-on-device.md`, `docs/qa/shots/phase3b/*.png`, `docs/qa/shots/phase3b/*.mp4`
 - Backups and the rollback APK go OUTSIDE the repository (they hold the Director's network inventory): `K:/claude/netprobe_db_backup/phase3b/`
+- Modify (step R, before anything else): the `phase3b` branch itself, rebased onto `phase3a` (final review I4)
+
+- [ ] **Step R: Rebase `phase3b` onto `phase3a` and re-run the full gate, before any other step (ruling R2, final review I4)**
+
+The phone runs the `phase3a` build (`87ab3c1`), so 3B must be rebuilt on top of it before anything is installed. The `.gitattributes` from final review I2 must already be on `phase3b` (it pins `app/src/main/res/raw/*.txt` to LF); without it the rebase checks the bundled wordlists out as CRLF on this PC (`core.autocrlf=true`) and `BundledWordlistsTest` fails. `phase3a` may carry docs-only commits after `87ab3c1`; that does not change the build.
+```bash
+git status --short                      # must be empty
+git checkout phase3b
+grep -qF 'app/src/main/res/raw/*.txt text eol=lf' .gitattributes || echo "STOP: the I2 .gitattributes is missing"
+git rebase phase3a
+```
+Expect exactly two conflicts, both in the Task 7 commit (`38fcd2b` before the rebase). Resolve them like this and nothing else:
+1. `app/src/main/java/com/northwalessolutions/netprobe/ui/home/RadarCollector.kt`: keep 3A's F1 body (`previousMac`, `IdentityWrite.sameDevice` and the guarded `setIdentityIfNotWeaker`) and add `hintsFor(id)` as the last argument of `HostEvidenceBuilder.build`. Keep 3B's `hintsFor` constructor parameter, before `removed`.
+2. `app/src/test/java/com/northwalessolutions/netprobe/engine/identify/DeviceIdentifierTest.kt`: set the rule count to `134` (118, plus 2 from 3A, plus 14 from 3B) and the `gateway - p-dsm-title` gap to `73`, and keep 3B's two hint-position assertions.
+
+`identify_rules.json` merges cleanly (3A's two rules sit after `p-unifi-cert`, 3B's 14 before `gateway`). If it or any other file conflicts, run `git rebase --abort` and stop. After each resolution:
+```bash
+git add <the resolved file>
+git rebase --continue
+```
+Then check the line endings and run the full gate:
+```bash
+git ls-files --eol app/src/main/res/raw/    # every *.txt must read i/lf w/lf attr/text eol=lf
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
+```
+Expected: `BUILD SUCCESSFUL`, 0 failures. Dot measured 882 JVM tests on the trial rebase; the final review's I1 test adds one, so expect 883 (sum the `tests` attributes in `app/build/test-results/testDebugUnitTest/*.xml` and record the number). `compileDebugAndroidTestKotlin` must pass, which proves 3A's `RadarIdentityGuardTest` compiles against the new `RadarCollector` signature. If anything is red, stop and tell the Director; do not install. The rebase rewrites every 3B commit, so record the new `phase3b` tip as the build commit in the QA record.
 
 Common setup (as the 3A plan's device QA task):
 ```bash
@@ -9710,8 +9736,18 @@ ADB="/c/Users/blastdav/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 DEV=28221FDH300AP9
 PKG=com.northwalessolutions.netprobe
 BK=/k/claude/netprobe_db_backup/phase3b
-BASE=$(cat docs/superpowers/plans/phase3b-base.txt)    # the 3A commit recorded in Task 1 step 0
+BASE=$(cat docs/superpowers/plans/phase3b-base.txt)    # 87ab3c1, the phase3a build on the phone (final review I4)
 mkdir -p "$BK" docs/qa/shots/phase3b
+# Binary-safe copy into the app's data directory, then an MD5 check (final review I3). Never stream a file with
+# `adb shell ... < file`: on this PC it truncates binary stdin (3A device QA finding F5: 4220 of 323584 bytes written).
+# `exec-in` is the form 3A's QA proved byte for byte. Usage: put <local file> <path under the app's data directory>
+put() {
+  "$ADB" -s $DEV exec-in run-as $PKG sh -c "cat > $2" < "$1"
+  local want got
+  want=$(md5sum < "$1" | cut -d' ' -f1)
+  got=$("$ADB" -s $DEV exec-out run-as $PKG md5sum "$2" | cut -d' ' -f1)
+  if [ "$want" = "$got" ]; then echo "MD5 OK $2 $got"; else echo "MD5 MISMATCH $2: PC $want, phone $got"; return 1; fi
+}
 run() { ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
   -Pandroid.testInstrumentationRunnerArguments.class="$1" --console=plain 2>&1 | tail -12; }
 ```
@@ -9745,14 +9781,14 @@ Expected: `BUILD SUCCESSFUL` and the APK in `$BK`. If Gradle reports anything mi
 
 - [ ] **Step 2: Put the copy for DirectorCopyMigration23Test in place (plan review G7)**
 
-Streamed straight into the app's data directory, so no SELinux rule on `/data/local/tmp` can block it; SQLite rebuilds the `-shm` file:
+Written straight into the app's data directory with `put` (`adb exec-in`, never `adb shell ... < file`), so no SELinux rule on `/data/local/tmp` can block it; SQLite rebuilds the `-shm` file. Each file's MD5 is compared with its backup before anything else runs:
 ```bash
 for f in netprobe.db netprobe.db-wal; do
-  "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/${f/netprobe.db/netprobe-migration-copy.db}'" < "$BK/$f.bak"
+  put "$BK/$f.bak" "databases/${f/netprobe.db/netprobe-migration-copy.db}" || break
 done
 "$ADB" -s $DEV shell run-as $PKG ls -l databases/
 ```
-Expected: `netprobe.db*` untouched; `netprobe-migration-copy.db` the same size as `netprobe.db.bak`.
+Expected: `MD5 OK` for both files; `netprobe.db*` untouched; `netprobe-migration-copy.db` the same size as `netprobe.db.bak`. On any `MD5 MISMATCH`, stop: do not run step 3. The test deletes the copy, so repeat this step before every re-run of `DirectorCopyMigration23Test`.
 
 - [ ] **Step 3: The migration tests first (they install the new APKs but never open `netprobe.db`)**
 ```bash
@@ -9774,7 +9810,7 @@ Check on screen: every host the Director marked shows its mark; open two marked 
 
 - [ ] **Step 5: The rest of the instrumented suite** (DAO and Compose tests use in-memory databases or fake state; 3A's classes run again because 3B edits the screens they cover):
 ```bash
-for c in data.ToolDaoTest data.DaoTest data.RemoveDeviceTest \
+for c in data.MigrationTest data.RadarIdentityGuardTest data.ToolDaoTest data.DaoTest data.RemoveDeviceTest \
          ui.tools.ToolsBlockTest ui.tools.DirBruteSheetTest ui.tools.ToolResultsSheetTest ui.wordlists.WordlistsScreenTest ui.settings.SettingsToolsTest \
          ui.home.RadarBlockTest ui.home.HomeContentTest ui.home.RadarStateTest ui.detail.DetailContentTest \
          ui.NavTransitionTest ui.ControlsMotionTest ui.ListMotionTest ui.settings.SettingsRowsTest ui.settings.ExtendedSectionTest \
@@ -9783,6 +9819,8 @@ for c in data.ToolDaoTest data.DaoTest data.RemoveDeviceTest \
 done
 run com.northwalessolutions.netprobe.ui.HomeScreenTest   # last (plan review G26): it launches the real activity, which opens netprobe.db and runs markInterrupted
 ```
+`data.MigrationTest` is 3A's 1 to 2 test, which now also opens through the version 3 builder, so it is a real regression check; `data.RadarIdentityGuardTest` is 3A's F1 identity guard, on the branch after step R. `NeighbourSpikeTest` and 3A's `DirectorCopyMigrationTest` stay out on purpose (a spike, and a schema 1 copy test whose source is no longer on the phone); say so in the record.
+
 Expected: every class passes. Record each class's count. A class name that does not exist on the branch (3A renamed or merged it) is recorded and skipped, not invented. Timing tests on a real frame clock that fail are recorded with their message, not retried into a pass and not relaxed.
 
 - [ ] **Step 6: Screen recordings** (10 to 20 s each):
@@ -9812,15 +9850,16 @@ rec() { "$ADB" -s $DEV shell screenrecord --time-limit "$2" /sdcard/$1.mp4; "$AD
 - 6 The Director's Windows PC, if SMB on 445: SMB session against the Windows rows.
 - 7 CHNAS or UniFi, if either answered SNMP: SNMP walk lists interfaces and addresses.
 - 8 Pi-hole admin: HTTP fingerprint names Pi-hole; a brute-force with admin-panels finds `/admin`.
-- 9 UniFi gateway: TLS on 443; fingerprint names UniFi OS; a brute-force with api-paths finishes with its catch-all redirect filtered.
+- 9 UniFi gateway: TLS on 443; a brute-force with api-paths finishes with its catch-all redirect filtered. His gateways are UniFi Security Gateways (title "UniFi Security Gateway", certificate `UbiquitiRouterUI`), and the `unifi-os` fingerprint rule is `^UniFi OS$`, so on a USG expect "nginx" or "No product named" unless a `unifi-usg` fingerprint rule (final review M4) has landed; that is not a tool failure. "UniFi OS" is expected only on the UniFi OS console at 10.0.0.6.
 - 10 Hue bridge off-subnet (`10.0.4.20`, extended on): fingerprint names Philips Hue; a brute-force completes without stalling (adaptive concurrency); the run is bound to Wi-Fi.
 - 11 Start a brute-force, go Home: the row shows "running"; Quick scan all skips it and says so; Forget this network is disabled until the run ends (plan review G9); the end message on Home.
 - 12 Import a wordlist on the phone; check name, count, date; run with it; delete it and check the saved options fall back with the notice.
 - 13 Switch Wi-Fi mid-run: it stops with "Network changed, run stopped".
 - 14 Results: Copy copies the URL; Share produces the 7.5 text.
 - 15 Force-stop mid-run and relaunch: the run shows "Interrupted" with its findings.
-- 16 Remove a device with tool history, Undo: the history is back. Remove again and let the Undo lapse: the history is gone.
+- 16 Remove a device with tool history, Undo: the history is back. Remove again and let the Undo lapse: the history is gone. This item is destructive (the lapse permanently deletes the host's mark, note, custom name and tool history), so it follows 3A Task 19's destructive-check rule: run it on a disposable network only (the phone's own hotspot from a second device, or a second Wi-Fi the Director does not keep, never the home network), on a throwaway host with at least one tool run, and never on CHNAS. If no disposable network is available, record item 16 as pending, never as passed. Record which network and host were used. Items 13 (switch Wi-Fi) and 15 (force-stop) are not destructive and run on the home network.
 - 17 Font scale 1.3: the Device screen budget (8.9) and the options sheet footer.
+- 18 A printer, if he has one: an HTTP fingerprint and a brute-force with common-short (the most fragile embedded web server on a LAN, so a good adaptive-concurrency check), and an SNMP walk if discovery got an answer to `public`.
 - Janky frames under 5 percent during a brute-force with the results sheet open:
 ```bash
 "$ADB" -s $DEV shell dumpsys gfxinfo $PKG reset
@@ -9847,12 +9886,15 @@ The backups and the rollback APK in `K:/claude/netprobe_db_backup/phase3b/` are 
 "$ADB" -s $DEV shell am force-stop $PKG
 "$ADB" -s $DEV install -r -d "$BK/netprobe-schema2-${BASE:0:7}.apk"   # -r keeps the data directory; -d allows going back to the older build
 for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV shell run-as $PKG rm -f databases/$f; done
-for f in netprobe.db netprobe.db-wal; do "$ADB" -s $DEV shell "run-as $PKG sh -c 'cat > databases/$f'" < "$BK/$f.bak"; done
+for f in netprobe.db netprobe.db-wal; do put "$BK/$f.bak" databases/$f || break; done
 "$ADB" -s $DEV shell run-as $PKG ls -l databases/
 ls -l "$BK"
+```
+Check: `MD5 OK` for both files before going on. On any `MD5 MISMATCH`, do not start the app: run the same `put` again for that file, and if it still mismatches, stop and tell the Director (the backup on the PC is intact). Only then:
+```bash
 "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 ```
-Expected: `netprobe.db` and `netprobe.db-wal` the same sizes as their backups; the app opens on the schema 2 build with every mark and note. Record what was restored and why.
+Expected: `netprobe.db` and `netprobe.db-wal` the same sizes and MD5s as their backups; the app opens on the schema 2 build (`87ab3c1`) with every mark and note. Record what was restored and why.
 
 ---
 ## Plan Self-Review Notes
