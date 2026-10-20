@@ -3,6 +3,7 @@ package com.northwalessolutions.netprobe.engine.tools
 import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import java.net.Inet4Address
 
 /** All tool coroutines and blocking calls run on Dispatchers.IO.limitedParallelism(TOOL_THREADS) (spec 4.4). */
@@ -57,7 +58,11 @@ suspend fun <T> RunControl.excusedOnce(failed: (T) -> Boolean, block: suspend ()
 data class Finding(val kind: FindingKind, val value: String, val detail: String? = null, val url: String? = null, val extra: Map<String, String> = emptyMap())
 data class ToolResult(val status: ToolRunStatus, val summary: String)   // DONE or FAILED; STOPPED is set by the runner
 
-sealed interface ToolOptions { object None : ToolOptions }
+sealed interface ToolOptions {
+    object None : ToolOptions
+    /** [wordlistName] and [wordlistEntries] are recorded in optionsJson so history still names a deleted list (spec 7.1). */
+    data class DirBrute(val options: DirBruteOptions, val wordlistName: String = "", val wordlistEntries: Int = 0) : ToolOptions
+}
 
 interface Tool {
     val id: ToolId

@@ -4,6 +4,7 @@ import android.content.Context
 import com.northwalessolutions.netprobe.actions.ActionProvider
 import com.northwalessolutions.netprobe.actions.AndroidActionRunner
 import com.northwalessolutions.netprobe.data.*
+import com.northwalessolutions.netprobe.engine.common.HttpClient
 import com.northwalessolutions.netprobe.engine.common.Locks
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
@@ -21,6 +22,10 @@ import com.northwalessolutions.netprobe.engine.tools.TOOL_THREADS
 import com.northwalessolutions.netprobe.engine.tools.Tool
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteforceTool
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.Exchange
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.LoadedWordlist
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.wordlists.BuiltInList
@@ -86,6 +91,19 @@ class AppContainer(val context: Context) {
     val tools: Map<ToolId, Tool> by lazy { toolMap() }
     private fun toolMap(): Map<ToolId, Tool> = buildMap {
         // Task 10: DIR_BRUTEFORCE. Task 11: HTTP_FINGERPRINT. Task 12: TLS_CERTIFICATE. Task 13: SNMP_WALK. Task 15: SMB_SESSION.
+        put(ToolId.DIR_BRUTEFORCE, DirBruteforceTool(
+            exchangeFor = { t, timeoutMs ->
+                val client = HttpClient(timeoutMs)
+                val ctx = if (t.tls) HttpClient.trustAllContext() else null          // one SSLContext per run: TLS sessions resume
+                Exchange { method, path -> client.request(t.ip, t.port, t.tls, method, path, null, ctx) }   // Host is always the IP
+            },
+            resolve = { id -> resolveWordlist(id) }))
+    }
+    /** The chosen list, else common-short (spec 5.1, 11.10); streams through withEntries, so a list is never loaded whole. */
+    private fun resolveWordlist(id: String): LoadedWordlist? {
+        val lists = wordlistStore.lists.value
+        val meta = lists.firstOrNull { it.id == id } ?: lists.firstOrNull { it.id == DirBruteOptions.DEFAULT_WORDLIST } ?: return null
+        return LoadedWordlist(meta.id, meta.name, meta.entries) { collect -> wordlistStore.withEntries(meta.id) { seq -> for (w in seq) collect(w) } }
     }
     /** Reading this lazy is the only place markInterrupted starts; no instrumented test reads it (Global Constraints). */
     val toolRunner: ToolRunner by lazy {
