@@ -28,7 +28,9 @@ import com.northwalessolutions.netprobe.ui.BackRow
 import com.northwalessolutions.netprobe.ui.home.RelativeTime
 import com.northwalessolutions.netprobe.ui.theme.*
 import com.northwalessolutions.netprobe.ui.tools.ActionPill
+import com.northwalessolutions.netprobe.wordlists.FetchFailure
 import com.northwalessolutions.netprobe.wordlists.ImportResult
+import com.northwalessolutions.netprobe.wordlists.UrlImportResult
 import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 import com.northwalessolutions.netprobe.wordlists.WordlistStore
 import kotlinx.coroutines.CancellationException
@@ -40,7 +42,7 @@ import kotlinx.coroutines.withContext
 
 data class WordlistsActions(val onBack: () -> Unit = {}, val onImport: () -> Unit = {}, val onDelete: (WordlistMeta) -> Unit = {})
 
-/** The snackbar text for an import (spec 9). */
+/** The snackbar text for an import (3B spec 9, 3C spec 5.3 and 7.2). */
 object WordlistImport {
     fun message(result: ImportResult): String = when (result) {
         is ImportResult.Imported -> WordlistCopy.imported(result.meta.name, result.meta.entries, result.skipped)
@@ -48,6 +50,22 @@ object WordlistImport {
         ImportResult.TooMany -> WordlistCopy.TOO_MANY
         ImportResult.Empty -> WordlistCopy.EMPTY_FILE
         ImportResult.Unreadable -> WordlistCopy.UNREADABLE
+    }
+    fun message(result: UrlImportResult): String = when (result) {
+        is UrlImportResult.Stored -> message(result.result)          // the store's own messages, reused as they are
+        is UrlImportResult.Failed -> failure(result.reason)
+        UrlImportResult.Cancelled -> WordlistCopy.CANCELLED
+    }
+    fun failure(f: FetchFailure): String = when (f) {
+        FetchFailure.UnknownHost -> WordlistCopy.FETCH_HOST
+        FetchFailure.NoAnswer -> WordlistCopy.FETCH_NO_ANSWER
+        FetchFailure.Tls -> WordlistCopy.FETCH_TLS
+        FetchFailure.Connection -> WordlistCopy.FETCH_CONNECTION
+        is FetchFailure.Status -> WordlistCopy.fetchStatus(f.code)
+        is FetchFailure.NotText -> WordlistCopy.fetchNotText(f.type)
+        FetchFailure.Insecure -> WordlistCopy.FETCH_INSECURE
+        FetchFailure.LocalTarget -> WordlistCopy.FETCH_LOCAL
+        FetchFailure.TooManyRedirects -> WordlistCopy.FETCH_REDIRECTS
     }
 }
 

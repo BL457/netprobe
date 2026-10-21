@@ -3,6 +3,10 @@ package com.northwalessolutions.netprobe.ui.tools
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.ui.wordlists.WordlistCopy
+import com.northwalessolutions.netprobe.ui.wordlists.WordlistImport
+import com.northwalessolutions.netprobe.wordlists.FetchFailure
+import com.northwalessolutions.netprobe.wordlists.ImportResult
+import com.northwalessolutions.netprobe.wordlists.UrlImportResult
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -65,10 +69,15 @@ class ToolCopyTableTest {
         "((up|down|testing|unknown|dormant|notPresent|lowerLayerDown|ethernetCsmacd|softwareLoopback|propVirtual|ieee80211|gigabitEthernet|tunnel|l2vlan|ieee8023adLag|bridge|type \\d+|\\d+ (M|G)bit/s|([0-9a-f]{2}:){5}[0-9a-f]{2})(, )?)*",
         "and \\d+ more", "Interface address", "\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+",
         // Wordlists screen, import results, Settings
-        "Back", "Wordlists", "Import wordlist", "Importing", "Built in", "Imported", "\\d+ entr(y|ies), built in", "\\d+ entr(y|ies), imported $date",
+        "Back", "Wordlists", "Import file", "Importing", "Built in", "Imported", "\\d+ entr(y|ies), built in", "\\d+ entr(y|ies), imported $date",
         "Delete", "Delete .+\\?", "Cancel", "No imported wordlists yet", "Delete .+", "Imported .+, \\d+ entr(y|ies)( \\(\\d+ skipped\\))?",
         "That file is too large \\(limit 10 MB\\)", "That file has more than 200000 entries", "That file has no entries", "Could not read that file",
         "Expand", " s", "Wordlist not found, common-short used", "Imported list", "Recovered list \\d+", "3 built in, \\d+ imported", "Loading wordlists", "3 built in",
+        // 3C-1 URL import (spec 7.2)
+        "Import from URL", "URL", "https://example\\.com/wordlist\\.txt", "Import", "Enter a web address starting with https:// or http://",
+        "Remove the user name and password from the address", "That address is too long", "Fetching \\d+\\.\\d( of \\d+\\.\\d)? MB", "Import cancelled",
+        "Could not fetch: (unknown host|no answer|secure connection failed|connection failed|redirected to an insecure address|redirected to a local address|too many redirects)",
+        "Could not fetch: the server answered \\d{3}", "Could not fetch: not a text file( \\(\\S+\\))?",
     ).map { Regex(it) }
     private fun inTable(s: String) = assertTrue("not in the tool copy table: '$s'", templates.any { it.matches(s) })
 
@@ -154,10 +163,30 @@ class ToolCopyTableTest {
             WordlistCopy.imported("my list", 1, 0), WordlistCopy.imported("my list", 4614, 3), WordlistCopy.TOO_LARGE, WordlistCopy.TOO_MANY,
             WordlistCopy.EMPTY_FILE, WordlistCopy.UNREADABLE, WordlistCopy.DEFAULT_NAME, WordlistCopy.recoveredName(1), WordlistCopy.recoveredName(12), WordlistCopy.SETTINGS_SECTION, WordlistCopy.SETTINGS_ROW,
             WordlistCopy.settingsSupport(0), WordlistCopy.settingsSupport(2), WordlistCopy.settingsSupport(null), WordlistCopy.LOADING))
+        addAll(listOf(WordlistCopy.IMPORT_URL, WordlistCopy.URL_LABEL, WordlistCopy.URL_PLACEHOLDER, WordlistCopy.URL_IMPORT, WordlistCopy.ERR_URL,
+            WordlistCopy.ERR_URL_USER, WordlistCopy.ERR_URL_LONG, WordlistCopy.CANCELLED, WordlistCopy.fetching(0, null), WordlistCopy.fetching(1_258_291, 3_565_158),
+            WordlistCopy.fetching(10_485_760, null)))
+        val failures = listOf(FetchFailure.UnknownHost, FetchFailure.NoAnswer, FetchFailure.Tls, FetchFailure.Connection, FetchFailure.Status(404),
+            FetchFailure.Status(503), FetchFailure.NotText("text/html"), FetchFailure.NotText(null), FetchFailure.Insecure, FetchFailure.LocalTarget,
+            FetchFailure.TooManyRedirects)
+        failures.forEach { add(WordlistImport.message(UrlImportResult.Failed(it))) }
+        listOf<ImportResult>(ImportResult.TooLarge, ImportResult.TooMany, ImportResult.Empty, ImportResult.Unreadable).forEach { add(WordlistImport.message(UrlImportResult.Stored(it))) }
+        add(WordlistImport.message(UrlImportResult.Cancelled))
     }
 
     @Test fun theFallbackLineSplitsOffTheSummaryAndPlainSummariesPass() {
         assertEquals("Wordlist not found, common-short used" to "7 found in 312 paths", ToolCopy.splitFallback(ToolCopy.bruteFallback(ToolCopy.bruteDone(7, 312, 0))))
         assertEquals(null to "7 found in 312 paths", ToolCopy.splitFallback(ToolCopy.bruteDone(7, 312, 0)))
+    }
+
+    @Test fun `url import strings read as the spec table`() {
+        assertEquals("Fetching 1.2 of 3.4 MB", WordlistCopy.fetching(1_258_291, 3_565_158))
+        assertEquals("Fetching 1.2 MB", WordlistCopy.fetching(1_258_291, null))
+        assertEquals("Could not fetch: the server answered 404", WordlistImport.message(UrlImportResult.Failed(FetchFailure.Status(404))))
+        assertEquals("Could not fetch: not a text file (text/html)", WordlistImport.message(UrlImportResult.Failed(FetchFailure.NotText("text/html"))))
+        assertEquals("Could not fetch: not a text file", WordlistImport.message(UrlImportResult.Failed(FetchFailure.NotText(null))))
+        assertEquals("That file is too large (limit 10 MB)", WordlistImport.message(UrlImportResult.Stored(ImportResult.TooLarge)))
+        assertEquals("Import file", WordlistCopy.IMPORT)
+        assertFalse("FETCH_OTHER_SITE" in WordlistCopy::class.java.declaredFields.map { it.name })   // spec 7.2: removed from the draft
     }
 }
