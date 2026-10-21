@@ -85,6 +85,23 @@ class NetworkRepository(private val db: NetProbeDb, private val onPurged: (Long)
         }
     }
     suspend fun byId(id: Long): NetworkEntity? = db.networks().byId(id)
+
+    /**
+     * The row [ensure] would return for [env], read-only (final review S5): no insert, no touch, no adoption, no purge. Null when there is none yet.
+     * A forgotten row is returned as it is, so the caller can see the Forget and hold nothing.
+     */
+    suspend fun find(env: NetworkEnv, gatewayMac: String?): NetworkEntity? = db.withTransaction {
+        db.networks().bySignature(NetworkSignature.of(env, gatewayMac))?.let { return@withTransaction it }
+        val gw = env.gateway?.hostAddress
+        val sameAddressing = db.networks().byGateway(gw, env.prefixLength)
+        sameAddressing.firstOrNull { it.forgotten != null }?.let { return@withTransaction it }
+        val mac = gatewayMac?.lowercase()
+        val adoptable = sameAddressing.filter { row ->
+            val stored = if (mac != null && gw != null) db.networks().gatewayHostMac(row.id, gw)?.lowercase() else null
+            stored == null || stored == mac
+        }
+        adoptable.singleOrNull()
+    }
     /** Only completed runs are persisted (spec 5.5, Gruff Q1); the caller decides. */
     suspend fun markRun(networkId: Long, runId: Long) = db.networks().markRun(networkId, runId)
     suspend fun setForgotten(networkId: Long, at: Long?) = db.networks().setForgotten(networkId, at)
@@ -120,15 +137,15 @@ class HostRepository(private val db: NetProbeDb) {
     }
 
     /** Read and write are one transaction, and the write lists scan columns only, so annotations written concurrently are never lost. */
-    suspend fun upsertDiscovered(networkId: Long, h: DiscoveredHost, runId: Long): Long = upsert(networkId, h) { runId }
+    suspend fun upsertDiscovered(networkId: Long, h: DiscoveredHost, runId: Long): Long = upsert(networkId, h, heard = false) { runId }
 
     /**
      * The listener's write (3C spec 3.4): the same merge as a scan, except an existing visible row keeps its lastDiscoveryRun, so a heard
      * packet never undims a device the latest scan missed and never moves "Last scan". A new row or a promoted manual row gets [runIdForNew].
      */
-    suspend fun upsertHeard(networkId: Long, h: DiscoveredHost, runIdForNew: Long): Long = upsert(networkId, h) { existing -> HeardRun.runId(existing, runIdForNew) }
+    suspend fun upsertHeard(networkId: Long, h: DiscoveredHost, runIdForNew: Long): Long = upsert(networkId, h, heard = true) { existing -> HeardRun.runId(existing, runIdForNew) }
 
-    private suspend fun upsert(networkId: Long, h: DiscoveredHost, runFor: (HostEntity?) -> Long): Long = db.withTransaction {
+    private suspend fun upsert(networkId: Long, h: DiscoveredHost, heard: Boolean, runFor: (HostEntity?) -> Long): Long = db.withTransaction {
         val now = System.currentTimeMillis()
         val ip = h.ip.hostAddress
         val existing = db.hosts().find(networkId, ip)
@@ -145,17 +162,17 @@ class HostRepository(private val db: NetProbeDb) {
             } catch (e: SQLiteConstraintException) {
                 // Lost an insert race on (networkId, ip): fall through to the update path on the winner's row.
                 val raced = db.hosts().find(networkId, ip) ?: throw e
-                return@withTransaction applyScan(raced, h, newRank, now, runFor(raced))
+                return@withTransaction applyScan(raced, h, newRank, now, runFor(raced), heard)
             }
         }
-        applyScan(existing, h, newRank, now, runFor(existing))
+        applyScan(existing, h, newRank, now, runFor(existing), heard)
     }
 
-    private suspend fun applyScan(existing: HostEntity, h: DiscoveredHost, newRank: Int, now: Long, runId: Long): Long {
+    private suspend fun applyScan(existing: HostEntity, h: DiscoveredHost, newRank: Int, now: Long, runId: Long, heard: Boolean): Long {
         // MAC precedence is by source rank (netlink > NetBIOS > UPnP > names/EUI-64), not arrival order; equal rank refreshes.
-        val takeMac = h.mac != null && (existing.mac == null || newRank >= existing.macSource)
+        val takeMac = HeardMerge.takeMac(existing.mac, existing.macSource, h.mac, newRank, heard)
         // mDNS TXT unions per service type: a later emission (for example the _device-info query) must not drop earlier types.
-        val txt = (parseTxt(existing.mdnsTxtJson) + h.mdnsTxt).takeIf { it.isNotEmpty() }?.let { Json.encodeToString(it) }
+        val txt = HeardMerge.txtUnion(parseTxt(existing.mdnsTxtJson), h.mdnsTxt, heard).takeIf { it.isNotEmpty() }?.let { Json.encodeToString(it) }
         db.hosts().updateScan(existing.id, mac = if (takeMac) h.mac else existing.mac, macSource = if (takeMac) newRank else existing.macSource,
             rdns = h.reverseDnsName ?: existing.reverseDnsName, mdnsName = h.mdnsName ?: existing.mdnsName,
             netbiosName = h.netbiosName ?: existing.netbiosName, upnpName = h.upnpFriendlyName ?: existing.upnpName, upnpManufacturer = h.upnpManufacturer ?: existing.upnpManufacturer,

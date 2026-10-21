@@ -59,11 +59,17 @@ class ListenSocketsTest {
         val daemon = MulticastSocket(null as SocketAddress?).apply { reuseAddress = true; bind(InetSocketAddress(0)) }
         try {
             var ours: MulticastSocket? = null
+            var requested: InetSocketAddress? = null
             val s = MulticastListenSockets({ FakeBinder }, interfaceFor = { lo }, newSocket = {
-                object : MulticastSocket(null as SocketAddress?) { override fun joinGroup(mcastaddr: SocketAddress?, netIf: NetworkInterface?) {} }.also { ours = it }
+                object : MulticastSocket(null as SocketAddress?) {
+                    override fun joinGroup(mcastaddr: SocketAddress?, netIf: NetworkInterface?) {}
+                    // The PC cannot bind a multicast address; record the request and bind the wildcard so the shared bind is still exercised.
+                    override fun bind(addr: SocketAddress?) { requested = addr as InetSocketAddress; super.bind(InetSocketAddress(requested!!.port)) }
+                }.also { ours = it }
             })
             val opened = s.open(ListenController.MDNS_GROUP, daemon.localPort, env)
             assertNotNull("bound beside the daemon", opened)
+            assertEquals("final review S2: bound to the group, not the wildcard", InetAddress.getByName(ListenController.MDNS_GROUP), requested!!.address)
             assertTrue(ours!!.reuseAddress); assertEquals(daemon.localPort, ours!!.localPort)
             opened!!.close()
         } finally { daemon.close() }

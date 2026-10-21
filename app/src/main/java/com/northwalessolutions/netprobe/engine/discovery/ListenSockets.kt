@@ -45,7 +45,8 @@ class MulticastListenSockets(
         val socket = newSocket()
         return try {
             socket.reuseAddress = true
-            socket.bind(InetSocketAddress(port))
+            // Final review S2: bound to the group address, so only multicast for that group matches and unicast replies for the system's own mDNS stay with it.
+            socket.bind(InetSocketAddress(InetAddress.getByName(group), port))
             binder.bind(socket)
             socket.joinGroup(InetSocketAddress(InetAddress.getByName(group), port), iface)
             Opened(socket)

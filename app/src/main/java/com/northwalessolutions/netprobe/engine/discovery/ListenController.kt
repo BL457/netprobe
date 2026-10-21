@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.net.Inet4Address
@@ -94,13 +96,14 @@ class ListenController(
 
     private suspend fun listen(key: Key) {
         val e = env.value?.takeIf { NetworkSignature.identityKey(it) == key.identity } ?: return
-        val networkId = resolve(e)
-        if (networkId == null) { session.value = ListenStatus.NO_NETWORK; return }
+        var networkId: Long = resolve(e) ?: run { session.value = ListenStatus.NO_NETWORK; return }
         // Director ruling R3: a network nobody has scanned is not listened on; wait for a completed scan, then start (amendment A3).
-        while (scannedOnly && !scanned(networkId)) {
+        // A network with no row yet (NO_ROW_YET) has nothing to write to, so it waits the same way whatever R3 says; the resolve sends and writes nothing (S5).
+        while (networkId == NO_ROW_YET || (scannedOnly && !scanned(networkId))) {
             session.value = ListenStatus.NOT_SCANNED
             scanActive.first { it }
             scanActive.first { !it }
+            networkId = resolve(e) ?: run { session.value = ListenStatus.NO_NETWORK; return }
         }
         val opened = ArrayList<HeardSocket>(2)
         val queue = heardQueue()
@@ -136,18 +139,21 @@ class ListenController(
     }
 
     /**
-     * A closed socket (IOException) ends this reader quietly: the session is ending. A packet the parsers choke on is logged and skipped
+     * An IOException after the session was cancelled is our own close and ends this reader quietly. One while the session is live is a real failure
+     * (final review S1): it escapes, fails the session, and [supervise] shows RETRYING and reopens after its backoff. A packet the parsers choke on is logged and skipped
      * (G4). Any other failure of receive escapes, fails the session and is retried by [supervise].
      */
     private suspend fun read(socket: HeardSocket, size: Int, onPacket: (ByteArray, Inet4Address) -> Unit) {
         val buf = ByteArray(size)
         while (true) {
-            val d = (try { socket.receive(buf) } catch (ce: CancellationException) { throw ce } catch (e: IOException) { log(e); return }) ?: continue
+            val d = (try { socket.receive(buf) } catch (ce: CancellationException) { throw ce } catch (e: IOException) { if (!currentCoroutineContext().isActive) return else throw e }) ?: continue
             try { onPacket(buf.copyOf(d.length), d.from) } catch (e: Exception) { log(e) }
         }
     }
 
     companion object {
+        /** What [resolve] returns for a network with no row yet: nothing is written for it until a scan creates the row (final review S5). */
+        const val NO_ROW_YET = 0L
         const val MDNS_GROUP = "224.0.0.251"
         const val MDNS_PORT = 5353
         const val SSDP_GROUP = "239.255.255.250"

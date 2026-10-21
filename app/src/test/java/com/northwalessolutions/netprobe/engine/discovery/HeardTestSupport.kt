@@ -18,6 +18,11 @@ class FakeSink(var ctx: HeardContext? = HOME, var ranges: KnownRanges = KnownRan
     /** The next store throws once (plan review G4: one failed write never ends the session). */
     var failNextStore = false
 
+    var gatewayIp: Inet4Address? = Ipv4.parse("10.0.3.1")
+    var selfIp: Inet4Address? = Ipv4.parse("10.0.3.50")
+    override fun gateway(): Inet4Address? = gatewayIp
+    override fun self(): Inet4Address? = selfIp
+    override suspend fun visible(networkId: Long, ip: String): Boolean = ip in existing
     override fun context(): HeardContext? = ctx
     override suspend fun known(networkId: Long): KnownRanges = ranges
     override suspend fun exists(networkId: Long, ip: String): Boolean = ip in existing

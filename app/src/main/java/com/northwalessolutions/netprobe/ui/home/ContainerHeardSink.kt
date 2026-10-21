@@ -20,8 +20,11 @@ import java.net.Inet4Address
 class ContainerHeardSink(private val c: AppContainer, private val env: NetworkEnv) : HeardSink {
     private val upnp = UpnpFetcher()
     private val collector = RadarCollector(c.hosts, c.ports, c.deviceIdentifier, c.ouiLookup, c.hostWriteLock,
-        hintsFor = { id -> c.toolRepo.hintsFor(id) }, upsert = c.hosts::upsertHeard) { removed() }
+        hintsFor = { id -> c.toolRepo.hintsFor(id) }, upsert = c.hosts::upsertHeard, forHeard = true) { removed() }
 
+    override fun gateway(): Inet4Address? = env.gateway
+    override fun self(): Inet4Address? = env.interfaceIp
+    override suspend fun visible(networkId: Long, ip: String): Boolean = c.hosts.findOnce(networkId, ip)?.let { !it.manualOnly } ?: false
     override fun context(): HeardContext? = c.currentNetwork.value?.let { n ->
         HeardContext(n.id, NetworkSignature.identityKey(n), forgotten = n.id == c.forgottenNetworkId.value,
             scanActive = c.radarScanActive.value, undoPending = c.undo.pending.value != null)

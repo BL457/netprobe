@@ -85,6 +85,25 @@ class HeardWriterTest {
         assertEquals(HeardOutcome.OUT_OF_RANGE, writer(sink).accept(fromTun))
         assertTrue(sink.stored.isEmpty())
     }
+    private fun answer(ipText: String, sourceText: String) =
+        Heard(KEY_A, DiscoveredHost(Ipv4.parse(ipText)!!, sources = setOf(Source.MDNS, Source.HEARD)), "m|$ipText|_x._tcp", source = Ipv4.parse(sourceText)!!)
+    @Test fun `an answer for another address is kept only from the gateway or a visible host`() = runBlocking {
+        val sink = FakeSink(); sink.existing += "10.0.3.99"
+        val w = writer(sink)
+        assertEquals(HeardOutcome.FOREIGN_ADDRESS, w.accept(answer("10.0.3.7", "10.0.3.8")))
+        assertEquals(HeardOutcome.WRITTEN, w.accept(answer("10.0.3.7", "10.0.3.1")))
+        assertEquals(HeardOutcome.WRITTEN, w.accept(answer("10.0.3.9", "10.0.3.99")))
+        assertEquals(HeardOutcome.WRITTEN, w.accept(answer("10.0.3.10", "10.0.3.10")))
+        assertEquals(listOf("10.0.3.7", "10.0.3.9", "10.0.3.10"), sink.stored.map { it.second })
+    }
+    @Test fun `the phone's own address as source or as record is dropped`() = runBlocking {
+        val sink = FakeSink()
+        val w = writer(sink)
+        assertEquals(HeardOutcome.SELF, w.accept(answer("10.0.3.50", "10.0.3.50")))
+        assertEquals(HeardOutcome.SELF, w.accept(answer("10.0.3.7", "10.0.3.50")))
+        assertEquals(HeardOutcome.SELF, w.accept(answer("10.0.3.50", "10.0.3.1")))
+        assertTrue(sink.stored.isEmpty())
+    }
     @Test fun `R2 off fetches no description and still writes the sighting`() = runBlocking {
         val sink = FakeSink(device = UpnpDevice("Living Room", "Sonos", "One", null, null, null))
         assertEquals(HeardOutcome.WRITTEN, HeardWriter(1, sink, fetchDescriptions = false).accept(heard("10.0.3.30", location = "http://10.0.3.30:1400/d.xml")))

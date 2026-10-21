@@ -130,7 +130,11 @@ class AppContainer(val context: Context) {
         ListenController(appScope, settings.state, foreground,
             networkEnvMonitor.env.stateIn(appScope, SharingStarted.Eagerly, networkEnvMonitor.current()), networkEpoch, radarScanActive,
             locks.listen, MulticastListenSockets(networkEnvMonitor::binderFor, log = { Log.w(AppScopes.LOG_TAG, "listen socket", it) }),
-            resolve = { e -> networks.ensure(e, GatewayMac.lookup(e.gateway))?.id?.takeIf { it != forgottenNetworkId.value } },
+            // Final review S5: no connect to the router, no row created. Home's scan makes the row; until then the session waits as NOT_SCANNED.
+            resolve = { e ->
+                val row = networks.find(e, GatewayMac.peek(e.gateway))
+                if (row == null) ListenController.NO_ROW_YET else row.id.takeIf { row.forgotten == null && it != forgottenNetworkId.value }
+            },
             scanned = { id -> networks.byId(id)?.lastRunAt != null },
             writerFor = { e, id -> HeardWriter(id, ContainerHeardSink(this@AppContainer, e)) },
             // G12: the removed set is cleared only when listening moves to another network row, not on every restart.

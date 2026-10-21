@@ -12,6 +12,12 @@ object GatewayMac {
 
     fun pick(entries: List<NeighbourEntry>, gateway: String): String? = entries.firstOrNull { it.ip == gateway }?.mac?.lowercase()
 
+    /** The gateway's MAC from the neighbour table as it is: sends nothing (the listener's resolve, final review S5). */
+    fun peek(gateway: Inet4Address?, dump: () -> Result<List<NeighbourEntry>> = NeighbourTable::dump): String? {
+        gateway ?: return null
+        return dump().getOrNull()?.let { pick(it, gateway.hostAddress) }
+    }
+
     suspend fun lookup(gateway: Inet4Address?): String? {
         gateway ?: return null
         return withContext(Dispatchers.IO) {

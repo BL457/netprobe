@@ -180,6 +180,26 @@ class ListenControllerTest {
         assertEquals(listOf(1L to "10.0.3.8"), rig.sink.stored)
         assertEquals(ListenStatus.BOTH, rig.controller.status.value)
     }
+    @Test fun `a socket that fails during a live session ends it visibly and retries with backoff`() = runTest {
+        val rig = Rig(backgroundScope)
+        rig.controller.start(); runCurrent()
+        assertEquals(ListenStatus.BOTH, rig.controller.status.value)
+        rig.sockets.latest(ListenController.SSDP_GROUP).inbox.close()      // receive now throws IOException while the session is active
+        runCurrent()
+        assertEquals(ListenStatus.RETRYING, rig.controller.status.value); assertFalse("lock released while waiting", rig.lock.held)
+        assertTrue("sockets closed", rig.sockets.opened.all { it.second.closed })
+        advanceTimeBy(ListenController.LISTEN_RETRY_FIRST_MS); runCurrent()
+        assertEquals(ListenStatus.BOTH, rig.controller.status.value); assertTrue(rig.lock.held); assertEquals(2, rig.lock.acquires)
+    }
+    @Test fun `a network with no row yet holds nothing and writes nothing until a scan ends`() = runTest {
+        val rig = Rig(backgroundScope); var rows = 0L
+        rig.resolveTo = { if (rows == 0L) ListenController.NO_ROW_YET else rows }
+        rig.scannedFlag = false
+        rig.controller.start(); runCurrent()
+        assertEquals(0, rig.lock.acquires); assertEquals(ListenStatus.NOT_SCANNED, rig.controller.status.value)
+        rig.scan.value = true; runCurrent(); rows = 1; rig.scannedFlag = true; rig.scan.value = false; runCurrent()
+        assertEquals(1, rig.lock.acquires); assertEquals(ListenStatus.BOTH, rig.controller.status.value); assertEquals(listOf(1L), rig.writers)
+    }
     @Test fun `a failed session says so and restarts after its backoff, never silently`() = runTest {
         val rig = Rig(backgroundScope); rig.sockets.throwTimes = 1
         rig.controller.start(); runCurrent()

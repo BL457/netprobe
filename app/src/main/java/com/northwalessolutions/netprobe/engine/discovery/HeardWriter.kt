@@ -17,10 +17,16 @@ const val HEARD_FETCH_DESCRIPTIONS = true
 /** What the writer needs to know about "now" (spec 3.4 rules 1 and 2), read at every packet. */
 data class HeardContext(val networkId: Long, val identityKey: String, val forgotten: Boolean, val scanActive: Boolean, val undoPending: Boolean)
 
-enum class HeardOutcome { WRITTEN, WRONG_NETWORK, BUSY, OUT_OF_RANGE, REMOVED, CAP_REACHED, NOT_STORED }
+enum class HeardOutcome { WRITTEN, WRONG_NETWORK, BUSY, OUT_OF_RANGE, REMOVED, CAP_REACHED, NOT_STORED, FOREIGN_ADDRESS, SELF }
 
 /** The writer's view of the app (production: ui.home.ContainerHeardSink; tests: a recording fake). */
 interface HeardSink {
+    /** The session network's gateway, the one non-host source allowed to announce for another address (final review S4a). */
+    fun gateway(): Inet4Address?
+    /** This phone's address on the session's network: never written as a device (final review S4b). */
+    fun self(): Inet4Address?
+    /** A visible (not manual-only) row for (network, ip). */
+    suspend fun visible(networkId: Long, ip: String): Boolean
     /** The current network as Home resolved it, or null. */
     fun context(): HeardContext?
     suspend fun known(networkId: Long): KnownRanges
@@ -47,8 +53,13 @@ class HeardWriter(private val sessionNetworkId: Long, private val sink: HeardSin
         val ctx = sink.context() ?: return HeardOutcome.WRONG_NETWORK
         val ip = heard.host.ip
         val ipText: String = ip.hostAddress
+        // Final review S4b: the phone's own announcements (loopback) are never a device.
+        val self = sink.self()
+        if (self != null && (ip == self || heard.source == self)) return HeardOutcome.SELF
         val known = sink.known(ctx.networkId)
         if (!known.contains(ip) || !known.contains(heard.source)) return HeardOutcome.OUT_OF_RANGE
+        // Final review S4a: an answer for another address (a reflector's) counts only from the gateway or a host already visible.
+        if (ip != heard.source && heard.source != sink.gateway() && !sink.visible(ctx.networkId, heard.source.hostAddress.orEmpty())) return HeardOutcome.FOREIGN_ADDRESS
         if ((ctx.networkId to ipText) in sink.removed()) return HeardOutcome.REMOVED
         val exists = sink.exists(ctx.networkId, ipText)
         if (!exists && inserted >= HEARD_NEW_MAX) return HeardOutcome.CAP_REACHED

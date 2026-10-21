@@ -5,6 +5,7 @@ import com.northwalessolutions.netprobe.data.IdentityWrite
 import com.northwalessolutions.netprobe.data.PortRepository
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
 import com.northwalessolutions.netprobe.engine.discovery.MacSource
+import com.northwalessolutions.netprobe.data.HeardMerge
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
 import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
 import kotlinx.coroutines.sync.Mutex
@@ -21,6 +22,8 @@ class RadarCollector(
     private val hintsFor: suspend (Long) -> List<String> = { emptyList() },
     /** The row write: a scan's upsertDiscovered, or the listener's upsertHeard (3C spec 3.4); the lock, the removed check and the identity rule are shared. */
     private val upsert: suspend (Long, DiscoveredHost, Long) -> Long = hosts::upsertDiscovered,
+    /** The listener's collector (final review S3): identity is only ever written when not weaker, whatever the MAC says. */
+    private val forHeard: Boolean = false,
     private val removed: () -> Set<Pair<Long, String>>,
 ) {
     /** Ports seen open per IP during this run: later emissions for the host carry none. */
@@ -40,7 +43,7 @@ class RadarCollector(
         // F1: the same device never loses identity to a radar run (a rule change or thinner evidence); a new MAC on the IP is a new device.
         // A neighbour-table MAC is compared as seen, so a stored MAC of another rank can never mask a new device on the IP.
         val currentMac = if (h.macSource == MacSource.NEIGH) h.mac else merged.mac
-        if (IdentityWrite.sameDevice(previousMac, currentMac)) hosts.setIdentityIfNotWeaker(id, identity) else hosts.setIdentity(id, identity)
+        if (HeardMerge.keepsStrongerIdentity(forHeard, previousMac, currentMac)) hosts.setIdentityIfNotWeaker(id, identity) else hosts.setIdentity(id, identity)
         true
     }
 }
