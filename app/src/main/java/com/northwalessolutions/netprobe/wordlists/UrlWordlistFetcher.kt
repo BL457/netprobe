@@ -1,7 +1,8 @@
 package com.northwalessolutions.netprobe.wordlists
 
-import com.northwalessolutions.netprobe.engine.common.CancellableIo
 import com.northwalessolutions.netprobe.engine.common.HttpClient
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,7 +14,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
-import java.io.Closeable
+import java.io.EOFException
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -61,8 +62,8 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
      * again at connect time; a server that changes its DNS answer between the two lookups is the accepted residual (a blind GET with
      * no credentials).
      */
-    private fun resolvesLocal(host: String): Boolean {
-        val addresses = try { resolve(host) } catch (_: UnknownHostException) { return false }
+    private suspend fun resolvesLocal(host: String): Boolean {
+        val addresses = try { abandonable { resolve(host) } } catch (_: UnknownHostException) { return false }
         return addresses.any(UrlImportRules::isLocalAddress)
     }
 
@@ -76,7 +77,7 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
             conn.setRequestProperty(USER_AGENT_HEADER, HttpClient.USER_AGENT)
             conn.setRequestProperty(ACCEPT_HEADER, ACCEPT)
             val code = try {
-                CancellableIo.closing(Closeable { conn.disconnect() }) { conn.responseCode }
+                abandonable { conn.responseCode }   // cancel abandons the thread; the finally below disconnects
             } catch (e: IOException) {
                 currentCoroutineContext().ensureActive()   // a disconnect from Cancel is the cancellation, not a fetch failure
                 return failed(UrlImportRules.failureOf(e))
@@ -91,6 +92,19 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
         } finally {
             runCatching { conn.disconnect() }   // cleanup only: a failed disconnect has nothing left to release
         }
+    }
+
+    /**
+     * Runs a blocking call (a DNS lookup, the status read) on its own IO thread and awaits it, so cancelling the caller returns at once
+     * and the blocked thread is abandoned: getaddrinfo cannot be interrupted, and a lookup can outlast the resolver timeout (spec 5.1).
+     * The abandoned thread ends when the call does; the finally in [step] disconnects the connection it was using.
+     */
+    private suspend fun <T> abandonable(block: () -> T): T {
+        val result = CompletableDeferred<T>()
+        CoroutineScope(Dispatchers.IO).launch {
+            try { result.complete(block()) } catch (t: Throwable) { result.completeExceptionally(t) }
+        }
+        return result.await()
     }
 
     private fun failed(f: FetchFailure): Step = Step.Done(UrlImportResult.Failed(f))
@@ -198,13 +212,17 @@ internal class CountingStream(inner: InputStream, private val total: Long?, priv
     private var reported = 0L
     override fun read(): Int {
         val b = super.read()
-        if (b >= 0) advance(1)
+        if (b >= 0) advance(1) else checkComplete()
         return b
     }
     override fun read(b: ByteArray, off: Int, len: Int): Int {
         val n = super.read(b, off, len)
-        if (n > 0) advance(n.toLong())
+        if (n > 0) advance(n.toLong()) else if (n < 0) checkComplete()
         return n
+    }
+    /** A body that ends before its declared Content-Length is a dropped connection, never a complete list (final review S2). */
+    private fun checkComplete() {
+        if (total != null && count < total) throw EOFException("body ended at $count of $total bytes")
     }
     private fun advance(n: Long) {
         count += n

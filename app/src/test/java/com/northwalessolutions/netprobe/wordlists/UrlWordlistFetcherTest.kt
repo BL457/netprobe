@@ -129,6 +129,25 @@ class UrlWordlistFetcherTest {
         assertEquals(UrlImportResult.Failed(FetchFailure.NoAnswer), UrlWordlistFetcher(readTimeoutMs = SHORT_READ_TIMEOUT_MS).fetch(srv.url("/stall2.txt"), s))
         assertTrue(s.lists.value.isEmpty()); assertTrue(noListFiles(s))
     }
+    @Test fun `a body shorter than its content length is a connection failure and nothing is stored`() = runBlocking {
+        val srv = serve { LoopbackHttpServer.Response(plainHead("Content-Length: 1000\r\n")) { out -> out.write("abc\n".repeat(25).toByteArray()); out.flush() } }
+        val s = store()
+        assertEquals(UrlImportResult.Failed(FetchFailure.Connection), fetch(s, srv.url("/short.txt")))
+        assertTrue(s.lists.value.isEmpty()); assertTrue(noListFiles(s))
+    }
+    @Test fun `cancel during a stalled name lookup ends within a second`() = runBlocking {   // final review S1
+        val srv = serve { LoopbackHttpServer.redirect(302, "http://slow.test/list.txt") }
+        val entered = CompletableDeferred<Unit>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        val fetcher = UrlWordlistFetcher(open = { u -> URL("http", "127.0.0.1", srv.port, u.file).openConnection() as HttpURLConnection },
+            resolve = { entered.complete(Unit); release.await(); emptyList() })
+        try {
+            val job = launch(Dispatchers.Default) { fetcher.fetch(URL("http://public.test/start"), store()) }
+            withTimeout(10_000) { entered.await() }
+            val t0 = System.nanoTime(); withTimeoutOrNull(3_000) { job.cancelAndJoin() }; val ms = (System.nanoTime() - t0) / 1_000_000
+            assertTrue("took $ms ms", ms < 1_000)
+        } finally { release.countDown() }
+    }
     @Test fun `cancel during a slow body ends within a second and stores nothing`() = runBlocking {
         val started = CompletableDeferred<Unit>()
         val srv = serve { LoopbackHttpServer.Response(plainHead()) { out ->
