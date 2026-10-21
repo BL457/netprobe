@@ -53,6 +53,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -84,6 +86,16 @@ class AppContainer(val context: Context) {
     val radarScanActive = MutableStateFlow(false)
     /** Held by each radar emission's check and write and by Remove's mark and delete, so the two never interleave (G2). */
     val hostWriteLock = Mutex()
+    private val activityStarted = AtomicBoolean(false)
+    /**
+     * MainActivity.onCreate calls this; the first call per process does the work. Never the Application: an instrumented test process runs
+     * NetProbeApp but no activity, so it never opens netprobe.db through here. Removes manual targets a killed process left without a run
+     * (3C spec 4.3, G8), under the write lock so no radar emission interleaves; a failure is logged by appScope's handler.
+     */
+    fun onActivityCreated() {
+        if (!activityStarted.compareAndSet(false, true)) return
+        appScope.launch { hostWriteLock.withLock { hosts.deleteOrphanManual() } }
+    }
     /** One run at a time per host, across Quick scan all, Detail scans and the tool runner (spec 4.3). */
     val hostBusy = HostBusyRegistry()
     /** End-of-run messages for whichever screen is visible (spec 4.3). */

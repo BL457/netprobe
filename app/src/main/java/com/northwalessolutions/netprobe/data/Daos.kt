@@ -23,17 +23,23 @@ import kotlinx.coroutines.flow.Flow
     @Query("DELETE FROM networks WHERE id = :id") suspend fun deleteNetwork(id: Long)
 }
 @Dao interface HostDao {
-    @Query("SELECT * FROM hosts WHERE networkId = :networkId ORDER BY ip") fun forNetwork(networkId: Long): Flow<List<HostEntity>>
+    /** Every visible row: manual tool targets are hidden from Home, its counts, groups, search and Quick scan all (3C spec 7.1). */
+    @Query("SELECT * FROM hosts WHERE networkId = :networkId AND manualOnly = 0 ORDER BY ip") fun forNetwork(networkId: Long): Flow<List<HostEntity>>
+    /** Every row, manual targets included: Forget's tool check and the canary picks read this (3C spec 7.1). */
+    @Query("SELECT * FROM hosts WHERE networkId = :networkId ORDER BY ip") fun allForNetwork(networkId: Long): Flow<List<HostEntity>>
     @Query("SELECT * FROM hosts WHERE id = :id") fun byId(id: Long): Flow<HostEntity?>
     @Query("SELECT * FROM hosts WHERE id = :id") suspend fun byIdOnce(id: Long): HostEntity?
     @Query("SELECT * FROM hosts WHERE networkId = :networkId AND ip = :ip LIMIT 1") suspend fun find(networkId: Long, ip: String): HostEntity?
     @Insert suspend fun insert(h: HostEntity): Long
     /** Undo of Remove device: the same rows with the same ids; a clash is an error, never a silent replace (spec 5.3). */
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertAll(hosts: List<HostEntity>)
-    /** Scan-derived columns only; customName, the user* overrides, status and note are deliberately absent so they are never overwritten. */
+    /**
+     * Scan-derived columns only; customName, the user* overrides, status and note are deliberately absent so they are never overwritten.
+     * A scan or a heard packet finding a manual tool target promotes it (manualOnly = 0), keeping its tool history (3C spec 7.1).
+     */
     @Query("UPDATE hosts SET mac = :mac, macSource = :macSource, reverseDnsName = :rdns, mdnsName = :mdnsName, netbiosName = :netbiosName, upnpName = :upnpName, upnpManufacturer = :upnpManufacturer, " +
         "upnpModel = :upnpModel, vendor = :vendor, snmpSysDescr = :snmpSysDescr, httpTitle = :httpTitle, mdnsTxtJson = :mdnsTxtJson, isGateway = :isGateway, lastSeen = :lastSeen, " +
-        "lastDiscoveryRun = :runId, upnpDeviceType = :upnpDeviceType, upnpServer = :upnpServer, httpServer = :httpServer, httpAuthRealm = :httpAuthRealm WHERE id = :id")
+        "lastDiscoveryRun = :runId, manualOnly = 0, upnpDeviceType = :upnpDeviceType, upnpServer = :upnpServer, httpServer = :httpServer, httpAuthRealm = :httpAuthRealm WHERE id = :id")
     suspend fun updateScan(id: Long, mac: String?, macSource: Int, rdns: String?, mdnsName: String?, netbiosName: String?, upnpName: String?, upnpManufacturer: String?, upnpModel: String?,
         vendor: String?, snmpSysDescr: String?, httpTitle: String?, mdnsTxtJson: String?, isGateway: Boolean, lastSeen: Long, runId: Long, upnpDeviceType: String?, upnpServer: String?,
         httpServer: String?, httpAuthRealm: String?)
@@ -49,8 +55,14 @@ import kotlinx.coroutines.flow.Flow
     suspend fun setOverrides(id: Long, name: String?, type: DeviceType?, vendor: String?, model: String?)
     @Query("UPDATE hosts SET lastPortScan = :now WHERE id = :id") suspend fun markScanned(id: Long, now: Long)
     @Query("DELETE FROM hosts WHERE id = :id") suspend fun deleteHost(id: Long)
+    /** Start-up sweep (3C spec 4.3, G8): manual targets a killed process left with no run. A promoted row or one with a run is kept. */
+    @Query("DELETE FROM hosts WHERE manualOnly = 1 AND id NOT IN (SELECT hostId FROM tool_runs)") suspend fun deleteOrphanManual(): Int
+    /** A refused manual start (spec 4.3 step 4): only while the row is still manualOnly and has no run, so a promotion or a started run keeps it. */
+    @Query("DELETE FROM hosts WHERE id = :id AND manualOnly = 1 AND id NOT IN (SELECT hostId FROM tool_runs)") suspend fun deleteManualIfUnused(id: Long): Int
 }
 data class PortCount(val hostId: Long, val n: Int)
+/** One run with its host's IP, for the manual tools history (3C spec 4.1, 7.1). */
+data class NetworkRun(@Embedded val run: ToolRunEntity, val ip: String)
 
 @Dao interface PortDao {
     @Query("SELECT * FROM ports WHERE hostId = :hostId ORDER BY port") fun forHost(hostId: Long): Flow<List<PortEntity>>
@@ -89,4 +101,8 @@ data class PortCount(val hostId: Long, val n: Int)
     @Query("SELECT value FROM tool_findings WHERE kind = 'HINT' AND runId IN (:runIds)") suspend fun hintsOf(runIds: List<Long>): List<String>
     @Query("UPDATE tool_runs SET optionsJson = :json WHERE id = :id") suspend fun setOptions(id: Long, json: String)
     @Query("SELECT DISTINCT hostId FROM tool_runs") suspend fun hostsWithRuns(): List<Long>
+    /** Newest first, every host of the network, manual targets included (3C spec 7.1). */
+    @Query("SELECT tool_runs.*, hosts.ip AS ip FROM tool_runs JOIN hosts ON hosts.id = tool_runs.hostId WHERE hosts.networkId = :networkId " +
+        "ORDER BY tool_runs.startedAt DESC, tool_runs.id DESC LIMIT :limit")
+    fun recentForNetwork(networkId: Long, limit: Int): Flow<List<NetworkRun>>
 }

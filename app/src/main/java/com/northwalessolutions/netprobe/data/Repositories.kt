@@ -29,6 +29,14 @@ private fun macSourceOf(rank: Int): MacSource? = when (rank) {
 /** A host row and its port rows, read together, for Remove device and its Undo (spec 5.3). */
 data class HostSnapshot(val host: HostEntity, val ports: List<PortEntity>)
 
+/** The row a manual tool run is keyed on (3C spec 4.3 step 4); [inserted] is true only when this call created it. */
+data class ManualRow(val host: HostEntity, val inserted: Boolean)
+
+/** 3C spec 3.4: a heard write leaves an existing visible row's lastDiscoveryRun alone; a new row or a promoted manual row takes [runIdForNew]. */
+object HeardRun {
+    fun runId(existing: HostEntity?, runIdForNew: Long): Long = if (existing == null || existing.manualOnly) runIdForNew else existing.lastDiscoveryRun
+}
+
 class NetworkRepository(private val db: NetProbeDb, private val onPurged: (Long) -> Unit = {}) {
     private val purge = PurgeOnce()
 
@@ -91,7 +99,10 @@ class NetworkRepository(private val db: NetProbeDb, private val onPurged: (Long)
 }
 
 class HostRepository(private val db: NetProbeDb) {
+    /** Visible rows only (3C spec 7.1): every device list, count and Quick scan all read this. */
     fun hostsForNetwork(networkId: Long): Flow<List<HostEntity>> = db.hosts().forNetwork(networkId)
+    /** Every row, manual targets included: Forget's tool check and the canary picks (3C spec 7.1). */
+    fun allHostsForNetwork(networkId: Long): Flow<List<HostEntity>> = db.hosts().allForNetwork(networkId)
     fun host(hostId: Long): Flow<HostEntity?> = db.hosts().byId(hostId)
     suspend fun byIdOnce(id: Long): HostEntity? = db.hosts().byIdOnce(id)
     suspend fun findOnce(networkId: Long, ip: String): HostEntity? = db.hosts().find(networkId, ip)
@@ -109,7 +120,15 @@ class HostRepository(private val db: NetProbeDb) {
     }
 
     /** Read and write are one transaction, and the write lists scan columns only, so annotations written concurrently are never lost. */
-    suspend fun upsertDiscovered(networkId: Long, h: DiscoveredHost, runId: Long): Long = db.withTransaction {
+    suspend fun upsertDiscovered(networkId: Long, h: DiscoveredHost, runId: Long): Long = upsert(networkId, h) { runId }
+
+    /**
+     * The listener's write (3C spec 3.4): the same merge as a scan, except an existing visible row keeps its lastDiscoveryRun, so a heard
+     * packet never undims a device the latest scan missed and never moves "Last scan". A new row or a promoted manual row gets [runIdForNew].
+     */
+    suspend fun upsertHeard(networkId: Long, h: DiscoveredHost, runIdForNew: Long): Long = upsert(networkId, h) { existing -> HeardRun.runId(existing, runIdForNew) }
+
+    private suspend fun upsert(networkId: Long, h: DiscoveredHost, runFor: (HostEntity?) -> Long): Long = db.withTransaction {
         val now = System.currentTimeMillis()
         val ip = h.ip.hostAddress
         val existing = db.hosts().find(networkId, ip)
@@ -121,15 +140,15 @@ class HostRepository(private val db: NetProbeDb) {
                     netbiosName = h.netbiosName, upnpName = h.upnpFriendlyName, upnpManufacturer = h.upnpManufacturer, upnpModel = h.upnpModel, vendor = h.upnpManufacturer,
                     deviceType = DeviceType.UNKNOWN, customName = null, identVendor = null, identModel = null, identOs = null, identConfidence = 0, identReasons = emptyList(),
                     snmpSysDescr = h.snmpSysDescr, httpTitle = h.httpTitle, mdnsTxtJson = txt, status = HostStatus.UNMARKED, note = "", isGateway = h.isGateway,
-                    firstSeen = now, lastSeen = now, lastPortScan = null, lastDiscoveryRun = runId,
+                    firstSeen = now, lastSeen = now, lastPortScan = null, lastDiscoveryRun = runFor(null),
                     macSource = newRank, upnpDeviceType = h.upnpDeviceType, upnpServer = h.upnpServer, httpServer = h.httpServer, httpAuthRealm = h.httpAuthRealm))
             } catch (e: SQLiteConstraintException) {
                 // Lost an insert race on (networkId, ip): fall through to the update path on the winner's row.
                 val raced = db.hosts().find(networkId, ip) ?: throw e
-                return@withTransaction applyScan(raced, h, newRank, now, runId)
+                return@withTransaction applyScan(raced, h, newRank, now, runFor(raced))
             }
         }
-        applyScan(existing, h, newRank, now, runId)
+        applyScan(existing, h, newRank, now, runFor(existing))
     }
 
     private suspend fun applyScan(existing: HostEntity, h: DiscoveredHost, newRank: Int, now: Long, runId: Long): Long {
@@ -146,6 +165,28 @@ class HostRepository(private val db: NetProbeDb) {
             httpServer = h.httpServer ?: existing.httpServer, httpAuthRealm = h.httpAuthRealm ?: existing.httpAuthRealm)
         return existing.id
     }
+
+    /**
+     * 3C spec 4.3 step 4: the row a manual run is keyed on, in one transaction: the existing row for (network, ip), visible or manual, or a
+     * new hidden row with every scan column empty. A lost insert race returns the winner's row as not inserted, so it is never discarded.
+     */
+    suspend fun manualTarget(networkId: Long, ip: String): ManualRow = db.withTransaction {
+        db.hosts().find(networkId, ip)?.let { return@withTransaction ManualRow(it, inserted = false) }
+        val now = System.currentTimeMillis()
+        val row = HostEntity(networkId = networkId, ip = ip, mac = null, reverseDnsName = null, mdnsName = null, netbiosName = null, upnpName = null,
+            upnpManufacturer = null, upnpModel = null, vendor = null, deviceType = DeviceType.UNKNOWN, customName = null, identVendor = null, identModel = null,
+            identOs = null, identConfidence = 0, identReasons = emptyList(), snmpSysDescr = null, httpTitle = null, mdnsTxtJson = null, status = HostStatus.UNMARKED,
+            note = "", isGateway = false, firstSeen = now, lastSeen = now, lastPortScan = null, lastDiscoveryRun = 0, manualOnly = true)
+        try {
+            ManualRow(row.copy(id = db.hosts().insert(row)), inserted = true)
+        } catch (e: SQLiteConstraintException) {
+            ManualRow(db.hosts().find(networkId, ip) ?: throw e, inserted = false)
+        }
+    }
+    /** A refused manual start (3C spec 4.3 step 4, G8); a promoted row, a row with a run and a visible row are kept. Returns rows deleted. */
+    suspend fun discardManual(hostId: Long): Int = db.hosts().deleteManualIfUnused(hostId)
+    /** The start-up sweep (3C spec 4.3, G8). Returns rows deleted. */
+    suspend fun deleteOrphanManual(): Int = db.hosts().deleteOrphanManual()
 
     suspend fun setIdentity(hostId: Long, identity: DeviceIdentity) {
         db.hosts().updateIdentity(hostId, identity.vendor, identity.model, identity.os, identity.type, identity.confidence, identity.reasons,
@@ -220,9 +261,12 @@ class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netpr
     /** Completed by [markInterrupted]; ToolRunner.start awaits it so a run started at launch is never marked INTERRUPTED. */
     override val ready: Deferred<Unit> = _ready
 
-    override suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String): Long = db.withTransaction {
+    override suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String): Long =
+        startRun(hostId, toolId, port, startedAt, optionsJson, null)
+    /** 3C spec 4.5: [route] is a ToolRoute name for a manual run, null for a Device-screen run; written in the same insert. */
+    override suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String, route: String?): Long = db.withTransaction {
         val id = dao.insertRun(ToolRunEntity(hostId = hostId, toolId = toolId, port = port, startedAt = startedAt,
-            finishedAt = null, status = ToolRunStatus.RUNNING, optionsJson = optionsJson, summary = ""))
+            finishedAt = null, status = ToolRunStatus.RUNNING, optionsJson = optionsJson, summary = "", route = route))
         dao.prune(hostId, toolId, port, KEEP_RUNS_PER_TOOL)   // per (host, tool, port), ruling R5: port 80's runs never prune port 5000's
         id
     }
@@ -238,6 +282,8 @@ class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netpr
         } finally { _ready.complete(Unit) }   // a failure here must never leave ToolRunner.start waiting forever
     }
     fun runsForHost(hostId: Long): Flow<List<ToolRunEntity>> = dao.runsForHost(hostId)
+    /** The manual tools history (3C spec 4.1): newest first, every host of the network. */
+    fun recentForNetwork(networkId: Long, limit: Int): Flow<List<NetworkRun>> = dao.recentForNetwork(networkId, limit)
     fun run(id: Long): Flow<ToolRunEntity?> = dao.run(id)
     fun findings(runId: Long): Flow<List<ToolFindingEntity>> = dao.findings(runId)
     suspend fun findingsOnce(runId: Long): List<ToolFindingEntity> = dao.findingsOnce(runId)

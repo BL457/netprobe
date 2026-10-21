@@ -123,6 +123,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
 
     private val hosts: Flow<List<HostEntity>> = combine(networkId, c.forgottenNetworkId) { id, gone -> id?.takeIf { it != gone } }
         .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
+    /** Every row of the shown network, manual targets included (3C spec 7.1): Forget stays disabled while a tool holds a hidden row. */
+    private val allHosts: Flow<List<HostEntity>> = combine(networkId, c.forgottenNetworkId) { id, gone -> id?.takeIf { it != gone } }
+        .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.allHostsForNetwork(id) }
 
     private val baseState: Flow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts,
         finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress, lastRunCompleted, networkId, c.undo.pending, runSnapshot, c.settings.state) { arr ->
@@ -139,7 +142,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val done = arr[10] as Long?
         // The running scan's snapshot while it runs, the live settings otherwise (3C spec 2.2, plan review G7); manual ranges are read whatever Aggressive scan says (D8).
         val runSettings = RunSettings.forDisplay(arr[17] as RunSettings?, cs.scanning, arr[18] as SettingsState, c.settings.manual.forNetwork(networkId.value))
-        val all = hs.map { h -> RowRules.row(h, e, runSettings.maxPrefix, pc[h.id] ?: 0, stale = run > 0 && h.lastDiscoveryRun < run, extraRanges = extra,
+        val all = hs.map { h -> RowRules.row(h, e, runSettings.maxPrefix, pc[h.id] ?: 0, stale = StaleRule.of(run, h), extraRanges = extra,
             manualRanges = runSettings.manual, aggressive = runSettings.aggressive) }
         val stats = HomeStats.of(hs, all, done)
         val shown = HomeFilter.apply(all, f, q)
@@ -151,9 +154,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** Rows held by a port scan or a tool show "running"; the newest end-of-run message is offered to the notice line (spec 4.3, 8.8).
-     *  [HomeUiState.toolRunningOnNetwork] reads the `hosts` flow (every host of the shown network, not only the filtered rows), so
+     *  [HomeUiState.toolRunningOnNetwork] reads the `allHosts` flow (every row of the shown network, manual targets included, not only the filtered rows), so
      *  Forget this network stays disabled while a tool holds any of them (plan review G9). */
-    val state: StateFlow<HomeUiState> = combine(baseState, c.hostBusy.busy, c.appMessages.current, hosts) { s, busy, message, hs ->
+    val state: StateFlow<HomeUiState> = combine(baseState, c.hostBusy.busy, c.appMessages.current, allHosts) { s, busy, message, hs ->
         val rows = s.rows.map { r -> busy[r.id]?.let { w -> r.copy(running = true, runningIsScan = w == HostBusyRegistry.Work.PORT_SCAN) } ?: r }
         s.copy(rows = rows, groups = HomeGroups.of(rows), appMessage = message?.text, appMessageId = message?.id,
             toolRunningOnNetwork = hs.any { busy[it.id] == HostBusyRegistry.Work.TOOL })
@@ -220,7 +223,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val runSettings = RunSettings.of(s, c.settings.manual.get(net.id))
         runSnapshot.value = runSettings
         // The stored IPs are read only when the extended phase will run (canary picks); the MVP path reads nothing extra.
-        val known = if (runSettings.bindOutside) c.hosts.hostsForNetwork(net.id).first().map { it.ip }.toSet() else emptySet()
+        // Every stored IP, manual targets included, so a canary is never an address a manual tool is probing (3C spec 7.1).
+        val known = if (runSettings.bindOutside) c.hosts.allHostsForNetwork(net.id).first().map { it.ip }.toSet() else emptySet()
         val ext = ExtendedOptionsOf.from(runSettings, s, known)
         if (ext.enabled) extraMessage.value = null   // extended runs only: a notice stays until dismissed or the next scan starts (Radar spec 4.4)
         val opts = DiscoveryOptions(s.mdns, s.ssdp, s.netbios, s.reverseDns, s.snmp, s.httpTitle, s.sweepConcurrency, s.connectTimeoutMs, runSettings.maxPrefix,

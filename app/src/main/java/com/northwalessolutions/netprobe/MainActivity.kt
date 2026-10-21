@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
             override fun onStart(owner: LifecycleOwner) { container.foreground.value = true }
             override fun onStop(owner: LifecycleOwner) { container.foreground.value = false }
         })
+        container.onActivityCreated()   // the orphan sweep (3C spec 4.3); idempotent across activity recreation
         setContent { NetProbeTheme { Surface(Modifier.fillMaxSize()) { NetProbeNav(container) } } }
     }
 }

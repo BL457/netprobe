@@ -67,7 +67,8 @@ class Migration34Test {
             assertEquals(2, room.openHelper.readableDatabase.query("SELECT COUNT(*) FROM hosts").use { it.moveToFirst(); it.getInt(0) })
             runBlocking {
                 assertEquals(listOf("OTHER", null), room.tools().runsForHost(7).first().map { it.route })   // newest first
-                // ROOM-FLOW CHECKS: Task 2 Step 5 inserts the hidden-row assertions here (HostDao.allForNetwork exists from Task 2, plan review G1).
+                assertEquals("the manual row is hidden", listOf("10.0.3.59"), room.hosts().forNetwork(1).first().map { it.ip })
+                assertEquals(2, room.hosts().allForNetwork(1).first().size)
             }
         } finally { room.close() }
         assertEquals("the app's own database file changed", before, stamp(appDb))
