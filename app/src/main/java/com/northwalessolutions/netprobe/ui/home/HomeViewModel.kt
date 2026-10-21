@@ -40,7 +40,7 @@ data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = fals
                        val lastScanAt: Long? = null, val totalHosts: Int = 0, val otherSubnetHosts: Int = 0, val scanStartedAt: Long? = null, val scanFinishedAt: Long? = null,
                        val groups: List<HostGroup> = emptyList(), val lastRunRanges: List<RangeProgress> = emptyList(),
                        val scanCompleted: Boolean = true, val networkId: Long? = null, val undoText: String? = null,
-                       val appMessage: String? = null, val appMessageId: Long? = null, val toolRunningOnNetwork: Boolean = false,
+                       val appMessage: String? = null, val appMessageId: Long? = null, val workRunningOnNetwork: Boolean = false,
                        val homeRange: String? = null)
 
 object IdentityLine {
@@ -154,12 +154,12 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** Rows held by a port scan or a tool show "running"; the newest end-of-run message is offered to the notice line (spec 4.3, 8.8).
-     *  [HomeUiState.toolRunningOnNetwork] reads the `allHosts` flow (every row of the shown network, manual targets included, not only the filtered rows), so
-     *  Forget this network stays disabled while a tool holds any of them (plan review G9). */
+     *  [HomeUiState.workRunningOnNetwork] reads the `allHosts` flow (every row of the shown network, manual targets included, not only the filtered rows), so
+     *  Forget this network stays disabled while a port scan or a tool holds any of them (3D spec D19). */
     val state: StateFlow<HomeUiState> = combine(baseState, c.hostBusy.busy, c.appMessages.current, allHosts) { s, busy, message, hs ->
         val rows = s.rows.map { r -> busy[r.id]?.let { w -> r.copy(running = true, runningIsScan = w == HostBusyRegistry.Work.PORT_SCAN) } ?: r }
         s.copy(rows = rows, groups = HomeGroups.of(rows), appMessage = message?.text, appMessageId = message?.id,
-            toolRunningOnNetwork = hs.any { busy[it.id] == HostBusyRegistry.Work.TOOL })
+            workRunningOnNetwork = ForgetGuard.workRunning(hs, busy))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), HomeUiState())
 
     fun dismissAppMessage() { state.value.appMessageId?.let { c.appMessages.dismiss(it) } }
@@ -261,7 +261,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
 
     /** Home overflow "Forget this network": a soft delete until the Undo ends; the UI disables it while a scan or the settle runs (spec 5.3). */
     fun forgetNetwork() {
-        if (controller.isRunning || quick.isRunning || state.value.toolRunningOnNetwork) return
+        if (!ForgetGuard.allowed(controller.isRunning, quick.isRunning, state.value.workRunningOnNetwork)) return
         val net = c.currentNetwork.value ?: return
         if (c.forgottenNetworkId.value == net.id) return   // a double tap never posts twice
         // Set before launching: Home hides the rows and discoverOn refuses this network from this line on, so no Scan can start on it.

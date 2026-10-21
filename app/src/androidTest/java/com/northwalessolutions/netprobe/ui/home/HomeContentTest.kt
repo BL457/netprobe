@@ -248,11 +248,11 @@ class HomeContentTest {
         rule.onAllNodesWithTag("hostRow")[0].assert(hasContentDescription("tool running", substring = true))
         rule.onNodeWithText("3 open").assertDoesNotExist()
     }
-    @Test fun forgetThisNetworkIsDisabledWhileAToolRunsOnIt() {
-        var st by mutableStateOf(HomeFakes.settled().copy(networkId = 1, toolRunningOnNetwork = true))
+    @Test fun forgetThisNetworkIsDisabledWhileAPortScanOrAToolRunsOnIt() {   // 3D spec D19: the flag covers both kinds of claim
+        var st by mutableStateOf(HomeFakes.settled().copy(networkId = 1, workRunningOnNetwork = true))
         rule.setContent { NetProbeTheme { HomeContent(st, rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro") } }
         rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithText("Forget this network").assertIsNotEnabled()
-        st = st.copy(toolRunningOnNetwork = false); rule.waitForIdle()
+        st = st.copy(workRunningOnNetwork = false); rule.waitForIdle()
         rule.onNodeWithText("Forget this network").assertIsEnabled()
     }
     @Test fun anAppMessageWaitsUntilTheUndoEndsThenIsDismissedThroughItsOwnAction() {

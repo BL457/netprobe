@@ -84,7 +84,7 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
                 HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && !radarBusy && state.totalHosts > 0 && state.env != null),
                     quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan, onSettings = actions.onOpenSettings,
-                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.toolRunningOnNetwork, onForget = actions.onForget,
+                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.workRunningOnNetwork, onForget = actions.onForget,
                     onAbout = { aboutOpen = true; actions.onAbout() })
             }
             RadarBlock(mode, progress?.found ?: 0, ProgressLine.of(progress, elapsedS), summary, canScan = state.env != null,
