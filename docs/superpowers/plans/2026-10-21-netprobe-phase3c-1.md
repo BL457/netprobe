@@ -27,7 +27,7 @@ Carried from the 3B plan (unchanged, they still bind):
 - Block bodies (`{ ... }`) for every function in which `return` appears; no `return` inside an expression body.
 - Every instrumented run passes `-Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true`, so NetProbe is never uninstalled and the Director's data survives.
 - THE PHONE IS NOT AVAILABLE during Tasks 1 to 10. Every task is built and tested on the JVM. Compose UI tests and the device fetch test are written in full and must compile (`./gradlew :app:compileDebugAndroidTestKotlin`) but are not run. No task may claim device evidence. Task 11 lists every instrumented run, screenshot and check; it runs when the phone is available.
-- No instrumented test may open, create or delete a database named `DB_NAME` ("netprobe.db") or touch the "netprobe" `SharedPreferences`: the Settings Compose tests drive `SettingsContent` with in-memory state, and the device fetch test writes only under `cacheDir/url-fetch-test-*`.
+- No new instrumented test may open, create or delete a database named `DB_NAME` ("netprobe.db") or touch the "netprobe" `SharedPreferences` or `files/wordlists/`: the Settings Compose tests drive `SettingsContent` with in-memory state, and the device fetch test writes only under `cacheDir/url-fetch-test-*`. The one existing exception is 3A's `HomeScreenTest`, which launches the real activity and opens `netprobe.db`; Task 11 runs it last, after the backup (plan review G16).
 - Every commit stages the files its task names and checks `git status --short` before committing; never `git add -A` or `git add .`.
 - All shell commands are Git Bash syntax, run from `K:/claude/netprobe`, using `./gradlew`, never a global `gradle`. Never kill python or java processes wholesale.
 - Standard commands used by every task:
@@ -40,9 +40,10 @@ New in 3C-1:
 - **No schema change.** `NetProbeDb` stays at version 3, no `Migration` is added and no entity changes. A task that finds itself editing `Entities.kt`, `Migrations.kt`, `NetProbeDb.kt` or `app/schemas/` stops and asks the controller. No new `SharedPreferences` key either: reset rewrites the 14 existing covered keys.
 - **Phase 2's bind rules are unchanged for scans** (Phase 2 spec 5.5): the gateway probe, the canaries and every extra-range sweep run inside `BoundNetwork`; a bind failure skips the extended phase with `SKIPPED_BIND_FAILED`; a port scan or tool run of a row outside the home range is bound to Wi-Fi when its run binds outside, and a missing binder is a `BindFailedException`, never an unbound run. The only change is when "binds outside" holds: `RunSettings.bindOutside = aggressive || manual.isNotEmpty()` instead of `extEnabled`. With Aggressive scan off and no manual ranges every path is the MVP's: unbound, the /24 on a wide mask, no extended phase, the MVP neighbour loop.
 - **One settings read per run (spec D21).** Radar scans, Quick scan all, Device-screen scans and tool runs each build a `RunSettings` once at their start; nothing in a running scan reads `settings.state.value` again for the home range, binding or grouping.
-- **The URL fetch is the only internet code.** `HttpURLConnection` appears only in `wordlists/UrlWordlistFetcher.kt`; it is never bound to Wi-Fi (the default network, which may be cellular), never follows redirects itself (`instanceFollowRedirects = false`), sends no `Authorization` or `Cookie`, and nothing in the app calls `CookieHandler.setDefault` or `Authenticator.setDefault` (checked by grep in Task 9).
+- **The URL fetch is the only internet code.** `HttpURLConnection` appears only in `wordlists/UrlWordlistFetcher.kt`; it is never bound to Wi-Fi (the default network, which may be cellular), never follows redirects itself (`instanceFollowRedirects = false`), sends no `Authorization` or `Cookie`, and nothing in the app calls `CookieHandler.setDefault` or `Authenticator.setDefault` (checked by grep in Task 9). A followed redirect into the LAN or onto the phone is refused, whether it names an IP literal, a local name (`localhost`, `*.local`, `*.lan`, `*.home.arpa`, a single label) or a name that resolves to a local address (plan review G4).
 - **Naming.** A local or parameter holding a `RunSettings` is called `runSettings`, never `run`, so it never shadows the standard library's `run` (review checklist item 1).
-- 3C-1 starts only after the 3B device QA has passed (spec section 6). Task 1 Step 0 checks for the 3B QA record and records the base commit in `docs/superpowers/plans/phase3c-base.txt`, from which Task 11 builds the rollback APK.
+- **Whole-file blocks are guarded (plan review G1).** Every block was written against 290850e while the 3B device QA was still committing. Before pasting a block marked "whole file", run the `git diff --quiet 290850e -- <file>` line printed above it: a non-zero exit means the file changed since (for example a 3B QA fix), so stop and ask the controller to rebase the block, because pasting it would silently revert the fix. Targeted "replace X with Y" edits fail loudly on their own; that is why `WordlistCopy.kt` and `WordlistsScreen.kt` (3B surfaces) and `GatewayProbe.kt` (the largest block) are given as targeted edits.
+- 3C-1 starts only after the 3B device QA has passed (spec section 6). Task 1 Step 0 checks for the 3B QA record and that no file under `app/src` changed since 290850e, and records the build base (line 1, from which Task 11 builds the rollback APK) and the plan base 290850e (line 2) in `docs/superpowers/plans/phase3c-base.txt`.
 
 ## Review Focus
 
@@ -50,9 +51,9 @@ The five failure modes most likely to bite the Director. Each is pinned to a tes
 
 1. **The Phase 2 toggle-off path regresses.** With Aggressive scan off and no manual ranges, a scan must be the MVP exactly: no extended phase, nothing bound, the phone's /24 on a wide mask, the MVP neighbour loop, no new notice. Pinned: Task 4 `HomeRangeTest.aggressive off equals sweepRange for every prefix and limit` and `ScanBindingTest.bindOutside false is unbound for any target`; Task 5 `ExtendedOptionsOfTest.aggressive off with no manual ranges is ExtendedOptions()` and `DiscoveryEngineExtendedTest.aggressive off with no manual ranges is the toggle off result`, alongside Phase 2's `toggle off changes nothing`, which must stay green untouched.
 2. **A manual range typed with Aggressive scan off leaks.** It must be swept bound to Wi-Fi, with no evidence ranges and no gateway probe, and a port scan of a host in it must be bound too. Pinned: Task 4 `ScanBindingTest.aggressive off with one manual range binds a target outside the home range`; Task 5 `DiscoveryEngineExtendedTest.aggressive off with one manual range sweeps only that range, bound, with no evidence and no probe`.
-3. **The outward walk runs away.** It must stop at the budget `B`, after two consecutive misses, at distance 16 and at the octet boundary, never walk when more than four seeds answer, never exceed 256 attempts, and end within a second of Stop. Pinned: Task 7 `GatewayWalkTest` (all of it, notably `the spec example walks exactly the spec's units in four rounds`, `with B of one the walk stops after the first round with a hit and the extra hit is truncated`, `five answering seeds give no walk and the flag`, `walk attempts never exceed 256`, `cancellation mid walk returns within a second`).
-4. **A mid-run toggle or reset changes the running scan.** Grouping, home range and binding must come from the snapshot taken at the run's start. Pinned: Task 6 `RunSnapshotTest.a run started with Aggressive off keeps its binding, home range and grouping after a mid run change`; device check Task 11 item 5.
-5. **The URL import stores junk, follows a hostile redirect or ignores Cancel.** HTTPS never downgrades to HTTP, a public host never bounces the phone into a LAN address, HTML and binary bodies are refused, the 10 MB cap holds while streaming and before reading on a large `Content-Length`, Cancel stores nothing, and no credential is sent. Pinned: Task 8 `UrlImportRulesTest` (redirect, content type, NUL sniff, validate); Task 9 `UrlWordlistFetcherTest` (all of it) and the device-run `UrlWordlistFetcherDeviceTest`, run in Task 11.
+3. **The outward walk runs away.** It must stop at the budget `B`, after two consecutive misses, at distance 16 and at the octet boundary, never walk when more than four seeds answer, never exceed 256 attempts, and end within a second of Stop. Pinned: Task 7 `GatewayWalkTest` (all of it, notably `the spec example walks exactly the spec's units in four rounds`, `with B of one the walk stops after the first round with a hit and the extra hit is truncated`, `manual and evidence units are never walked and a hit derive drops frees no slot`, `five answering seeds give no walk and the flag`, `walk attempts never exceed 256`, `cancellation mid walk returns within a second`); device check Task 11 item 6 runs the walk on the Director's LAN at cap 8.
+4. **A mid-run toggle or reset changes the running scan.** Grouping, home range and binding must come from the snapshot taken at the run's start; once the run ends, Home follows the live settings again (plan review G7). Pinned: Task 6 `RunSnapshotTest.a run started with Aggressive off keeps its binding, home range and grouping after a mid run change`; device check Task 11 item 9.
+5. **The URL import stores junk, follows a hostile redirect or ignores Cancel.** HTTPS never downgrades to HTTP, a public host never bounces the phone into a LAN address (by IP literal, by local name or by a name that resolves there), HTML and binary bodies are refused, the 10 MB cap holds while streaming and before reading on a large `Content-Length`, Cancel stores nothing, and no credential is sent. Pinned: Task 8 `UrlImportRulesTest` (redirect, local names and addresses, content type, NUL sniff, validate); Task 9 `UrlWordlistFetcherTest` (all of it) and the device-run `UrlWordlistFetcherDeviceTest`, run in Task 11.
 
 ### Review checklist (every task)
 
@@ -131,21 +132,26 @@ object SettingsDefaults { val DEFAULTS: SettingsState; fun reset(current: Settin
                           fun undo(before: SettingsState, current: SettingsState): SettingsState }
 object SettingsReset { suspend fun run(current: () -> SettingsState, update: ((SettingsState) -> SettingsState) -> Unit, showUndo: suspend () -> Boolean) }
 class AppSettings(prefs: SharedPreferences) { constructor(context: Context); companion object { const val PREFS_NAME = "netprobe" } }
-object SettingsCopy { const val MENU; const val RESET; const val RESET_DONE; fun defaultMarker(value: Int, unit: String): String; fun resetDescription(label: String, value: Int, unit: String): String }
+object SettingsCopy { const val MENU; const val RESET; const val RESET_DONE; const val LARGE_NETWORKS_CAPTION; fun defaultMarker(value: Int, unit: String): String; fun resetDescription(label: String, value: Int, unit: String): String }
 object DefaultMarker { fun text(value: Int, default: Int, unit: String): String? }
 ```
 
-- [ ] **Step 0: Confirm the start condition and record the base (spec section 6)**
+- [ ] **Step 0: Confirm the start condition, check the plan's files are unchanged since 290850e, and record both bases (spec section 6, plan review G1, G17)**
 
 ```bash
-git status --short                                   # must be empty
+git status --short                                   # must be empty; see below for entries under docs/qa/
 git rev-parse --abbrev-ref HEAD                      # phase3b
 test -f docs/qa/phase3b-on-device.md && echo "3B QA record present" || echo "STOP: no 3B device QA record"
+git diff --name-only 290850e HEAD -- app/src         # must print nothing
 ```
-If the 3B QA record is missing, or it records a failed item without the Director's ruling, stop and ask the controller: the spec starts 3C only after the 3B device QA passes, and only the controller may rule to start early. Otherwise branch and record the base:
+- If `git status` lists entries only under `docs/qa/`, the 3B QA agent has not committed yet: wait for its commit, and never stage, move or delete those files.
+- If the 3B QA record is missing, or it records a failed item without the Director's ruling, stop and ask the controller: the spec starts 3C only after the 3B device QA passes, and only the controller may rule to start early.
+- If the `git diff` prints any file, stop and give the controller the list. Every block in this plan was written against 290850e, and a whole-file block pasted over a file fixed since would silently revert the fix; the controller rebases the affected steps on the new content before this task starts. The production files this plan edits are `AppContainer.kt`, `data/Settings.kt`, `netenv/Subnet.kt`, `engine/discovery/` (`DiscoveryOptions.kt`, `DiscoveryEngine.kt`, `CandidateRanges.kt`, `GatewayProbe.kt`), `ui/home/` (`RunSettings.kt` new, `ScanBinding.kt`, `HomeViewModel.kt`, `ExtendedNotices.kt`, `HomeCopy.kt`, `HomeContent.kt`), `ui/detail/DetailViewModel.kt`, `ui/settings/` (`SettingsCopy.kt` new, `SettingsScreen.kt`, `ExtendedSection.kt`), `wordlists/` (`UrlImport.kt`, `UrlWordlistFetcher.kt` new) and `ui/wordlists/` (`WordlistCopy.kt`, `WordlistsScreen.kt`, `UrlImportController.kt` new); a change to any other file under `app/src` is still reported, and the controller decides whether it matters.
+
+Otherwise branch and record both bases (line 1 is the build base Task 11's rollback APK uses, line 2 the plan base the whole-file guards use):
 ```bash
 git checkout -b phase3c-1
-git rev-parse --short HEAD > docs/superpowers/plans/phase3c-base.txt
+printf '%s\nplan 290850e\n' "$(git rev-parse --short HEAD)" > docs/superpowers/plans/phase3c-base.txt
 cat docs/superpowers/plans/phase3c-base.txt
 ```
 
@@ -314,12 +320,13 @@ with
         "Open \\d+\\.\\d+\\.\\d+\\.\\d+:\\d+ as (http|https|ssh|vnc|rdp|ftp|telnet|smb)",
         // 3C-1 Settings (spec 7.2)
         "Settings menu", "Reset to defaults", "Settings reset to defaults", "Default \\d+( ms)?", "Reset .+ to \\d+( ms)?",
+        "Largest block of a big network to sweep\\. With Aggressive scan off, a network wider than this gets your /24 only\\. .+",
     ).map { Regex(it) }
 ```
 and add this test before the class's closing brace:
 ```kotlin
     @Test fun `settings reset strings`() {
-        listOf(SettingsCopy.MENU, SettingsCopy.RESET, SettingsCopy.RESET_DONE).forEach { inTable(it) }
+        listOf(SettingsCopy.MENU, SettingsCopy.RESET, SettingsCopy.RESET_DONE, SettingsCopy.LARGE_NETWORKS_CAPTION).forEach { inTable(it) }
         for (unit in listOf("", " ms")) for (v in listOf(1, 4, 128, 600, 2000)) {
             inTable(SettingsCopy.defaultMarker(v, unit)); inTable(SettingsCopy.resetDescription("Sweep connect timeout", v, unit))
             DefaultMarker.text(v + 1, v, unit)?.let { inTable(it) }
@@ -335,6 +342,8 @@ and add this test before the class's closing brace:
 Expected: `BUILD FAILED` with `Unresolved reference 'SettingsDefaults'`, `'SettingsReset'`, `'DefaultMarker'`, `'SettingsCopy'`, and `Argument type mismatch` for `AppSettings(FakePrefs())`.
 
 - [ ] **Step 3: Implement**
+
+Before writing it (plan review G1): `git diff --quiet 290850e -- app/src/main/java/com/northwalessolutions/netprobe/data/Settings.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/data/Settings.kt changed since 290850e"`; if it prints STOP, stop and ask the controller.
 
 `app/src/main/java/com/northwalessolutions/netprobe/data/Settings.kt` (whole file; `SettingsState` and `ManualRangeStore` are unchanged):
 ```kotlin
@@ -443,6 +452,8 @@ object SettingsCopy {
     const val MENU = "Settings menu"
     const val RESET = "Reset to defaults"
     const val RESET_DONE = "Settings reset to defaults"
+    /** The Large networks caption (plan review G6, proposed wording for the Director): the old one was false with Aggressive scan on. */
+    const val LARGE_NETWORKS_CAPTION = "Largest block of a big network to sweep. With Aggressive scan off, a network wider than this gets your /24 only. A /22 takes about 1 minute, a /20 about 4."
     /** [unit] is written as the value shows it: "" or " ms". */
     fun defaultMarker(value: Int, unit: String) = "Default $value$unit"
     fun resetDescription(label: String, value: Int, unit: String) = "Reset $label to $value$unit"
@@ -500,7 +511,7 @@ data class SettingsActions(val onBack: () -> Unit = {}, val update: ((SettingsSt
 @Composable internal fun DefaultMarkerButton(text: String, description: String, tag: String, enabled: Boolean = true, onReset: () -> Unit)
 @Composable internal fun StepSlider(label: String, value: Int, min: Int, max: Int, step: Int, unit: String, enabled: Boolean = true, default: Int? = null, onCommit: (Int) -> Unit)
 ```
-Section order after this task: Discovery, `ExtendedCopy.TITLE` (renamed "Aggressive scan" in Task 3), Speed, Large networks, Permissions, Vulnerabilities, Tools (spec 2.3).
+The Large networks caption becomes `SettingsCopy.LARGE_NETWORKS_CAPTION` (plan review G6). Section order after this task: Discovery, `ExtendedCopy.TITLE` (renamed "Aggressive scan" in Task 3), Speed, Large networks, Permissions, Vulnerabilities, Tools (spec 2.3).
 
 - [ ] **Step 1: Write the failing Compose test**
 
@@ -587,6 +598,8 @@ class SettingsContentTest {
 Expected: `BUILD FAILED` with `Unresolved reference 'SettingsContent'`, `'SettingsUi'`, `'SettingsActions'`.
 
 - [ ] **Step 3: Implement**
+
+Before writing it (plan review G1): `git diff --quiet 290850e -- app/src/main/java/com/northwalessolutions/netprobe/ui/settings/SettingsScreen.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/ui/settings/SettingsScreen.kt changed since 290850e"`; if it prints STOP, stop and ask the controller.
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/settings/SettingsScreen.kt` (whole file; `Section`, `npSwitchColors`, `SwitchRow` and `LocationPermissionRow` are unchanged):
 ```kotlin
@@ -712,7 +725,7 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             StepSlider("Port scan timeout", s.scanTimeoutMs, TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_STEP, MS_UNIT, default = d.scanTimeoutMs) { v -> update { it.copy(scanTimeoutMs = v) } }
 
             Section("Large networks")
-            Text("Largest network to sweep. Bigger networks are cut down to your own /24 unless widened here.", style = NetProbeText.data, color = NetProbeColors.textMuted)
+            Text(SettingsCopy.LARGE_NETWORKS_CAPTION, style = NetProbeText.data, color = NetProbeColors.textMuted)   // plan review G6
             PinnedSegmented(PREFIX_OPTIONS.map { "/$it" }, PREFIX_OPTIONS.indexOf(s.maxPrefix), { i -> update { it.copy(maxPrefix = PREFIX_OPTIONS[i]) } },
                 activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, modifier = Modifier.fillMaxWidth())
 
@@ -852,7 +865,7 @@ git commit -m "Phase 3C-1: Settings overflow reset with undo, default markers, s
 
 **Files:**
 - Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSection.kt` (whole file), `ui/home/HomeCopy.kt`
-- Test: modify `app/src/test/java/com/northwalessolutions/netprobe/ui/settings/ExtendedCopyTest.kt`, `ui/home/ExtendedNoticesTest.kt`, `ui/home/CopyTableTest.kt`; compile only (run in Task 11): modify `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSectionTest.kt`
+- Test: modify `app/src/test/java/com/northwalessolutions/netprobe/ui/settings/ExtendedCopyTest.kt`, `ui/home/ExtendedNoticesTest.kt`, `ui/home/CopyTableTest.kt`, `ui/home/RunEndTest.kt` (one string); compile only (run in Task 11): modify `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSectionTest.kt`
 
 **Interfaces:**
 - Consumes: `SettingsDefaults.DEFAULTS` (Task 1), `DefaultMarker`, `SettingsCopy` (Task 1), `DefaultMarkerButton` (Task 2), `SwitchRow`, `CidrParser`, `ManualCap` (Phase 2).
@@ -860,7 +873,7 @@ git commit -m "Phase 3C-1: Settings overflow reset with undo, default markers, s
 ```kotlin
 ExtendedCopy.TITLE = "Aggressive scan"; ExtendedCopy.SUPPORT; ExtendedCopy.PROBE_LABEL = "Smart discovery"; ExtendedCopy.PROBE_SUPPORT; ExtendedCopy.MANUAL_LINE
 HomeCopy.NO_EXTRA_RANGES, GATEWAY_FOUND_NONE, GATEWAY_ANSWERS_ALL, SOURCE_GATEWAY (renamed); HomeCopy.GATEWAY_WALK_SKIPPED (new);
-fun HomeCopy.capDropped(n: Int) (reworded); fun HomeCopy.largeNetworkPartial(prefix: Int, swept: Int): String (new)
+fun HomeCopy.capDropped(n: Int) (reworded); fun HomeCopy.largeNetwork(prefix: Int) (reworded, plan review G6); fun HomeCopy.largeNetworkPartial(prefix: Int, swept: Int): String (new)
 ```
 - Behaviour (spec 2.3, D8): the "Maximum extra ranges" stepper is always enabled and carries the D2 marker (default 4); "Smart discovery" stays disabled while Aggressive scan is off; the manual editor is enabled whenever a network is current and shows `MANUAL_LINE` under its title.
 
@@ -889,7 +902,7 @@ and add `import org.junit.Assert.assertFalse` to its imports.
 - `"10.0.5.0/24  gateway probe  skipped, every address answered"` becomes `"10.0.5.0/24  smart discovery  skipped, every address answered"`
 
 `app/src/test/java/com/northwalessolutions/netprobe/ui/home/CopyTableTest.kt`, in the `templates` list:
-- replace `"Large network \\(/\\d+\\)\\. Scanned your /24 only\\. Widen in Settings\\.",` with `"Large network \\(/\\d+\\)\\. Scanned your /\\d+ only\\. Widen in Settings\\.",`
+- replace `"Large network \\(/\\d+\\)\\. Scanned your /24 only\\. Widen in Settings\\.",` with `"Large network \\(/\\d+\\)\\. Scanned your /\\d+ only\\.( Widen in Settings\\.| Turn on Aggressive scan in Settings\\.)?",`
 - replace `"\\d+ more ranges? found, raise the cap in Settings", "Extended discovery: no extra ranges to sweep", "Gateway probe found no other ranges",` with `"\\d+ more ranges? found, raise Maximum extra ranges in Settings", "Aggressive scan: no extra ranges to sweep", "Smart discovery found no other ranges",`
 - replace `"Gateway probe skipped: every address answered", "Other ranges skipped: could not bind to Wi-Fi", "\\S+ skipped: every address answered",` with `"Smart discovery skipped: every address answered", "Other ranges skipped: could not bind to Wi-Fi", "\\S+ skipped: every address answered", "Smart discovery: too many ranges answered, nearby ranges not checked",`
 - in the range-line template (the entry that begins `"\\S+  (manual|evidence|gateway probe|local)  (swept, nothing reachable`), replace the words `gateway probe` with `smart discovery` and change nothing else on that line
@@ -899,8 +912,11 @@ and add these tests before the class's closing brace (import `com.northwalessolu
 ```kotlin
     @Test fun `aggressive scan and the large network notices`() {
         listOf(ExtendedCopy.TITLE, ExtendedCopy.SUPPORT, ExtendedCopy.PROBE_LABEL, ExtendedCopy.PROBE_SUPPORT, ExtendedCopy.MANUAL_LINE,
-            HomeCopy.GATEWAY_WALK_SKIPPED, HomeCopy.largeNetwork(16), HomeCopy.largeNetworkPartial(16, 22), HomeCopy.largeNetworkPartial(16, 20)).forEach { inTable(it) }
+            HomeCopy.GATEWAY_WALK_SKIPPED, HomeCopy.largeNetwork(16), HomeCopy.largeNetwork(21), HomeCopy.largeNetworkPartial(16, 22), HomeCopy.largeNetworkPartial(16, 20)).forEach { inTable(it) }
         assertEquals("Large network (/16). Scanned your /22 only. Widen in Settings.", HomeCopy.largeNetworkPartial(16, 22))
+        assertEquals("at the widest limit there is nothing to widen", "Large network (/16). Scanned your /20 only.", HomeCopy.largeNetworkPartial(16, 20))
+        assertEquals("widening cannot help a /16: Aggressive scan can", "Large network (/16). Scanned your /24 only. Turn on Aggressive scan in Settings.", HomeCopy.largeNetwork(16))
+        assertEquals("Large network (/21). Scanned your /24 only. Widen in Settings.", HomeCopy.largeNetwork(21))
         assertEquals("1 more range found, raise Maximum extra ranges in Settings", HomeCopy.capDropped(1))
     }
     @Test fun `names removed from the draft do not exist`() {   // spec 7.2
@@ -930,6 +946,8 @@ and add these tests before the class's closing brace (import `com.northwalessolu
 ```
 (`show` already keeps the state in a `remember`ed `mutableStateOf`, so the marker tap updates it.)
 
+`app/src/test/java/com/northwalessolutions/netprobe/ui/home/RunEndTest.kt`: in `toggle off publishes no ranges and the large network notice only after a completed scan`, replace `"Large network (/16). Scanned your /24 only. Widen in Settings."` with `"Large network (/16). Scanned your /24 only. Turn on Aggressive scan in Settings."` (plan review G6: widening the limit cannot help a /16).
+
 - [ ] **Step 2: Run the JVM tests and compile to see them fail**
 
 ```bash
@@ -938,6 +956,8 @@ and add these tests before the class's closing brace (import `com.northwalessolu
 Expected: `BUILD FAILED` (`Unresolved reference 'MANUAL_LINE'`, `'GATEWAY_WALK_SKIPPED'`, `'largeNetworkPartial'`), then, once those exist, assertion failures on the old strings.
 
 - [ ] **Step 3: Implement**
+
+Before writing it (plan review G1): `git diff --quiet 290850e -- app/src/main/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSection.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSection.kt changed since 290850e"`; if it prints STOP, stop and ask the controller.
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSection.kt` (whole file; `ManualCap`, `StepButton` and the editor's validation are unchanged):
 ```kotlin
@@ -1081,7 +1101,7 @@ private fun ManualEditor(networkName: String?, networkId: Long?, manual: List<Su
 }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeCopy.kt`: replace the block from `const val NO_EXTRA_RANGES` to `const val SOURCE_GATEWAY` and the `capDropped` line, and add `largeNetworkPartial` after `largeNetwork`:
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeCopy.kt`: replace the block from `const val NO_EXTRA_RANGES` to `const val SOURCE_GATEWAY`, the `capDropped` line, and the `largeNetwork` line (with the reworded notice, the new partial one and their constant):
 ```kotlin
     const val NO_EXTRA_RANGES = "Aggressive scan: no extra ranges to sweep"
     const val GATEWAY_FOUND_NONE = "Smart discovery found no other ranges"
@@ -1098,9 +1118,12 @@ private fun ManualEditor(networkName: String?, networkId: Long?, manual: List<Su
     fun capDropped(n: Int) = if (n == 1) "1 more range found, raise Maximum extra ranges in Settings" else "$n more ranges found, raise Maximum extra ranges in Settings"
 ```
 ```kotlin
-    fun largeNetwork(prefix: Int) = "Large network (/$prefix). Scanned your /24 only. Widen in Settings."
-    /** Aggressive scan on with a mask wider than the limit: the limit-sized block holding the phone was swept (3C spec 2.1). */
-    fun largeNetworkPartial(prefix: Int, swept: Int) = "Large network (/$prefix). Scanned your /$swept only. Widen in Settings."
+    /** Aggressive scan off (3C spec 2.1, plan review G6): widening helps only a mask within the widest limit; past it, Aggressive scan is the control that helps. */
+    fun largeNetwork(prefix: Int) = "Large network (/$prefix). Scanned your /24 only. " + if (prefix >= WIDEST_LIMIT) "Widen in Settings." else "Turn on Aggressive scan in Settings."
+    /** Aggressive scan on with a mask wider than the limit: the limit-sized block holding the phone was swept; at the widest limit there is nothing to widen. */
+    fun largeNetworkPartial(prefix: Int, swept: Int) = "Large network (/$prefix). Scanned your /$swept only." + if (swept > WIDEST_LIMIT) " Widen in Settings." else ""
+    /** The widest Large networks stop. */
+    private const val WIDEST_LIMIT = 20
 ```
 The progress line `gatewayProbing` ("probing 10.0.0.0/16 for gateways") is kept: it describes the action (spec 2.4).
 
@@ -1125,6 +1148,7 @@ Expected: `BUILD SUCCESSFUL`; the grep finds only code comments (`DiscoveryOptio
 ```bash
 git add app/src/main/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSection.kt app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeCopy.kt \
   app/src/test/java/com/northwalessolutions/netprobe/ui/settings/ExtendedCopyTest.kt app/src/test/java/com/northwalessolutions/netprobe/ui/home/ExtendedNoticesTest.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/home/RunEndTest.kt \
   app/src/test/java/com/northwalessolutions/netprobe/ui/home/CopyTableTest.kt app/src/androidTest/java/com/northwalessolutions/netprobe/ui/settings/ExtendedSectionTest.kt
 git status --short
 git commit -m "Phase 3C-1: Aggressive scan and Smart discovery copy, stepper marker, editor always enabled"
@@ -1236,6 +1260,8 @@ class RunSettingsTest {
     }
 }
 ```
+
+Before writing it (plan review G1): `git diff --quiet 290850e -- app/src/test/java/com/northwalessolutions/netprobe/ui/home/ScanBindingTest.kt || echo "STOP: app/src/test/java/com/northwalessolutions/netprobe/ui/home/ScanBindingTest.kt changed since 290850e"`; if it prints STOP, stop and ask the controller.
 
 `app/src/test/java/com/northwalessolutions/netprobe/ui/home/ScanBindingTest.kt` (whole file):
 ```kotlin
@@ -1351,6 +1377,8 @@ data class RunSettings(val aggressive: Boolean, val maxPrefix: Int, val manual: 
 }
 ```
 
+Before writing it (plan review G1): `git diff --quiet 290850e -- app/src/main/java/com/northwalessolutions/netprobe/ui/home/ScanBinding.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/ui/home/ScanBinding.kt changed since 290850e"`; if it prints STOP, stop and ask the controller.
+
 `app/src/main/java/com/northwalessolutions/netprobe/ui/home/ScanBinding.kt` (whole file):
 ```kotlin
 package com.northwalessolutions.netprobe.ui.home
@@ -1434,6 +1462,7 @@ with
 ```kotlin
             bind = { ip, e, block ->
                 // Read once at the run's start (3C spec D21): manual ranges bind off-subnet targets even with Aggressive scan off (spec 2.4).
+                // The current network's list is the target's: Home and the Device screen list only the current network's hosts (plan review G12).
                 val runSettings = RunSettings.of(settings.state.value, settings.manual.forNetwork(currentNetwork.value?.id))
                 ScanBinding.forRun(ip, e, runSettings, networkEnvMonitor::binderFor) { block() }
             },
@@ -1496,7 +1525,7 @@ data class ExtendedOptions(val enabled: Boolean = false, val maxRanges: Int = 4,
 data class DiscoveryOptions(..., val extended: ExtendedOptions = ExtendedOptions(), val aggressive: Boolean = false)   // aggressive appended last
 object ExtendedOptionsOf { fun from(runSettings: RunSettings, s: SettingsState, known: Set<String>): ExtendedOptions }   // ui.home
 ```
-- Behaviour (spec 2.4): Aggressive scan on gives today's options. Aggressive scan off with manual ranges gives `enabled = true, gatewayProbe = false, evidence = false`: the extended phase runs, bound, for the typed ranges only (no DNS-server evidence, no sighting evidence, no TEST-NET pre-check, no Smart discovery). Aggressive scan off with no manual ranges gives `ExtendedOptions()`, the MVP path. The local sweep uses `HomeRange.of(..., options.aggressive)`. With `enabled = true`, the neighbour table goes through Phase 2's `NeighbourRules` (as with Aggressive scan on); recorded as deviation 3 in the Self-Review Notes.
+- Behaviour (spec 2.4): Aggressive scan on gives today's options. Aggressive scan off with manual ranges gives `enabled = true, gatewayProbe = false, evidence = false`: the extended phase runs, bound, for the typed ranges only (no DNS-server evidence, no sighting evidence, no TEST-NET pre-check, no Smart discovery). Aggressive scan off with no manual ranges gives `ExtendedOptions()`, the MVP path. The local sweep uses `HomeRange.of(..., options.aggressive)`. With `enabled = true`, the neighbour table goes through Phase 2's `NeighbourRules` (as with Aggressive scan on); recorded as deviation 3 in the Self-Review Notes and pinned by the neighbour-rules test below (plan review G18).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1581,6 +1610,16 @@ and add these members before the class's closing brace:
         val eng = engine()
         eng.hosts(DiscoveryOptions(maxPrefix = 22), e = env16)
         assertEquals(listOf("172.20.9.1"), swept()); assertEquals(254, eng.status.value.total); assertEquals(16, eng.status.value.clampedFrom)
+    }
+    @Test fun `aggressive off with a manual range uses the neighbour rules - a local MAC is kept and a gateway MAC on another IP is not claimed`() = runBlocking {   // plan review G18
+        val gatewayMac = "aa:bb:cc:00:00:01"
+        val neigh = listOf(com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.1", gatewayMac, "REACHABLE"),
+            com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.20", "de:ad:be:ef:00:20", "REACHABLE"),
+            com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.30", gatewayMac, "REACHABLE"))
+        val h = engine(neigh = neigh).hosts(runOpts(aggressive = false, manual = listOf("10.0.4.0/24")))
+        assertEquals("de:ad:be:ef:00:20", h["10.0.3.20"]!!.mac)
+        assertTrue("the row stays", "10.0.3.30" in h.keys)
+        assertNull("the gateway's MAC on another IP is not claimed (the MVP loop would claim it)", h["10.0.3.30"]!!.mac)
     }
 ```
 
@@ -1688,7 +1727,7 @@ git commit -m "Phase 3C-1: engine home range, evidence flag, manual ranges swept
 ### Task 6: Home wiring: the radar run snapshot, grouping and the hero from it, manual-range summaries and notices, and the partial large-network notice
 
 **Files:**
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/ExtendedNotices.kt` (whole file), `ui/home/HomeViewModel.kt`, `ui/home/HomeContent.kt` (one line)
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/ExtendedNotices.kt` (whole file), `ui/home/HomeViewModel.kt`, `ui/home/HomeContent.kt` (one line), `ui/home/RunSettings.kt` (`forDisplay`)
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/home/RunSnapshotTest.kt`; additions to `ui/home/RunEndTest.kt`
 
 **Interfaces:**
@@ -1699,9 +1738,10 @@ object ExtendedNotices { fun of(status: DiscoveryStatus, aggressive: Boolean = t
 data class RunEnd(...) { companion object { fun of(currentNetworkId: Long?, runNetworkId: Long, extEnabled: Boolean, completed: Boolean, status: DiscoveryStatus,
                                                    aggressive: Boolean = extEnabled): RunEnd? } }
 data class RunMemory(val finishedAt: Long?, val swept: List<Subnet>, val progress: List<RangeProgress>, val settings: RunSettings? = null)
-HomeUiState.homeRange: String? = null       // the home range of the effective RunSettings, for the hero subtitle (spec 2.1)
+HomeUiState.homeRange: String? = null       // the home range of the displayed RunSettings, for the hero subtitle (spec 2.1)
+fun RunSettings.Companion.forDisplay(snapshot: RunSettings?, scanning: Boolean, live: SettingsState, liveManual: List<Subnet>): RunSettings
 ```
-- Behaviour: `discoverOn` builds one `RunSettings` at its start, keeps it in `runSnapshot` (memory only, cleared on a network change through `RunMemory`), builds `ExtendedOptions` with `ExtendedOptionsOf.from`, passes `aggressive` to the engine, and ends with `RunEnd.of(..., aggressive = runSettings.aggressive)`. `baseState` groups with `RunSettings.effective(runSnapshot, live settings, live manual)` and now also recomposes on `c.settings.state`. The range summary and per-range notices show whenever the run's `ExtendedOptions.enabled` was true (manual ranges with Aggressive scan off included); "Aggressive scan: no extra ranges to sweep" only when Aggressive scan was on.
+- Behaviour: `discoverOn` builds one `RunSettings` at its start, keeps it in `runSnapshot` (memory only, cleared on a network change through `RunMemory`), builds `ExtendedOptions` with `ExtendedOptionsOf.from`, passes `aggressive` to the engine, and ends with `RunEnd.of(..., aggressive = runSettings.aggressive)`. `baseState` groups with `RunSettings.forDisplay(runSnapshot, scanning, live settings, live manual)`: the snapshot while the radar scan runs, the live settings otherwise (controller ruling on plan review G7, so a change after the run regroups at once and the hero names what the next scan will sweep), and it now also recomposes on `c.settings.state`. The range summary and per-range notices show whenever the run's `ExtendedOptions.enabled` was true (manual ranges with Aggressive scan off included); "Aggressive scan: no extra ranges to sweep" only when Aggressive scan was on.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1748,6 +1788,14 @@ class RunSnapshotTest {
         assertSame(FakeBinder, ScanBinding.forRun(ip("10.9.0.5"), env16, next, { FakeBinder }) { currentBinder() })
         assertEquals("172.20.0.0/20", RowRules.row(host, env16, next.maxPrefix, 0, false, aggressive = next.aggressive).subnet)
     }
+    @Test fun `after the run the live settings regroup at once and the hero follows`() {   // plan review G7
+        val started = RunSettings.of(SettingsState(), emptyList())
+        val live = SettingsState(extEnabled = true, maxPrefix = 20)
+        assertSame("while the scan runs", started, RunSettings.forDisplay(started, scanning = true, live = live, liveManual = emptyList()))
+        val after = RunSettings.forDisplay(started, scanning = false, live = live, liveManual = emptyList())
+        assertEquals("the hero's range", "172.20.0.0/20", after.home(env16).toString())
+        assertEquals("172.20.0.0/20", RowRules.row(host, env16, after.maxPrefix, 0, false, aggressive = after.aggressive).subnet)
+    }
     @Test fun `a network change drops the snapshot, the same network keeps it`() {
         val mem = RunMemory(finishedAt = 500L, swept = emptyList(), progress = emptyList(), settings = RunSettings(true, 22, emptyList()))
         assertNull(mem.afterNetworkChange(1L, 2L).settings)
@@ -1784,7 +1832,7 @@ class RunSnapshotTest {
         val clamped22 = DiscoveryStatus(clampedFrom = 16, ranges = listOf(RangeProgress("172.20.8.0/22", null, RangeState.DONE, 1022, 1022, 0)))
         assertEquals("Large network (/16). Scanned your /22 only. Widen in Settings.", RunEnd.of(1L, 1L, true, true, clamped22, aggressive = true)!!.notice)
         val clamped24 = DiscoveryStatus(clampedFrom = 16, ranges = listOf(RangeProgress("172.20.9.0/24", null, RangeState.DONE, 254, 254, 0)))
-        assertEquals("Large network (/16). Scanned your /24 only. Widen in Settings.", RunEnd.of(1L, 1L, false, true, clamped24, aggressive = false)!!.notice)
+        assertEquals("Large network (/16). Scanned your /24 only. Turn on Aggressive scan in Settings.", RunEnd.of(1L, 1L, false, true, clamped24, aggressive = false)!!.notice)
         assertNull(RunEnd.of(1L, 1L, true, false, clamped22, aggressive = true)!!.notice)   // Stop, failure or network change: no notice
     }
 ```
@@ -1797,6 +1845,8 @@ class RunSnapshotTest {
 Expected: `BUILD FAILED` with `No parameter with name 'settings'` and `No parameter with name 'aggressive'`.
 
 - [ ] **Step 3: Implement**
+
+Before writing it (plan review G1): `git diff --quiet 290850e -- app/src/main/java/com/northwalessolutions/netprobe/ui/home/ExtendedNotices.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/ui/home/ExtendedNotices.kt changed since 290850e"`; if it prints STOP, stop and ask the controller.
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/home/ExtendedNotices.kt` (whole file; `RangeSummaryText` and `LastRun` are unchanged):
 ```kotlin
@@ -1915,7 +1965,7 @@ data class RunMemory(val finishedAt: Long?, val swept: List<Subnet>, val progres
 ```
 2. After `private val lastRunCompleted = MutableStateFlow(true)` add:
 ```kotlin
-    /** The last radar run's settings (3C spec 2.2, D21): grouping and the hero read it, so a mid-run toggle or reset never regroups the running list. Memory only; a network change clears it. */
+    /** The radar run's settings (3C spec 2.2, D21): grouping and the hero read it while the scan runs, so a mid-run toggle or reset never regroups the running list. Memory only; a network change clears it. */
     private val runSnapshot = MutableStateFlow<RunSettings?>(null)
 ```
 3. Replace the whole `baseState` declaration with:
@@ -1933,8 +1983,8 @@ data class RunMemory(val finishedAt: Long?, val swept: List<Subnet>, val progres
         val e = arr[0] as NetworkEnv?; val cs = arr[1] as ScanController.State; val st = arr[2] as DiscoveryStatus
         val f = arr[4] as StatusFilter; val q = arr[5] as String; val run = arr[6] as Long; val qs = arr[7] as ScanController.State; val msg = arr[8] as String?
         val done = arr[10] as Long?
-        // The last radar run's snapshot, else the live settings; manual ranges are read whatever Aggressive scan says (3C spec 2.2, D8).
-        val runSettings = RunSettings.effective(arr[17] as RunSettings?, arr[18] as SettingsState, c.settings.manual.forNetwork(networkId.value))
+        // The running scan's snapshot while it runs, the live settings otherwise (3C spec 2.2, plan review G7); manual ranges are read whatever Aggressive scan says (D8).
+        val runSettings = RunSettings.forDisplay(arr[17] as RunSettings?, cs.scanning, arr[18] as SettingsState, c.settings.manual.forNetwork(networkId.value))
         val all = hs.map { h -> RowRules.row(h, e, runSettings.maxPrefix, pc[h.id] ?: 0, stale = run > 0 && h.lastDiscoveryRun < run, extraRanges = extra,
             manualRanges = runSettings.manual, aggressive = runSettings.aggressive) }
         val stats = HomeStats.of(hs, all, done)
@@ -1977,13 +2027,20 @@ with
 ```
 The `ExtendedOptions` import becomes unused; remove `import com.northwalessolutions.netprobe.engine.discovery.ExtendedOptions`.
 
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/RunSettings.kt`: in `RunSettings`'s companion, after `effective`, add:
+```kotlin
+        /** What Home groups and names the hero with (plan review G7): the running scan's snapshot while it runs, the live settings otherwise. */
+        fun forDisplay(snapshot: RunSettings?, scanning: Boolean, live: SettingsState, liveManual: List<Subnet>): RunSettings =
+            effective(snapshot.takeIf { scanning }, live, liveManual)
+```
+
 `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeContent.kt`: replace
 ```kotlin
     val localSubnet = state.env?.let { SubnetMath.of(it.interfaceIp, it.prefixLength).toString() }
 ```
 with
 ```kotlin
-    // The hero names what a scan will sweep: the home range (3C spec 2.1), the mask only before the first state arrives.
+    // The hero names the home range (3C spec 2.1): the running scan's while it runs, else what the next scan will sweep (plan review G7); the mask only before the first state arrives.
     val localSubnet = state.homeRange ?: state.env?.let { SubnetMath.of(it.interfaceIp, it.prefixLength).toString() }
 ```
 
@@ -2007,7 +2064,8 @@ Expected: `BUILD SUCCESSFUL`; the grep finds exactly two lines, both at a run's 
 
 ```bash
 git add app/src/main/java/com/northwalessolutions/netprobe/ui/home/ExtendedNotices.kt app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt \
-  app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeContent.kt app/src/test/java/com/northwalessolutions/netprobe/ui/home/RunSnapshotTest.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeContent.kt app/src/main/java/com/northwalessolutions/netprobe/ui/home/RunSettings.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/home/RunSnapshotTest.kt \
   app/src/test/java/com/northwalessolutions/netprobe/ui/home/RunEndTest.kt
 git status --short
 git commit -m "Phase 3C-1: radar run snapshot, manual range summaries, partial large network notice"
@@ -2020,7 +2078,7 @@ git commit -m "Phase 3C-1: radar run snapshot, manual range summaries, partial l
 The stronger model implements and reviews this task. The walk is deterministic but easy to get subtly wrong: the round order, what counts as a miss, when a direction ends and when the budget stops further rounds all change which client ranges get swept and how many connection attempts a client's IDS sees.
 
 **Files:**
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/GatewayProbe.kt` (whole file), `engine/discovery/CandidateRanges.kt` (`walkBudget`), `engine/discovery/DiscoveryOptions.kt` (`ExtendedNote`), `engine/discovery/DiscoveryEngine.kt` (the `gatewayProbe` type, its call and the production lambda), `ui/home/ExtendedNotices.kt` (one branch)
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/GatewayProbe.kt` (targeted edits), `engine/discovery/CandidateRanges.kt` (`walkBudget`, `sweptUnits`), `engine/discovery/DiscoveryOptions.kt` (`ExtendedNote`), `engine/discovery/DiscoveryEngine.kt` (the `gatewayProbe` type, its call and the production lambda), `ui/home/ExtendedNotices.kt` (one branch)
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/GatewayWalkTest.kt`; modify `engine/discovery/GatewayProbeTest.kt` (one line), `engine/discovery/DiscoveryEngineExtendedTest.kt` (the fake and two tests), `ui/home/ExtendedNoticesTest.kt` (one test)
 
 **Interfaces:**
@@ -2028,21 +2086,23 @@ The stronger model implements and reviews this task. The walk is deterministic b
 - Produces:
 ```kotlin
 data class GatewayProbeResult(val hits: List<Subnet>, val answered: Set<Inet4Address> = emptySet(), val walkSkippedManySeeds: Boolean = false)
+data class WalkPlan(val budget: (List<Subnet>) -> Int = { 0 }, val skip: List<Subnet> = emptyList())                   // plan review G8
 object GatewayProbe { const val WALK_MAX_SEEDS = 4; const val OUTWARD_MAX_UNITS = 16; const val OUTWARD_MISS_LIMIT = 2
     suspend fun run(targets: GatewayTargets, connect: suspend (Inet4Address, Int) -> Probe.Outcome, onProgress: (Int, Int, Int) -> Unit = { _, _, _ -> },
                     onAnswer: (Inet4Address) -> Unit = {}, dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(CONCURRENCY),
-                    walkBudget: (List<Subnet>) -> Int = { 0 }): GatewayProbeResult }        // was List<Subnet>
-internal class OutwardWalk(seeds: List<Inet4Address>, probed: MutableSet<Subnet>, home: Subnet)
-fun CandidateRanges.walkBudget(scanned: Subnet, manual: List<Subnet>, evidence: List<Inet4Address>, firstPassHits: List<Subnet>, cap: Int): Int
+                    walk: WalkPlan = WalkPlan()): GatewayProbeResult }        // was List<Subnet>
+internal class OutwardWalk(seeds: List<Inet4Address>, probed: MutableSet<Subnet>, home: Subnet, skip: List<Subnet> = emptyList())
+fun CandidateRanges.walkBudget(scanned: Subnet, manual: List<Subnet>, evidence: List<Inet4Address>, hits: List<Subnet>, cap: Int): Int
+fun CandidateRanges.sweptUnits(scanned: Subnet, manual: List<Subnet>, evidence: List<Inet4Address>): List<Subnet>
 enum class ExtendedNote { ..., GATEWAY_WALK_SKIPPED_MANY }
-DiscoveryEngine.gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?, (List<Subnet>) -> Int) -> GatewayProbeResult
+DiscoveryEngine.gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?, WalkPlan) -> GatewayProbeResult
 ```
 - The walk, exactly as spec 2.5 steps 1 to 6:
   1. After the first pass, the answering seeds are the `targets.seeds` (outside the phone's enclosing /16, or all of them off RFC1918) that answered. More than `WALK_MAX_SEEDS` answering: no walk, `walkSkippedManySeeds = true` (engine note `GATEWAY_WALK_SKIPPED_MANY`). None answering: no walk.
-  2. `B = walkBudget(firstPassHits)`, which the engine computes as `cap - derive(home, manual, evidence, firstPassHits, cap).ranges.size`. `B <= 0`: no walk.
+  2. `B = walk.budget(firstPassHits)`, which the engine computes as `cap - derive(home, manual, evidence, hits, cap).ranges.size`. `B <= 0`: no walk.
   3. Directions: seeds in ascending address order, each "down" then "up" over the third octet within the seed's own /16, probing only the seed's last octet.
-  4. Round `k` (1 to 16): each live direction offers its unit at distance `k`. A unit already probed (a first-pass unit, which includes every seed's unit, or one an earlier direction took) or overlapping the home range is skipped: neither a miss nor a hit, and the consecutive-miss count is unchanged. A direction ends at the octet boundary (third octet below 0 or above 255), after `OUTWARD_MISS_LIMIT` consecutive misses (a hit resets the count), or after distance 16. A round's units are probed concurrently with the same ports, timeout, semaphore, `connect` (so the same bound `Network`), answer rule and `onAnswer`.
-  5. After each round its hits join `hits`. When the walk's hits reach `B`, no further round starts; extra hits of that round stay and `derive` reports them as truncated.
+  4. Round `k` (1 to 16): each live direction offers its unit at distance `k`. A unit already probed (a first-pass unit, which includes every seed's unit, or one an earlier direction took), overlapping the home range, or overlapping a manual or evidence unit (`walk.skip`, swept anyway, plan review G8) is skipped: neither a miss nor a hit, and the consecutive-miss count is unchanged. A direction ends at the octet boundary (third octet below 0 or above 255), after `OUTWARD_MISS_LIMIT` consecutive misses (a hit resets the count), or after distance 16. A round's units are probed concurrently with the same ports, timeout, semaphore, `connect` (so the same bound `Network`), answer rule and `onAnswer`.
+  5. After each round its hits join `hits`. When `walk.budget(all hits so far) <= 0`, no further round starts (the same `derive` that sweeps decides, so a walked hit derive would drop frees no slot, plan review G8); extra hits of that round stay and `derive` reports them as truncated.
   6. `onProgress`'s total grows by each round's unit count before the round starts, under the same lock as `done`, so it never steps back; cancellation ends a round within one probe timeout (the round is a `coroutineScope`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -2088,8 +2148,9 @@ class GatewayWalkTest {
         val fp = firstPass(t)
         return calls.map { it.substringBefore(':') }.filter { it !in fp }.distinct()
     }
-    private suspend fun probe(t: GatewayTargets, connect: suspend (Inet4Address, Int) -> Probe.Outcome, budget: (List<Subnet>) -> Int): GatewayProbeResult =
-        GatewayProbe.run(t, connect, onProgress = { d, total, n -> progress += Triple(d, total, n) }, dispatcher = oneThread, walkBudget = budget)
+    private suspend fun probe(t: GatewayTargets, connect: suspend (Inet4Address, Int) -> Probe.Outcome, skip: List<Subnet> = emptyList(),
+                              budget: (List<Subnet>) -> Int): GatewayProbeResult =
+        GatewayProbe.run(t, connect, onProgress = { d, total, n -> progress += Triple(d, total, n) }, dispatcher = oneThread, walk = WalkPlan(budget, skip))
 
     private val phone192 = env("192.168.1.50", "192.168.1.1"); private val home192 = net("192.168.1.0/24")
     private val phone10 = env("10.0.3.20", "10.0.3.1"); private val home10 = net("10.0.3.0/24")
@@ -2131,6 +2192,15 @@ class GatewayWalkTest {
         val cand = CandidateRanges.derive(home10, emptyList(), emptyList(), r.hits, 2)
         assertEquals(listOf("10.1.9.0/24", "10.1.10.0/24"), cand.ranges.map { it.subnet.toString() })
         assertEquals(listOf("10.1.11.0/24"), cand.truncated.map { it.subnet.toString() })
+    }
+    @Test fun `manual and evidence units are never walked and a hit derive drops frees no slot`() = runBlocking {   // plan review G8
+        val t = GatewayTargets.of(phone192, home192)
+        val manual = listOf(net("10.1.2.0/24"))
+        val r = probe(t, answering(setOf("10.1.1.1", "10.1.2.1", "10.1.3.1")), skip = manual) { hits ->
+            CandidateRanges.walkBudget(home192, manual, emptyList(), hits, 3) }
+        assertFalse("the manual unit is swept anyway: the walk never probes it", calls.any { it.startsWith("10.1.2.1:") })
+        assertTrue("the walk went on past it and found 10.1.3.0/24", net("10.1.3.0/24") in r.hits)
+        assertEquals(listOf("10.1.0.1", "10.1.3.1"), walked(t))
     }
     @Test fun `with manual units filling the cap no walk unit is probed`() = runBlocking {
         val t = GatewayTargets.of(phone10, home10)
@@ -2210,7 +2280,7 @@ class GatewayWalkTest {
                 else -> { walking.complete(Unit); delay(10_000); Probe.Outcome.Timeout }   // a walk unit that never answers
             }
         }
-        val job = launch(Dispatchers.Default) { GatewayProbe.run(t, connect, dispatcher = Dispatchers.Default, walkBudget = { 16 }) }
+        val job = launch(Dispatchers.Default) { GatewayProbe.run(t, connect, dispatcher = Dispatchers.Default, walk = WalkPlan({ 16 })) }
         withTimeout(10_000) { walking.await() }
         val t0 = System.nanoTime(); job.cancelAndJoin(); val ms = (System.nanoTime() - t0) / 1_000_000
         assertTrue("took $ms ms", ms < 1_000)
@@ -2230,7 +2300,7 @@ with
 `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/DiscoveryEngineExtendedTest.kt`:
 1. After `private val rdnsCalls = Collections.synchronizedList(mutableListOf<String>())` add:
 ```kotlin
-    private val budgets = Collections.synchronizedList(mutableListOf<(List<com.northwalessolutions.netprobe.netenv.Subnet>) -> Int>())
+    private val plans = Collections.synchronizedList(mutableListOf<WalkPlan>())
 ```
 2. In `engine(...)`, replace the parameter line
 ```kotlin
@@ -2246,17 +2316,19 @@ and the fake
 ```
 with
 ```kotlin
-            gatewayProbe = { t, onProgress, _, budget -> gatewayCalls += t; budgets += budget; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2)
+            gatewayProbe = { t, onProgress, _, plan -> gatewayCalls += t; plans += plan; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2)
                 GatewayProbeResult(gatewayHits.map(::net), gatewayAnswered.map(::ip).toSet(), walkSkippedManySeeds = walkSkipped) },
 ```
 3. Add before the class's closing brace:
 ```kotlin
-    @Test fun `the walk budget is the cap less what the first pass already fills`() = runBlocking {   // spec 2.5 step 2
+    @Test fun `the walk plan's budget is the cap less what is already accepted, and manual units are never walked`() = runBlocking {   // spec 2.5 step 2, plan review G8
         engine().hosts(opts(manual = listOf("10.0.4.0/24"), cap = 4, probe = true))
-        val budget = budgets.single()
-        assertEquals("one manual unit of four", 3, budget(emptyList()))
-        assertEquals(1, budget(listOf(net("10.0.10.0/24"), net("10.0.11.0/24"))))
-        assertEquals(0, budget(listOf("10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24", "10.0.13.0/24").map(::net)))
+        val plan = plans.single()
+        assertEquals("one manual unit of four", 3, plan.budget(emptyList()))
+        assertEquals(1, plan.budget(listOf(net("10.0.10.0/24"), net("10.0.11.0/24"))))
+        assertEquals(0, plan.budget(listOf("10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24", "10.0.13.0/24").map(::net)))
+        assertEquals("a hit on the manual unit frees no slot", 3, plan.budget(listOf(net("10.0.4.0/24"))))
+        assertEquals(listOf("10.0.4.0/24"), plan.skip.map { it.toString() })
     }
     @Test fun `too many answering seeds is noted`() = runBlocking {
         val eng = engine(walkSkipped = true); eng.hosts(opts(probe = true))
@@ -2279,84 +2351,40 @@ and add `import org.junit.Assert.assertTrue` to its imports.
 ```bash
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.engine.discovery.*" --tests "com.northwalessolutions.netprobe.ui.home.ExtendedNoticesTest" --console=plain 2>&1 | tail -20
 ```
-Expected: `BUILD FAILED` with `No parameter with name 'walkBudget'`, `Unresolved reference 'walkBudget'` (CandidateRanges), `'walkSkippedManySeeds'`, `'GATEWAY_WALK_SKIPPED_MANY'`, and a lambda arity mismatch for the engine fake.
+Expected: `BUILD FAILED` with `Unresolved reference 'WalkPlan'`, `No parameter with name 'walk'`, `Unresolved reference 'walkBudget'` (CandidateRanges), `'walkSkippedManySeeds'`, `'GATEWAY_WALK_SKIPPED_MANY'`, and a lambda arity mismatch for the engine fake.
 
 - [ ] **Step 3: Implement**
 
-`app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/GatewayProbe.kt` (whole file; `GatewayTargets`, `AnswersForEverything` and `RandomHighPort` are unchanged):
+`app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/GatewayProbe.kt` (targeted edits, plan review G1; `GatewayTargets`, `AnswersForEverything` and `RandomHighPort` are untouched):
+1. Replace
 ```kotlin
-package com.northwalessolutions.netprobe.engine.discovery
-
-import com.northwalessolutions.netprobe.engine.common.Probe
-import com.northwalessolutions.netprobe.engine.portscan.QuickPorts
-import com.northwalessolutions.netprobe.netenv.*
-import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import java.net.Inet4Address
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
-import kotlin.random.Random
-
+/** The gateway probe's hit /24s and every address that answered, which the canary must not reuse (final review I3). */
+data class GatewayProbeResult(val hits: List<Subnet>, val answered: Set<Inet4Address> = emptySet())
+```
+with
+```kotlin
 /**
  * The gateway probe's hit /24s, every address that answered (the canary must not reuse them, final review I3), and whether the outward
  * walk was skipped because more than [GatewayProbe.WALK_MAX_SEEDS] seeds answered (3C spec 2.5 step 1).
  */
 data class GatewayProbeResult(val hits: List<Subnet>, val answered: Set<Inet4Address> = emptySet(), val walkSkippedManySeeds: Boolean = false)
 
-/** What the gateway probe walks (extended spec 4.3 steps 1 to 4). */
-data class GatewayTargets(val enclosing: Subnet?, val exclude: Subnet, val gatewayOffset: Int?, val seeds: List<Inet4Address>) {
-    fun byUnit(): Map<Subnet, List<Inet4Address>> {
-        val out = LinkedHashMap<Subnet, MutableList<Inet4Address>>()
-        val offsets = listOfNotNull(LOW, HIGH, gatewayOffset).distinct()
-        enclosing?.slash24Units()?.filterNot { it.overlaps(exclude) }?.forEach { u -> out[u] = offsets.map { SubnetMath.toAddress(u.network + it) }.toMutableList() }
-        seeds.forEach { s -> out.getOrPut(SubnetMath.of(s, UNIT_PREFIX)) { mutableListOf() }.add(s) }
-        return out
-    }
-
-    companion object {
-        const val LOW = 1
-        const val HIGH = 254
-        private const val UNIT_PREFIX = 24
-        private const val LAST_OCTET = 0xFF
-        /** Common gateways in the other RFC1918 blocks, so a guest Wi-Fi on 192.168.x can find server ranges on 10.x or 172.16.x. */
-        val SEEDS = listOf("10.0.0.1", "10.0.1.1", "10.1.1.1", "10.1.10.1", "10.10.0.1", "10.10.10.1", "10.0.0.254", "172.16.0.1", "172.16.1.1",
-            "172.16.16.1", "172.17.0.1", "172.31.0.1", "192.168.0.1", "192.168.1.1", "192.168.1.254", "192.168.2.1", "192.168.10.1",
-            "192.168.88.1", "192.168.100.1", "192.168.178.1")
-
-        fun of(env: NetworkEnv, scanned: Subnet): GatewayTargets {
-            val enclosing = Rfc1918.enclosing16(env.interfaceIp)
-            val offset = env.gateway?.let { SubnetMath.toInt(it) and LAST_OCTET }?.takeUnless { it == LOW || it == HIGH || it == 0 }
-            val seeds = SEEDS.mapNotNull { Ipv4.parse(it) }.filter { s -> (enclosing == null || !enclosing.contains(s)) && !scanned.contains(s) }
-            return GatewayTargets(enclosing, scanned, offset, seeds)
-        }
-    }
-}
-
-/** TEST-NET pre-check (extended spec 4.3 step 0): RFC 5737 addresses are never assigned, so any answer means "answers for everything". */
-object AnswersForEverything {
-    val TEST_NET: List<Inet4Address> = listOf("192.0.2.1", "198.51.100.1").map { Ipv4.parse(it)!! }
-    const val TEST_PORT = 80
-    fun answered(o: Probe.Outcome): Boolean = o is Probe.Outcome.Connected || o == Probe.Outcome.Refused
-    fun of(outcomes: List<Probe.Outcome>): Boolean = outcomes.any(::answered)
-}
-
-/** One random high port per run, never a liveness or Quick port, for the pre-check and the canaries (extended spec 4.7). */
-object RandomHighPort {
-    const val MIN = 49152
-    const val MAX_EXCLUSIVE = 65536
-    private val EXCLUDED: Set<Int> = (HostProber.DEFAULT_PORTS + QuickPorts.list).toSet()
-    fun pick(random: Random): Int {
-        while (true) { val p = random.nextInt(MIN, MAX_EXCLUSIVE); if (p !in EXCLUDED) return p }
-    }
-}
-
+/**
+ * What the outward walk may do (3C spec 2.5 step 2, plan review G8). [budget] gives the cap slots left for a list of hits, computed by
+ * the same CandidateRanges.derive that sweeps, so a walked hit derive would drop frees no slot. [skip] holds the manual and evidence
+ * units, which are candidates already and are never probed by the walk.
+ */
+data class WalkPlan(val budget: (List<Subnet>) -> Int = { 0 }, val skip: List<Subnet> = emptyList())
+```
+2. Replace everything from `object GatewayProbe {` to the end of the file (that object is the file's last declaration; it ends with `answers` and the closing `}`) with:
+```kotlin
 /**
  * Smart discovery's outward walk (3C spec 2.5 steps 3 and 4): two directions per answering seed, seeds in ascending address order,
  * one unit per live direction per round, only the seed's own last octet probed, within the seed's /16. [probed] starts as the first
- * pass's units and grows as directions take units, so no unit is probed twice.
+ * pass's units and grows as directions take units, so no unit is probed twice; [skip] units (manual, evidence) are never probed.
  */
-internal class OutwardWalk(seeds: List<Inet4Address>, private val probed: MutableSet<Subnet>, private val home: Subnet) {
+internal class OutwardWalk(seeds: List<Inet4Address>, private val probed: MutableSet<Subnet>, private val home: Subnet,
+                           private val skip: List<Subnet> = emptyList()) {
     class Direction(val seed: Inet4Address, val step: Int) {
         var misses = 0
         var ended = false
@@ -2373,7 +2401,8 @@ internal class OutwardWalk(seeds: List<Inet4Address>, private val probed: Mutabl
             if (c < 0 || c > OCTET_MASK) { d.ended = true; continue }   // the seed's own /16 ends here
             val a = SubnetMath.toAddress((s and THIRD_CLEAR) or (c shl THIRD_SHIFT))
             val unit = SubnetMath.of(a, UNIT_PREFIX)
-            if (unit.overlaps(home) || !probed.add(unit)) continue       // first pass, a seed, another direction, or the home range
+            // The home range, a manual or evidence unit, or one already probed (first pass, a seed, another direction): skipped.
+            if (unit.overlaps(home) || skip.any { it.overlaps(unit) } || !probed.add(unit)) continue
             out += d to a
         }
         return out
@@ -2409,14 +2438,14 @@ object GatewayProbe {
 
     /**
      * First pass: a /24 is a hit when any probed address in it connects or is refused on 80 or 443. Then the outward walk (3C spec 2.5)
-     * around answering seeds outside the enclosing /16, bounded by [walkBudget] (cap slots left after the first pass; 0 means no walk).
-     * Hits come back ordered by address. [onAnswer] gets each answering address, first pass and walk.
+     * around answering seeds outside the enclosing /16, bounded by [walk] (no budget means no walk). Hits come back ordered by address.
+     * [onAnswer] gets each answering address, first pass and walk.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     suspend fun run(targets: GatewayTargets, connect: suspend (Inet4Address, Int) -> Probe.Outcome, onProgress: (Int, Int, Int) -> Unit = { _, _, _ -> },
                     onAnswer: (Inet4Address) -> Unit = {},
                     dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(CONCURRENCY),
-                    walkBudget: (List<Subnet>) -> Int = { 0 }): GatewayProbeResult {
+                    walk: WalkPlan = WalkPlan()): GatewayProbeResult {
         val units = targets.byUnit()
         val sem = Semaphore(CONCURRENCY)
         val hits = ConcurrentHashMap.newKeySet<Subnet>()
@@ -2444,24 +2473,24 @@ object GatewayProbe {
         val enclosing = targets.enclosing
         val seeds = targets.seeds.filter { it in answered && (enclosing == null || !enclosing.contains(it)) }
         if (seeds.size > WALK_MAX_SEEDS) return GatewayProbeResult(firstPass, answered.toSet(), walkSkippedManySeeds = true)
-        val budget = if (seeds.isEmpty()) 0 else walkBudget(firstPass)
+        val budget = if (seeds.isEmpty()) 0 else walk.budget(firstPass)
         if (budget <= 0) return GatewayProbeResult(firstPass, answered.toSet())
 
-        val walk = OutwardWalk(seeds, units.keys.toHashSet(), targets.exclude)
-        var walkHits = 0
+        val outward = OutwardWalk(seeds, units.keys.toHashSet(), targets.exclude, walk.skip)
         for (k in 1..OUTWARD_MAX_UNITS) {
-            if (walk.allEnded()) break
-            val round = walk.round(k)
-            if (round.isEmpty()) continue                                  // every live direction skipped a probed unit this round
+            if (outward.allEnded()) break
+            val round = outward.round(k)
+            if (round.isEmpty()) continue                                  // every live direction skipped a unit this round
             synchronized(lock) { total += round.size; onProgress(done, total, attempts.get()) }   // the total grows before the round starts
             val results = coroutineScope {
                 round.map { (d, a) -> async(dispatcher) { val ok = probeOne(a); finishedOne(); Triple(d, a, ok) } }.awaitAll()
             }
             for ((d, a, ok) in results) {
-                walk.record(d, ok, k)
-                if (ok) { hits += SubnetMath.of(a, UNIT_PREFIX); walkHits++ }
+                outward.record(d, ok, k)
+                if (ok) hits += SubnetMath.of(a, UNIT_PREFIX)
             }
-            if (walkHits >= budget) break                                  // extra hits of this round stay; derive reports them as truncated
+            // The same derive that sweeps decides (plan review G8): extra hits of this round stay, and derive reports them as truncated.
+            if (walk.budget(hits.sortedBy { it.start() }) <= 0) break
         }
         return GatewayProbeResult(hits.sortedBy { it.start() }, answered.toSet())
     }
@@ -2483,9 +2512,17 @@ object GatewayProbe {
 
 `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/CandidateRanges.kt`: add inside `object CandidateRanges`, after `derive`:
 ```kotlin
-    /** Smart discovery's walk budget (3C spec 2.5 step 2): cap slots left after manual, evidence and the first pass's hits; 0 or less means no walk. */
-    fun walkBudget(scanned: Subnet, manual: List<Subnet>, evidence: List<Inet4Address>, firstPassHits: List<Subnet>, cap: Int): Int =
-        cap.coerceIn(MIN_CAP, MAX_CAP) - derive(scanned, manual, evidence, firstPassHits, cap).ranges.size
+    /**
+     * Smart discovery's walk budget (3C spec 2.5 step 2): cap slots left after manual, evidence and [hits] (the first pass's, then the
+     * walk's so far), counted by the same derive that sweeps; 0 or less means no walk, or no further round (plan review G8).
+     */
+    fun walkBudget(scanned: Subnet, manual: List<Subnet>, evidence: List<Inet4Address>, hits: List<Subnet>, cap: Int): Int =
+        cap.coerceIn(MIN_CAP, MAX_CAP) - derive(scanned, manual, evidence, hits, cap).ranges.size
+
+    /** The manual units and evidence /24s: candidates already, so the outward walk never probes them (plan review G8). */
+    fun sweptUnits(scanned: Subnet, manual: List<Subnet>, evidence: List<Inet4Address>): List<Subnet> =
+        (manual.flatMap { CidrParser.units(it) } +
+            evidence.filter { Rfc1918.contains(it) && !scanned.contains(it) }.map { SubnetMath.of(it, UNIT_PREFIX) }).distinct()
 ```
 
 `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/DiscoveryOptions.kt`: replace the `ExtendedNote` line with
@@ -2500,8 +2537,8 @@ enum class ExtendedNote { GATEWAY_PROBE_SKIPPED_ANSWERS_ALL, GATEWAY_PROBE_FOUND
 ```
 with
 ```kotlin
-    /** Smart discovery: targets, progress, the bound network, and the walk budget for the first pass's hits (3C spec 2.5 step 2). */
-    val gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?, (List<Subnet>) -> Int) -> GatewayProbeResult = { _, _, _, _ -> GatewayProbeResult(emptyList()) },
+    /** Smart discovery: targets, progress, the bound network, and the walk plan (budget and skipped units, 3C spec 2.5 step 2, plan review G8). */
+    val gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?, WalkPlan) -> GatewayProbeResult = { _, _, _, _ -> GatewayProbeResult(emptyList()) },
 ```
 2. In `extendedPhase`, replace
 ```kotlin
@@ -2514,9 +2551,10 @@ with
 with
 ```kotlin
                         isolated {
-                            // Counted against what derive would accept, so walked hits never push past the cap (3C spec 2.5 step 2).
-                            val budget: (List<Subnet>) -> Int = { first -> CandidateRanges.walkBudget(local, ext.manual, evidenceNow(), first, ext.maxRanges) }
-                            val r = gatewayProbe(targets, { d, t, n -> _status.update { it.copy(gatewayProbe = GatewayProbeProgress(label, d, t, n)) } }, b, budget)
+                            // Counted by what derive would accept, so walked hits never push past the cap; manual and evidence units are never walked (3C spec 2.5 step 2, plan review G8).
+                            val plan = WalkPlan(budget = { hitsSoFar -> CandidateRanges.walkBudget(local, ext.manual, evidenceNow(), hitsSoFar, ext.maxRanges) },
+                                skip = CandidateRanges.sweptUnits(local, ext.manual, evidenceNow()))
+                            val r = gatewayProbe(targets, { d, t, n -> _status.update { it.copy(gatewayProbe = GatewayProbeProgress(label, d, t, n)) } }, b, plan)
                             hits = r.hits; gatewayAnswered = r.answered
                             if (r.walkSkippedManySeeds) addNote(ExtendedNote.GATEWAY_WALK_SKIPPED_MANY)
                             ran = true
@@ -2534,9 +2572,9 @@ with
 with
 ```kotlin
                 // The walk's probes use the same bound connect as the first pass (Phase 2 spec 5.5).
-                gatewayProbe = { targets, onProgress, b, budget ->
+                gatewayProbe = { targets, onProgress, b, plan ->
                     GatewayProbe.run(targets, connect = { a, port -> Probe.connect(a, port, GatewayProbe.TIMEOUT_MS, binder = b) },
-                        onProgress = onProgress, walkBudget = budget)
+                        onProgress = onProgress, walk = plan)
                 },
 ```
 
@@ -2577,7 +2615,7 @@ git commit -m "Phase 3C-1: Smart discovery outward walk with budget, stop rules 
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/wordlists/UrlImport.kt`
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistCopy.kt` (whole file), `ui/wordlists/WordlistsScreen.kt` (`WordlistImport` only)
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistCopy.kt` (targeted edits), `ui/wordlists/WordlistsScreen.kt` (`WordlistImport` only)
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/wordlists/UrlImportRulesTest.kt`; modify `ui/tools/ToolCopyTableTest.kt`
 
 **Interfaces:**
@@ -2592,10 +2630,11 @@ sealed interface UrlImportResult { data class Stored(val result: ImportResult); 
 object UrlImportRules { const val MAX_REDIRECTS = 3; const val MAX_URL_CHARS = 2048; const val BINARY_SNIFF_BYTES = 8_192
     fun validate(text: String): UrlCheck; fun redirect(original: URL, from: URL, location: String?, hops: Int): RedirectDecision
     fun contentType(header: String?): Boolean; fun mediaType(header: String?): String?; fun looksBinary(prefix: ByteArray): Boolean
-    fun displayName(url: URL): String?; fun failureOf(e: IOException): FetchFailure; internal fun isLocalLiteral(host: String?): Boolean }
+    fun displayName(url: URL): String?; fun failureOf(e: IOException): FetchFailure; fun isLocalHost(host: String?): Boolean; fun isLocalAddress(a: InetAddress): Boolean
+    internal fun isLocalLiteral(host: String?): Boolean; internal fun isLocalName(host: String?): Boolean }
 object WordlistImport { fun message(result: ImportResult): String; fun message(result: UrlImportResult): String; fun failure(f: FetchFailure): String }
 ```
-- Rules (spec 5.3, D16), exactly: `validate` trims; prepends `https://` when the text has no `scheme://` (a `name:` prefix followed by a non-digit with no `@` is a scheme, so `javascript:` is refused and `example.com:8080` is not); accepts `http` and `https` only; requires a host; refuses user info with `ERR_URL_USER`; refuses whitespace and control characters; caps at `MAX_URL_CHARS`; drops the fragment. `redirect` follows when `hops < MAX_REDIRECTS`, the `Location` resolves against `from` to an `http` or `https` URL with a host and no user info, the hop is not https to http, and the target is not a loopback, link-local, RFC1918 (or IPv6 loopback, link-local or unique-local) literal unless the original host was itself such a literal; a missing or unusable `Location` is `Invalid` (the fetcher reports the server's status). `contentType` accepts `text/*` except `text/html`, `application/octet-stream`, and a missing or blank header. `looksBinary` is a NUL in the first `BINARY_SNIFF_BYTES`.
+- Rules (spec 5.3, D16), exactly: `validate` trims; prepends `https://` when the text has no `scheme://` (a `name:` prefix followed by a non-digit with no `@` is a scheme, so `javascript:` is refused and `example.com:8080` is not); accepts `http` and `https` only; requires a host; refuses user info with `ERR_URL_USER`; refuses whitespace and control characters; caps at `MAX_URL_CHARS`; drops the fragment. `redirect` follows when `hops < MAX_REDIRECTS`, the `Location` resolves against `from` to an `http` or `https` URL with a host and no user info, the hop is not https to http, and the target is not local unless the original host was itself local by the same test, where local is a loopback, link-local or RFC1918 IPv4 literal, an IPv6 loopback, link-local or unique-local literal, or a local name: `localhost`, `*.localhost`, `*.local`, `*.lan`, `*.home.arpa`, or a single label such as `router` (plan review G4; Task 9 also refuses a followed name that resolves to a local address); a missing or unusable `Location` is `Invalid` (the fetcher reports the server's status). `contentType` accepts `text/*` except `text/html`, `application/octet-stream`, and a missing or blank header. `looksBinary` is a NUL in the first `BINARY_SNIFF_BYTES`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2607,6 +2646,7 @@ import com.northwalessolutions.netprobe.ui.wordlists.WordlistCopy
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.IOException
+import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.UnknownHostException
@@ -2654,10 +2694,14 @@ class UrlImportRulesTest {
     @Test fun `a public host never bounces the phone into a local address`() {
         val p = url("http://example.com/a")
         for (target in listOf("http://192.168.1.1/", "http://10.0.0.5/", "http://127.0.0.1/", "http://169.254.1.1/", "http://172.16.0.9/",
-                "http://[::1]/", "http://[fe80::1]/", "http://[fd00::1]/", "http://[::ffff:10.0.0.5]/"))
+                "http://[::1]/", "http://[fe80::1]/", "http://[fd00::1]/", "http://[::ffff:10.0.0.5]/",
+                "http://localhost:8080/", "http://foo.localhost/", "http://router/", "http://nas.local/", "http://router.lan/", "http://box.home.arpa/"))
             assertEquals(target, RedirectDecision.LocalTarget, UrlImportRules.redirect(p, p, target, 0))
         val lan = url("http://10.0.3.5/a")
         assertEquals("http://10.0.3.6/b", follow(UrlImportRules.redirect(lan, lan, "http://10.0.3.6/b", 0)))   // started local: allowed
+        val named = url("http://nas.local/a")
+        assertEquals("http://nas.local/b", follow(UrlImportRules.redirect(named, named, "http://nas.local/b", 0)))   // a local name typed by the Director: allowed
+        assertEquals("http://cdn.example.net/x", follow(UrlImportRules.redirect(p, p, "http://cdn.example.net/x", 0)))  // a public name: followed, resolved by the fetcher
         assertEquals("http://example.com/next", follow(UrlImportRules.redirect(p, p, "/next", 0)))           // relative
     }
     @Test fun `a missing or unusable location, another scheme or credentials are invalid`() {
@@ -2683,6 +2727,12 @@ class UrlImportRulesTest {
         assertEquals("common.txt", UrlImportRules.displayName(url("https://raw.githubusercontent.com/a/b/master/common.txt")))
         assertEquals("example.com", UrlImportRules.displayName(url("https://example.com/")))
         assertEquals("example.com", UrlImportRules.displayName(url("https://example.com")))
+    }
+    @Test fun `resolved addresses in the LAN or on the phone are local and public ones are not`() {   // plan review G4; literals only, no lookup
+        for (a in listOf("10.0.0.5", "192.168.1.1", "172.16.0.9", "127.0.0.1", "169.254.1.1", "0.0.0.0", "::1", "fd00::1", "fe80::1"))
+            assertTrue(a, UrlImportRules.isLocalAddress(InetAddress.getByName(a)))
+        for (a in listOf("93.184.216.34", "2606:4700::1111")) assertFalse(a, UrlImportRules.isLocalAddress(InetAddress.getByName(a)))
+        assertTrue(UrlImportRules.isLocalHost("Router.LAN.")); assertFalse(UrlImportRules.isLocalHost("raw.githubusercontent.com"))
     }
     @Test fun `failures map by exception type`() {
         assertEquals(FetchFailure.UnknownHost, UrlImportRules.failureOf(UnknownHostException("x")))
@@ -2807,6 +2857,8 @@ object UrlImportRules {
     private val SCHEME = Regex("^[A-Za-z][A-Za-z0-9+.-]*:")
     private val LOOPBACK = SubnetMath.of(Ipv4.parse("127.0.0.0")!!, 8)
     private val LINK_LOCAL = SubnetMath.of(Ipv4.parse("169.254.0.0")!!, 16)
+    private const val LOCALHOST = "localhost"
+    private val LOCAL_SUFFIXES = listOf(".localhost", ".local", ".lan", ".home.arpa")
 
     fun validate(text: String): UrlCheck {
         val t = text.trim()
@@ -2841,7 +2893,7 @@ object UrlImportRules {
         if (scheme != HTTP && scheme != HTTPS) return RedirectDecision.Invalid
         if (target.host.isNullOrEmpty() || target.userInfo != null) return RedirectDecision.Invalid   // no credentials, ever
         if (from.protocol.equals(HTTPS, ignoreCase = true) && scheme == HTTP) return RedirectDecision.Insecure
-        if (isLocalLiteral(target.host) && !isLocalLiteral(original.host)) return RedirectDecision.LocalTarget
+        if (isLocalHost(target.host) && !isLocalHost(original.host)) return RedirectDecision.LocalTarget   // by literal or by name (plan review G4)
         return RedirectDecision.Follow(if (target.ref == null) target else URL(target.toString().substringBefore('#')))
     }
 
@@ -2881,34 +2933,30 @@ object UrlImportRules {
         return a.isLoopbackAddress || a.isLinkLocalAddress || (a.address[0].toInt() and ULA_MASK) == ULA_PREFIX
     }
     private fun isLocalV4(a: Inet4Address): Boolean = LOOPBACK.contains(a) || LINK_LOCAL.contains(a) || Rfc1918.contains(a)
+
+    /** Local by IP literal or by name (plan review G4). */
+    fun isLocalHost(host: String?): Boolean = isLocalLiteral(host) || isLocalName(host)
+
+    /** localhost, *.localhost, *.local (mDNS), *.lan, *.home.arpa and single-label names: never a public file host. Literals are isLocalLiteral's. */
+    internal fun isLocalName(host: String?): Boolean {
+        val h = host?.trim()?.trimEnd('.')?.lowercase()?.takeIf { it.isNotEmpty() } ?: return false
+        if (h.startsWith("[") || ':' in h || Ipv4.parse(h) != null) return false
+        return h == LOCALHOST || '.' !in h || LOCAL_SUFFIXES.any { h.endsWith(it) }
+    }
+
+    /** What a followed hop's name may not resolve to (plan review G4): loopback, link-local, RFC1918, IPv6 unique-local, or the any address. */
+    fun isLocalAddress(a: InetAddress): Boolean = when (a) {
+        is Inet4Address -> isLocalV4(a) || a.isAnyLocalAddress
+        else -> a.isLoopbackAddress || a.isLinkLocalAddress || a.isAnyLocalAddress || (a.address[0].toInt() and ULA_MASK) == ULA_PREFIX
+    }
 }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistCopy.kt` (whole file):
+`app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistCopy.kt` (targeted edits, plan review G1: this 3B file may have changed in the 3B QA, and these edits fail loudly if it has):
+1. Add `import java.util.Locale` after the `package` line (with a blank line on each side).
+2. Replace `    const val IMPORT = "Import wordlist"` with `    const val IMPORT = "Import file"`.
+3. After `    const val SETTINGS_ROW = "Wordlists"` insert:
 ```kotlin
-package com.northwalessolutions.netprobe.ui.wordlists
-
-import java.util.Locale
-
-/** Every Wordlists screen, import and Settings string (3B spec 9, 3C spec 7.2). Templates live in ToolCopyTableTest. */
-object WordlistCopy {
-    const val BACK = "Back"
-    const val TITLE = "Wordlists"
-    const val IMPORT = "Import file"
-    const val IMPORTING = "Importing"
-    const val BUILT_IN = "Built in"
-    const val IMPORTED = "Imported"
-    const val DELETE = "Delete"
-    const val CANCEL = "Cancel"
-    const val NO_IMPORTED = "No imported wordlists yet"
-    const val TOO_LARGE = "That file is too large (limit 10 MB)"
-    const val TOO_MANY = "That file has more than 200000 entries"
-    const val EMPTY_FILE = "That file has no entries"
-    const val UNREADABLE = "Could not read that file"
-    const val LOADING = "Loading wordlists"
-    const val DEFAULT_NAME = "Imported list"
-    const val SETTINGS_SECTION = "Tools"
-    const val SETTINGS_ROW = "Wordlists"
     // URL import (3C spec 5, 7.2)
     const val IMPORT_URL = "Import from URL"
     const val URL_LABEL = "URL"
@@ -2926,20 +2974,14 @@ object WordlistCopy {
     const val FETCH_LOCAL = "Could not fetch: redirected to a local address"
     const val FETCH_REDIRECTS = "Could not fetch: too many redirects"
     private const val BYTES_PER_MB = 1_048_576.0
-    private fun entries(n: Int) = if (n == 1) "1 entry" else "$n entries"
+```
+4. After the line `    fun settingsSupport(imported: Int?) = if (imported == null) "3 built in" else "3 built in, $imported imported"` insert:
+```kotlin
     /** One decimal place in MB of 1,048,576 bytes, always a full stop (spec 7.2). */
     private fun mb(bytes: Long) = String.format(Locale.ROOT, "%.1f", bytes / BYTES_PER_MB)
-    fun entriesBuiltIn(n: Int) = "${entries(n)}, built in"
-    fun entriesImported(n: Int, date: String) = "${entries(n)}, imported $date"
-    fun recoveredName(n: Int) = "Recovered list $n"
-    fun deletePrompt(name: String) = "Delete $name?"
-    fun deleteDescription(name: String) = "Delete $name"
-    fun imported(name: String, n: Int, skipped: Int) = "Imported $name, ${entries(n)}${if (skipped > 0) " ($skipped skipped)" else ""}"
-    fun settingsSupport(imported: Int?) = if (imported == null) "3 built in" else "3 built in, $imported imported"
     fun fetching(read: Long, total: Long?) = if (total == null) "Fetching ${mb(read)} MB" else "Fetching ${mb(read)} of ${mb(total)} MB"
     fun fetchStatus(code: Int) = "Could not fetch: the server answered $code"
     fun fetchNotText(type: String?) = if (type == null) "Could not fetch: not a text file" else "Could not fetch: not a text file ($type)"
-}
 ```
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreen.kt`: add imports `import com.northwalessolutions.netprobe.wordlists.FetchFailure` and `import com.northwalessolutions.netprobe.wordlists.UrlImportResult`, and replace `object WordlistImport` with:
@@ -3010,7 +3052,8 @@ The stronger model implements and reviews this task. It is the app's only intern
 - Consumes: `UrlImportRules`, `RedirectDecision`, `FetchFailure`, `UrlImportResult` (Task 8), `WordlistStore.import`, `WordlistStore.delete`, `WordlistStore.MAX_IMPORT_BYTES`, `ImportResult` (3B), `CancellableIo.closing` (3B), `HttpClient.USER_AGENT` (3B).
 - Produces:
 ```kotlin
-class UrlWordlistFetcher(open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
+class UrlWordlistFetcher(open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+                         resolve: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() }) {
     suspend fun fetch(url: URL, store: WordlistStore, onProgress: (Long, Long?) -> Unit = { _, _ -> }): UrlImportResult
     companion object { const val URL_CONNECT_TIMEOUT_MS = 10_000; const val URL_READ_TIMEOUT_MS = 15_000; const val PROGRESS_STEP_BYTES = 65_536L } }
 internal class CountingStream(inner: InputStream, total: Long?, onProgress: (Long, Long?) -> Unit) : FilterInputStream
@@ -3018,7 +3061,7 @@ internal class CountingStream(inner: InputStream, total: Long?, onProgress: (Lon
 - The fetch, exactly as spec 5.3 steps 1 to 7, on `Dispatchers.IO`:
   1. Every connection: `instanceFollowRedirects = false`, `useCaches = false`, the two timeouts, `User-Agent: NetProbe/0.1`, `Accept: text/plain, */*;q=0.5`; nothing else is set. No `Authorization`, no `Cookie`.
   2. The status read runs in `CancellableIo.closing(Closeable { conn.disconnect() })`; an `IOException` there is `failureOf(e)` unless the coroutine was cancelled, in which case it re-throws as a cancellation.
-  3. 301, 302, 303, 307, 308 go through `UrlImportRules.redirect`; each followed hop opens a fresh connection with the same settings; any other status but 200 is `Status(code)`.
+  3. 301, 302, 303, 307, 308 go through `UrlImportRules.redirect`; when the typed URL's host is not local, a followed hop's name is resolved first and any local address (`isLocalAddress`) is `LocalTarget`, before the hop is requested (plan review G4); each followed hop opens a fresh connection with the same settings; any other status but 200 is `Status(code)`.
   4. `contentType` false is `NotText(media type)`; `Content-Length` above 10 MB is `Stored(TooLarge)` with no body byte read.
   5. The body: `onProgress(0, total)`, then a counting stream (progress at most every `PROGRESS_STEP_BYTES`), buffered, the first 8 KB sniffed for a NUL (`NotText(null)`), then `WordlistStore.import(displayName(finalUrl), stream)`, which enforces 10 MB while reading (after any transparent gzip), 200,000 entries, empty lists and names.
   6. Cancel: a watcher disconnects the connection the moment the job is cancelled, so a blocked read fails at once. The body step runs `NonCancellable`, so the store never sees a cancellation mid-commit: its read fails (`Unreadable`, nothing written) or, if it had just finished, the stored list is deleted again before the fetch reports the cancellation. The job then ends with `CancellationException`.
@@ -3111,6 +3154,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.net.CookieHandler
+import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.URL
@@ -3186,6 +3230,21 @@ class UrlWordlistFetcherTest {
         assertEquals("named from the final URL", "list", (ok.result as ImportResult.Imported).meta.name)
         assertEquals(UrlImportResult.Failed(FetchFailure.TooManyRedirects), fetch(s, srv.url("/a1")))
         assertEquals("the fourth hop's target is never requested", 1, srv.requests.count { it.path == "/final/list.txt" })
+    }
+    @Test fun `a hop whose public name resolves into the LAN is refused before it is requested`() = runBlocking {   // plan review G4
+        val srv = serve { req ->
+            when (req.path) {
+                "/start" -> LoopbackHttpServer.redirect(302, "http://evil.test/x")
+                "/start2" -> LoopbackHttpServer.redirect(302, "http://cdn.test/list.txt")
+                else -> LoopbackHttpServer.ok("text/plain", "one\n".toByteArray())
+            }
+        }
+        // Every URL is opened on the loopback server; only the names differ. No real lookup: the resolver is a table of literals.
+        val fetcher = UrlWordlistFetcher(open = { u -> URL("http", "127.0.0.1", srv.port, u.file).openConnection() as HttpURLConnection },
+            resolve = { host -> listOf(InetAddress.getByAddress(host, if (host == "evil.test") byteArrayOf(10, 0, 0, 5) else byteArrayOf(93, 184, 216, 34))) })
+        assertEquals(UrlImportResult.Failed(FetchFailure.LocalTarget), fetcher.fetch(URL("http://public.test/start"), store()))
+        assertFalse("the LAN target is never requested", srv.requests.any { it.path == "/x" })
+        assertTrue("a public name is followed", fetcher.fetch(URL("http://public.test/start2"), store()) is UrlImportResult.Stored)
     }
     @Test fun `a redirect without a location is the server's status`() = runBlocking {
         val srv = serve { LoopbackHttpServer.redirect(302, null) }
@@ -3365,7 +3424,9 @@ import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
+import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -3374,7 +3435,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * by the platform, so every hop passes UrlImportRules.redirect. No Authorization and no Cookie are ever sent; the app installs no
  * CookieHandler. The only internet code in the app.
  */
-class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }) {
+class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+                         private val resolve: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() }) {
 
     suspend fun fetch(url: URL, store: WordlistStore, onProgress: (Long, Long?) -> Unit = { _, _ -> }): UrlImportResult =
         withContext(Dispatchers.IO) { follow(url, store, onProgress) }
@@ -3389,10 +3451,24 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
         var hops = 0
         while (true) {
             when (val step = step(original, current, hops, store, onProgress)) {
-                is Step.Redirect -> { current = step.url; hops++ }
+                is Step.Redirect -> {
+                    // A followed hop to a name that resolves into the LAN or onto the phone is refused before it is requested (plan review G4).
+                    if (!UrlImportRules.isLocalHost(original.host) && resolvesLocal(step.url.host)) return UrlImportResult.Failed(FetchFailure.LocalTarget)
+                    current = step.url; hops++
+                }
                 is Step.Done -> return step.result
             }
         }
+    }
+
+    /**
+     * True when [host] resolves to a local address. An unknown name is left to the connect, which reports it. The platform resolves
+     * again at connect time; a server that changes its DNS answer between the two lookups is the accepted residual (a blind GET with
+     * no credentials).
+     */
+    private fun resolvesLocal(host: String): Boolean {
+        val addresses = try { resolve(host) } catch (_: UnknownHostException) { return false }
+        return addresses.any(UrlImportRules::isLocalAddress)
     }
 
     private suspend fun step(original: URL, current: URL, hops: Int, store: WordlistStore, onProgress: (Long, Long?) -> Unit): Step {
@@ -3558,7 +3634,7 @@ git commit -m "Phase 3C-1: wordlist URL fetch with redirect rules, streaming cap
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/UrlImportController.kt`
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreen.kt` (whole file), `AppContainer.kt` (`urlImport`)
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreen.kt` (targeted edits), `AppContainer.kt` (`urlImport`)
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/wordlists/UrlImportControllerTest.kt`; compile only (run in Task 11): additions to `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreenTest.kt`
 
 **Interfaces:**
@@ -3587,7 +3663,11 @@ import com.northwalessolutions.netprobe.wordlists.FetchFailure
 import com.northwalessolutions.netprobe.wordlists.UrlImportResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -3625,6 +3705,21 @@ class UrlImportControllerTest {
         c.cancel(); runCurrent()
         assertEquals(UrlImportState.Idle, c.state.value); assertEquals("Import cancelled", c.message.value)
         assertTrue("a new import may start", c.start(url))
+    }
+    @Test fun `a cancelled import still finishing blocks a new start and keeps the state`() = runTest {   // plan review G10
+        val gate = CompletableDeferred<Unit>()
+        val c = UrlImportController(backgroundScope, { _, _ ->
+            withContext(NonCancellable) { gate.await() }      // the store's commit, which Cancel never interrupts
+            currentCoroutineContext().ensureActive()
+            UrlImportResult.Cancelled
+        }, AppMessages())
+        c.attach(); c.start(url); runCurrent()
+        c.cancel(); runCurrent()
+        assertFalse("the first import has not completed", c.start(url))
+        assertTrue("both pills stay disabled", c.state.value is UrlImportState.Fetching)
+        gate.complete(Unit); runCurrent()
+        assertEquals(UrlImportState.Idle, c.state.value); assertEquals("Import cancelled", c.message.value)
+        assertTrue("now a new import may start", c.start(url))
     }
     @Test fun `an unexpected failure is logged and reported as a connection failure`() = runTest {
         val logged = mutableListOf<Throwable>()
@@ -3697,6 +3792,7 @@ import com.northwalessolutions.netprobe.wordlists.FetchFailure
 import com.northwalessolutions.netprobe.wordlists.UrlImportResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -3727,141 +3823,68 @@ class UrlImportController(private val scope: CoroutineScope, private val fetch: 
     fun detach() { attached.decrementAndGet() }
     fun consumeMessage() { _message.value = null }
 
-    /** False while another URL import runs. */
+    /**
+     * False while another URL import has not completed. isCompleted, not isActive: a cancelled job may still be inside its
+     * NonCancellable store step, and a second import must not overlap it (plan review G10).
+     */
     @Synchronized
     fun start(url: URL): Boolean {
-        if (job?.isActive == true) return false
+        if (job?.isCompleted == false) return false
         _state.value = UrlImportState.Fetching(0, null)
-        job = scope.launch {
+        // LAZY, so [job] names this import before any of its code can call finish.
+        val next = scope.launch(start = CoroutineStart.LAZY) {
+            val me = coroutineContext[Job]
             val result = try {
                 fetch(url) { read, total -> _state.value = UrlImportState.Fetching(read, total) }
             } catch (ce: CancellationException) {
-                finish(WordlistCopy.CANCELLED)
+                finish(me, WordlistCopy.CANCELLED)
                 throw ce
             } catch (e: Exception) {
                 log(e)
                 UrlImportResult.Failed(FetchFailure.Connection)
             }
-            finish(WordlistImport.message(result))
+            finish(me, WordlistImport.message(result))
         }
+        job = next
+        next.start()
         return true
     }
 
     fun cancel() { job?.cancel() }
 
-    private fun finish(text: String) {
-        _state.value = UrlImportState.Idle
+    /** Only the current import ends the Fetching state; its message is delivered either way. */
+    private fun finish(owner: Job?, text: String) {
+        if (owner === job) _state.value = UrlImportState.Idle
         if (attached.get() > 0) _message.value = text else messages.post(text)
     }
 }
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreen.kt` (whole file; `WordlistImport` is Task 8's, the list rows and the delete dialog are unchanged):
+`app/src/main/java/com/northwalessolutions/netprobe/ui/wordlists/WordlistsScreen.kt` (targeted edits, plan review G1: this 3B file may have changed in the 3B QA, and these edits fail loudly if it has; `WordlistImport` is Task 8's, the list rows and the delete dialog are untouched):
+1. Imports: after `import androidx.compose.foundation.lazy.items` add `import androidx.compose.foundation.shape.RoundedCornerShape` and `import androidx.compose.foundation.text.KeyboardOptions`; after `import androidx.compose.runtime.*` add `import androidx.compose.runtime.saveable.rememberSaveable`; after `import androidx.compose.ui.semantics.semantics` add `import androidx.compose.ui.text.input.KeyboardType`; after `import com.northwalessolutions.netprobe.ui.home.RelativeTime` add `import com.northwalessolutions.netprobe.ui.npFieldColors`; after `import com.northwalessolutions.netprobe.wordlists.ImportResult` add `import com.northwalessolutions.netprobe.wordlists.UrlCheck` and `import com.northwalessolutions.netprobe.wordlists.UrlImportRules`; after `import kotlinx.coroutines.withContext` add `import java.net.URL`.
+2. Replace
 ```kotlin
-package com.northwalessolutions.netprobe.ui.wordlists
-
-import android.content.Context
-import android.net.Uri
-import android.provider.OpenableColumns
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.northwalessolutions.netprobe.AppContainer
-import com.northwalessolutions.netprobe.ui.BackRow
-import com.northwalessolutions.netprobe.ui.home.RelativeTime
-import com.northwalessolutions.netprobe.ui.npFieldColors
-import com.northwalessolutions.netprobe.ui.theme.*
-import com.northwalessolutions.netprobe.ui.tools.ActionPill
-import com.northwalessolutions.netprobe.wordlists.FetchFailure
-import com.northwalessolutions.netprobe.wordlists.ImportResult
-import com.northwalessolutions.netprobe.wordlists.UrlCheck
-import com.northwalessolutions.netprobe.wordlists.UrlImportResult
-import com.northwalessolutions.netprobe.wordlists.UrlImportRules
-import com.northwalessolutions.netprobe.wordlists.WordlistMeta
-import com.northwalessolutions.netprobe.wordlists.WordlistStore
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.URL
-
+data class WordlistsActions(val onBack: () -> Unit = {}, val onImport: () -> Unit = {}, val onDelete: (WordlistMeta) -> Unit = {})
+```
+with
+```kotlin
 data class WordlistsActions(val onBack: () -> Unit = {}, val onImport: () -> Unit = {}, val onDelete: (WordlistMeta) -> Unit = {},
                             val onImportUrl: (URL) -> Unit = {}, val onCancelUrl: () -> Unit = {})
-
-/** The snackbar text for an import (3B spec 9, 3C spec 5.3 and 7.2). */
-object WordlistImport {
-    fun message(result: ImportResult): String = when (result) {
-        is ImportResult.Imported -> WordlistCopy.imported(result.meta.name, result.meta.entries, result.skipped)
-        ImportResult.TooLarge -> WordlistCopy.TOO_LARGE
-        ImportResult.TooMany -> WordlistCopy.TOO_MANY
-        ImportResult.Empty -> WordlistCopy.EMPTY_FILE
-        ImportResult.Unreadable -> WordlistCopy.UNREADABLE
-    }
-    fun message(result: UrlImportResult): String = when (result) {
-        is UrlImportResult.Stored -> message(result.result)          // the store's own messages, reused as they are
-        is UrlImportResult.Failed -> failure(result.reason)
-        UrlImportResult.Cancelled -> WordlistCopy.CANCELLED
-    }
-    fun failure(f: FetchFailure): String = when (f) {
-        FetchFailure.UnknownHost -> WordlistCopy.FETCH_HOST
-        FetchFailure.NoAnswer -> WordlistCopy.FETCH_NO_ANSWER
-        FetchFailure.Tls -> WordlistCopy.FETCH_TLS
-        FetchFailure.Connection -> WordlistCopy.FETCH_CONNECTION
-        is FetchFailure.Status -> WordlistCopy.fetchStatus(f.code)
-        is FetchFailure.NotText -> WordlistCopy.fetchNotText(f.type)
-        FetchFailure.Insecure -> WordlistCopy.FETCH_INSECURE
-        FetchFailure.LocalTarget -> WordlistCopy.FETCH_LOCAL
-        FetchFailure.TooManyRedirects -> WordlistCopy.FETCH_REDIRECTS
-    }
-}
-
-private val SECTION_PAD = 10.dp
-private val ROW_VERTICAL = 8.dp
-private val ROW_END = 6.dp
-private val DELETE_PAD = 12.dp
+```
+3. After `private val DELETE_PAD = 12.dp` add:
+```kotlin
 private val PILL_ROW_PAD = 6.dp
 private val PILL_GAP = 8.dp
-private val NO_LISTS: StateFlow<List<WordlistMeta>> = MutableStateFlow(emptyList())
-private const val PICKER_MIME = "text/plain"
-
+```
+4. Replace the content's KDoc, signature and top bar, from
+```kotlin
 /**
- * The store, resolved off the main thread: its first access scans the built-in resources, so it never happens during composition.
- * Null until it is ready.
+ * The Wordlists screen (spec 8.6), stateless: a pinned top block (back row, title, the Import pill) and a scrolling list of built-in
+ * then imported lists. Delete confirms in an AlertDialog. The Import pill is never inside the list.
  */
-@Composable
-internal fun rememberWordlistStore(container: AppContainer): State<WordlistStore?> =
-    produceState<WordlistStore?>(null, container) { value = withContext(Dispatchers.IO) { container.wordlistStore } }
-
-/** The wordlist metadata, empty until the store has loaded. */
-@Composable
-internal fun rememberWordlists(container: AppContainer): State<List<WordlistMeta>> {
-    val store by rememberWordlistStore(container)
-    return (store?.lists ?: NO_LISTS).collectAsStateWithLifecycle()
-}
-
+```
+through the line `    }) { pad ->`, with:
+```kotlin
 /**
  * The Wordlists screen (3B spec 8.6, 3C spec 5.1), stateless: a pinned top block (back row, title, the two import pills and the URL
  * Cancel) and a scrolling list of built-in then imported lists. Delete confirms in an AlertDialog. No import control is inside the list.
@@ -3880,6 +3903,7 @@ fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: Str
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)) {
             BackRow(WordlistCopy.BACK, actions.onBack)
             Text(WordlistCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.padding(horizontal = Dimens.gutter))
+            // A FlowRow, so Cancel wraps to a second line at font scale 1.3 instead of clipping; still pinned.
             FlowRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter, vertical = PILL_ROW_PAD), horizontalArrangement = Arrangement.spacedBy(PILL_GAP)) {
                 ActionPill(if (importing) WordlistCopy.IMPORTING else WordlistCopy.IMPORT, enabled = !busy, onClick = actions.onImport, tag = "importWordlist")
                 ActionPill(fetching?.let { WordlistCopy.fetching(it.read, it.total) } ?: WordlistCopy.IMPORT_URL, enabled = !busy, onClick = { askUrl = true }, tag = "importUrl")
@@ -3889,27 +3913,15 @@ fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: Str
             }
         }
     }) { pad ->
-        val builtIn = lists.filter { it.builtIn }; val imported = lists.filter { !it.builtIn }
-        LazyColumn(Modifier.padding(pad).fillMaxSize().testTag("wordlistList")) {
-            if (loading) item(key = "loading") {
-                Text(WordlistCopy.LOADING, style = NetProbeText.secondary, color = NetProbeColors.textMuted, modifier = Modifier.padding(horizontal = Dimens.gutter, vertical = SECTION_PAD).testTag("wordlistsLoading"))
-            } else {
-            item(key = "builtInHeader") { SectionHeader(WordlistCopy.BUILT_IN) }
-            items(builtIn, key = { it.id }) { WordlistRow(it.name, WordlistCopy.entriesBuiltIn(it.entries), null) }
-            item(key = "importedHeader") { SectionHeader(WordlistCopy.IMPORTED) }
-            }
-            if (!loading && imported.isEmpty()) item(key = "empty") {
-                Text(WordlistCopy.NO_IMPORTED, style = NetProbeText.secondary, color = NetProbeColors.textMuted, modifier = Modifier.padding(horizontal = Dimens.gutter, vertical = SECTION_PAD))
-            }
-            items(imported, key = { it.id }) { meta ->
-                WordlistRow(meta.name, WordlistCopy.entriesImported(meta.entries, formatDate(meta.importedAt ?: 0L)), meta.id) { confirm = meta }
-            }
-        }
+```
+5. Replace the end of the delete dialog and of `WordlistsContent`
+```kotlin
+            dismissButton = { TextButton({ confirm = null }) { Text(WordlistCopy.CANCEL, color = NetProbeColors.textSecondary) } })
     }
-    confirm?.let { meta ->
-        AlertDialog(onDismissRequest = { confirm = null }, containerColor = NetProbeColors.surface,
-            title = { Text(WordlistCopy.deletePrompt(meta.name), style = NetProbeText.rowName, color = NetProbeColors.text) },
-            confirmButton = { TextButton({ confirm = null; actions.onDelete(meta) }, modifier = Modifier.testTag("confirmDelete")) { Text(WordlistCopy.DELETE, color = NetProbeColors.signal) } },
+}
+```
+with
+```kotlin
             dismissButton = { TextButton({ confirm = null }) { Text(WordlistCopy.CANCEL, color = NetProbeColors.textSecondary) } })
     }
     if (askUrl) UrlDialog(onDismiss = { askUrl = false }) { url -> askUrl = false; actions.onImportUrl(url) }
@@ -3938,77 +3950,28 @@ private fun UrlDialog(onDismiss: () -> Unit, onImport: (URL) -> Unit) {
         },
         dismissButton = { TextButton(onDismiss) { Text(WordlistCopy.CANCEL, color = NetProbeColors.textSecondary) } })
 }
-
-@Composable
-private fun SectionHeader(title: String) {
-    Column(Modifier.fillMaxWidth().padding(top = SECTION_PAD)) {
-        HorizontalDivider(thickness = 1.dp, color = NetProbeColors.surface)
-        Text(title, style = NetProbeText.groupHeader, color = NetProbeColors.textMuted,
-            modifier = Modifier.padding(start = Dimens.gutter, top = SECTION_PAD, bottom = 4.dp).semantics { heading() })
-    }
-}
-
-@Composable
-private fun WordlistRow(name: String, line: String, deleteId: String?, onDelete: () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).padding(start = Dimens.gutter, end = ROW_END, top = ROW_VERTICAL, bottom = ROW_VERTICAL),
-        verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(name, style = NetProbeText.secondary, color = NetProbeColors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(line, style = NetProbeText.data, color = NetProbeColors.textMuted)
-        }
-        if (deleteId != null) {
-            Box(Modifier.heightIn(min = Dimens.touch).widthIn(min = Dimens.touch).clickable(role = Role.Button, onClick = onDelete)
-                .semantics { contentDescription = WordlistCopy.deleteDescription(name) }.testTag("delete:$deleteId"), contentAlignment = Alignment.Center) {
-                Text(WordlistCopy.DELETE, style = NetProbeText.action, color = NetProbeColors.signal, modifier = Modifier.padding(horizontal = DELETE_PAD))
-            }
-        }
-    }
-}
-
-/**
- * Route "wordlists": SAF import (ACTION_OPEN_DOCUMENT, text/plain, no permission) and URL import, both on appScope so leaving the
- * screen never cancels them; delete through the store.
- */
-@Composable
-fun WordlistsScreen(container: AppContainer, onBack: () -> Unit) {
-    val store by rememberWordlistStore(container)
-    val lists by rememberWordlists(container)
-    val scope = rememberCoroutineScope(); val ctx = LocalContext.current
-    var importing by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    val visible = remember { java.util.concurrent.atomic.AtomicBoolean(true) }
-    DisposableEffect(Unit) { onDispose { visible.set(false) } }
+```
+6. In `WordlistsScreen`, after `    DisposableEffect(Unit) { onDispose { visible.set(false) } }` insert:
+```kotlin
     val urlImport = container.urlImport
     val urlState by urlImport.state.collectAsStateWithLifecycle()
     val urlMessage by urlImport.message.collectAsStateWithLifecycle()
     // While attached, the URL result goes to this screen's snackbar; once the screen is gone it goes to AppMessages (Home notice line).
     DisposableEffect(urlImport) { urlImport.attach(); onDispose { urlImport.detach() } }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val target = store
-        if (uri == null || target == null) return@rememberLauncherForActivityResult
-        importing = true
-        // On the app scope: leaving the screen mid-import must not cancel it; the result then goes to AppMessages (Home notice line).
-        container.appScope.launch {
-            val result = try {
-                withContext(Dispatchers.IO) {
-                    ctx.contentResolver.openInputStream(uri)?.use { target.import(displayName(ctx, uri), it) } ?: ImportResult.Unreadable
-                }
-            } catch (ce: CancellationException) { throw ce } catch (_: Exception) { ImportResult.Unreadable }
-            val text = WordlistImport.message(result)
-            if (visible.get()) { importing = false; message = text } else container.appMessages.post(text)
-        }
-    }
+```
+and replace the final call
+```kotlin
+    WordlistsContent(lists, importing, message, { message = null },
+        WordlistsActions(onBack = onBack, onImport = { launcher.launch(arrayOf(PICKER_MIME)) },
+            onDelete = { meta -> scope.launch { store?.delete(meta.id) } }), loading = store == null)
+```
+with
+```kotlin
     WordlistsContent(lists, importing, message ?: urlMessage, { if (message != null) message = null else urlImport.consumeMessage() },
         WordlistsActions(onBack = onBack, onImport = { launcher.launch(arrayOf(PICKER_MIME)) },
             onDelete = { meta -> scope.launch { store?.delete(meta.id) } },
             onImportUrl = { url -> urlImport.start(url) }, onCancelUrl = { urlImport.cancel() }),
         loading = store == null, urlState = urlState)
-}
-
-private fun displayName(ctx: Context, uri: Uri): String? =
-    try {
-        ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-    } catch (_: Exception) { null }
 ```
 
 `app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`: add imports `import com.northwalessolutions.netprobe.ui.wordlists.UrlImportController` and `import com.northwalessolutions.netprobe.wordlists.UrlWordlistFetcher`, and after the `wordlistStore` lazy add:
@@ -4033,7 +3996,7 @@ Expected: `BUILD SUCCESSFUL` twice.
 
 ```bash
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
-git diff --stat "$(cat docs/superpowers/plans/phase3c-base.txt)" -- app/schemas app/src/main/java/com/northwalessolutions/netprobe/data/Entities.kt \
+git diff --stat "$(head -n1 docs/superpowers/plans/phase3c-base.txt)" -- app/schemas app/src/main/java/com/northwalessolutions/netprobe/data/Entities.kt \
   app/src/main/java/com/northwalessolutions/netprobe/data/Migrations.kt app/src/main/java/com/northwalessolutions/netprobe/data/NetProbeDb.kt
 grep -rn "$(printf '\342\200\224')" app/src docs/superpowers/plans/2026-10-21-netprobe-phase3c-1.md || echo "no em-dashes"   # printf makes the U+2014 bytes, so this line holds none
 ```
@@ -4055,15 +4018,25 @@ git commit -m "Phase 3C-1: Wordlists import from URL with progress and cancel"
 
 This task is NOT executed during the plan. Tasks 1 to 10 end with JVM tests green and every instrumented test compiled; no task has device evidence. When the Pixel 7 Pro (`28221FDH300AP9`) is on the Director's LAN, Bugsy runs every step below in order and records each result, pass or fail, in `docs/qa/phase3c-1-on-device.md`. Per the standing QA rule, Bugsy builds, installs on the device and smoke tests every core flow; a green suite is not a substitute, and code review is not QA. If any step fails, stop, record it, and tell the Director; never fix anything on his live data.
 
-3C-1 has no schema change, so there is no migration test and no `DirectorCopyMigration` test (spec 8.3 item 0). The data-safety preamble still runs in full: the Settings reset check changes the Director's real tuning, and the manual-range and Aggressive scan checks change his preferences, so both are backed up first and restored at the end.
+3C-1 has no schema change, so there is no migration test and no `DirectorCopyMigration` test (spec 8.3 item 0). The data-safety preamble still runs in full, and it covers every store the QA writes to (plan review G2): the database, the preferences (the Settings reset, the manual ranges and the toggles change them) and the Director's imported wordlists under `files/wordlists/` (item 10 imports into and deletes from that store). All three are backed up with MD5 first and put back at the end.
 
-No 3C-1 check deletes data: Forget this network and Remove device are not exercised. Any check that turns out to need a destructive step runs only on a disposable network (the phone's own hotspot from a second device, or a guest SSID the Director does not keep), never on the home network, and is recorded with the network used.
+No 3C-1 check deletes the Director's data: Forget this network and Remove device are not exercised, and item 10 deletes only the lists it imported itself. Any check that turns out to need a destructive step runs only on a disposable network (the phone's own hotspot from a second device, or a guest SSID the Director does not keep), never on the home network, and is recorded with the network used.
 
-Item 6 fetches files from the internet onto the phone. Bugsy proposes the exact URLs in the QA record first (a GitHub `/raw/` link to a small public wordlist, the same file's `raw.githubusercontent.com` link, a 404 on the same host, a `.zip`, an HTML page, and a large list for Cancel) and fetches nothing until the Director approves them; the plain HTTP case uses a file the Director serves on his LAN, also with his approval. No agent fetches anything on the PC.
+**Approval gate for the downloads (plan review G11).** Item 10 makes the app fetch third-party files onto the phone, which counts as an agent download. These are the exact URLs; the Director approves this list with the plan, and Bugsy fetches nothing else. No agent fetches anything on the PC, and the paths were not checked by fetching them: if one answers 404 at run time, record it and ask the Director for a replacement.
+
+| # | URL | Expected |
+|---|---|---|
+| U1 | `https://github.com/danielmiessler/SecLists/raw/master/Discovery/Web-Content/common.txt` | one cross-host redirect to `raw.githubusercontent.com`, then "Imported common, N entries" (SecLists' small web-content list, about 4,750 entries) |
+| U2 | `https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt` | no redirect; "Imported common (2), N entries" |
+| U3 | `https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/no-such-list.txt` | "Could not fetch: the server answered 404" |
+| U4 | `https://github.com/danielmiessler/SecLists/archive/refs/heads/master.zip` | one redirect to `codeload.github.com`, then "Could not fetch: not a text file (application/zip)"; the type is refused from the headers, so no body byte is read |
+| U5 | `https://github.com/danielmiessler/SecLists` | "Could not fetch: not a text file (text/html)" |
+| U6 | `https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/directory-list-2.3-medium.txt` | about 2 MB, about 220,000 lines: tap Cancel during "Fetching": "Import cancelled", no new list. If it completes before Cancel can be tapped it reports "That file has more than 200000 entries" (the entry cap, itself a pass); record Cancel as "NOT RUN, covered by `UrlWordlistFetcherDeviceTest.cancelDuringASlowBodyReturnsWithinOneSecondAndLeavesNoFile`" |
+| U7 | a small text file the Director serves on his own LAN over plain HTTP (he supplies the URL) | "Imported ..." |
 
 **Files:**
 - Create (at execution time): `docs/qa/phase3c-1-on-device.md`, `docs/qa/shots/phase3c-1/*.png`, `docs/qa/shots/phase3c-1/*.mp4`
-- Backups and the rollback APK go OUTSIDE the repository (they hold the Director's network inventory): `K:/claude/netprobe_db_backup/phase3c-1/`
+- Backups and the rollback APK go OUTSIDE the repository (they hold the Director's network inventory and his lists): `K:/claude/netprobe_db_backup/phase3c-1/`
 
 Common setup (as the 3B plan's Task 20):
 ```bash
@@ -4071,8 +4044,8 @@ ADB="/c/Users/blastdav/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 DEV=28221FDH300AP9
 PKG=com.northwalessolutions.netprobe
 BK=/k/claude/netprobe_db_backup/phase3c-1
-BASE=$(cat docs/superpowers/plans/phase3c-base.txt)    # the 3B head the phone runs (Task 1 step 0)
-mkdir -p "$BK" docs/qa/shots/phase3c-1
+BASE=$(head -n1 docs/superpowers/plans/phase3c-base.txt)    # the 3B head the phone runs (Task 1 step 0, line 1)
+mkdir -p "$BK/wordlists" docs/qa/shots/phase3c-1
 # Binary-safe copy into the app's data directory, then an MD5 check (3B final review I3). Never stream a file with
 # `adb shell ... < file`: on this PC it truncates binary stdin (3A device QA finding F5: 4220 of 323584 bytes written).
 # `exec-in` is the form 3A's QA proved byte for byte. Usage: put <local file> <path under the app's data directory>
@@ -4083,7 +4056,7 @@ put() {
   got=$("$ADB" -s $DEV exec-out run-as $PKG md5sum "$2" | cut -d' ' -f1)
   if [ "$want" = "$got" ]; then echo "MD5 OK $2 $got"; else echo "MD5 MISMATCH $2: PC $want, phone $got"; return 1; fi
 }
-# MD5 of a backup on the PC and of its source on the phone; they must match.
+# MD5 of the backup "$BK/<name>.bak" on the PC and of its source on the phone; they must match. Usage: same <name> <path on the phone>
 same() {
   local pc phone
   pc=$(md5sum < "$BK/$1.bak" | cut -d' ' -f1)
@@ -4092,10 +4065,11 @@ same() {
 }
 run() { ./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
   -Pandroid.testInstrumentationRunnerArguments.class="$1" --console=plain 2>&1 | tail -12; }
+log() { "$ADB" -s $DEV logcat -d -s NetProbeExt | tail -5; "$ADB" -s $DEV logcat -c; }
 ```
 If `leaveApksInstalledAfterRun` is rejected by this AGP version, stop and ask the Director before running any instrumented test without it.
 
-- [ ] **Step 0: Back up the database and the preferences, before anything is installed or any instrumented test runs**
+- [ ] **Step 0: Back up the database, the preferences and the wordlists, before anything is installed or any instrumented test runs (plan review G2, G5)**
 
 Force-stop the app so nothing writes during the copy:
 ```bash
@@ -4105,9 +4079,18 @@ for f in netprobe.db netprobe.db-wal netprobe.db-shm; do
 done
 "$ADB" -s $DEV exec-out run-as $PKG cat shared_prefs/netprobe.xml > "$BK/netprobe.xml.bak"
 same netprobe.db databases/netprobe.db && same netprobe.db-wal databases/netprobe.db-wal && same netprobe.xml shared_prefs/netprobe.xml
-ls -l "$BK"
+# The Director's imported wordlists: index.json and every <uuid>.txt (an empty listing means he has none)
+"$ADB" -s $DEV exec-out run-as $PKG ls files/wordlists | tr -d '\r' > "$BK/wordlists-list.txt"
+cat "$BK/wordlists-list.txt"
+for f in $(cat "$BK/wordlists-list.txt"); do
+  "$ADB" -s $DEV exec-out run-as $PKG cat files/wordlists/$f > "$BK/wordlists/$f.bak"
+  same "wordlists/$f" "files/wordlists/$f" || break
+done
+# Manual ranges saved before 3C-1 now sweep on every scan, with Aggressive scan off too (D8)
+grep -o 'extManual\.[0-9]*">[^<]*' "$BK/netprobe.xml.bak" || echo "no manual ranges saved"
+ls -l "$BK" "$BK/wordlists"
 ```
-Expected: four files; `netprobe.db.bak` and `netprobe.xml.bak` non-empty; `MD5 OK` three times (record each MD5 in the QA record). If either is empty or any MD5 mismatches, stop.
+Expected: `netprobe.db.bak` and `netprobe.xml.bak` non-empty; `MD5 OK` for the database, its `-wal`, the preferences and every wordlist file (record each MD5 in the QA record). If any is empty where it should not be, or any MD5 mismatches, stop. If the grep prints any `extManual.` key, record each key and its ranges, and tell the Director before Step 2 that those ranges will now be swept, bound to Wi-Fi, on every scan of that network; empty that network's list in Settings before item 2 (Step 6 puts it back).
 
 - [ ] **Step 1: Build the rollback APK from the recorded base, offline (no downloads)**
 
@@ -4131,55 +4114,70 @@ Expected: `BUILD SUCCESSFUL` and the APK in `$BK`. If Gradle reports anything mi
 "$ADB" -s $DEV exec-out screencap -p > docs/qa/shots/phase3c-1/q00-after-install.png
 "$ADB" -s $DEV logcat -d | grep -E "AndroidRuntime|FATAL|IllegalStateException: Migration|Room" | tail -10
 ```
-Check on screen: every marked host shows its mark; open two marked hosts and confirm notes, custom names, open ports and tool history. Open Settings and confirm the Director's tuning is what it was (no reset has happened). Record the JVM test count from the gate.
+Check on screen: every marked host shows its mark; open two marked hosts and confirm notes, custom names, open ports and tool history. Open Settings and confirm the Director's tuning is what it was (no reset has happened). Open Wordlists and confirm his imported lists, with their names and entry counts. Record the JVM test count from the gate.
 
-- [ ] **Step 3: The instrumented suite** (Compose tests use fake state; the device fetch test writes only under `cacheDir`):
+- [ ] **Step 3: The instrumented suite** (the new Compose tests use fake state; the device fetch test writes only under `cacheDir`):
 ```bash
 for c in ui.settings.SettingsContentTest ui.settings.ExtendedSectionTest ui.settings.SettingsRowsTest ui.settings.SettingsToolsTest \
          ui.wordlists.WordlistsScreenTest wordlists.UrlWordlistFetcherDeviceTest \
          ui.home.HomeContentTest ui.home.RadarBlockTest ui.home.RadarStateTest ui.NavTransitionTest ui.ControlsMotionTest ui.ListMotionTest; do
   run com.northwalessolutions.netprobe.$c
 done
-run com.northwalessolutions.netprobe.ui.HomeScreenTest   # last: it launches the real activity, which opens netprobe.db
-"$ADB" -s $DEV shell run-as $PKG ls -l databases/ shared_prefs/
+run com.northwalessolutions.netprobe.ui.HomeScreenTest   # last: the existing 3A test launches the real activity, which opens netprobe.db
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/ shared_prefs/ files/wordlists/
 same netprobe.xml shared_prefs/netprobe.xml
 ```
-Expected: every class passes; record each count. `UrlWordlistFetcherDeviceTest` reports 5 tests: its gzip case is the proof of assumption A4 and its cancel case of "Cancel ends the fetch within a second" on Android's `HttpURLConnection`. The prefs MD5 still matches the backup (no instrumented test touched the Director's preferences). A class name that does not exist on the branch is recorded and skipped, not invented. Timing tests that fail on a real frame clock are recorded with their message, not retried into a pass.
+Expected: every class passes; record each count. `UrlWordlistFetcherDeviceTest` reports 5 tests: its gzip case is the proof of assumption A4 and its cancel case of "Cancel ends the fetch within a second" on Android's `HttpURLConnection`. The prefs MD5 still matches the backup and `files/wordlists/` lists the same files (no instrumented test touched the Director's data). A class name that does not exist on the branch is recorded and skipped, not invented. Timing tests that fail on a real frame clock are recorded with their message, not retried into a pass.
 
-- [ ] **Step 4: Behaviour checks, each recorded pass or fail** (spec 8.3 items 1 to 7):
+- [ ] **Step 4: Behaviour checks, each recorded pass or fail** (spec 8.3 items 1 to 7, corrected to the Phase 2 record `docs/qa/phase2-extended-discovery-on-device.md` (plan review G3), plus Phase 2 checks 2, 5 and 6 re-run (G9)):
 1. Settings: change two sliders (Sweep concurrency to 256, Port scan timeout to 1,000 ms) and two switches (SNMP off, Aggressive scan on). Each slider shows "Default 128" / "Default 600 ms"; tap one marker and confirm it restores that slider alone. Overflow, Reset to defaults: every value returns, the NVD key stays, the snackbar says "Settings reset to defaults" with Undo; tap Undo: every value returns to before the reset. Reset again and let the snackbar lapse. Force-stop and relaunch: the values persist. Then restore the Director's preferences:
 ```bash
 "$ADB" -s $DEV shell am force-stop $PKG
 put "$BK/netprobe.xml.bak" shared_prefs/netprobe.xml
 "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 ```
-   Expected: `MD5 OK`; open Settings and confirm his tuning is back. Screenshot `s01-settings-markers` (markers shown) and `s01b-reset-snackbar`.
-2. Aggressive scan off, manual list empty: a scan matches the Phase 2 check 1 baseline (time and host count within the Phase 2 record's range; no range summary, no extra notice).
-3. Aggressive scan off, add manual `10.0.4.0/24`: the editor is enabled with "Swept first on every scan, with Aggressive scan on or off"; a scan sweeps it after the home subnet, bound to Wi-Fi (the Hue bridge at `10.0.4.20` is found); the summary reads "1 other range checked" and expands to "10.0.4.0/24  manual  swept, N found"; no evidence range is swept and no "probing ... for gateways" line appears. Then Aggressive scan on, Smart discovery off: the manual range is swept first, evidence ranges may follow, and no "probing ... for gateways" line appears.
-4. Smart discovery on (manual list emptied again): `10.0.4.0/24` is found as in Phase 2 check 3, now listed as "smart discovery"; the `NetProbeExt` log line `gateway probe: ... connect attempts` is within 10 percent of 1,054 (the spec's 1,056 counts the 2 TEST-NET probes, which the log does not); no outward walk runs unless a seed answers. Record which seeds answered, and if any did, the walked units and hits.
+   Expected: `MD5 OK`; open Settings and confirm his tuning is back. Screenshot `s01-settings-markers` (markers shown) and `s01b-reset-snackbar`. (If Step 0 found saved manual ranges, empty that list again now.)
+2. Phase 2 check 1: Aggressive scan off, manual list empty: a scan matches the Phase 2 check 1 baseline (time and host count within the Phase 2 record's range; no range summary, no extra notice).
+3. Phase 2 check 2, re-run as written (G9): Aggressive scan on, Smart discovery off, no manual ranges. `10.0.4.0/24` is found by evidence (the Hue Bridge's mDNS) and swept; the summary line reads "10.0.4.0/24  evidence  swept, N found"; its hosts appear under their own group (the Phase 2 record: 4 hosts, about 29 s). Record time and host count.
+4. Manual range with Aggressive scan off: add manual `10.0.4.0/24`; the editor is enabled with "Swept first on every scan, with Aggressive scan on or off". Turn Aggressive scan off and scan: the range is swept after the home subnet, bound to Wi-Fi (the Hue Bridge at `10.0.4.20` is found); the summary reads "1 other range checked" and expands to "10.0.4.0/24  manual  swept, N found"; no evidence range is swept and no "probing ... for gateways" line appears. Then Aggressive scan on, Smart discovery off: the manual range is swept first, evidence ranges may follow, and no "probing ... for gateways" line appears. Empty the manual list again.
+5. Smart discovery on at Maximum extra ranges 4 (the default), no manual ranges (G3). Expected, from the Phase 2 record: seeds 192.168.1.1 and 192.168.2.1 answer (both outside 10.0.0.0/16); the ranges are `10.0.4.0/24` "evidence" (the Hue Bridge's mDNS outranks probe hits) and `10.0.0.0/24`, `10.0.2.0/24` and `192.168.1.0/24` "smart discovery"; `192.168.2.0/24` is listed "not swept, scan limit reached" with the notice "1 more range found, raise Maximum extra ranges in Settings". No outward walk runs, because the cap is already full (B = 4 minus those 4 accepted ranges = 0). The `NetProbeExt` line `gateway probe: D of T units, N connect attempts` has N within 10 percent of 1,054 (the Phase 2 run logged 1,041; the spec's 1,056 adds the 2 TEST-NET probes, which the log does not count) and D equal to T. Record the hit list and `T` as the first-pass unit count.
 ```bash
-"$ADB" -s $DEV logcat -d -s NetProbeExt | tail -5
+log
 ```
-5. Start a scan with Aggressive scan off and manual ranges empty, and during it turn Aggressive scan on and then Reset to defaults: the running scan's grouping, progress and range list do not change; the next scan uses the new values. Record a 15 s screen recording `r1-midrun-toggle`.
-6. URL import, with the Director's approved URLs only (see the preamble): the GitHub `/raw/` link over HTTPS (redirects to `raw.githubusercontent.com`) imports; the `raw.githubusercontent.com` link imports; the plain HTTP URL on the LAN imports; the 404 says "Could not fetch: the server answered 404"; the `.zip` says "Could not fetch: not a text file (application/zip)" or "Could not fetch: not a text file"; the HTML page says "Could not fetch: not a text file (text/html)"; Cancel mid-fetch of the large list ends within a second with "Import cancelled" and no new list. Leave the screen during a fetch: the result reaches the Home notice line. Screenshots `s06-two-pills`, `s06b-url-dialog`, `s06c-fetching`. Afterwards delete every list this item imported (they are QA artefacts; record their names).
-7. A wide mask cannot be produced on the Director's LAN: record "NOT RUN, covered by 8.1 item 3 (`HomeRangeTest`) and `DiscoveryEngineExtendedTest.aggressive on sweeps the limit block of a wide mask`" unless a client or guest network with a mask wider than /22 is available; if one is, run a scan with Aggressive scan off ("Scanned your /24 only") and on at limit /22 ("Scanned your /22 only") and record both.
+6. Smart discovery on at Maximum extra ranges 8, so the walk gets a budget (G3): B = 8 minus the 5 ranges above = 3. Expected: the walk runs: the logged `T` is larger than item 5's `T` (the difference is the number of walked units), and the attempts above item 5's N are at most 256. Every direction ends after two misses, at distance 16 or at the octet boundary. Both answering seeds are in 192.168.0.0/16, so their directions leapfrog: one skips the units the other has just taken (neither a miss nor a hit, plan review G14), and a trailing direction may carry on past the leading one for two more misses. That is expected, still bounded, and not a defect. `192.168.2.0/24` is now swept; any walked hit shows as a "smart discovery" range, at most 3 more ranges in all, with the cap notice if more answered. Record the walked-unit count, the extra attempts, the hits and the time; this run is the walk's on-hardware check of the bound connect (the walked probes go through the same Wi-Fi-bound `Probe.connect`). Put Maximum extra ranges back to 4.
+```bash
+log
+```
+7. Phase 2 check 5, re-run with the new wording (G9): Maximum extra ranges 1, Smart discovery on: only the first range (`10.0.4.0/24`, evidence) is swept; the rest are "not swept, scan limit reached"; the notice reads "N more ranges found, raise Maximum extra ranges in Settings". Put the cap back to 4.
+8. Phase 2 check 6, re-run (G9): with Aggressive scan on, press Stop while an extra range is being swept: the scan ends within about a second, partial hosts stay, the notice names "Stopped at <range>", and no NetProbe lock is held:
+```bash
+"$ADB" -s $DEV shell dumpsys wifi | grep -i -A2 "netprobe" || echo "no NetProbe lock held"
+```
+9. Mid-run toggle (spec 8.3 item 5): start a scan with Aggressive scan off and no manual ranges, and during it turn Aggressive scan on and then Reset to defaults: the running scan's grouping, progress and range list do not change. When it ends, Home follows the live settings at once (plan review G7): the grouping and the hero subtitle reflect the new values without another scan, and the next scan uses them. Record a 15 s screen recording `r1-midrun-toggle`.
+10. URL import, with the approved URLs U1 to U7 only (the table above), each result as the table says. Leave the screen during U1's fetch: the result reaches the Home notice line. Screenshots `s10-two-pills`, `s10b-url-dialog`, `s10c-fetching`. Afterwards delete every list this item imported (record their names) and check the Director's lists are exactly as backed up:
+```bash
+"$ADB" -s $DEV exec-out run-as $PKG ls files/wordlists | tr -d '\r' | diff "$BK/wordlists-list.txt" - && echo "same files"
+same wordlists/index.json files/wordlists/index.json
+```
+    Expected: "same files" and `MD5 OK` (when he had no imports, the list and `index.json` match the empty state Step 0 recorded).
+11. A wide mask cannot be produced on the Director's LAN: record "NOT RUN, covered by 8.1 item 3 (`HomeRangeTest`) and `DiscoveryEngineExtendedTest.aggressive on sweeps the limit block of a wide mask`" unless a client or guest network with a mask wider than /22 is available; if one is, run a scan with Aggressive scan off ("Scanned your /24 only. Turn on Aggressive scan in Settings.") and on at limit /22 ("Scanned your /22 only. Widen in Settings.") and record both.
 
 - [ ] **Step 5: Screens for the Director at font scale 1.0 and 1.3** (`"$ADB" -s $DEV shell settings put system font_scale 1.3`, restored to 1.0 afterwards):
-`s10-settings-top` (overflow menu open), `s11-aggressive-section` (directly under Discovery, Smart discovery greyed with Aggressive off), `s12-wordlists-fetching` (both pills and Cancel pinned; at 1.3 Cancel may wrap to the next line, which is the FlowRow's job, never clipped). The Director rules on the markers (G19: keep, or caption only).
+`s20-settings-top` (overflow menu open), `s21-aggressive-section` (directly under Discovery, Smart discovery greyed with Aggressive scan off), `s22-large-networks` (the reworded caption, plan review G6), `s23-wordlists-fetching` (both pills and Cancel pinned; at 1.3 Cancel may wrap to the next line, which is the FlowRow's job, never clipped). The Director rules on the markers (G19 of the spec review: keep, or caption only) and on the Large networks caption wording.
 
 - [ ] **Step 6: Restore the Director's preferences and confirm the data is untouched**
 
-Items 3 to 6 changed his manual ranges and toggles; put his preferences back exactly:
+Items 4 to 9 changed his toggles, cap and manual ranges; put his preferences back exactly:
 ```bash
 "$ADB" -s $DEV shell am force-stop $PKG
 put "$BK/netprobe.xml.bak" shared_prefs/netprobe.xml
 "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 ```
-Expected: `MD5 OK`. Open Settings: his tuning, his manual ranges (if he had any) and Aggressive scan as he left it. Open Home: every mark is there.
+Expected: `MD5 OK`. Open Settings: his tuning, his manual ranges (if Step 0 found any) and Aggressive scan as he left it. Open Home: every mark is there. Open Wordlists: his lists, names and counts as in Step 2.
 
 - [ ] **Step 7: Record and hand over**
 
-Write `docs/qa/phase3c-1-on-device.md`: the date, build commit, every step's result, the MD5s, the test counts per class, the screenshot and recording names, the attempt count and walk observations from item 4, the URLs used in item 6 and the Director's approval, and for the Director to rule on: the spec section 10 assumptions A1, A4 and A5 and open items 1, 2 and 5, the markers (G19), and every deviation and gap in the Plan Self-Review Notes below. Then commit only the QA record and its shots:
+Write `docs/qa/phase3c-1-on-device.md`: the date, build commit, every step's result, the MD5s, the test counts per class, the screenshot and recording names, the Smart discovery observations from items 5 and 6 (hits, walked units, attempts, times), the URLs used in item 10 and the Director's approval, any `extManual.` keys Step 0 found, and for the Director to rule on: the spec section 10 assumptions A1, A4 and A5 and open items 1, 2 and 5, the markers, the Large networks caption, and every deviation and gap in the Plan Self-Review Notes below (notably that spec 2.5's last sentence, "No seed answers on the Director's LAN", is wrong). Then commit only the QA record and its shots:
 ```bash
 git add docs/qa/phase3c-1-on-device.md docs/qa/shots/phase3c-1
 git status --short    # nothing else may be staged
@@ -4187,61 +4185,89 @@ git commit -m "Phase 3C-1 on-device QA record"
 ```
 The backups and the rollback APK in `K:/claude/netprobe_db_backup/phase3c-1/` are never committed.
 
-**Restore procedure (only on the Director's say-so).** This puts the 3B build and the step 0 backup back together. Every file is replaced with the app stopped, because a stale `-wal` or `-shm` next to a restored database can corrupt it:
+**Restore procedure (only on the Director's say-so).** This puts the 3B build and the Step 0 backup back together: database, preferences and wordlists. Every file is replaced with the app stopped, because a stale `-wal` or `-shm` next to a restored database can corrupt it:
 ```bash
 "$ADB" -s $DEV shell am force-stop $PKG
 "$ADB" -s $DEV install -r -d "$BK/netprobe-3b-${BASE:0:7}.apk"   # -r keeps the data directory; -d allows going back to the older build
 for f in netprobe.db netprobe.db-wal netprobe.db-shm; do "$ADB" -s $DEV shell run-as $PKG rm -f databases/$f; done
 for f in netprobe.db netprobe.db-wal; do put "$BK/$f.bak" databases/$f || break; done
 put "$BK/netprobe.xml.bak" shared_prefs/netprobe.xml
-"$ADB" -s $DEV shell run-as $PKG ls -l databases/ shared_prefs/
+"$ADB" -s $DEV shell run-as $PKG mkdir -p files/wordlists
+for f in $(cat "$BK/wordlists-list.txt"); do put "$BK/wordlists/$f.bak" files/wordlists/$f || break; done
+"$ADB" -s $DEV shell run-as $PKG ls -l databases/ shared_prefs/ files/wordlists/
 ```
-Check: `MD5 OK` for all three files before going on. On any `MD5 MISMATCH`, do not start the app: run the same `put` again for that file, and if it still mismatches, stop and tell the Director (the backup on the PC is intact). Only then:
+Check: `MD5 OK` for every file before going on. A `.txt` on the phone that is not in `wordlists-list.txt` is a QA leftover: `WordlistStore.load()` deletes any `.txt` the restored `index.json` does not name. On any `MD5 MISMATCH`, do not start the app: run the same `put` again for that file, and if it still mismatches, stop and tell the Director (the backup on the PC is intact). Only then:
 ```bash
 "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 ```
-Expected: the app opens on the 3B build with every mark, note and setting. Record what was restored and why.
+Expected: the app opens on the 3B build with every mark, note, setting and imported wordlist. Record what was restored and why.
 
 ---
 ## Plan Self-Review Notes
 
 **Spec coverage, by section:**
 - Section 1 (settings reset): 1.1 defaults and the covered set, Task 1 (`SettingsDefaults`, `AppSettings.load` from `SettingsState()`); 1.2 overflow, one-edit reset, Undo with the newer key kept, Task 1 (`SettingsReset`) and Task 2 (`SettingsMenu`, the snackbar); 1.3 markers, Task 1 (`DefaultMarker`), Task 2 (sliders), Task 3 (the stepper). 14 covered values (D3); `listenMulticast` is 3C-2's.
-- Section 2 (Aggressive scan): 2.1 `HomeRange` and both large-network notices, Tasks 4 and 6, every listed caller moved (engine Task 5, `ScanBinding` and its three callers Task 4, grouping and hero Task 6, the editor's own-network check Task 4); 2.2 `RunSettings` snapshot, Tasks 4 and 6 (radar, Quick scan all, Device-screen scans and tool runs each read once); 2.3 section order, copy and enabling, Tasks 2 and 3; 2.4 manual ranges always swept, binding, summaries and notices, Tasks 4, 5 and 6; 2.5 the first pass restated and the outward walk, Task 7.
-- Section 5 (URL import): 5.1 UI, Task 10; 5.2 `HttpURLConnection`, Task 9; 5.3 rules, Task 8, and the fetch steps 1 to 7, Task 9.
+- Section 2 (Aggressive scan): 2.1 `HomeRange` and both large-network notices, Tasks 3, 4 and 6, every listed caller moved (engine Task 5, `ScanBinding` and its three callers Task 4, grouping and hero Task 6, the editor's own-network check Task 4); 2.2 `RunSettings` snapshot, Tasks 4 and 6 (radar, Quick scan all, Device-screen scans and tool runs each read once; Home uses the snapshot only while the run is live, plan review G7); 2.3 section order, copy and enabling, Tasks 2 and 3; 2.4 manual ranges always swept, binding, summaries and notices, Tasks 4, 5 and 6; 2.5 the first pass restated and the outward walk, Task 7.
+- Section 5 (URL import): 5.1 UI, Task 10; 5.2 `HttpURLConnection`, Task 9; 5.3 rules, Task 8, and the fetch steps 1 to 7, Task 9 (plus the local-name and resolution refusal, plan review G4).
 - Section 6: the 3C-1 plan split and order are followed; nothing from 3C-2 (schema 4, manual tools, the listener) is in this plan.
-- Section 7.2: every 3C-1 row is a Copy member with a template (Tasks 1, 3, 8); the removed names are asserted absent by reflection (`MENU_AGGRESSIVE`, `aggressiveDescription`, `MANUAL_ON`, `MANUAL_OFF`, `FETCH_OTHER_SITE`; `ManualCopy.ERR_PRIVATE` belongs to 3C-2, whose `ManualCopy` does not exist yet).
-- Section 8: 8.1 items 1 to 13 are Tasks 1 (1, 2), 4 (3, 5), 6 (4, 8), 5 (6, 7), 7 (9, 10), 8 (11, 13), 9 (12), 3 and 8 (13); 8.2 items 4, 7 and 8 are compiled in Tasks 2, 3, 9 and 10 and run in Task 11; 8.3 is Task 11.
+- Section 7.2: every 3C-1 row is a Copy member with a template (Tasks 1, 3, 8), plus the reworded Large networks caption and notices (G6); the removed names are asserted absent by reflection (`MENU_AGGRESSIVE`, `aggressiveDescription`, `MANUAL_ON`, `MANUAL_OFF`, `FETCH_OTHER_SITE`; `ManualCopy.ERR_PRIVATE` belongs to 3C-2, whose `ManualCopy` does not exist yet).
+- Section 8: 8.1 items 1 to 13 are Tasks 1 (1, 2), 4 (3, 5), 6 (4, 8), 5 (6, 7), 7 (9, 10), 8 (11, 13), 9 (12) and 3 (13); 8.2 items 4, 7 and 8 are compiled in Tasks 2, 3, 9 and 10 and run in Task 11; 8.3 is Task 11, corrected to the Phase 2 record (G3) and extended with Phase 2 checks 2, 5 and 6 (G9).
 
-**Placeholder scan:** `grep -nE "TBD|TODO|similar to Task|implementer (completes|finishes|adds)|stub|placeholder|<[a-z ]+>"` over this file. Remaining hits are the Compose `placeholder =` parameter of the URL field and the editor, test-tag patterns written with angle brackets in prose (`default:<label>`), and the generic `<pattern>` in the standard JVM command; none is unwritten code. Every task gives its failing tests, complete production code or an exact replacement block, exact names, exact commands, the gate and an explicit staging list.
+**Placeholder scan (re-run after the plan review):** `grep -nE "TBD|TODO|similar to Task|implementer (completes|finishes|adds)|stub|placeholder|<[a-z ]+>"` over this file. Remaining hits are the Compose `placeholder =` parameter of the URL field and the editor, test-tag patterns and log fields written with angle brackets in prose (`default:<label>`, "Stopped at <range>", `<path>`), and the generic `<pattern>` in the standard JVM command; none is unwritten code. Every task gives its failing tests, complete production code or an exact replacement block, exact names, exact commands, the gate and an explicit staging list.
 
-**Type consistency:**
-- `RunSettings` (Task 4) is consumed by `ScanBinding.forRun` (4), `ExtendedOptionsOf` (5), `RunMemory.settings`, `baseState` and `discoverOn` (6), `DetailViewModel.scanHost` and the tool runner's `bind` (4). Every local holding one is named `runSettings`.
+**Type consistency (re-checked against the code at 290850e, where `app/src` is identical to 33a6970):**
+- `RunSettings` (Task 4) is consumed by `ScanBinding.forRun` (4), `ExtendedOptionsOf` (5), `RunMemory.settings`, `RunSettings.forDisplay`, `baseState` and `discoverOn` (6), `DetailViewModel.scanHost` and the tool runner's `bind` (4). Every local holding one is named `runSettings`.
 - `ExtendedOptions.evidence` and `DiscoveryOptions.aggressive` (Task 5) are appended last with defaults, so Phase 2's positional `ExtendedOptions(enabled, cap, probe, manual, known)` and 3A's positional `DiscoveryOptions(...)` in `discoverOn` compile.
-- `GatewayProbe.run` returns `GatewayProbeResult` from Task 7 (it returned `List<Subnet>`); its only callers are the production lambda (rewritten) and `GatewayProbeTest` (one `.hits` added). The engine's `gatewayProbe` gains a fourth parameter; its only fake is `DiscoveryEngineExtendedTest.engine` (rewritten).
-- `RunEnd.of(..., aggressive = extEnabled)` and `ExtendedNotices.of(status, aggressive = true)` default to the Phase 2 meaning, so `RunEndTest`, `ExtendedNoticesTest` and `CopyTableTest` call sites compile unchanged.
+- `GatewayProbe.run` returns `GatewayProbeResult` and takes `walk: WalkPlan` from Task 7 (it returned `List<Subnet>`); its only callers are the production lambda (rewritten) and `GatewayProbeTest` (one `.hits` added). The engine's `gatewayProbe` gains a fourth parameter, the `WalkPlan`; its only fake is `DiscoveryEngineExtendedTest.engine` (rewritten). `CandidateRanges.walkBudget` and `sweptUnits` feed the plan.
+- `RunEnd.of(..., aggressive = extEnabled)` and `ExtendedNotices.of(status, aggressive = true)` default to the Phase 2 meaning, so `RunEndTest`, `ExtendedNoticesTest` and `CopyTableTest` call sites compile unchanged; Task 3 updates the one `RunEndTest` string the reworded `largeNetwork` changes.
 - `WordlistsActions` and `WordlistsContent` gain defaulted parameters only; 3B's `WordlistsScreenTest.show` compiles unchanged. `StepSlider` gains `default` after `enabled`, so `SettingsRowsTest`'s positional call compiles.
-- `UrlImportResult`, `FetchFailure` and `UrlCheck` (Task 8) are consumed by Task 9 (fetcher), Task 10 (controller, dialog) and `WordlistImport` (Task 8, carried into Task 10's file unchanged).
-- Checked against the code on `phase3b` at 33a6970: `ScanBinding.run(ip, env, maxPrefix, extEnabled, ...)` has exactly three callers (`HomeViewModel.quickScanHost`, `DetailViewModel.scanHost`, `AppContainer.toolRunner`); `SubnetMath.sweepRange` is called for the local range by `DiscoveryEngine.discover`, `ScanBinding`, `RowRules.row` and `SettingsScreen`; the hero reads `SubnetMath.of(env)` in `HomeContent`; `ExtendedNote` is matched exhaustively only in `ExtendedNotices.of`.
+- `UrlImportResult`, `FetchFailure` and `UrlCheck` (Task 8) are consumed by Task 9 (fetcher, with its injectable `resolve`), Task 10 (controller, dialog) and `WordlistImport` (Task 8). `UrlImportRules.isLocalHost` and `isLocalAddress` (Task 8) are used by the redirect rule and the fetcher.
+- Checked against the code: `ScanBinding.run(ip, env, maxPrefix, extEnabled, ...)` has exactly three callers (`HomeViewModel.quickScanHost`, `DetailViewModel.scanHost`, `AppContainer.toolRunner`); `SubnetMath.sweepRange` is called for the local range by `DiscoveryEngine.discover`, `ScanBinding`, `RowRules.row` and `SettingsScreen`; the hero reads `SubnetMath.of(env)` in `HomeContent`; `ExtendedNote` is matched exhaustively only in `ExtendedNotices.of`; `HomeCopy.largeNetwork`'s only test pins are `RunEndTest` line 22 and `CopyTableTest` (the `HomeContentTest` fixture string is display-only and unaffected).
 
 **Deviations, gaps and contradictions for the Director (the spec wins unless noted):**
-1. **The task brief says "one redirect hop rule"; the spec (D16, 5.3) says up to 3 redirects to any host.** The plan follows the spec: `MAX_REDIRECTS = 3`, with the per-hop rules (no downgrade, no public-to-local). If he meant a single hop, it is one constant.
-2. **A 3xx with no usable `Location` has no outcome in spec 5.3.** The plan adds `RedirectDecision.Invalid`, reported as "Could not fetch: the server answered 302". The plan also refuses a redirect whose URL carries user info, and treats IPv6 loopback, link-local and unique-local literals (and IPv4-mapped forms) as local; the spec names only IPv4 ranges. Both serve "no credentials" and "never from a public host to a local IP literal".
-3. **Manual ranges with Aggressive scan off switch the neighbour table to Phase 2's `NeighbourRules`.** `ExtendedOptions.enabled` is true for them, and the engine keys the MVP neighbour loop on `!enabled`; the spec is silent. With no manual ranges the MVP loop is unchanged (Review Focus 1). The effect is that a MAC shared by many on-link IPs (proxy ARP) is not claimed, as with Aggressive scan on.
-4. **Spec 2.2 snapshot grouping vs Phase 2's "display-time grouping regroups at once".** Home groups with the last radar run's snapshot until the next scan or a network change, so a manual range added or a limit changed after a scan regroups only at the next scan. The plan follows 2.2.
-5. **The hero subtitle now names the home range (spec 2.1), not the mask.** On a wide mask with Aggressive scan off it reads "Tap to find what is on 172.20.9.0/24" where the MVP said "/16"; the network line keeps the mask.
-6. **The "Large networks" caption is now partly wrong and is not in the copy table.** "Bigger networks are cut down to your own /24 unless widened here." is false with Aggressive scan on (the limit-sized block is swept). The plan leaves it (the copy table does not list it, and existing lines are not restructured); a one-line rewording is the Director's call.
-7. **The walk's skip rule.** Spec 2.5 says a skipped unit is "skipped without counting as a miss" but not whether it resets the consecutive-miss count. The plan: neither a miss nor a hit, count unchanged (`GatewayWalkTest.two consecutive misses end a direction and an already probed unit is skipped without counting`).
-8. **"Aggressive scan: no extra ranges to sweep" with Aggressive scan off.** When every manual range overlaps the home range the engine still records `NO_EXTRA_RANGES`; `ExtendedNotices.of(aggressive = false)` drops it, as spec 2.4 requires.
-9. **The URL display name's host fallback loses its suffix.** `WordlistStore.cleanName` strips after the last dot, so a URL with no file segment names the list "example" for `example.com`. Left as the spec describes (5.3).
-10. **Cancel within a second is proved for the body, not the connect.** On the desktop JDK a `disconnect()` during a blocking connect may wait for `URL_CONNECT_TIMEOUT_MS`; Android's OkHttp-backed connection cancels the call. The JVM and device tests cancel during the body, which is what spec 8.2 item 7 asks.
-11. **Device QA item 6 fetches from the internet.** The standing "no downloads" rule covers agents; this check makes the app download third-party files to the phone, so Task 11 makes the Director approve the URLs first.
-12. **Device QA item 4's attempt figure.** The `NetProbeExt` log counts 1,054 attempts for the Director's network; the spec's 1,056 adds the 2 TEST-NET pre-check probes. The check uses 1,054 within 10 percent.
-13. **3C-1 starts only after the 3B device QA passes (spec section 6).** Task 1 Step 0 stops if `docs/qa/phase3b-on-device.md` is missing; only the controller can rule to start early.
+1. **The task brief says "one redirect hop rule"; the spec (D16, 5.3) says up to 3 redirects to any host.** The plan follows the spec: `MAX_REDIRECTS = 3`, with the per-hop rules. If he meant a single hop, it is one constant.
+2. **Redirect rules beyond spec 5.3's IP-literal wording.** A 3xx with no usable `Location` is reported as "the server answered 302"; a `Location` with user info is refused; IPv6 loopback, link-local and unique-local literals (and IPv4-mapped forms) count as local; and (plan review G4) so do local names (`localhost`, `*.localhost`, `*.local`, `*.lan`, `*.home.arpa`, single-label names) and any followed hop whose name resolves to a local address. All serve D16's "never from a public host to a local IP literal" and Review Focus 5. Residual: the platform resolves again at connect, so a server that changes its DNS answer between the two lookups is not caught (a blind GET with no credentials).
+3. **Manual ranges with Aggressive scan off switch the neighbour table to Phase 2's `NeighbourRules`.** The spec is silent; the switch is pinned by `DiscoveryEngineExtendedTest.aggressive off with a manual range uses the neighbour rules` (G18). With no manual ranges the MVP loop is unchanged.
+4. **Spec 2.2 snapshot grouping, read narrowly (controller ruling on plan review G7).** Home groups and names the hero from the run's snapshot only while the radar scan runs; afterwards the live settings apply at once, as Phase 2 had it. Spec 2.2 kept the snapshot until the next scan; the narrow reading meets D21 and fixes the stale hero.
+5. **The hero subtitle names the home range (spec 2.1), not the mask.** On a wide mask with Aggressive scan off it reads "Tap to find what is on 172.20.9.0/24" where the MVP said "/16"; the network line keeps the mask.
+6. **The Large networks caption and notices are reworded (plan review G6), proposed wording for the Director.** Caption: "Largest block of a big network to sweep. With Aggressive scan off, a network wider than this gets your /24 only. A /22 takes about 1 minute, a /20 about 4." Aggressive off on a mask wider than /20: "... Scanned your /24 only. Turn on Aggressive scan in Settings."; at the /20 limit the partial notice drops "Widen in Settings.". One constant each if he rewords.
+7. **The walk's skip rule.** Spec 2.5 says a skipped unit is "skipped without counting as a miss" but not whether it resets the count. The plan: neither a miss nor a hit, count unchanged. Two seeds in one /16 therefore leapfrog (plan review G14): bounded, stated in the Task 11 item 6 expectation.
+8. **"Aggressive scan: no extra ranges to sweep" with Aggressive scan off** is dropped by `ExtendedNotices.of(aggressive = false)`, as spec 2.4 requires.
+9. **The URL display name's host fallback loses its suffix** (`example.com` becomes "example"); left as the spec describes.
+10. **Cancel within a second is proved for the body, not the connect.** On the desktop JDK a `disconnect()` during a blocking connect may wait for `URL_CONNECT_TIMEOUT_MS`; Android's OkHttp-backed connection cancels the call.
+11. **Device QA item 10 fetches from the internet,** so the exact URLs are listed in Task 11 for the Director's approval with this plan.
+12. **Device QA item 5's attempt figure** uses 1,054 within 10 percent (the spec's 1,056 adds the 2 TEST-NET probes; Phase 2 logged 1,041).
+13. **3C-1 starts only after the 3B device QA passes (spec section 6),** and only on files unchanged since 290850e (G1).
+14. **Spec 2.5's last sentence is wrong (plan review G3).** "No seed answers on the Director's LAN": the Phase 2 record shows 192.168.1.1 and 192.168.2.1 answering. At his default cap of 4 no walk runs (B = 0); Task 11 item 6 runs the walk at cap 8.
+15. **Deferred minors (plan review):** the progress line keeps naming the enclosing /16 during walk rounds (G13); the URL fetch has no overall deadline, only the 10 s connect and 15 s read timeouts, so a server dripping a byte every 14 s keeps "Fetching" up until Cancel (G15). Both are bounded by Cancel or the walk's limits; each is a one-constant change if he wants it.
 
 **Review Focus mapping:**
-1. Toggle-off regression: Task 4 `HomeRangeTest`, `ScanBindingTest.bindOutside false is unbound for any target`; Task 5 `ExtendedOptionsOfTest.aggressive off with no manual ranges is ExtendedOptions()`, `DiscoveryEngineExtendedTest.aggressive off with no manual ranges is the toggle off result` and Phase 2's `toggle off changes nothing`; device check Task 11 item 2.
-2. Manual range leak: Task 4 `ScanBindingTest.aggressive off with one manual range binds a target outside the home range`; Task 5 `DiscoveryEngineExtendedTest.aggressive off with one manual range sweeps only that range, bound, with no evidence and no probe`; device check item 3.
-3. Walk runaway: Task 7 `GatewayWalkTest` (13 tests) and `DiscoveryEngineExtendedTest.the walk budget is the cap less what the first pass already fills`; device check item 4.
-4. Mid-run change: Task 6 `RunSnapshotTest` (2); device check item 5.
-5. URL import safety: Task 8 `UrlImportRulesTest` (10); Task 9 `UrlWordlistFetcherTest` (9) and `UrlWordlistFetcherDeviceTest` (5), run in Task 11 step 3; Task 10 `UrlImportControllerTest` (4); device check item 6.
+1. Toggle-off regression: Task 4 `HomeRangeTest`, `ScanBindingTest.bindOutside false is unbound for any target`; Task 5 `ExtendedOptionsOfTest.aggressive off with no manual ranges is ExtendedOptions()`, `DiscoveryEngineExtendedTest.aggressive off with no manual ranges is the toggle off result` and Phase 2's `toggle off changes nothing`; device checks Task 11 items 2 and 3.
+2. Manual range leak: Task 4 `ScanBindingTest.aggressive off with one manual range binds a target outside the home range`; Task 5 `DiscoveryEngineExtendedTest.aggressive off with one manual range sweeps only that range, bound, with no evidence and no probe`; device check item 4.
+3. Walk runaway: Task 7 `GatewayWalkTest` (14 tests) and `DiscoveryEngineExtendedTest.the walk plan's budget is the cap less what is already accepted, and manual units are never walked`; device checks items 5 and 6.
+4. Mid-run change: Task 6 `RunSnapshotTest` (3); device check item 9.
+5. URL import safety: Task 8 `UrlImportRulesTest` (11); Task 9 `UrlWordlistFetcherTest` (10) and `UrlWordlistFetcherDeviceTest` (5), run in Task 11 step 3; Task 10 `UrlImportControllerTest` (5); device check item 10.
+
+## Gruff plan review response
+
+One line per finding of `docs/superpowers/plans/2026-10-21-phase3c-1-plan-gruff-review.md` (9125ab7). Applied unless marked otherwise.
+
+- G1 (BLOCKING) Applied, per the controller ruling. Task 1 Step 0 stops on any `app/src` change since 290850e and gives the controller the list; every remaining whole-file block (`Settings.kt`, `SettingsScreen.kt`, `ExtendedSection.kt`, `ScanBinding.kt`, `ExtendedNotices.kt`, `ScanBindingTest.kt`) carries its own `git diff --quiet 290850e` guard line; `phase3c-base.txt` records the plan base on line 2. The three riskiest blocks are now targeted edits: `WordlistCopy.kt` and `WordlistsScreen.kt` (3B surfaces) and `GatewayProbe.kt` (the largest).
+- G2 (BLOCKING) Applied. Task 11 Step 0 backs up `files/wordlists/` (the listing, `index.json` and every `.txt`, MD5 on both sides); item 10 compares the store against it after deleting the QA lists; the restore procedure puts every file back with `put`.
+- G3 (BLOCKING) Applied. Item 5 expects the Phase 2 record's result (10.0.4.0/24 evidence; 10.0.0, 10.0.2, 192.168.1 smart discovery; 192.168.2 capped; seeds 192.168.1.1 and 192.168.2.1 answering; no walk at cap 4); item 6 runs at cap 8 with B = 3 and states the expected walk; spec 2.5's false sentence is gap 14.
+- G4 Applied. Local names count as local in `UrlImportRules.redirect`, and the fetcher resolves each followed hop through an injectable `resolve` and refuses a local address; JVM cases for the names, the addresses and a public name that resolves to 10.0.0.5.
+- G5 Applied. Step 0 greps the prefs backup for `extManual.`, records any, tells the Director before Step 2 and empties the list for item 2; Step 6 restores it.
+- G6 Applied. `SettingsCopy.LARGE_NETWORKS_CAPTION` replaces the false caption with the cost stated; `largeNetwork` says "Turn on Aggressive scan in Settings." for a mask wider than /20; `largeNetworkPartial` drops "Widen in Settings." at /20; all pinned in `CopyTableTest` and `RunEndTest`. The wording goes to the Director (gap 6, Task 11 Step 5).
+- G7 Applied, per the controller ruling. `RunSettings.forDisplay` uses the snapshot only while the radar scan runs; a `RunSnapshotTest` case pins that a live change regroups and moves the hero once the run ends; the `HomeContent` comment is corrected.
+- G8 Applied. The walk stops when `walk.budget(all hits so far) <= 0`, the same `derive` that sweeps; the `walkHits` counter is gone; manual and evidence units go into the walk as `WalkPlan.skip` and are never probed; `GatewayWalkTest.manual and evidence units are never walked and a hit derive drops frees no slot` is Gruff's example.
+- G9 Applied. Task 11 items 3, 7 and 8 re-run Phase 2 checks 2, 5 (new `capDropped` text) and 6 (`dumpsys wifi`).
+- G10 Applied. `start` guards on `job?.isCompleted == false`; `finish` resets the state only for the current job (the job is created LAZY and assigned before it runs); `UrlImportControllerTest.a cancelled import still finishing blocks a new start and keeps the state`.
+- G11 Applied. Task 11 names U1 to U7 (SecLists `common.txt` via its `github.com/.../raw/` redirect and directly, a 404, the repository zip, the repository page, `directory-list-2.3-medium.txt` for Cancel, and a LAN file the Director serves) behind the approval gate, with the Cancel NOT RUN fallback.
+- G12 Applied as a comment: the tool runner's `bind` explains why the current network's list is the target's (Home and the Device screen list only the current network's hosts).
+- G13 Not applied, recorded (gap 15): the label change needs a walk-round signal from `GatewayProbe` to the engine for a cosmetic gain; the Director decides.
+- G14 Not applied as a rule change, recorded: the behaviour is bounded and stated in item 6's expectation and gap 7; ending a direction on a walk-probed miss would change spec 2.5's rule 4.
+- G15 Not applied, recorded (gap 15): Cancel covers it; an overall deadline is one named constant if he wants it.
+- G16 Applied. The Global Constraint now says "no new instrumented test" and names `HomeScreenTest` as the existing exception, run last after the backup.
+- G17 Applied. Task 1 Step 0: entries only under `docs/qa/` mean the 3B QA agent has not committed; wait, and never stage, move or delete them.
+- G18 Applied. `DiscoveryEngineExtendedTest.aggressive off with a manual range uses the neighbour rules: a local MAC is kept and a gateway MAC on another IP is not claimed`.
+- G19 Not applied (Gruff: leave it); gap 9.
