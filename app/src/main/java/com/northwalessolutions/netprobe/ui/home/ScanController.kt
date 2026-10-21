@@ -18,8 +18,12 @@ class ScanController(private val scope: CoroutineScope, private val env: StateFl
     /** Bumped on every start and stop, so a cancelled job's cleanup can never touch a newer scan's state. */
     private var generation = 0L
 
-    /** Starts [work] (default: the constructor's runDiscovery) unless a job is already running. */
-    fun start(work: suspend (NetworkEnv) -> Unit = runDiscovery) {
+    /**
+     * Starts [work] (default: the constructor's runDiscovery) unless a job is already running. [onComplete] runs once when the job has
+     * completed for any reason, including a cancel before its first dispatch, which no `finally` inside [work] can see (PortScans needs it).
+     * It is not called when nothing was started (no network, or a job already running).
+     */
+    fun start(onComplete: () -> Unit = {}, work: suspend (NetworkEnv) -> Unit = runDiscovery) {
         val e = env.value ?: run { _state.value = State(false, NO_NETWORK); return }
         if (job?.isActive == true) return
         val gen = ++generation
@@ -34,7 +38,7 @@ class ScanController(private val scope: CoroutineScope, private val env: StateFl
             } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Exception) {
-                if (gen == generation) _state.value = State(false, "Scan failed: ${t.message ?: t.javaClass.simpleName}")
+                if (gen == generation) _state.value = State(false, failureMessage(t))
             } finally {
                 if (gen == generation && _state.value.scanning) _state.update { it.copy(scanning = false) }
             }
@@ -44,7 +48,7 @@ class ScanController(private val scope: CoroutineScope, private val env: StateFl
             env.first { it == null || NetworkSignature.identityKey(it) != key }
             if (gen == generation) { j.cancel(); _state.value = State(false, NETWORK_CHANGED) }
         }
-        j.invokeOnCompletion { w.cancel() }
+        j.invokeOnCompletion { w.cancel(); onComplete() }
         job = j; watcher = w
         w.start(); j.start()
     }
@@ -59,6 +63,8 @@ class ScanController(private val scope: CoroutineScope, private val env: StateFl
     fun dismissMessage() = _state.update { it.copy(message = null) }
 
     companion object {
+        /** The failure wording, shared with the Scans summaries (3D spec 3.3). */
+        fun failureMessage(t: Throwable): String = "Scan failed: ${t.message ?: t.javaClass.simpleName}"
         const val NO_NETWORK = "Connect to Wi-Fi or Ethernet to scan"
         const val NETWORK_CHANGED = "Network changed, scan stopped"
     }

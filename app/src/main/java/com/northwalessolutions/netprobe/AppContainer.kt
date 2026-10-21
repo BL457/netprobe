@@ -14,6 +14,11 @@ import com.northwalessolutions.netprobe.engine.tools.TlsCertificateTool
 import com.northwalessolutions.netprobe.engine.tools.UdpSnmpExchange
 import com.northwalessolutions.netprobe.engine.tools.namedThenIp
 import com.northwalessolutions.netprobe.engine.common.Locks
+import com.northwalessolutions.netprobe.engine.common.ForegroundGate
+import com.northwalessolutions.netprobe.engine.portscan.HostScanBody
+import com.northwalessolutions.netprobe.engine.portscan.PortScans
+import com.northwalessolutions.netprobe.engine.portscan.PrefsOpenScanStore
+import com.northwalessolutions.netprobe.scans.LiveWork
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
 import com.northwalessolutions.netprobe.engine.discovery.HeardWriter
 import com.northwalessolutions.netprobe.engine.discovery.ListenController
@@ -109,6 +114,7 @@ class AppContainer(val context: Context) {
         if (!activityStarted.compareAndSet(false, true)) return
         appScope.launch { hostWriteLock.withLock { hosts.deleteOrphanManual() } }
         listen.start()
+        portScans       // built at launch, so port scans a dead process left open show as Interrupted before anything new ends (3D spec 3.3)
     }
 
     /**
@@ -134,6 +140,10 @@ class AppContainer(val context: Context) {
     val appMessages = AppMessages()
     /** NetProbe's foreground state; MainActivity's lifecycle sets it. Runs pause while false (spec 4.8). */
     val foreground = MutableStateFlow(true)
+    /** Port scans await this before each probe (3D spec 3.3); ToolRunner keeps its own gate on the same flow. */
+    val foregroundGate = ForegroundGate(foreground)
+    /** Radar, Quick scan all, port scans and URL imports as the Scans destination sees them (3D spec 3.2). Memory only. */
+    val liveWork = LiveWork(appScope)
     /** Every tool coroutine and blocking call runs here, so tool I/O never holds more than TOOL_THREADS threads total (spec 4.4, Gruff M7). */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val toolDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(TOOL_THREADS)
@@ -208,6 +218,13 @@ class AppContainer(val context: Context) {
     val cpeMap by lazy { Cpe.load(RawResources.read(context, R.raw.cpe_map)) }
     val discoveryEngine by lazy { DiscoveryEngine.production(context, mdnsTypes) }
     val portScanEngine by lazy { PortScanEngine() }
+    /** Device port scans on appScope (3D spec 3.3). Building it drains the open-scan record into Interrupted Scans items. */
+    val portScans: PortScans by lazy {
+        val scanBody = HostScanBody(this)
+        PortScans(appScope, networkEnvMonitor.env.stateIn(appScope, SharingStarted.Eagerly, networkEnvMonitor.current()), hostBusy, liveWork, appMessages,
+            PrefsOpenScanStore(context.getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)),
+            body = { h, profile, e, sink -> undo.committedBefore { scanBody.run(h, profile, e, sink) } })
+    }
     /** Built-in lists from raw resources and user imports under filesDir/wordlists; lazy, so no file work until first use. */
     val wordlistStore by lazy {
         WordlistStore(java.io.File(context.filesDir, "wordlists"), listOf(
