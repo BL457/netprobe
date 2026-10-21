@@ -103,12 +103,20 @@ fun ManualToolsContent(state: ManualUiState, actions: ManualActions, liveProgres
             Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).padding(bottom = 10.dp)) {
                 ToolsTitleRow(actions.onManageWordlists)
                 Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter)) {
+                    // The fields own their text as snapshot state and echo it to the form: a TextField whose value comes back a frame late
+                    // through a flow drops or reorders characters as they are typed (seen on the device in the 3D QA). The effects take
+                    // the form's text only when it changes elsewhere.
+                    var ipText by remember { mutableStateOf(state.form.ipText) }
+                    var portText by remember { mutableStateOf(state.form.portText) }
+                    LaunchedEffect(state.form.ipText) { if (state.form.ipText != ipText) ipText = state.form.ipText }
+                    LaunchedEffect(state.form.portText) { if (state.form.portText != portText) portText = state.form.portText }
                     Row(Modifier.fillMaxWidth().padding(top = ROW_VERTICAL), horizontalArrangement = Arrangement.spacedBy(FIELD_GAP)) {
-                        OutlinedTextField(state.form.ipText, actions.onIp, Modifier.weight(IP_WEIGHT).testTag("manualIp"), enabled = editable,
+                        OutlinedTextField(ipText, { ipText = it; actions.onIp(it) }, Modifier.weight(IP_WEIGHT).testTag("manualIp"), enabled = editable,
                             label = { Text(ManualCopy.IP) }, placeholder = { Text(ManualCopy.IP_PLACEHOLDER) }, singleLine = true,
                             isError = state.ipError != null, supportingText = state.ipError?.let { e -> { Text(e) } },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), colors = npFieldColors(), shape = FIELD_SHAPE)
-                        OutlinedTextField(state.form.portText, actions.onPort, Modifier.weight(PORT_WEIGHT).testTag("manualPort"),
+                        OutlinedTextField(portText, { v -> val t = v.filter(Char::isDigit).take(ManualToolsViewModel.MAX_PORT_CHARS); portText = t; actions.onPort(t) },
+                            Modifier.weight(PORT_WEIGHT).testTag("manualPort"),
                             enabled = editable && state.portEnabled, label = { Text(ManualCopy.PORT) }, placeholder = { Text(ManualCopy.PORT_PLACEHOLDER) },
                             singleLine = true, isError = state.portError != null, supportingText = state.portError?.let { e -> { Text(e) } },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), colors = npFieldColors(), shape = FIELD_SHAPE)

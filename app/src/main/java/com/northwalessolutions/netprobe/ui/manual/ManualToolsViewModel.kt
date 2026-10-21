@@ -207,7 +207,7 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
     fun dismissMessage() { message.value = null }
     fun dismissAppMessage(id: Long) { c.appMessages.dismiss(id) }
 
-    private companion object {
+    companion object {
         const val STOP_TIMEOUT_MS = 5_000L
         /** Five digits is the widest valid port; the field filters digits and validation checks the range. */
         const val MAX_PORT_CHARS = 5
