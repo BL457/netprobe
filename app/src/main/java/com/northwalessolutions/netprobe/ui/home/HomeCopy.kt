@@ -19,6 +19,10 @@ object HomeCopy {
     const val JUST_NOW = "just now"
     const val YESTERDAY = "yesterday"
     const val FORGET_NETWORK = "Forget this network"
+    /** The Devices overflow (3D D16, D17): its two items and the button's description. */
+    const val QUICK_SCAN_ALL = "Quick scan all"
+    const val STOP_QUICK_SCAN = "Stop quick scan"
+    const val MENU = "Menu"
     const val UNDO = "Undo"
     const val APP_NAME = "NetProbe"
     const val COPY_VERSION = "Copy"

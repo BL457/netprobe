@@ -19,7 +19,7 @@ object NavCopy {
     fun scansBadge(n: Int) = "Scans, $n running"
     /** The count on the Scans icon: 1 to 9, then "9+" (the Running block holds at most eight rows, so the cap is a safety net). */
     fun badgeText(n: Int): String = if (n > BADGE_CAP) "$BADGE_CAP+" else "$n"
-    /** The back row names where Back goes (D18), replacing "Back to Home". */
+    /** The back row names where Back goes (D18), replacing the old Home back row. */
     fun backTo(tab: Tab) = "Back to ${label(tab)}"
 }
 

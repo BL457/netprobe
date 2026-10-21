@@ -106,9 +106,9 @@ fun HomeMenu(quickEnabled: Boolean, quickScanning: Boolean, onQuick: () -> Unit,
              forgetEnabled: Boolean = false, onForget: () -> Unit = {}) {
     Box {
         var open by remember { mutableStateOf(false) }
-        IconButton(onClick = { open = true }, modifier = Modifier.testTag("homeMenu")) { Icon(Icons.Default.MoreVert, "Menu", tint = NetProbeColors.textSecondary) }
+        IconButton(onClick = { open = true }, modifier = Modifier.testTag("homeMenu")) { Icon(Icons.Default.MoreVert, HomeCopy.MENU, tint = NetProbeColors.textSecondary) }
         DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
-            DropdownMenuItem(text = { Text(if (quickScanning) "Stop quick scan" else "Quick scan all") }, enabled = quickEnabled,
+            DropdownMenuItem(text = { Text(if (quickScanning) HomeCopy.STOP_QUICK_SCAN else HomeCopy.QUICK_SCAN_ALL) }, enabled = quickEnabled,
                 onClick = { open = false; if (quickScanning) onStopQuick() else onQuick() })
             DropdownMenuItem(text = { Text(HomeCopy.FORGET_NETWORK) }, enabled = forgetEnabled, onClick = { open = false; onForget() })
         }
