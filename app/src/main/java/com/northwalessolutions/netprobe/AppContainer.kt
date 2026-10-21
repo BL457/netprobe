@@ -19,6 +19,9 @@ import com.northwalessolutions.netprobe.engine.portscan.HostScanBody
 import com.northwalessolutions.netprobe.engine.portscan.PortScans
 import com.northwalessolutions.netprobe.engine.portscan.PrefsOpenScanStore
 import com.northwalessolutions.netprobe.scans.LiveWork
+import com.northwalessolutions.netprobe.ui.scans.ScansHistoryStore
+import com.northwalessolutions.netprobe.ui.scans.ScansRules
+import kotlinx.coroutines.flow.combine
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
 import com.northwalessolutions.netprobe.engine.discovery.HeardWriter
 import com.northwalessolutions.netprobe.engine.discovery.ListenController
@@ -218,6 +221,12 @@ class AppContainer(val context: Context) {
     val cpeMap by lazy { Cpe.load(RawResources.read(context, R.raw.cpe_map)) }
     val discoveryEngine by lazy { DiscoveryEngine.production(context, mdnsTypes) }
     val portScanEngine by lazy { PortScanEngine() }
+    /** The Clear history cut-off (3D spec 3.8), a data key in the netprobe preferences. */
+    val scansHistory by lazy { ScansHistoryStore(context.getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)) }
+    /** How many things run right now (3D spec 3.7): the Scans bar badge. Reading it creates the tool runner, as the screen-on flag always did. */
+    val scansRunning: StateFlow<Int> by lazy {
+        combine(liveWork.live, toolRunner.active) { live, active -> ScansRules.runningCount(live, active) }.stateIn(appScope, SharingStarted.Eagerly, 0)
+    }
     /** Device port scans on appScope (3D spec 3.3). Building it drains the open-scan record into Interrupted Scans items. */
     val portScans: PortScans by lazy {
         val scanBody = HostScanBody(this)

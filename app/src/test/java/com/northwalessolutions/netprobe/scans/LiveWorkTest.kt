@@ -129,4 +129,20 @@ class LiveWorkTest {
         lw.stop(lw.live.value.single().id); runCurrent()
         assertEquals(1, stops); assertTrue(job.isCompleted)
     }
+    @Test fun `a radar entry that began on the previous network carries the new one once it is resolved`() = runTest {
+        val lw = work()
+        val id = lw.begin(LiveWork.Kind.RADAR, 1L, null, null) {}          // began while the previous network (1) was still current
+        lw.setNetwork(id, 2L)                                              // discoverOn resolved the switched-to network
+        assertEquals(2L, lw.live.value.single().networkId)
+        lw.end(id, LiveWork.Outcome.DONE, "Done in 3 s, 2 devices")
+        assertEquals(2L, lw.ended.value.single().live.networkId)
+    }
+    @Test fun `a radar entry that began with no network gets one and an unknown id does nothing`() = runTest {
+        val lw = work()
+        val id = lw.begin(LiveWork.Kind.RADAR, null, null, null) {}
+        lw.setNetwork(id + 99, 5L); assertNull(lw.live.value.single().networkId)
+        lw.setNetwork(id, 5L); assertEquals(5L, lw.live.value.single().networkId)
+        lw.end(id, LiveWork.Outcome.STOPPED, "x"); lw.setNetwork(id, 6L)
+        assertEquals(5L, lw.ended.value.single().live.networkId)
+    }
 }

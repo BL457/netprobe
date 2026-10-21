@@ -208,7 +208,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             c.removedDuringScan.value = emptySet()          // a new radar scan starts with nothing removed
             c.removedWhileListening.value = emptySet()      // 3C spec 3.4 rule 5: after a scan the listener may add a device again
             c.radarScanActive.value = true
-            try { trackRadar { discoverOn(e) } } finally { c.radarScanActive.value = false; c.radarScanNetworkId.value = null }
+            try { trackRadar { liveId -> discoverOn(e, liveId) } } finally { c.radarScanActive.value = false; c.radarScanNetworkId.value = null }
         }
     }
     /**
@@ -216,10 +216,10 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
      * did not run (a Forget in flight), which removes the entry without recording it. A cleared ViewModel cancels the job, which ends
      * the entry STOPPED, so a Scans row never stays RUNNING with a Stop that does nothing.
      */
-    private suspend fun trackRadar(body: suspend () -> Int?) {
+    private suspend fun trackRadar(body: suspend (Long) -> Int?) {
         c.liveWork.tracked<Int>(LiveWork.Kind.RADAR, c.currentNetwork.value?.id, null, null, stop = { stopScan() },
             summarize = { found, seconds -> LiveWork.Outcome.DONE to ScansCopy.radarDone(found, seconds) },
-            stopped = { seconds -> ScansCopy.stoppedAfter(seconds) }, failed = { t -> ScanController.failureMessage(t) }) { body() }
+            stopped = { seconds -> ScansCopy.stoppedAfter(seconds) }, failed = { t -> ScanController.failureMessage(t) }) { id -> body(id) }
     }
 
     private suspend fun quickScanAllOn(e: NetworkEnv) {
@@ -230,13 +230,14 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    private suspend fun discoverOn(e: NetworkEnv): Int? {
+    private suspend fun discoverOn(e: NetworkEnv, liveId: Long): Int? {
         runSnapshot.value = null   // the previous run's snapshot must not group the start frames of this one; live settings show until the new snapshot is taken
         // null only while this network's Forget is pending, which committedBefore has already ended; the guard stays for a Forget racing in.
         val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return null
         if (net.id == c.forgottenNetworkId.value) return null   // a Forget on this network is in flight: it is unavailable
         c.radarScanNetworkId.value = net.id
         networkId.value = net.id; c.currentNetwork.value = net
+        c.liveWork.setNetwork(liveId, net.id)   // the entry began before ensure(): it may have carried no network or the previous one
         val runId = System.currentTimeMillis(); latestRun.value = runId
         lastRunCompleted.value = false
         val s = c.settings.state.value

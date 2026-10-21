@@ -30,7 +30,8 @@ class LiveWork(private val scope: CoroutineScope, private val clock: () -> Long 
         @Volatile var done = live.done
         @Volatile var total = live.total
         @Volatile var found = live.found
-        fun snapshot(): Live = live.copy(done = done, total = total, found = found)
+        @Volatile var networkId = live.networkId
+        fun snapshot(): Live = live.copy(networkId = networkId, done = done, total = total, found = found)
     }
 
     private val lock = Any()
@@ -59,6 +60,15 @@ class LiveWork(private val scope: CoroutineScope, private val clock: () -> Long 
     fun progress(id: Long, done: Int, total: Int?, found: Int) {
         val e = entries[id] ?: return
         e.done = done; e.total = total; e.found = found
+    }
+
+    /** For work that learns its network after it begins (the radar scan resolves it first thing); an unknown id does nothing. */
+    fun setNetwork(id: Long, networkId: Long?) {
+        synchronized(lock) {
+            val e = entries[id] ?: return
+            e.networkId = networkId
+            publishLocked()
+        }
     }
 
     /** Idempotent; an unknown id does nothing, so a finally racing a clear or a second end is harmless. */
