@@ -8,6 +8,8 @@ import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.ui.detail.DetailCopy
 import com.northwalessolutions.netprobe.ui.detail.EditCopy
 import com.northwalessolutions.netprobe.ui.detail.setByYouLine
+import com.northwalessolutions.netprobe.ui.settings.DefaultMarker
+import com.northwalessolutions.netprobe.ui.settings.SettingsCopy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -43,6 +45,9 @@ class CopyTableTest {
         "Router", "Phone", "Computer", "Printer", "Media", "IoT", "NAS", "Camera", "Server", "Not set", "Save", "Cancel",
         "Open with\\.\\.\\.", "Try as", "(http|https|ssh|vnc|rdp|ftp|telnet|smb)",
         "Open \\d+\\.\\d+\\.\\d+\\.\\d+:\\d+ as (http|https|ssh|vnc|rdp|ftp|telnet|smb)",
+        // 3C-1 Settings (spec 7.2)
+        "Settings menu", "Reset to defaults", "Settings reset to defaults", "Default \\d+( ms)?", "Reset .+ to \\d+( ms)?",
+        "Largest block of a big network to sweep\\. With Aggressive scan off, a network wider than this gets your /24 only\\. .+",
     ).map { Regex(it) }
     /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
     private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", templates.any { it.matches(s) })
@@ -133,5 +138,13 @@ class CopyTableTest {
         inTable(DetailCopy.SCAN_BIND_FAILED); inTable(DetailCopy.identifying(1)); inTable(DetailCopy.identifying(3))
         for (p in listOf(com.northwalessolutions.netprobe.engine.portscan.ScanProgress(312, 65535, 4, 0), com.northwalessolutions.netprobe.engine.portscan.ScanProgress(9, 9, 2, 0)))
             for (n in listOf(0, 1, 3)) inTable(com.northwalessolutions.netprobe.ui.detail.detailProgress(p, n))
+    }
+
+    @Test fun `settings reset strings`() {
+        listOf(SettingsCopy.MENU, SettingsCopy.RESET, SettingsCopy.RESET_DONE, SettingsCopy.LARGE_NETWORKS_CAPTION).forEach { inTable(it) }
+        for (unit in listOf("", " ms")) for (v in listOf(1, 4, 128, 600, 2000)) {
+            inTable(SettingsCopy.defaultMarker(v, unit)); inTable(SettingsCopy.resetDescription("Sweep connect timeout", v, unit))
+            DefaultMarker.text(v + 1, v, unit)?.let { inTable(it) }
+        }
     }
 }
