@@ -6,9 +6,11 @@ import com.northwalessolutions.netprobe.wordlists.UrlImportResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.launch
 import java.net.URL
 import java.util.concurrent.atomic.AtomicInteger
@@ -33,7 +35,10 @@ class UrlImportController(private val scope: CoroutineScope, private val fetch: 
     @Volatile private var job: Job? = null
 
     fun attach() { attached.incrementAndGet() }
-    fun detach() { attached.decrementAndGet() }
+    /** The last screen leaving hands any result it never consumed to [messages], so it is not shown again on the next visit. */
+    fun detach() {
+        if (attached.decrementAndGet() <= 0) _message.getAndUpdate { null }?.let { messages.post(it) }
+    }
     fun consumeMessage() { _message.value = null }
 
     /**
@@ -41,25 +46,28 @@ class UrlImportController(private val scope: CoroutineScope, private val fetch: 
      * NonCancellable store step, and a second import must not overlap it (plan review G10).
      */
     @Synchronized
+    @OptIn(DelicateCoroutinesApi::class)                     // CoroutineStart.ATOMIC, as in ToolRunner
     fun start(url: URL): Boolean {
         if (job?.isCompleted == false) return false
         _state.value = UrlImportState.Fetching(0, null)
-        // LAZY, so [job] names this import before any of its code can call finish.
-        val next = scope.launch(start = CoroutineStart.LAZY) {
+        // ATOMIC, not LAZY: a job cancelled before its first dispatch still runs its body, so finish always runs and Fetching cannot stick.
+        // The body's first step takes this lock, so [job] names this import before finish compares against it.
+        val next = scope.launch(start = CoroutineStart.ATOMIC) {
             val me = coroutineContext[Job]
-            val result = try {
-                fetch(url) { read, total -> _state.value = UrlImportState.Fetching(read, total) }
+            synchronized(this@UrlImportController) { }
+            var text = WordlistImport.failure(FetchFailure.Connection)    // what a non-Exception Throwable leaves behind
+            try {
+                text = WordlistImport.message(fetch(url) { read, total -> _state.value = UrlImportState.Fetching(read, total) })
             } catch (ce: CancellationException) {
-                finish(me, WordlistCopy.CANCELLED)
+                text = WordlistCopy.CANCELLED
                 throw ce
             } catch (e: Exception) {
                 log(e)
-                UrlImportResult.Failed(FetchFailure.Connection)
+            } finally {
+                finish(me, text)
             }
-            finish(me, WordlistImport.message(result))
         }
         job = next
-        next.start()
         return true
     }
 
