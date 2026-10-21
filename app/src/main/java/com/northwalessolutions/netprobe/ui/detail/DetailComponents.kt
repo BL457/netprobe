@@ -20,6 +20,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -43,6 +48,7 @@ import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolRunBar
+import com.northwalessolutions.netprobe.ui.LiveLine
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.ScanPill
 import com.northwalessolutions.netprobe.ui.home.label
@@ -158,7 +164,7 @@ private const val STATIC_TOOL_FRACTION = 0.3f
 @Composable
 fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scanning: Boolean, progress: ScanProgress?, enabled: Boolean, identifying: Int = 0, identified: Int = 0,
             onProfile: (ScanProfile) -> Unit, onCustom: (String) -> Unit, onScan: () -> Unit,
-            toolBar: ToolRunBar? = null, onStopTool: () -> Unit = {}) {
+            toolBar: ToolRunBar? = null, onStopTool: () -> Unit = {}, liveToolBar: () -> ToolRunBar? = { toolBar }) {
     // Reserved from the data style's line height, so the bar never jumps when a scan starts (about 21 dp at 1.3). The sp line height
     // alone came out 1 px short of the laid-out text on the Pixel (pixel rounding), so the measured line wins when it is taller.
     val reduced = LocalReducedMotion.current
@@ -183,11 +189,10 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
         }
         Box(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).heightIn(min = progressHeight), contentAlignment = Alignment.CenterEnd) {
             when {
-                toolBar != null -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(toolBar.label, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).testTag("toolBarLabel"))
-                    Text(toolBar.progress, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, modifier = Modifier.padding(start = 8.dp).testTag("toolBarProgress"))
-                }
+                // The per-tick progress is read in LiveLine's draw only: a tick neither recomposes, relayouts nor changes the semantics
+                // of the Device screen (3B QA F4). The fallback covers the frame where the run has ended and the live bar is null.
+                toolBar != null -> LiveLine({ liveToolBar()?.progress ?: toolBar.progress }, style = NetProbeText.data, color = NetProbeColors.textMuted,
+                    lead = toolBar.label, leadModifier = Modifier.testTag("toolBarLabel"), textModifier = Modifier.testTag("toolBarProgress"))
                 scanning -> Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
             }
         }
@@ -196,8 +201,14 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
         val toolFraction = toolBar?.fraction
         Box(Modifier.fillMaxWidth().height(2.dp)) {
             when {
-                toolFraction != null -> LinearProgressIndicator(progress = { toolFraction }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
-                    trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})
+                // Drawn, not an M3 indicator: its progress semantics read the lambda, so every tick changed the screen's semantics and
+                // cost a whole-tree accessibility diff (3B QA F4). The live fraction is read in draw only (3A per-frame rule).
+                toolFraction != null -> Box(Modifier.fillMaxSize().graphicsLayer {}.drawBehind {
+                    drawRect(NetProbeColors.surface)
+                    val f = (liveToolBar()?.fraction ?: toolFraction).coerceIn(0f, 1f)
+                    val w = size.width * f
+                    drawRect(NetProbeColors.signal, topLeft = Offset(if (layoutDirection == LayoutDirection.Rtl) size.width - w else 0f, 0f), size = Size(w, size.height))
+                }.testTag("toolBarLine"))
                 toolBar != null && reduced -> LinearProgressIndicator(progress = { STATIC_TOOL_FRACTION }, modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal,
                     trackColor = NetProbeColors.surface, gapSize = 0.dp, drawStopIndicator = {})   // reduced motion: a fixed partial bar, no sweep
                 toolBar != null -> LinearProgressIndicator(modifier = Modifier.fillMaxSize(), color = NetProbeColors.signal, trackColor = NetProbeColors.surface, gapSize = 0.dp)

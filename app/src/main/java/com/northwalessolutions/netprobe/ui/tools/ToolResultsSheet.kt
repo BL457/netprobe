@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.northwalessolutions.netprobe.ui.LiveLine
 import com.northwalessolutions.netprobe.ui.theme.*
 
 private val RESULTS_SHAPE = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
@@ -37,7 +38,7 @@ private val ROW_VERTICAL = 10.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolResultsSheet(state: ToolResultsState, onOlder: () -> Unit, onNewer: () -> Unit, onCopy: (FindingRow) -> Unit, onOpen: (FindingRow) -> Unit,
-                     onShare: () -> Unit, onDismiss: () -> Unit) {
+                     onShare: () -> Unit, onDismiss: () -> Unit, liveStatus: (() -> String)? = null) {
     val maxHeight = (LocalConfiguration.current.screenHeightDp * RESULTS_MAX_FRACTION).dp
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = NetProbeColors.surface, shape = RESULTS_SHAPE,
@@ -54,7 +55,8 @@ fun ToolResultsSheet(state: ToolResultsState, onOlder: () -> Unit, onNewer: () -
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = if (state.index < state.count) NetProbeColors.textSecondary else NetProbeColors.border)
                     }
                 }
-                Text(state.statusLine, style = NetProbeText.data, color = NetProbeColors.textMuted)
+                if (liveStatus != null) LiveLine(liveStatus, style = NetProbeText.data, color = NetProbeColors.textMuted)
+                else Text(state.statusLine, style = NetProbeText.data, color = NetProbeColors.textMuted)
                 val (fallback, summary) = ToolCopy.splitFallback(state.summary)
                 fallback?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.testTag("fallbackLine")) }
                 if (summary.isNotEmpty()) Text(summary, style = NetProbeText.secondary, color = NetProbeColors.textSecondary)

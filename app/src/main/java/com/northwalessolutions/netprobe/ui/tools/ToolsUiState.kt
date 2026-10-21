@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.ui.tools
 
+import androidx.compose.runtime.Immutable
 import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.ToolFindingEntity
 import com.northwalessolutions.netprobe.data.ToolRunEntity
@@ -13,16 +14,17 @@ import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.ui.home.RelativeTime
 import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 
-data class ToolChip(val toolId: ToolId, val port: Int, val label: String, val description: String)
-data class ToolBlock(val toolId: ToolId, val name: String, val hasRun: Boolean, val history: String, val chips: List<ToolChip>)
-data class ToolsUiState(val available: Int, val headerHistory: String, val blocks: List<ToolBlock>)
+// @Immutable: built fresh by the view model and never mutated, so Compose compares them by equals() and skips unchanged blocks.
+@Immutable data class ToolChip(val toolId: ToolId, val port: Int, val label: String, val description: String)
+@Immutable data class ToolBlock(val toolId: ToolId, val name: String, val hasRun: Boolean, val history: String, val chips: List<ToolChip>)
+@Immutable data class ToolsUiState(val available: Int, val headerHistory: String, val blocks: List<ToolBlock>)
 /** The pinned bar during a run (spec 8.2); [fraction] null draws an indeterminate line. */
-data class ToolRunBar(val label: String, val progress: String, val fraction: Float?)
-data class FindingRow(val id: Long, val value: String, val detail: String?, val url: String?)
-data class ToolResultsState(val runId: Long, val title: String, val statusLine: String, val summary: String, val index: Int, val count: Int,
+@Immutable data class ToolRunBar(val label: String, val progress: String, val fraction: Float?)
+@Immutable data class FindingRow(val id: Long, val value: String, val detail: String?, val url: String?)
+@Immutable data class ToolResultsState(val runId: Long, val title: String, val statusLine: String, val summary: String, val index: Int, val count: Int,
                             val findings: List<FindingRow>, val active: Boolean)
-data class DirBruteSheetState(val port: Int, val targetUrl: String, val lists: List<WordlistMeta>, val initial: DirBruteOptions, val busyReason: String?)
-data class DetailToolsState(val tools: ToolsUiState? = null, val bar: ToolRunBar? = null, val busy: HostBusyRegistry.Work? = null,
+@Immutable data class DirBruteSheetState(val port: Int, val targetUrl: String, val lists: List<WordlistMeta>, val initial: DirBruteOptions, val busyReason: String?)
+@Immutable data class DetailToolsState(val tools: ToolsUiState? = null, val bar: ToolRunBar? = null, val busy: HostBusyRegistry.Work? = null,
                             val results: ToolResultsState? = null, val dirBrute: DirBruteSheetState? = null, val appMessage: AppMessage? = null,
                             /** Remove device is refused only while a tool run holds the host (spec 4.3); computed by DetailBusyRules. */
                             val removeAllowed: Boolean = true)

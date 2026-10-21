@@ -24,9 +24,9 @@ class ToolsBlockTest {
 
     @Test fun collapsedByDefaultWithAvailableAndTheNewestHistory() {
         show(ToolsFakes.tools())
-        rule.onNodeWithText("Tools").assertIsDisplayed(); rule.onNodeWithText("2 available").assertIsDisplayed()
-        rule.onNodeWithText("Last run 2 hours ago: Directory brute-force on 5000, 7 found in 4614 paths").assertIsDisplayed()
-        rule.onNodeWithTag("toolsHeader").assert(hasContentDescription("Tools, 2 available, expand"))
+        // The header clears its children's semantics and speaks one description, so its texts are not separate nodes.
+        rule.onNodeWithTag("toolsHeader").assertIsDisplayed().assert(hasContentDescription("Tools, 2 available, expand"))
+        rule.onNodeWithText("Tools").assertDoesNotExist()
         rule.onNodeWithTag("toolChip:dir-bruteforce:5000").assertDoesNotExist()
     }
     @Test fun expandsAndCollapses() {

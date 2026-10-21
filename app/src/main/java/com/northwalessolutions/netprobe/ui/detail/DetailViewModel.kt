@@ -39,6 +39,7 @@ import com.northwalessolutions.netprobe.ui.tools.FindingRow
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolExport
 import com.northwalessolutions.netprobe.ui.tools.ToolResultsModel
+import com.northwalessolutions.netprobe.ui.tools.ToolRunBar
 import com.northwalessolutions.netprobe.ui.tools.ToolsUiModel
 import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 import kotlinx.coroutines.*
@@ -92,9 +93,24 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     /** The wordlist store does resource I/O on first use, so it is first touched inside this flow, which runs on Dispatchers.Default (toolState's flowOn). */
     private val wordlists: Flow<List<WordlistMeta>> = flow { emitAll(c.wordlistStore.lists) }
 
-    /** Tools block, pinned bar, busy state, both sheets and the app message for this host (spec 8.1 to 8.5, 4.3). */
+    /**
+     * The runner republishes every PROGRESS_INTERVAL_MS while a run is live. Only these fields change what [toolState] lays out: which
+     * run this host has (and whether its total is known, which picks the determinate line), and whether the runner is full. The
+     * per-tick counts go to [toolBar] instead, so the Device screen does not recompose on every tick (3B QA F4).
+     */
+    private val structuralActive: Flow<Map<Long, ToolRunner.Active>> = c.toolRunner.active.distinctUntilChanged { a, b -> activeKey(a) == activeKey(b) }
+    private fun activeKey(m: Map<Long, ToolRunner.Active>) = m[hostId]?.let { Triple(it.runId, it.total == null, it.toolId) } to (m.size >= ToolRunner.MAX_ACTIVE_RUNS)
+
+    /** The pinned bar's per-tick fields, read only by the bar's leaf composables and the live results status line (3B QA F4). */
+    val toolBar: StateFlow<ToolRunBar?> = c.toolRunner.active.map { it[hostId]?.let(ToolsUiModel::bar) }.distinctUntilChanged()
+        .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+
+    /**
+     * Tools block, pinned bar, busy state, both sheets and the app message for this host (spec 8.1 to 8.5, 4.3). It emits on structural
+     * changes only; the bar's progress text and fraction and the live results status line come from [toolBar].
+     */
     val toolState: StateFlow<DetailToolsState> = combine(listOf(c.hosts.host(hostId), c.ports.portsForHost(hostId), c.toolRepo.runsForHost(hostId),
-        c.toolRunner.active, c.hostBusy.busy, resultsSource, dirBrutePort, wordlists, c.appMessages.current)) { arr ->
+        structuralActive, c.hostBusy.busy, resultsSource, dirBrutePort, wordlists, c.appMessages.current)) { arr ->
         @Suppress("UNCHECKED_CAST") val ports = arr[1] as List<PortEntity>
         @Suppress("UNCHECKED_CAST") val runs = arr[2] as List<ToolRunEntity>
         @Suppress("UNCHECKED_CAST") val activeMap = arr[3] as Map<Long, ToolRunner.Active>
@@ -116,7 +132,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             appMessage = appMessage,
             removeAllowed = DetailBusyRules.removeAllowed(busyMap, hostId),
         )
-    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailToolsState())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailToolsState())
 
     init {
         // The results sheet closes when its run disappears (pruned by a new run, or its host removed) (spec 8.5, 11.15).

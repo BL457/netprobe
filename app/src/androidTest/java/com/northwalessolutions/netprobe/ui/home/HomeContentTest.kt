@@ -234,7 +234,7 @@ class HomeContentTest {
         val base = HomeFakes.settled()
         val rows = base.rows.mapIndexed { i, r -> if (i == 0) r.copy(openPorts = 3, running = true) else r }
         show(base.copy(rows = rows, groups = HomeGroups.of(rows)))
-        rule.onNodeWithTag("rowRunning").assertTextEquals("running")
+        rule.onNodeWithTag("rowRunning", useUnmergedTree = true).assertTextEquals("running")   // the row merges its children
         rule.onAllNodesWithTag("hostRow")[0].assert(hasContentDescription("tool running", substring = true))
         rule.onNodeWithText("3 open").assertDoesNotExist()
     }

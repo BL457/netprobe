@@ -43,8 +43,9 @@ private val BLOCK_VERTICAL = 10.dp
 @Composable
 fun ToolsBlock(state: ToolsUiState, expanded: Boolean, busy: Boolean, onToggle: () -> Unit, onRunChip: (ToolId, Int) -> Unit, onResults: (ToolId) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().heightIn(min = ROW_MIN).clickable(onClick = onToggle)
-            .clearAndSetSemantics { contentDescription = ToolCopy.rowDescription(state.available, expanded); role = Role.Button }.testTag("toolsHeader")
+        // The tag goes before clearAndSetSemantics: anything after it in the chain is cleared with the children (3B QA F6).
+        Row(Modifier.fillMaxWidth().heightIn(min = ROW_MIN).clickable(onClick = onToggle).testTag("toolsHeader")
+            .clearAndSetSemantics { contentDescription = ToolCopy.rowDescription(state.available, expanded); role = Role.Button }
             .padding(start = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

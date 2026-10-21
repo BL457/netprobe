@@ -15,6 +15,8 @@ fun DetailScreen(container: AppContainer, hostId: Long, onBack: () -> Unit, onOp
     val vm: DetailViewModel = viewModel(key = "host$hostId", factory = viewModelFactory { initializer { DetailViewModel(container, hostId) } })
     val s by vm.state.collectAsStateWithLifecycle()
     val tools by vm.toolState.collectAsStateWithLifecycle()
+    // Not delegated: the per-tick bar is read only inside the leaf composables, through the lambda below (3B QA F4).
+    val liveBar = vm.toolBar.collectAsStateWithLifecycle()
     DetailContent(s, DetailActions(onBack = onBack, onEdit = vm::setOverrides, onStatus = vm::setStatus, onNote = vm::setNote,
         onProfile = vm::setProfile, onCustom = vm::setCustomPorts, onScan = vm::startScan, onStop = vm::stopScan, onAction = vm::runAction,
         onPortVulns = vm::lookupVulnsForService, onDeviceVulns = vm::lookupVulnsForDevice, onCloseVulns = vm::closeVulns,
@@ -22,5 +24,6 @@ fun DetailScreen(container: AppContainer, hostId: Long, onBack: () -> Unit, onOp
         toolState = tools, toolActions = ToolActions(
             onRunTool = vm::runTool, onStartDirBrute = vm::startDirBrute, onCloseDirBrute = vm::closeDirBrute, onManageWordlists = onOpenWordlists,
             onOpenResults = vm::openResults, onOlderRun = vm::olderRun, onNewerRun = vm::newerRun, onCloseResults = vm::closeResults, onShare = vm::shareRun,
-            onCopyFinding = vm::copyFinding, onOpenFinding = vm::openFinding, onStopTool = vm::stopTool, onDismissAppMessage = vm::dismissAppMessage))
+            onCopyFinding = vm::copyFinding, onOpenFinding = vm::openFinding, onStopTool = vm::stopTool, onDismissAppMessage = vm::dismissAppMessage),
+        liveToolBar = { liveBar.value })
 }

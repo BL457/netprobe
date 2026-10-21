@@ -45,7 +45,9 @@ data class DetailActions(
 /** All Detail layout (Radar spec section 5). PINNED: the topBar column; only `portList` scrolls. */
 @Composable
 fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false,
-                  toolState: DetailToolsState = DetailToolsState(), toolActions: ToolActions = ToolActions()) {
+                  toolState: DetailToolsState = DetailToolsState(), toolActions: ToolActions = ToolActions(),
+                  /** The bar's per-tick fields (DetailViewModel.toolBar); null uses toolState.bar as it stands. Read only in leaf composables. */
+                  liveToolBar: (() -> ToolRunBar?)? = null) {
     val reduced = LocalReducedMotion.current
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
@@ -85,7 +87,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
             ScanBar(state.profile, state.customPortsText, state.customError, state.scanning, state.progress, enabled = state.host != null,
                 identifying = state.identifying, identified = state.identified,
                 onProfile = actions.onProfile, onCustom = actions.onCustom, onScan = { if (state.scanning) actions.onStop() else actions.onScan() },
-                toolBar = toolState.bar, onStopTool = toolActions.onStopTool)
+                toolBar = toolState.bar, onStopTool = toolActions.onStopTool, liveToolBar = liveToolBar ?: { toolState.bar })
         }
     }) { pad ->
         val tools = toolState.tools
@@ -126,5 +128,10 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     }
     state.vuln?.let { VulnSheet(it, onClose = actions.onCloseVulns, onRerun = actions.onRerunVulns, onOpen = actions.onOpenLink) }
     toolState.dirBrute?.let { DirBruteSheet(it, onRun = toolActions.onStartDirBrute, onManageWordlists = { toolActions.onCloseDirBrute(); toolActions.onManageWordlists() }, onDismiss = toolActions.onCloseDirBrute) }
-    toolState.results?.let { ToolResultsSheet(it, toolActions.onOlderRun, toolActions.onNewerRun, toolActions.onCopyFinding, toolActions.onOpenFinding, toolActions.onShare, toolActions.onCloseResults) }
+    toolState.results?.let { r ->
+        // A live run's status line follows the per-tick bar, read inside the sheet's status text only.
+        val liveStatus: (() -> String)? = if (r.active && liveToolBar != null) { { liveToolBar()?.let { ToolCopy.resultsRunning(it.progress) } ?: r.statusLine } } else null
+        ToolResultsSheet(r, toolActions.onOlderRun, toolActions.onNewerRun, toolActions.onCopyFinding, toolActions.onOpenFinding, toolActions.onShare, toolActions.onCloseResults,
+            liveStatus = liveStatus)
+    }
 }
