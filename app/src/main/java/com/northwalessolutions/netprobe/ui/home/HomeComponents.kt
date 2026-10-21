@@ -102,8 +102,8 @@ fun NetworkLine(env: NetworkEnv?, networkName: String?, onRequestLocation: () ->
 }
 
 @Composable
-fun HomeMenu(quickEnabled: Boolean, quickScanning: Boolean, onQuick: () -> Unit, onStopQuick: () -> Unit, onSettings: () -> Unit,
-             forgetEnabled: Boolean = false, onForget: () -> Unit = {}, onAbout: () -> Unit = {}) {
+fun HomeMenu(quickEnabled: Boolean, quickScanning: Boolean, onQuick: () -> Unit, onStopQuick: () -> Unit,
+             forgetEnabled: Boolean = false, onForget: () -> Unit = {}) {
     Box {
         var open by remember { mutableStateOf(false) }
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("homeMenu")) { Icon(Icons.Default.MoreVert, "Menu", tint = NetProbeColors.textSecondary) }
@@ -111,8 +111,6 @@ fun HomeMenu(quickEnabled: Boolean, quickScanning: Boolean, onQuick: () -> Unit,
             DropdownMenuItem(text = { Text(if (quickScanning) "Stop quick scan" else "Quick scan all") }, enabled = quickEnabled,
                 onClick = { open = false; if (quickScanning) onStopQuick() else onQuick() })
             DropdownMenuItem(text = { Text(HomeCopy.FORGET_NETWORK) }, enabled = forgetEnabled, onClick = { open = false; onForget() })
-            DropdownMenuItem(text = { Text("Settings") }, onClick = { open = false; onSettings() })
-            DropdownMenuItem(text = { Text(HomeCopy.ABOUT) }, modifier = Modifier.testTag("menuAbout"), onClick = { open = false; onAbout() })
         }
     }
 }

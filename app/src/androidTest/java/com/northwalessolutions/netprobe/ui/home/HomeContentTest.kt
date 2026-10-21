@@ -230,15 +230,17 @@ class HomeContentTest {
         rule.mainClock.advanceTimeBy(1_000)
         rule.onNodeWithText("Quick scan all").assertIsEnabled(); rule.onNodeWithText("Forget this network").assertIsEnabled()
     }
-    @Test fun aboutOpensTheDialogWithTheBuildLinesAndCloseDismissesIt() {
-        val info = AboutInfo("0.3.0", 3, "c8a62e6", "2026-10-21 14:05", "14")
-        rule.setContent { NetProbeTheme { HomeContent(HomeFakes.settled(), rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro", about = info) } }
-        rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithTag("menuAbout").performClick()
-        rule.onNodeWithTag("aboutDialog").assertIsDisplayed()
-        rule.onNodeWithText("Version 0.3.0 (3)").assertIsDisplayed()
-        rule.onNodeWithText("Build c8a62e6, 2026-10-21 14:05").assertIsDisplayed()
-        rule.onNodeWithText("Android 14").assertIsDisplayed()
-        rule.onNodeWithTag("aboutClose").performClick(); rule.onNodeWithTag("aboutDialog").assertDoesNotExist()
+    @Test fun theOverflowListsOnlyQuickScanAllAndForgetThisNetwork() {   // 3D spec 9.2 item 5; D16 is confirmed, so no "Run a tool..." either
+        show(HomeFakes.settled().copy(networkId = 1))
+        rule.onNodeWithTag("homeMenu").performClick()
+        rule.onNodeWithText("Quick scan all").assertIsDisplayed(); rule.onNodeWithText("Forget this network").assertIsDisplayed()
+        listOf("Settings", "About", "Run a tool...").forEach { rule.onNodeWithText(it).assertDoesNotExist() }
+        rule.onNodeWithTag("menuAbout").assertDoesNotExist(); rule.onNodeWithTag("menuRunTool").assertDoesNotExist()
+    }
+    @Test fun theOverflowOffersStopQuickScanWhileItRuns() {
+        show(HomeFakes.settled().copy(networkId = 1, quickScanning = true))
+        rule.onNodeWithTag("homeMenu").performClick()
+        rule.onNodeWithText("Stop quick scan").assertIsDisplayed(); rule.onNodeWithText("Quick scan all").assertDoesNotExist()
     }
     @Test fun aHeldHostShowsRunningInPlaceOfItsPortCount() {
         val base = HomeFakes.settled()

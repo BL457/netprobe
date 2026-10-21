@@ -9,7 +9,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.northwalessolutions.netprobe.AppContainer
-import com.northwalessolutions.netprobe.BuildConfig
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.ui.theme.Motion
 import kotlinx.coroutines.FlowPreview
@@ -25,7 +24,7 @@ private const val TICK_IDLE_MS = 30_000L
 /** Thin wrapper: builds the view model, samples progress, keeps a clock, and hands everything to [HomeContent]. */
 @OptIn(FlowPreview::class)
 @Composable
-fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettings: () -> Unit) {
+fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit) {
     val vm: HomeViewModel = viewModel(factory = viewModelFactory { initializer { HomeViewModel(container) } })
     val s by vm.state.collectAsStateWithLifecycle()
     // Re-read the environment after the answer: the SSID becomes visible without waiting for a link change.
@@ -44,9 +43,8 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettin
         state = s,
         actions = HomeActions(onScan = vm::startScan, onStop = vm::stopScan, onOpenHost = onOpenHost, onDismissMessage = vm::dismissMessage,
             onFilter = vm::setFilter, onQuery = vm::setQuery, onQuickScanAll = vm::quickScanAll, onStopQuickScan = vm::stopQuickScan,
-            onOpenSettings = onOpenSettings, onRequestLocation = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+            onRequestLocation = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
             onForget = vm::forgetNetwork, onUndo = vm::undo, onDismissUndo = vm::dismissUndo, onDismissApp = vm::dismissAppMessage),
         progress = latched, now = now,
-        about = AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME),
     )
 }

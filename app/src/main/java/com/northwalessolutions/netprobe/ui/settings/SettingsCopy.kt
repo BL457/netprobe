@@ -5,6 +5,10 @@ object SettingsCopy {
     const val MENU = "Settings menu"
     const val RESET = "Reset to defaults"
     const val RESET_DONE = "Settings reset to defaults"
+    /** The Settings root's title row and its last section (3D spec 5); About moved here from Home's overflow. */
+    const val TITLE = "Settings"
+    const val ABOUT_SECTION = "About"
+    const val ABOUT_ROW = "About"
     /** The Large networks caption (plan review G6, proposed wording for the Director): the old one was false with Aggressive scan on. */
     const val LARGE_NETWORKS_CAPTION = "Largest block of a big network to sweep. With Aggressive scan off, a network wider than this gets your /24 only. A /22 takes about 1 minute, a /20 about 4."
     /** [unit] is written as the value shows it: "" or " ms". */

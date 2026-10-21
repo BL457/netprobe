@@ -49,7 +49,7 @@ class CopyTableTest {
         "Open with\\.\\.\\.", "Try as", "(http|https|ssh|vnc|rdp|ftp|telnet|smb)",
         "Open \\d+\\.\\d+\\.\\d+\\.\\d+:\\d+ as (http|https|ssh|vnc|rdp|ftp|telnet|smb)",
         // 3C-1 Settings (spec 7.2)
-        "Settings menu", "Reset to defaults", "Settings reset to defaults", "Default \\d+( ms)?", "Reset .+ to \\d+( ms)?",
+        "Settings", "Settings menu", "Reset to defaults", "Settings reset to defaults", "Default \\d+( ms)?", "Reset .+ to \\d+( ms)?",
         "Largest block of a big network to sweep\\. With Aggressive scan off, a network wider than this gets your /24 only\\. .+",
         // 3D Device screen cap refusal (spec 3.3)
         "(One port scan is already running, stop it|\\w+ port scans are already running, stop one) in Scans",
@@ -65,7 +65,7 @@ class CopyTableTest {
     }
 
     @Test fun `about strings`() {
-        listOf(HomeCopy.ABOUT, HomeCopy.APP_NAME, HomeCopy.COPY_VERSION, HomeCopy.CLOSE, HomeCopy.version("0.3.0", 3),
+        listOf(SettingsCopy.ABOUT_ROW, SettingsCopy.ABOUT_SECTION, SettingsCopy.TITLE, HomeCopy.APP_NAME, HomeCopy.COPY_VERSION, HomeCopy.CLOSE, HomeCopy.version("0.3.0", 3),
             HomeCopy.build("c8a62e6", "2026-10-21 14:05"), HomeCopy.android("14")).forEach { inTable(it) }
         assertEquals("Version 0.3.0 (3)", HomeCopy.version("0.3.0", 3))
     }
