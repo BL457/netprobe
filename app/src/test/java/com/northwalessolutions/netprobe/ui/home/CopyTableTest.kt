@@ -15,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.northwalessolutions.netprobe.ui.manual.ManualCopy
 
 /**
  * The Radar spec section 8 copy table held as regex templates. Each test generates a matrix of reachable states and asserts every
@@ -163,4 +164,20 @@ class CopyTableTest {
         val fields = HomeCopy::class.java.declaredFields.map { it.name }; val methods = HomeCopy::class.java.declaredMethods.map { it.name }
         assertFalse("MENU_AGGRESSIVE" in fields); assertFalse("aggressiveDescription" in methods)
     }
-}
+    @Test fun `manual tools strings`() {
+        val manualTemplates = listOf("Run a tool\\.\\.\\.", "Run a tool", "IP address", "10\\.0\\.3\\.20", "Port", "443", "Tool: .+", "Use HTTPS",
+            "Uses port 445", "Uses UDP 161", "Known device: .+, results also show on its page", "Connect to Wi-Fi or Ethernet to run a tool",
+            "Enter an address like 10\\.0\\.3\\.20", "That address cannot be used", "This tool needs a port", "Use a port from 1 to 65535",
+            "Recent runs on this network", "No tools run on this network yet", ".+ on \\d+\\.\\d+\\.\\d+\\.\\d+:(\\d+|UDP 161)", ".+, .+",
+            "Show .+ results for \\d+\\.\\d+\\.\\d+\\.\\d+:(\\d+|UDP 161)").map { Regex(it) }
+        val strings = listOf(ManualCopy.TITLE, ManualCopy.IP, ManualCopy.IP_PLACEHOLDER, ManualCopy.PORT, ManualCopy.PORT_PLACEHOLDER,
+            ManualCopy.toolRow("HTTP fingerprint"), ManualCopy.USE_HTTPS, ManualCopy.FIXED_SMB, ManualCopy.FIXED_SNMP, ManualCopy.knownDevice("CHNAS"),
+            ManualCopy.NO_LAN, ManualCopy.ERR_IP, ManualCopy.ERR_ADDRESS, ManualCopy.ERR_PORT_NEEDED, ManualCopy.ERR_PORT_RANGE, ManualCopy.HISTORY,
+            ManualCopy.HISTORY_EMPTY, ManualCopy.historyRow("HTTP fingerprint", "10.0.3.5", "5000"), ManualCopy.historyRow("SNMP walk", "10.0.3.1", "UDP 161"),
+            ManualCopy.historyLine("Synology DSM, 6 findings", "2 min ago"), ManualCopy.historyDescription("HTTP fingerprint", "10.0.3.5", "5000"))
+        strings.forEach { s -> assertTrue("not in the manual tools copy table: '$s'", manualTemplates.any { it.matches(s) }); assertFalse("em-dash in '$s'", s.contains('\u2014')) }
+        assertEquals("HTTP fingerprint on 10.0.3.5:5000", ManualCopy.historyRow("HTTP fingerprint", "10.0.3.5", "5000"))
+        assertEquals("Synology DSM, 6 findings, 2 min ago", ManualCopy.historyLine("Synology DSM, 6 findings", "2 min ago"))
+        val removed = HomeCopy::class.java.declaredFields.map { it.name } + ManualCopy::class.java.declaredFields.map { it.name }
+        for (gone in listOf("MENU_AGGRESSIVE", "ERR_PRIVATE")) assertFalse("$gone was removed from the spec", gone in removed)   // spec 7.2
+    }}

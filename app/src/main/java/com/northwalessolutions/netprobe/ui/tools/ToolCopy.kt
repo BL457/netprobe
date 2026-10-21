@@ -2,6 +2,7 @@ package com.northwalessolutions.netprobe.ui.tools
 
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolRoute
 import java.util.Locale
 
 /**
@@ -67,6 +68,16 @@ object ToolCopy {
     // Common summaries
     const val NETWORK_CHANGED = "Network changed, run stopped"
     const val BIND_FAILED = "Tool skipped: could not bind to Wi-Fi"
+    // The results header for a manual run (3C spec 4.5, controller ruling: "via Ethernet" allowed)
+    const val ROUTE_WIFI = "via Wi-Fi"
+    const val ROUTE_ETHERNET = "via Ethernet"
+    const val ROUTE_OTHER = "via VPN or other route"
+    fun routeLine(route: ToolRoute?): String? = when (route) {
+        ToolRoute.WIFI -> ROUTE_WIFI
+        ToolRoute.ETHERNET -> ROUTE_ETHERNET
+        ToolRoute.OTHER -> ROUTE_OTHER
+        null -> null
+    }
     fun failed(reason: String) = "Failed: $reason"
     fun interrupted(found: Int) = "Interrupted, $found found"
     fun stopped(done: Int, total: Int?, found: Int): String =

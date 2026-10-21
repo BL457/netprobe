@@ -8,7 +8,7 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 /** Which tools a port gets, from the stored ServiceInfo and the port number (spec 4.2); it reuses 3A's PortUris.guess. */
 object ToolApplicability {
     const val SNMP_PORT = 161
-    private const val SMB_PORT = 445
+    const val SMB_PORT = 445
     /** TLS certificate also applies to these non-web TLS ports (spec 4.2). */
     private val TLS_EXTRA = setOf(465, 636, 993, 995, 5986, 8883)
     private val DNS_NAME = Regex("^[A-Za-z0-9.-]+$")

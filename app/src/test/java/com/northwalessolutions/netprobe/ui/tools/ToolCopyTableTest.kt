@@ -2,6 +2,7 @@ package com.northwalessolutions.netprobe.ui.tools
 
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolRoute
 import com.northwalessolutions.netprobe.ui.wordlists.WordlistCopy
 import com.northwalessolutions.netprobe.ui.wordlists.WordlistImport
 import com.northwalessolutions.netprobe.wordlists.FetchFailure
@@ -188,5 +189,12 @@ class ToolCopyTableTest {
         assertEquals("That file is too large (limit 10 MB)", WordlistImport.message(UrlImportResult.Stored(ImportResult.TooLarge)))
         assertEquals("Import file", WordlistCopy.IMPORT)
         assertFalse("FETCH_OTHER_SITE" in WordlistCopy::class.java.declaredFields.map { it.name })   // spec 7.2: removed from the draft
+    }
+    @Test fun `route header strings`() {
+        val routeTemplates = listOf("via Wi-Fi", "via Ethernet", "via VPN or other route").map { Regex(it) }
+        val shown = ToolRoute.entries.map { ToolCopy.routeLine(it)!! }
+        shown.forEach { s -> assertTrue("not in the route table: '$s'", routeTemplates.any { it.matches(s) }); assertFalse(s.contains('\u2014')) }
+        assertEquals(listOf("via Wi-Fi", "via Ethernet", "via VPN or other route"), shown)
+        assertNull("a Device-screen run shows no route", ToolCopy.routeLine(null))
     }
 }
