@@ -106,11 +106,11 @@ class ScansViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    /** Every LiveWork item stops by its own id (a stale tap is a no-op); a tool run stops by its host, as the Device screen's Stop does. */
+    /** Every LiveWork item stops by its own id (a stale tap is a no-op); a tool row stops by its run id (checked against the runner at tap time), never by host alone. */
     fun stop(item: ScansItem) {
         when (val route = ScansTargets.stop(item)) {
             is StopRoute.Live -> c.liveWork.stop(route.id)
-            is StopRoute.Tool -> c.toolRunner.stop(route.hostId)
+            is StopRoute.Tool -> if (ScansTargets.toolStopApplies(route, c.toolRunner.active.value[route.hostId]?.runId)) c.toolRunner.stop(route.hostId)
             null -> Unit
         }
     }

@@ -8,10 +8,10 @@ sealed interface ScansTap {
     object None : ScansTap
 }
 
-/** How Stop reaches the work. Every LiveWork item stops by its own id, so a stale tap can never stop a newer run of the same device. */
+/** How Stop reaches the work. Every LiveWork item stops by its own id, and a tool row carries its run id, so a stale tap can never stop a newer run of the same device. */
 sealed interface StopRoute {
     data class Live(val id: Long) : StopRoute
-    data class Tool(val hostId: Long) : StopRoute
+    data class Tool(val hostId: Long, val runId: Long) : StopRoute
 }
 
 /** Where a tap on a row goes and what its Stop does (3D spec 3.6), pure so each row of the table is tested. */
@@ -30,10 +30,13 @@ object ScansTargets {
         }
     }
 
+    /** A tool Stop is by host in the runner, so it applies only if the run the row showed is still the one active there. */
+    fun toolStopApplies(route: StopRoute.Tool, activeRunId: Long?): Boolean = activeRunId == route.runId
+
     fun stop(item: ScansItem): StopRoute? {
         if (!item.running) return null
         return when (item.source) {
-            ScansSource.TOOL -> item.hostId?.let { StopRoute.Tool(it) }
+            ScansSource.TOOL -> item.hostId?.let { host -> item.runId?.let { run -> StopRoute.Tool(host, run) } }
             else -> item.liveId?.let { StopRoute.Live(it) }
         }
     }

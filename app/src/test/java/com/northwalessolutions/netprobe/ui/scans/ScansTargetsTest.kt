@@ -36,10 +36,19 @@ class ScansTargetsTest {
         for (s in listOf(ScansSource.RADAR, ScansSource.QUICK_SCAN_ALL, ScansSource.PORT_SCAN, ScansSource.WORDLIST_IMPORT)) {
             assertEquals(StopRoute.Live(3), ScansTargets.stop(item(s)))
         }
-        assertEquals(StopRoute.Tool(7), ScansTargets.stop(item(ScansSource.TOOL, runId = 5)))
+        assertEquals(StopRoute.Tool(7, 5), ScansTargets.stop(item(ScansSource.TOOL, runId = 5)))
     }
     @Test fun `finished items have no stop route`() {
         for (s in ScansSource.entries) for (st in ScansState.entries.filter { it != ScansState.RUNNING }) assertNull("$s $st", ScansTargets.stop(item(s, st)))
         assertNull("a running item with no live id has nothing to stop", ScansTargets.stop(item(ScansSource.PORT_SCAN, liveId = null)))
+    }
+    @Test fun `a tool stop applies only while that run is still the one active on the host`() {
+        val route = StopRoute.Tool(7, 5)
+        assertTrue(ScansTargets.toolStopApplies(route, activeRunId = 5))
+        assertFalse("a newer run on the same host", ScansTargets.toolStopApplies(route, activeRunId = 6))
+        assertFalse("the run already ended", ScansTargets.toolStopApplies(route, activeRunId = null))
+    }
+    @Test fun `a tool row with no run id has no stop route`() {
+        assertNull(ScansTargets.stop(item(ScansSource.TOOL, runId = null)))
     }
 }
