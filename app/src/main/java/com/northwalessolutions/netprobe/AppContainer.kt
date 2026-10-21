@@ -236,7 +236,8 @@ class AppContainer(val context: Context) {
         val scanBody = HostScanBody(this)
         PortScans(appScope, networkEnvMonitor.env.stateIn(appScope, SharingStarted.Eagerly, networkEnvMonitor.current()), hostBusy, liveWork, appMessages,
             PrefsOpenScanStore(context.getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)),
-            body = { h, profile, e, sink -> undo.committedBefore { scanBody.run(h, profile, e, sink) } })
+            body = { h, profile, e, sink -> undo.committedBefore { scanBody.run(h, profile, e, sink) } },
+            foreground = foreground)
     }
     /** Built-in lists from raw resources and user imports under filesDir/wordlists; lazy, so no file work until first use. */
     val wordlistStore by lazy {

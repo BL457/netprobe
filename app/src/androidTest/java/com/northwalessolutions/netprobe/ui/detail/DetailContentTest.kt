@@ -221,7 +221,7 @@ class DetailContentTest {
         rule.onNodeWithText("8090").performTouchInput { longClick() }
         rule.onNodeWithText("Open with...").assertIsDisplayed(); rule.onNodeWithText("Try as").assertDoesNotExist()
     }
-    @Test fun overflowRemoveStopsTheScanFirstThenRemovesAndGoesBack() {
+    @Test fun overflowRemoveLeavesTheStopToTheRemoveAndGoesBack() {
         val events = mutableListOf<String>()
         rule.setContent { NetProbeTheme { DeviceConfigurationOverride(phone) {
             DetailContent(DetailFakes.state(scanning = true), DetailActions(onStop = { events += "stop" }, onRemove = { events += "remove" }, onBack = { events += "back" }))
@@ -229,7 +229,7 @@ class DetailContentTest {
         rule.onNodeWithTag("detailMenu").performClick()
         rule.onNodeWithText("Edit device").assertIsEnabled()
         rule.onNodeWithText("Remove device").assertIsEnabled().performClick()
-        assertEquals(listOf("stop", "remove", "back"), events)
+        assertEquals(listOf("remove", "back"), events)
     }
     private fun showTools(state: DetailUiState, tools: com.northwalessolutions.netprobe.ui.tools.DetailToolsState,
                           toolActions: com.northwalessolutions.netprobe.ui.tools.ToolActions = com.northwalessolutions.netprobe.ui.tools.ToolActions()) = rule.setContent {

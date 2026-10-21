@@ -23,4 +23,10 @@ class DetailViewModelOwnershipTest {
         assertTrue(source.contains("c.portScans.stop(hostId)"))
         assertTrue("Remove device must join the scan before the delete (spec 5.3 step 1)", source.contains("c.portScans.stopAndJoin(hostId)"))
     }
+    @Test fun `the Remove menu leaves the stop to stopAndJoin so no message is posted for a deleted device`() {
+        val content = listOf("src/main/java", "app/src/main/java").map { File("$it/com/northwalessolutions/netprobe/ui/detail/DetailContent.kt") }
+            .first { it.exists() }.readText()
+        val remove = content.lines().single { it.contains("onRemove = {") && it.contains("DetailMenu(") }
+        assertFalse("a non-silent stop races stopAndJoin's silent flag (final review S7)", remove.contains("onStop"))
+    }
 }

@@ -137,17 +137,19 @@ class LiveWork(private val scope: CoroutineScope, private val clock: () -> Long 
 /**
  * Begin, run, end: the one place the outcome rules live, used by the radar scan, Quick scan all, port scans and the URL import. A body
  * that returns null did not run (the entry is dropped, nothing is recorded); a cancellation ends STOPPED with [stopped]; any other
- * throwable ends FAILED with [failed]; both are rethrown. [onEnd] runs just after the entry ends.
+ * throwable ends FAILED with [failed]; both are rethrown. [onEnd] runs just after the entry ends. [elapsedMs] replaces wall time in the
+ * seconds the summaries report (a port scan reports active time only, as tool runs do).
  */
 suspend fun <T : Any> LiveWork.tracked(
     kind: LiveWork.Kind, networkId: Long?, hostId: Long?, label: String?, stop: () -> Unit,
     summarize: (T, Long) -> Pair<LiveWork.Outcome, String>, stopped: (Long) -> String, failed: (Throwable) -> String,
     onEnd: (LiveWork.Outcome, String) -> Unit = { _, _ -> },
+    elapsedMs: (() -> Long)? = null,
     body: suspend (Long) -> T?,
 ): T? {
     val id = begin(kind, networkId, hostId, label, stop)
     val startedAt = now()
-    fun seconds(): Long = ((now() - startedAt) / MS_PER_S).coerceAtLeast(0)
+    fun seconds(): Long = ((elapsedMs?.invoke() ?: (now() - startedAt)) / MS_PER_S).coerceAtLeast(0)
     try {
         val result = body(id)
         if (result == null) {

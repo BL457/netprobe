@@ -72,7 +72,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     // on the list counted the navigation bar twice and left a 48 dp gap above the keyboard on the Pixel.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("detailHeader")) {
-            BackBar(backLabel, actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.removeAllowed, onRemove = { if (state.scanning) actions.onStop(); actions.onRemove(); actions.onBack() }) }
+            BackBar(backLabel, actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.removeAllowed, onRemove = { actions.onRemove(); actions.onBack() }) }
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
                     DetailName(state.displayName) { editing = true }

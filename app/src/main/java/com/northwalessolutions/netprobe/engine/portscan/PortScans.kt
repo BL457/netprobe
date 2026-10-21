@@ -16,6 +16,7 @@ import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Identifies started and finished during one port scan (Detail spec 1.14). */
@@ -50,6 +51,7 @@ class PortScans(
     private val open: OpenScanStore,
     private val body: suspend (HostEntity, ScanProfile, NetworkEnv, ScanSink) -> Int,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val foreground: StateFlow<Boolean> = MutableStateFlow(true),
 ) {
     private class Running(val host: HostEntity, val controller: ScanController, val startedAt: Long) {
         @Volatile var stopRequested = false
@@ -58,6 +60,14 @@ class PortScans(
         @Volatile var identify = IdentifyCount()
         @Volatile var lastPublishAt = -PUBLISH_MS
         @Volatile var liveId = 0L
+        /** Foreground time so far: milliseconds banked in earlier foreground stretches, plus the open stretch (-1 when in the background). */
+        private var bankedMs = 0L
+        private var segmentStart = -1L
+        @Synchronized fun setForeground(fg: Boolean, now: Long) {
+            if (fg && segmentStart < 0) segmentStart = now
+            else if (!fg && segmentStart >= 0) { bankedMs += now - segmentStart; segmentStart = -1 }
+        }
+        @Synchronized fun activeMs(now: Long): Long = bankedMs + if (segmentStart >= 0) now - segmentStart else 0L
         val finished = AtomicBoolean(false)
     }
 
@@ -121,14 +131,18 @@ class PortScans(
     private suspend fun execute(r: Running, profile: ScanProfile, e: NetworkEnv) {
         val host = r.host
         val sink = ScanSink({ p -> reportProgress(r, p) }, { change -> reportIdentify(r, change) })
-        liveWork.tracked<Int>(LiveWork.Kind.PORT_SCAN, host.networkId, host.id, DisplayName.of(host), stop = { stopRun(r) },
+        // Active time only (final review S5): the same foreground flow the gate and ToolRunner read, so "Done in N s" agrees with tool rows.
+        r.setForeground(foreground.value, clock())
+        val watch = scope.launch { foreground.collect { r.setForeground(it, clock()) } }
+        try { liveWork.tracked<Int>(LiveWork.Kind.PORT_SCAN, host.networkId, host.id, DisplayName.of(host), stop = { stopRun(r) },
             summarize = { opened, seconds -> LiveWork.Outcome.DONE to ScansCopy.portDone(opened, seconds) },
             stopped = { seconds -> if (r.stopRequested) ScansCopy.stoppedAfter(seconds) else ScanController.NETWORK_CHANGED },
             failed = { t -> if (t is BindFailedException) DetailCopy.SCAN_BIND_FAILED else ScanController.failureMessage(t) },
-            onEnd = { _, summary -> if (!r.silent) messages.post(ToolCopy.finished(ScansCopy.PORT_SCAN_NAME, summary), host.id) }) { id ->
+            onEnd = { _, summary -> if (!r.silent) messages.post(ToolCopy.finished(ScansCopy.PORT_SCAN_NAME, summary), host.id) },
+            elapsedMs = { r.activeMs(clock()) }) { id ->
             r.liveId = id
             body(host, profile, e, sink)
-        }
+        } } finally { watch.cancel() }
     }
 
     /** Idempotent; the host is released last, after the record and the running entry are gone, so a new scan can never lose its own record. */

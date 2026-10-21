@@ -43,7 +43,8 @@ private class Rig(val test: TestScope, body: ScanBodyFn = { _, _, _, _ -> awaitC
     val live = LiveWork(test.backgroundScope, clock = { test.testScheduler.currentTime })
     val messages = AppMessages()
     val store = FakeOpenStore(leftovers)
-    val scans = PortScans(test.backgroundScope, env, busy, live, messages, store, body, clock = { test.testScheduler.currentTime })
+    val foreground = MutableStateFlow(true)
+    val scans = PortScans(test.backgroundScope, env, busy, live, messages, store, body, clock = { test.testScheduler.currentTime }, foreground = foreground)
 }
 
 private fun host(id: Long) = TestHosts.host("10.0.3.$id").copy(id = id)
@@ -195,5 +196,36 @@ class PortScansTest {
         rig.scans.start(host(1), ScanProfile.Quick); runCurrent()
         rig.live.stop(oldId); runCurrent()
         assertTrue("the new scan is untouched", rig.scans.state.value.containsKey(1L)); assertTrue(rig.busy.busy.value.containsKey(1L))
+    }
+    @Test fun `Done in reports active time only, not the time spent in the background`() = runTest {
+        val rig = Rig(this, body = { _, _, _, _ -> delay(20_000); 3 })
+        rig.scans.start(host(1), ScanProfile.Full); runCurrent()
+        advanceTimeBy(5_000); rig.foreground.value = false; runCurrent()
+        advanceTimeBy(10_000); rig.foreground.value = true; runCurrent()
+        advanceTimeBy(5_001); runCurrent()
+        assertEquals("Done in 10 s, 3 open ports", rig.live.ended.value.single().summary)
+    }
+    @Test fun `Stopped after counts active time only`() = runTest {
+        val rig = Rig(this)
+        rig.scans.start(host(1), ScanProfile.Full); runCurrent()
+        advanceTimeBy(4_000); rig.foreground.value = false; runCurrent()
+        advanceTimeBy(60_000)
+        rig.scans.stop(1); runCurrent()
+        assertEquals("Stopped after 4 s", rig.live.ended.value.single().summary)
+    }
+    @Test fun `a scan that starts while in the background counts from when it comes back`() = runTest {
+        val rig = Rig(this)
+        rig.foreground.value = false
+        rig.scans.start(host(1), ScanProfile.Full); runCurrent()
+        advanceTimeBy(30_000); rig.foreground.value = true; runCurrent()
+        advanceTimeBy(3_000)
+        rig.scans.stop(1); runCurrent()
+        assertEquals("Stopped after 3 s", rig.live.ended.value.single().summary)
+    }
+    @Test fun `stopAndJoin posts no message at all`() = runTest {
+        val rig = Rig(this)
+        rig.scans.start(host(1), ScanProfile.Full); runCurrent()
+        rig.scans.stopAndJoin(1); runCurrent()
+        assertNull(rig.messages.current.value)
     }
 }
