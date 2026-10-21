@@ -39,7 +39,9 @@ import com.northwalessolutions.netprobe.ui.home.RunSettings
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.DirBruteOptionsStore
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.wordlists.UrlImportController
 import com.northwalessolutions.netprobe.wordlists.BuiltInList
+import com.northwalessolutions.netprobe.wordlists.UrlWordlistFetcher
 import com.northwalessolutions.netprobe.wordlists.WordlistStore
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -167,6 +169,11 @@ class AppContainer(val context: Context) {
             BuiltInList("builtin:admin-panels", "admin-panels") { context.resources.openRawResource(R.raw.wordlist_admin_panels) },
             BuiltInList("builtin:api-paths", "api-paths") { context.resources.openRawResource(R.raw.wordlist_api_paths) },
         ), log = { Log.e(AppScopes.LOG_TAG, "wordlist recovery", it) })
+    }
+    /** Wordlist import from a URL (3C spec 5): one at a time on appScope. Building it touches no file and no network. */
+    val urlImport: UrlImportController by lazy {
+        UrlImportController(appScope, { url, progress -> UrlWordlistFetcher().fetch(url, wordlistStore, progress) }, appMessages,
+            log = { Log.e(AppScopes.LOG_TAG, "url import", it) })
     }
     /** Last-used brute-force options, saved globally (spec 5.1). */
     val dirBruteOptions by lazy {

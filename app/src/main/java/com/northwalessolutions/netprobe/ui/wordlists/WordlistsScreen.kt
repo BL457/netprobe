@@ -10,8 +10,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -20,16 +23,20 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.ui.BackRow
 import com.northwalessolutions.netprobe.ui.home.RelativeTime
+import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.theme.*
 import com.northwalessolutions.netprobe.ui.tools.ActionPill
 import com.northwalessolutions.netprobe.wordlists.FetchFailure
 import com.northwalessolutions.netprobe.wordlists.ImportResult
+import com.northwalessolutions.netprobe.wordlists.UrlCheck
+import com.northwalessolutions.netprobe.wordlists.UrlImportRules
 import com.northwalessolutions.netprobe.wordlists.UrlImportResult
 import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 import com.northwalessolutions.netprobe.wordlists.WordlistStore
@@ -39,8 +46,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.URL
 
-data class WordlistsActions(val onBack: () -> Unit = {}, val onImport: () -> Unit = {}, val onDelete: (WordlistMeta) -> Unit = {})
+data class WordlistsActions(val onBack: () -> Unit = {}, val onImport: () -> Unit = {}, val onDelete: (WordlistMeta) -> Unit = {},
+                            val onImportUrl: (URL) -> Unit = {}, val onCancelUrl: () -> Unit = {})
 
 /** The snackbar text for an import (3B spec 9, 3C spec 5.3 and 7.2). */
 object WordlistImport {
@@ -73,6 +82,8 @@ private val SECTION_PAD = 10.dp
 private val ROW_VERTICAL = 8.dp
 private val ROW_END = 6.dp
 private val DELETE_PAD = 12.dp
+private val PILL_ROW_PAD = 6.dp
+private val PILL_GAP = 8.dp
 private val NO_LISTS: StateFlow<List<WordlistMeta>> = MutableStateFlow(emptyList())
 private const val PICKER_MIME = "text/plain"
 
@@ -92,21 +103,30 @@ internal fun rememberWordlists(container: AppContainer): State<List<WordlistMeta
 }
 
 /**
- * The Wordlists screen (spec 8.6), stateless: a pinned top block (back row, title, the Import pill) and a scrolling list of built-in
- * then imported lists. Delete confirms in an AlertDialog. The Import pill is never inside the list.
+ * The Wordlists screen (3B spec 8.6, 3C spec 5.1), stateless: a pinned top block (back row, title, the two import pills and the URL
+ * Cancel) and a scrolling list of built-in then imported lists. Delete confirms in an AlertDialog. No import control is inside the list.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: String?, onMessageShown: () -> Unit, actions: WordlistsActions,
-                     formatDate: (Long) -> String = RelativeTime::defaultDate, loading: Boolean = false) {
+                     formatDate: (Long) -> String = RelativeTime::defaultDate, loading: Boolean = false, urlState: UrlImportState = UrlImportState.Idle) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); onMessageShown() } }
     var confirm by remember { mutableStateOf<WordlistMeta?>(null) }
+    var askUrl by rememberSaveable { mutableStateOf(false) }
+    val fetching = urlState as? UrlImportState.Fetching
+    val busy = importing || fetching != null || loading
     Scaffold(containerColor = NetProbeColors.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)) {
             BackRow(WordlistCopy.BACK, actions.onBack)
-            Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
-                Text(WordlistCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.weight(1f))
-                ActionPill(if (importing) WordlistCopy.IMPORTING else WordlistCopy.IMPORT, enabled = !importing && !loading, onClick = actions.onImport, tag = "importWordlist")
+            Text(WordlistCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.padding(horizontal = Dimens.gutter))
+            // A FlowRow, so Cancel wraps to a second line at font scale 1.3 instead of clipping; still pinned.
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter, vertical = PILL_ROW_PAD), horizontalArrangement = Arrangement.spacedBy(PILL_GAP)) {
+                ActionPill(if (importing) WordlistCopy.IMPORTING else WordlistCopy.IMPORT, enabled = !busy, onClick = actions.onImport, tag = "importWordlist")
+                ActionPill(fetching?.let { WordlistCopy.fetching(it.read, it.total) } ?: WordlistCopy.IMPORT_URL, enabled = !busy, onClick = { askUrl = true }, tag = "importUrl")
+                if (fetching != null) TextButton(onClick = actions.onCancelUrl, modifier = Modifier.heightIn(min = Dimens.touch).testTag("cancelUrl")) {
+                    Text(WordlistCopy.CANCEL, style = NetProbeText.action, color = NetProbeColors.signal)
+                }
             }
         }
     }) { pad ->
@@ -133,6 +153,31 @@ fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: Str
             confirmButton = { TextButton({ confirm = null; actions.onDelete(meta) }, modifier = Modifier.testTag("confirmDelete")) { Text(WordlistCopy.DELETE, color = NetProbeColors.signal) } },
             dismissButton = { TextButton({ confirm = null }) { Text(WordlistCopy.CANCEL, color = NetProbeColors.textSecondary) } })
     }
+    if (askUrl) UrlDialog(onDismiss = { askUrl = false }) { url -> askUrl = false; actions.onImportUrl(url) }
+}
+
+/** "Import from URL" (3C spec 5.1): one field, validated as typed; the error shows once the field is not blank. */
+@Composable
+private fun UrlDialog(onDismiss: () -> Unit, onImport: (URL) -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    val check = UrlImportRules.validate(text)
+    val ok = check as? UrlCheck.Ok
+    val error = (check as? UrlCheck.Invalid)?.error?.takeIf { text.isNotBlank() }
+    AlertDialog(onDismissRequest = onDismiss, containerColor = NetProbeColors.surface,
+        title = { Text(WordlistCopy.IMPORT_URL, style = NetProbeText.rowName, color = NetProbeColors.text) },
+        text = {
+            OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().testTag("urlField"), label = { Text(WordlistCopy.URL_LABEL) },
+                placeholder = { Text(WordlistCopy.URL_PLACEHOLDER) }, singleLine = true, isError = error != null,
+                supportingText = error?.let { e -> { Text(e, color = NetProbeColors.error) } },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), textStyle = NetProbeText.data,
+                colors = npFieldColors(), shape = RoundedCornerShape(8.dp))
+        },
+        confirmButton = {
+            TextButton({ ok?.let { onImport(it.url) } }, enabled = ok != null, modifier = Modifier.testTag("urlImport")) {
+                Text(WordlistCopy.URL_IMPORT, color = if (ok != null) NetProbeColors.signal else NetProbeColors.border)
+            }
+        },
+        dismissButton = { TextButton(onDismiss) { Text(WordlistCopy.CANCEL, color = NetProbeColors.textSecondary) } })
 }
 
 @Composable
@@ -171,6 +216,11 @@ fun WordlistsScreen(container: AppContainer, onBack: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     val visible = remember { java.util.concurrent.atomic.AtomicBoolean(true) }
     DisposableEffect(Unit) { onDispose { visible.set(false) } }
+    val urlImport = container.urlImport
+    val urlState by urlImport.state.collectAsStateWithLifecycle()
+    val urlMessage by urlImport.message.collectAsStateWithLifecycle()
+    // While attached, the URL result goes to this screen's snackbar; once the screen is gone it goes to AppMessages (Home notice line).
+    DisposableEffect(urlImport) { urlImport.attach(); onDispose { urlImport.detach() } }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val target = store
         if (uri == null || target == null) return@rememberLauncherForActivityResult
@@ -186,9 +236,11 @@ fun WordlistsScreen(container: AppContainer, onBack: () -> Unit) {
             if (visible.get()) { importing = false; message = text } else container.appMessages.post(text)
         }
     }
-    WordlistsContent(lists, importing, message, { message = null },
+    WordlistsContent(lists, importing, message ?: urlMessage, { if (message != null) message = null else urlImport.consumeMessage() },
         WordlistsActions(onBack = onBack, onImport = { launcher.launch(arrayOf(PICKER_MIME)) },
-            onDelete = { meta -> scope.launch { store?.delete(meta.id) } }), loading = store == null)
+            onDelete = { meta -> scope.launch { store?.delete(meta.id) } },
+            onImportUrl = { url -> urlImport.start(url) }, onCancelUrl = { urlImport.cancel() }),
+        loading = store == null, urlState = urlState)
 }
 
 private fun displayName(ctx: Context, uri: Uri): String? =
