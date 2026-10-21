@@ -31,6 +31,7 @@ import com.northwalessolutions.netprobe.engine.common.BindFailedException
 import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.home.RemovedHosts
 import com.northwalessolutions.netprobe.ui.home.RowRules
+import com.northwalessolutions.netprobe.ui.home.RunSettings
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.home.ScanController
 import com.northwalessolutions.netprobe.ui.tools.DetailToolsState
@@ -253,8 +254,9 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
 
     private suspend fun scanHost(h: HostEntity, profile: ScanProfile, e: NetworkEnv) {
         val ip = InetAddress.getByName(h.ip) as Inet4Address
-        val s = c.settings.state.value
-        ScanBinding.run(ip, e, s.maxPrefix, s.extEnabled, c.networkEnvMonitor::binderFor) { scanHostOn(h, profile, ip) }
+        // One settings read per scan (3C spec D21); manual ranges bind off-subnet rows even with Aggressive scan off (spec 2.4).
+        val runSettings = RunSettings.of(c.settings.state.value, c.settings.manual.forNetwork(h.networkId))
+        ScanBinding.forRun(ip, e, runSettings, c.networkEnvMonitor::binderFor) { scanHostOn(h, profile, ip) }
     }
 
     private suspend fun scanHostOn(h: HostEntity, profile: ScanProfile, ip: Inet4Address) {

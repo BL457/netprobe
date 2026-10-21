@@ -35,6 +35,7 @@ import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteforceTool
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.Exchange
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.LoadedWordlist
 import com.northwalessolutions.netprobe.engine.tools.smb.SmbSessionTool
+import com.northwalessolutions.netprobe.ui.home.RunSettings
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.DirBruteOptionsStore
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
@@ -135,7 +136,12 @@ class AppContainer(val context: Context) {
         ToolRunner(appScope, toolDispatcher, tools, toolRepo, hostBusy, appMessages,
             networkEnvMonitor.env.stateIn(appScope, SharingStarted.Eagerly, networkEnvMonitor.current()),
             foreground,
-            bind = { ip, e, block -> ScanBinding.run(ip, e, settings.state.value.maxPrefix, settings.state.value.extEnabled, networkEnvMonitor::binderFor) { block() } },
+            bind = { ip, e, block ->
+                // Read once at the run's start (3C spec D21): manual ranges bind off-subnet targets even with Aggressive scan off (spec 2.4).
+                // The current network's list is the target's: Home and the Device screen list only the current network's hosts (plan review G12).
+                val runSettings = RunSettings.of(settings.state.value, settings.manual.forNetwork(currentNetwork.value?.id))
+                ScanBinding.forRun(ip, e, runSettings, networkEnvMonitor::binderFor) { block() }
+            },
             onFinished = { hostId -> reidentifyFromTools(hostId) },
             log = { Log.e(AppScopes.LOG_TAG, "tool run", it) })
     }

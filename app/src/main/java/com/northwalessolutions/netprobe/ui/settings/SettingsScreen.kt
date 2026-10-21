@@ -32,7 +32,7 @@ import com.northwalessolutions.netprobe.data.SettingsDefaults
 import com.northwalessolutions.netprobe.data.SettingsReset
 import com.northwalessolutions.netprobe.data.SettingsState
 import com.northwalessolutions.netprobe.netenv.Subnet
-import com.northwalessolutions.netprobe.netenv.SubnetMath
+import com.northwalessolutions.netprobe.netenv.HomeRange
 import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.home.HomeCopy
@@ -67,8 +67,8 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists:
     val network by container.currentNetwork.collectAsStateWithLifecycle()
     val revision by container.settings.manual.revision.collectAsStateWithLifecycle()
     val manual = remember(network?.id, revision) { container.settings.manual.forNetwork(network?.id) }
-    val local = remember(network?.id, s.maxPrefix) {   // re-read on a network switch (Task 17 M2)
-        container.networkEnvMonitor.current()?.let { SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, s.maxPrefix).subnet } }
+    val local = remember(network?.id, s.maxPrefix, s.extEnabled) {   // re-read on a network switch (Task 17 M2) and when the home range changes (3C spec 2.1)
+        container.networkEnvMonitor.current()?.let { HomeRange.of(it.interfaceIp, it.prefixLength, s.maxPrefix, s.extEnabled).subnet } }
     val wordlists by rememberWordlists(container)
     val wordlistsLoaded = rememberWordlistStore(container).value != null
     SettingsContent(

@@ -20,9 +20,9 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.netenv.HomeRange
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.Subnet
-import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.netenv.Transport
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -76,10 +76,10 @@ object RowRules {
     fun isOwn(ip: String, env: NetworkEnv?): Boolean = env != null && ip == env.interfaceIp.hostAddress
 
     fun row(h: HostEntity, env: NetworkEnv?, maxPrefix: Int, openPorts: Int, stale: Boolean,
-            extraRanges: List<Subnet> = emptyList(), manualRanges: List<Subnet> = emptyList()): HostRow {
+            extraRanges: List<Subnet> = emptyList(), manualRanges: List<Subnet> = emptyList(), aggressive: Boolean = false): HostRow {
         val own = isOwn(h.ip, env)
         val name = if (own && h.customName.isNullOrBlank()) THIS_PHONE else DisplayName.of(h)
-        val scanned = env?.let { listOf(SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, maxPrefix).subnet) + extraRanges }.orEmpty()
+        val scanned = env?.let { listOf(HomeRange.of(it.interfaceIp, it.prefixLength, maxPrefix, aggressive).subnet) + extraRanges }.orEmpty()
         val (subnet, off) = RangeRules.groupFor(h.ip, scanned, manualRanges)
         // The own phone keeps "Android device" (and Build.MODEL on Home) unless the Director set a model; its type stays PHONE unless set.
         val line = if (own && h.userModel == null) OWN_LINE else IdentityLine.of(h)
@@ -286,6 +286,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         var failed = 0; var unbound = 0; var skipped = 0
         try {
             val net = networkId.value ?: return
+            // One settings read per Quick scan all (3C spec D21): a toggle mid-run never changes which hosts are bound.
+            val runSettings = RunSettings.of(c.settings.state.value, c.settings.manual.forNetwork(net))
             QuickScanAllLoop.run(c.hosts.hostsForNetwork(net).first(), { it.id },
                 { RemovedHosts.skipQuickScan(c.removedHostIds.value, c.removedDuringScan.value, net, it.id, it.ip) }, c.hostScanJobs) scanOne@{ h ->
                 // A host a tool holds is skipped and counted (spec 4.3); a host another port scan holds is skipped silently.
@@ -295,7 +297,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 }
                 try {
                     // One unreachable or odd host must not end the sweep for the rest; an off-subnet host that cannot be bound is skipped and said so.
-                    try { quickScanHost(h, e) } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
+                    try { quickScanHost(h, e, runSettings) } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
                 } finally { c.hostBusy.release(h.id, HostBusyRegistry.Work.PORT_SCAN) }
             }
         } finally {
@@ -304,10 +306,9 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    private suspend fun quickScanHost(h: HostEntity, e: NetworkEnv) {
+    private suspend fun quickScanHost(h: HostEntity, e: NetworkEnv, runSettings: RunSettings) {
         val ip = InetAddress.getByName(h.ip) as Inet4Address
-        val s = c.settings.state.value
-        ScanBinding.run(ip, e, s.maxPrefix, s.extEnabled, c.networkEnvMonitor::binderFor) { quickScanHostOn(h, ip) }
+        ScanBinding.forRun(ip, e, runSettings, c.networkEnvMonitor::binderFor) { quickScanHostOn(h, ip) }
     }
 
     private suspend fun quickScanHostOn(h: HostEntity, ip: Inet4Address) {
