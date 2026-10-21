@@ -125,7 +125,9 @@ fun NetProbeNav(container: AppContainer) {
     KeepScreenOn(extended || toolRun || portScan)
     val running by container.scansRunning.collectAsStateWithLifecycle()
     val nav = rememberNavController()
-    NetProbeShell(nav, running, NavSlots(
+    // Every lambda below uses only `container` and `nav`, so the slots are built once: a badge or KeepScreenOn change must not hand the
+    // NavHost a new builder (it would rebuild the graph on a live back stack).
+    val slots = remember(container, nav) { NavSlots(
         devices = { HomeScreen(container, onOpenHost = { nav.navigate(Routes.host(Tab.DEVICES, it)) }) },
         scans = {
             ScansScreen(container, onOpenDevices = { TabSwitch.select(nav, Tab.DEVICES) }, onOpenHost = { nav.navigate(Routes.host(Tab.SCANS, it)) },
@@ -143,7 +145,8 @@ fun NetProbeNav(container: AppContainer) {
             DetailScreen(container, id, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate(Routes.wordlists(tab)) { launchSingleTop = true } },
                 backLabel = backLabel)
         },
-        wordlists = { _, backLabel -> WordlistsScreen(container, onBack = { nav.popBackStack() }, backLabel = backLabel) }))
+        wordlists = { _, backLabel -> WordlistsScreen(container, onBack = { nav.popBackStack() }, backLabel = backLabel) }) }
+    NetProbeShell(nav, running, slots)
 }
 
 /**
