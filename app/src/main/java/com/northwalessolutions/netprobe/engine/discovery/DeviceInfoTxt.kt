@@ -20,8 +20,6 @@ object DeviceInfoTxt {
     private const val MDNS_PORT = 5353
     private const val MAX_LABEL_BYTES = 63
     private const val TYPE_TXT = 16
-    private const val POINTER_MASK = 0xC0
-    private const val MAX_POINTER_JUMPS = 8
     private const val POLL_MS = 250
     private const val RECV_BUFFER = 1500
 
@@ -61,42 +59,10 @@ object DeviceInfoTxt {
         } catch (_: Exception) { return null }
     }
 
-    private fun u16(b: ByteArray, at: Int) = ((b[at].toInt() and 0xff) shl 8) or (b[at + 1].toInt() and 0xff)
-
-    /** Reads a possibly compressed name. Returns the dotted name and the position after it in the original stream. */
-    private fun readName(b: ByteArray, start: Int): Pair<String, Int>? {
-        val parts = ArrayList<String>(); var pos = start; var end = -1; var jumps = 0
-        while (true) {
-            if (pos >= b.size) return null
-            val len = b[pos].toInt() and 0xff
-            when {
-                len == 0 -> { if (end < 0) end = pos + 1; return parts.joinToString(".") to end }
-                (len and POINTER_MASK) == POINTER_MASK -> {
-                    if (pos + 1 >= b.size || ++jumps > MAX_POINTER_JUMPS) return null
-                    if (end < 0) end = pos + 2
-                    pos = ((len and 0x3F) shl 8) or (b[pos + 1].toInt() and 0xff)
-                }
-                (len and POINTER_MASK) != 0 -> return null
-                else -> {
-                    if (pos + 1 + len > b.size) return null
-                    parts += String(b, pos + 1, len, Charsets.UTF_8); pos += 1 + len
-                }
-            }
-        }
-    }
-
-    private fun parseTxtRdata(b: ByteArray, start: Int, end: Int): Map<String, String> {
-        val out = LinkedHashMap<String, String>(); var p = start
-        while (p < end) {
-            val l = b[p].toInt() and 0xff
-            if (l == 0 || p + 1 + l > end) break
-            val s = String(b, p + 1, l, Charsets.UTF_8)
-            val eq = s.indexOf('=')
-            if (eq > 0) out.putIfAbsent(s.substring(0, eq).lowercase(), s.substring(eq + 1))
-            p += 1 + l
-        }
-        return out
-    }
+    // The wire helpers moved to DnsWire (3C spec 3.3), shared with the listener; behaviour unchanged (no label limit here).
+    private fun u16(b: ByteArray, at: Int) = DnsWire.u16(b, at)
+    private fun readName(b: ByteArray, start: Int): Pair<String, Int>? = DnsWire.readName(b, start)
+    private fun parseTxtRdata(b: ByteArray, start: Int, end: Int): Map<String, String> = DnsWire.parseTxtRdata(b, start, end)
 
     /** Sends the question to the mDNS group and unicast to [host]; returns the TXT map from the first reply sent by [host]. */
     suspend fun query(instance: String, host: Inet4Address, timeoutMs: Int = 1000): Map<String, String>? {

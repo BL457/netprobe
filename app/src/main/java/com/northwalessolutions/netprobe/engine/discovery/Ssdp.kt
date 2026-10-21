@@ -14,6 +14,20 @@ object SsdpParser {
         val h = lines.drop(1).mapNotNull { l -> l.indexOf(':').takeIf { it > 0 }?.let { l.substring(0, it).trim().lowercase() to l.substring(it + 1).trim() } }.toMap()
         return SsdpResponse(from, h["location"], h["server"], h["st"], h["usn"])
     }
+
+    /**
+     * The listener's NOTIFY (3C spec 3.3): "NOTIFY * HTTP/1.1" with NTS ssdp:alive only; byebye, M-SEARCH requests and search responses are
+     * null. [SsdpResponse.st] carries the NT header; the address is the packet source, never a header.
+     */
+    fun parseNotify(from: Inet4Address, text: String): SsdpResponse? {
+        val lines = text.split("\r\n", "\n")
+        if (!lines.firstOrNull().orEmpty().trim().equals(NOTIFY_LINE, ignoreCase = true)) return null
+        val h = lines.drop(1).mapNotNull { l -> l.indexOf(':').takeIf { it > 0 }?.let { l.substring(0, it).trim().lowercase() to l.substring(it + 1).trim() } }.toMap()
+        if (!h["nts"].orEmpty().equals(ALIVE, ignoreCase = true)) return null
+        return SsdpResponse(from, h["location"], h["server"], h["nt"], h["usn"])
+    }
+    private const val NOTIFY_LINE = "NOTIFY * HTTP/1.1"
+    private const val ALIVE = "ssdp:alive"
 }
 
 object MacExtract {
