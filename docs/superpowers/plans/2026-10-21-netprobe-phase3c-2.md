@@ -8,9 +8,25 @@
 
 **Tech Stack:** Unchanged from 3C-1: Kotlin 2.1.21, AGP 8.10.1, Gradle 8.14, JDK 17, Compose BOM 2025.06.00, navigation-compose 2.9.0, Room 2.7.1 with KSP (schema 3 to 4 here), kotlinx-coroutines 1.10.2, kotlinx-serialization-json 1.8.1, JUnit 4, Turbine, AndroidX test, `room-testing` (already declared). No additions, no version bumps, no new Gradle plugins. `java.net.MulticastSocket` and `android.net.wifi.WifiManager.MulticastLock` are platform classes.
 
-**Spec:** `docs/superpowers/specs/2026-10-21-phase3c-feedback-design.md` at 33a6970 is binding: sections 3, 4, 6 (plan 3C-2), 7.1, 7.2 (the 3C-2 rows), 8.1 items 14 to 24, 8.2 items 1 to 3, 5 and 6, and 8.4. Its Gruff review (`docs/superpowers/plans/2026-10-21-phase3c-gruff-review.md`) explains the reasoning; the spec applied it, and where they differ the spec wins. The controller rulings in `.superpowers/sdd/2026-10-21-netprobe-phase3c/rulings.md` bind and override the spec where they say more: "via Ethernet" is allowed; the listener fetches the UPnP description of a heard SSDP device only when the device is inside the network's known ranges and the switch is on, bounded as discovery's fetch is; a name-only mDNS sighting is dropped; rigour standard. The 3C-1 plan (`2026-10-21-netprobe-phase3c-1.md` at 82084d3) owns every name this plan consumes from 3C-1 (`RunSettings`, `HomeRange`, `ScanBinding.forRun`, `SettingsDefaults`, `SettingsContent`, `SettingsUi`, the renamed Aggressive scan copy, manual ranges always swept); the 3B plan owns the tools framework. Gaps and contradictions found while planning are in the Plan Self-Review Notes and go to the Director in the Task 12 record.
+**Spec:** `docs/superpowers/specs/2026-10-21-phase3c-feedback-design.md` at 33a6970 is binding: sections 3, 4, 6 (plan 3C-2), 7.1, 7.2 (the 3C-2 rows), 8.1 items 14 to 24, 8.2 items 1 to 3, 5 and 6, and 8.4. Its Gruff review (`docs/superpowers/plans/2026-10-21-phase3c-gruff-review.md`) explains the reasoning; the spec applied it, and where they differ the spec wins. The controller rulings in `.superpowers/sdd/2026-10-21-netprobe-phase3c/rulings.md` bind and override the spec where they say more: "via Ethernet" is allowed; the listener fetches the UPnP description of a heard SSDP device only when the device is inside the network's known ranges and the switch is on, bounded as discovery's fetch is; a name-only mDNS sighting is dropped; rigour standard. The 3C-1 plan (`2026-10-21-netprobe-phase3c-1.md` at 82084d3) owns every name this plan consumes from 3C-1 (`RunSettings`, `HomeRange`, `ScanBinding.forRun`, `SettingsDefaults`, `SettingsContent`, `SettingsUi`, the renamed Aggressive scan copy, manual ranges always swept); the 3B plan owns the tools framework. Gaps and contradictions found while planning are in the Plan Self-Review Notes and go to the Director in the Task 12 record. Where this plan goes beyond the spec text, the change is listed under "Spec amendments" below and is committed to the spec before execution (plan review G6).
 
-**Roles:** The stronger model implements and reviews Task 1 (the schema 4 migration and the Director-copy test), Tasks 3 and 5 (the manual tools routing: `ManualRoute`, the runner's `routeBind`, and the start path that creates and discards hidden rows), and Tasks 10 and 11 (the listener's writer and controller: network tagging, the drop rules, the lock lifecycle). Every other task is standard. Ada implements, Bugsy reviews each task, Gruff reviews this plan, Dot does the final review (rigour standard, controller ruling). The plan has 12 tasks: 11 built and JVM-tested now, and Task 12, the deferred on-device QA.
+**Director rulings (pending; each is one line the controller flips, defaults are the controller's recommendations, plan review G9, G10 and the four questions):**
+- R1 (QA item 3 internet contact): `APPROVED: TLS handshake to 1.1.1.1:443`. If refused, Task 12 item 3 uses the public address the Director names, or records "NOT RUN, refused".
+- R2 (listener UPnP description fetch): `HEARD_FETCH_DESCRIPTIONS = true` in `engine/discovery/HeardWriter.kt` (Task 10). `false` skips every description GET; nothing else changes.
+- R3 (listen only on scanned networks): `LISTEN_SCANNED_NETWORKS_ONLY = true` in `engine/discovery/ListenController.kt` (Task 11). With `true` a network with no completed scan holds nothing and shows "Scan this network once to start listening"; `false` listens on any network.
+- R4 (private targets on a Wi-Fi with no internet): `PRIVATE_TARGETS_OVER_LAN_WITHOUT_INTERNET = true` in `engine/tools/ManualRoute.kt` (Task 3). With `true`, a private target (RFC1918, CGNAT or link-local) outside the known ranges goes over the Wi-Fi or Ethernet Network when that network has no internet and no VPN is the default network; public targets stay unbound. `false` is ruling 4 as written.
+Each flag has a JVM test for both values, so a flip is a one-line change plus a green run.
+
+**Spec amendments (one spec commit before execution, plan review G6; the controller writes it):**
+- A1. D11 and 3.1: "listening sends nothing" becomes "listening sends only one bounded UPnP description GET per heard IP inside the known ranges, bound to Wi-Fi (R2)"; section 6 drops "UPnP description fetches from the listener" from "Not in 3C"; open item 3 records that the controller turned the fetch on, pending the Director (R2).
+- A2. 3.2 and 3.4 rule 1: each session resolves its own network row (gateway MAC) and writes only while Home's current network is that row; a Forget, its Undo or its commit restarts the session; a session is keyed on the env's identity key, interface address and transport, so roaming between access points does not restart it (G12).
+- A3. 3.2: with R3 on, a network with no completed scan is not listened on; 3.1's status line gains "Scan this network once to start listening" and "Listening stopped after an error, retrying" (G4).
+- A4. 3.4: the writer re-reads the network context after the description fetch and drops the write on any change (G3); an mDNS datagram whose source is outside the known ranges is dropped (G11).
+- A5. 4.3 step 1: the network is always resolved with `networks.ensure` (MAC-aware), never taken from `currentNetwork` (G7). 4.3 step 4: the row is created in one transaction, the runner starts in its own, and a refused start deletes the row only while it is still manual-only with no run; the start is refused when the env changed since the tap (G15).
+- A6. 4.5: R4's private-target rule.
+- A7. Section 9 gains two recorded deviations: every manual-tools error is held until the first Run tap (self-review gap 6), and the removed-this-session set is process-wide, cleared when the listening network row changes or a radar scan starts (gap 10, G12).
+
+**Roles:** The stronger model implements and reviews Task 1 (the schema 4 migration and the Director-copy test), Tasks 3 and 5 (the manual tools routing: `ManualRoute`, the runner's `routeBind`, and the start path that creates and discards hidden rows), and Tasks 10 and 11 (the listener's writer and controller: network tagging, the drop rules, the lock lifecycle). Every other task is standard; Tasks 4 and 6 (copy and the route header) may run as one standard-model batch, and so may Tasks 8 and 9 (independent of each other) (plan review G19). Ada implements, Bugsy reviews each task, Gruff reviews this plan, Dot does the final review (rigour standard, controller ruling). The plan has 13 tasks: 12 built and JVM-tested now (Task 7 is split into 7a, the presenter and view model, and 7b, the screen and its wiring, G19), and Task 12, the deferred on-device QA.
 
 ## Global Constraints
 
@@ -44,8 +60,9 @@ New in 3C-2:
 - **The listener sends nothing to the LAN except one bounded UPnP description GET** per new heard IP inside the known ranges (controller ruling), bound to Wi-Fi: no mDNS query, no M-SEARCH. It never writes except through `RadarCollector.store` with `HostRepository.upsertHeard` (the write lock, `RemovedHosts.skip`, `IdentityWrite.sameDevice`), never while a radar scan runs or an Undo is pending, and never for a network row other than the one its session resolved.
 - **Lock lifecycle.** `Locks.listen` (`netprobe-listen`) is a separate `MulticastLock` from the scan's `netprobe-mdns`; nothing but `ListenController` acquires or releases it, and the controller holds it only inside a session (switch on, foreground, LAN up, network row resolved, at least one socket open). No service, no wake lock, nothing in the background.
 - **Starts from the activity, not the Application.** The orphan sweep and `ListenController.start()` run from `MainActivity.onCreate` through `AppContainer.onActivityCreated()`, so an instrumented test process (which runs `NetProbeApp.onCreate` but no activity) never opens `netprobe.db` through them.
-- **Whole-file blocks are guarded (3C-1 plan review G1).** This plan's blocks were written against 82084d3 plus the 3C-1 plan's code. Files 3C-1 edits are changed here only by targeted "replace X with Y" edits, which fail loudly if the text moved. The three existing files rewritten whole (`data/NetProbeDb.kt`, `engine/common/Locks.kt`, `ui/Nav.kt`) are untouched by 3C-1; before pasting each, run the `git diff --quiet 82084d3 -- <file>` line printed above it, and on STOP ask the controller to rebase the block.
-- 3C-2 starts only after the 3C-1 device QA has passed (spec section 6). Task 1 Step 0 checks for the 3C-1 QA record and that `app/src/main` changed since 82084d3 only in the files the 3C-1 plan names, and appends the build base (line 3, from which Task 12's rollback APK is built) and the plan base 82084d3 (line 4) to `docs/superpowers/plans/phase3c-base.txt`.
+- **Whole-file blocks are guarded (3C-1 plan review G1).** This plan's blocks were written against f8acaec (phase3b with the 3B QA fixes c6b88cc and F4) plus the 3C-1 plan's code. Files 3C-1 edits are changed here only by targeted "replace X with Y" edits, which fail loudly if the text moved. The three existing files rewritten whole (`data/NetProbeDb.kt`, `engine/common/Locks.kt`, `ui/Nav.kt`) are untouched by 3C-1, F4 and c6b88cc; Task 1 Step 0 checks all three with one `git diff --quiet f8acaec -- <files>`, and each block repeats its own guard line. On STOP ask the controller to rebase the block. The F4 files this plan edits by targeted edit (`ui/tools/ToolResultsSheet.kt`, `ui/tools/ToolsUiState.kt`, `ui/detail/DetailViewModel.kt`) were read at f8acaec and their anchors checked.
+- **Per-tick updates follow F4 (3B QA, f8acaec).** No new screen state combines `ToolRunner.active` raw: the structural state sees a frozen copy of each run (counts zeroed) and ends with `distinctUntilChanged()`, and the per-tick text reaches the screen only through `ui/LiveLine.kt`'s `LiveLine` and `ToolResultsSheet`'s `liveStatus` parameter, read in draw.
+- 3C-2 starts only after the 3C-1 device QA has passed (spec section 6). Task 1 Step 0 checks for the 3C-1 QA record and that `app/src/main` changed since f8acaec only in the files the 3C-1 plan names, and appends the build base (line 3, from which Task 12's rollback APK is built) and the plan base f8acaec (line 4) to `docs/superpowers/plans/phase3c-base.txt`.
 
 ## Review Focus
 
@@ -54,8 +71,8 @@ The five failure modes most likely to bite the Director. Each is pinned to a tes
 1. **The Director's data does not survive schema 4.** The migration must be two additive columns, every mark, note, override, port, network and tool run of his own database must come through unchanged, and Room must open the result. Pinned: Task 1 `MigrationSql34Test.exactly the two additive columns and nothing else`, `SchemaExportTest.version 4 keeps every version 3 table and column unchanged and adds only manualOnly and route`, `Migration34Test` (both tests) and `DirectorCopyMigration34Test.theDirectorsSchema3CopyMigratesWithEveryMarkNotePortAndToolRun`, run on his pushed copy in Task 12 Step 3 before the in-place install.
 2. **A hidden manual row leaks or is left behind.** It must never appear on Home, in the counts or in Quick scan all; a later scan must merge into the same row (keeping its tool history), not create a second; a start the runner refuses must delete the row it created and keep one that existed. Pinned: Task 2 `ManualHostDaoTest` (all of it, notably `aManualRowIsHiddenFromForNetworkAndShownByAll`, `aScanFindingTheIpPromotesTheRowAndKeepsItsToolRuns`, `discardManualKeepsAPromotedOrStartedRow`); Task 5 `ManualStarterTest.a refused start deletes the row this call inserted and keeps a row that existed`; device check Task 12 item 2.
 3. **A manual run takes the wrong route.** A target inside the known ranges must be bound to Wi-Fi or Ethernet, and with no binder must be refused or fail, never run unbound; a target outside them must run unbound whatever Aggressive scan says; Device-screen runs keep the scan binding. Pinned: Task 3 `ManualRouteTest` (all of it), `ToolRunnerRouteTest.a WIFI manual run with no binder fails with the bind wording and the tool never runs` and `the default route binder refuses a Wi-Fi route rather than run it unbound`; Task 5 `ManualStarterTest.a known-range target with no Wi-Fi binder is NoNetwork before any row exists`; device check Task 12 item 3.
-4. **The listener writes where it must not.** Nothing outside the known ranges, nothing past 32 new rows a session, nothing while a radar scan runs or an Undo is pending, nothing for a removed device, nothing for a network other than the session's (including the window before Home catches up with a network change), and nothing from a malformed or flooding packet. Pinned: Task 8 `MdnsPacketTest` (all of it); Task 10 `HeardWriterTest` (all of it, notably `the 33rd new row of a session is dropped while an update to an existing row still applies` and `a packet for another network or another row is dropped`); Task 11 `ListenControllerTest.packets from network A queued at a change are discarded and B's are dropped until Home catches up`; device checks Task 12 items 4, 5 and 7.
-5. **The listener's lock outlives its reason, or the scan releases it.** It must be released on ON_STOP, on the switch turning off or a reset, on network loss or change, and when no port opens; a scan ending must never release it. Pinned: Task 11 `ListenControllerTest` (the lifecycle tests), `LocksTest.the scan's release never releases the listener's lock`, `ListenSocketsTest.a null interface opens no socket, so nothing joins on a default or VPN interface`; device checks Task 12 items 4 and 5 (`dumpsys wifi`).
+4. **The listener writes where it must not.** Nothing outside the known ranges, nothing past 32 new rows a session, nothing while a radar scan runs or an Undo is pending, nothing for a removed device, nothing for a network other than the session's (including the window before Home catches up with a network change), and nothing from a malformed or flooding packet. Pinned: Task 8 `MdnsPacketTest` (all of it); Task 10 `HeardWriterTest` (all of it, notably `the 33rd new row of a session is dropped while an update to an existing row still applies`, `a packet for another network or another row is dropped` and `a Forget or a scan landing during the description fetch drops the write`); Task 11 `ListenControllerTest.packets from network A queued at a change are discarded and B's are dropped until Home catches up`; device checks Task 12 items 5, 6 and 8.
+5. **The listener's lock outlives its reason, or the scan releases it.** It must be released on ON_STOP, on the switch turning off or a reset, on network loss or change, and when no port opens; a scan ending must never release it. It must also never stop silently after an error. Pinned: Task 11 `ListenControllerTest` (the lifecycle tests and `a failed session says so and restarts after its backoff, never silently`), `LocksTest.the scan's release never releases the listener's lock`, `ListenSocketsTest.a null interface opens no socket, so nothing joins on a default or VPN interface`; device checks Task 12 items 5 and 6 (`dumpsys wifi`, process death).
 
 ### Review checklist (every task)
 
@@ -71,7 +88,7 @@ The five failure modes most likely to bite the Director. Each is pinned to a tes
 
 ```
 app/src/main/java/com/northwalessolutions/netprobe/
-  AppContainer.kt          onActivityCreated and the orphan sweep (2); routeBind (3); removedWhileListening (10); listen (11)
+  AppContainer.kt          onActivityCreated and the orphan sweep (2); routeBind (3); manualStartedHostId (7a); removedWhileListening (10); listen (11)
   MainActivity.kt          container.onActivityCreated() (2)
   data/
     Entities.kt            HostEntity.manualOnly, ToolRunEntity.route (1)
@@ -91,31 +108,33 @@ app/src/main/java/com/northwalessolutions/netprobe/
   engine/tools/
     ToolId.kt              ToolTarget.route (3); ToolStore.kt startRun with route (2); ToolRunner.kt routeBind (3); ManualRoute.kt with ToolRoute (3)
     ToolApplicability.kt   SMB_PORT public (4)
-  ui/Nav.kt                the "tools" route (7, whole file)
+  ui/Nav.kt                the "tools" route (7b, whole file)
+  netenv/NetworkEnvMonitor.kt   routeContext (3, Director ruling R4)
   ui/detail/DetailViewModel.kt   Remove device marks removedWhileListening (10)
   ui/home/
-    HomeViewModel.kt       allHosts, canary knownIps (2); removedWhileListening cleared at scan start (10)
+    HomeViewModel.kt       allHosts, canary knownIps, StaleRule (2); removedWhileListening cleared at scan start (10)
+    StaleRule.kt           Home's dim rule, extracted (2, plan review G16)
     HomeCopy.kt            MENU_RUN_TOOL (4)
-    HomeComponents.kt, HomeContent.kt, HomeScreen.kt   the "Run a tool..." item (7)
+    HomeComponents.kt, HomeContent.kt, HomeScreen.kt   the "Run a tool..." item (7b)
     RadarCollector.kt      upsert parameter (10); ContainerHeardSink.kt (10)
   ui/manual/
-    ManualCopy.kt, ManualTarget.kt (4); ManualStarter.kt (5); ManualPresenter.kt, ManualToolsViewModel.kt, ManualToolsScreen.kt (7)
+    ManualCopy.kt, ManualTarget.kt (4); ManualStarter.kt (5); ManualPresenter.kt, ManualToolsViewModel.kt (7a); ManualToolsScreen.kt (7b)
   ui/settings/
     ListenCopy.kt (9); SettingsScreen.kt the switch and status line (9), the status wiring (11)
   ui/tools/
     ToolCopy.kt            ROUTE_* and routeLine (4); ToolsUiState.kt ToolResultsState.route (6); ToolResultsSheet.kt the route line (6)
 app/schemas/com.northwalessolutions.netprobe.data.NetProbeDb/4.json   generated by KSP (1)
 app/src/test/java/com/northwalessolutions/netprobe/
-  data/MigrationSql34Test.kt, data/SchemaExportTest.kt additions (1); data/HeardRunTest.kt, data/NetworkKeyTest.kt (2); data/SettingsDefaultsTest.kt edits (9)
+  data/MigrationSql34Test.kt, data/SchemaExportTest.kt additions (1); data/HeardRunTest.kt, data/NetworkKeyTest.kt, ui/home/StaleRuleTest.kt (2); data/SettingsDefaultsTest.kt edits (9)
   engine/discovery/KnownRangesTest.kt (3); MdnsTestPackets.kt, MdnsPacketTest.kt, SsdpNotifyTest.kt, DnsWireTest.kt (8); ListenGateTest.kt (9)
   engine/discovery/HeardTestSupport.kt, HeardWriterTest.kt, HeardRepeatsTest.kt, HeardPacketsTest.kt (10); ListenSocketsTest.kt, ListenControllerTest.kt (11)
   engine/common/LocksTest.kt (11)
   engine/tools/ManualRouteTest.kt, ToolRunnerRouteTest.kt (3)
-  ui/manual/ManualTargetTest.kt (4); ManualStarterTest.kt (5); ManualPresenterTest.kt (7)
+  ui/manual/ManualTargetTest.kt (4); ManualStarterTest.kt (5); ManualPresenterTest.kt (7a)
   ui/home/CopyTableTest.kt additions (4, 9); ui/tools/ToolCopyTableTest.kt addition (4); ui/tools/ToolResultsRouteTest.kt (6)
 app/src/androidTest/java/com/northwalessolutions/netprobe/
   data/Migration34Test.kt, data/DirectorCopyMigration34Test.kt (1); data/ManualHostDaoTest.kt (2)
-  ui/tools/RouteLineTest.kt (6); ui/home/HomeMenuTest.kt, ui/manual/ManualToolsContentTest.kt (7); ui/settings/SettingsListenTest.kt (9)
+  ui/tools/RouteLineTest.kt (6); ui/home/HomeMenuTest.kt, ui/manual/ManualToolsContentTest.kt (7b); ui/settings/SettingsListenTest.kt (9)
 docs/superpowers/plans/phase3c-base.txt   lines 3 and 4 appended (Task 1 Step 0)
 docs/qa/phase3c-2-on-device.md            Task 12 record (written when the phone is available)
 ```
@@ -140,30 +159,32 @@ val MIGRATION_3_4: Migration                                                    
 ```
 Both new fields are last with defaults, so every positional and named `HostEntity(...)` and `ToolRunEntity(...)` in main and test code compiles unchanged, and the column order of a freshly created schema 4 database matches a migrated one (the 3B Undo snapshot's `INSERT INTO tool_runs SELECT *` copies within one database either way).
 
-- [ ] **Step 0: Confirm the start condition, check what changed since 82084d3, and record both bases (spec section 6, 3C-1 plan review G1)**
+- [ ] **Step 0: Confirm the start condition, check what changed since f8acaec, and record both bases (spec section 6, 3C-1 plan review G1, plan review G2)**
 
 ```bash
 git status --short                                   # must be empty; see below for entries under docs/qa/
 git rev-parse --abbrev-ref HEAD                      # the 3C-1 branch head (phase3c-1, or wherever the controller merged it)
 test -f docs/qa/phase3c-1-on-device.md && echo "3C-1 QA record present" || echo "STOP: no 3C-1 device QA record"
 P=app/src/main/java/com/northwalessolutions/netprobe/
-comm -23 <(git diff --name-only 82084d3 HEAD -- app/src/main | sed "s|^$P||" | sort) <(printf '%s\n' \
+comm -23 <(git diff --name-only f8acaec HEAD -- app/src/main | sed "s|^$P||" | sort) <(printf '%s\n' \
   AppContainer.kt data/Settings.kt engine/discovery/CandidateRanges.kt engine/discovery/DiscoveryEngine.kt \
   engine/discovery/DiscoveryOptions.kt engine/discovery/GatewayProbe.kt netenv/Subnet.kt ui/detail/DetailViewModel.kt \
   ui/home/ExtendedNotices.kt ui/home/HomeContent.kt ui/home/HomeCopy.kt ui/home/HomeViewModel.kt ui/home/RunSettings.kt \
   ui/home/ScanBinding.kt ui/settings/ExtendedSection.kt ui/settings/SettingsCopy.kt ui/settings/SettingsScreen.kt \
   ui/wordlists/UrlImportController.kt ui/wordlists/WordlistCopy.kt ui/wordlists/WordlistsScreen.kt \
   wordlists/UrlImport.kt wordlists/UrlWordlistFetcher.kt | sort)                  # must print nothing
-for f in data/NetProbeDb.kt engine/common/Locks.kt ui/Nav.kt; do git diff --quiet 82084d3 HEAD -- "$P$f" || echo "STOP: $f changed since 82084d3"; done
+# The whole-file blocks of this plan (written against f8acaec): one check for all three.
+git diff --quiet f8acaec HEAD -- "${P}data/NetProbeDb.kt" "${P}engine/common/Locks.kt" "${P}ui/Nav.kt" || echo "STOP: a whole-file block's file changed since f8acaec"
 ```
+The expected `comm` output is nothing: c6b88cc (`Calibration.kt`, `DirBrutePaths.kt`, `DirBruteforceTool.kt`) and F4 (`ui/LiveLine.kt`, the Detail files, `ToolResultsSheet.kt`, `ToolsBlock.kt`, `ToolsUiState.kt`) are inside the base f8acaec, and Tasks 6, 7a and 7b already build on F4's shape.
 - If `git status` lists entries only under `docs/qa/`, the 3C-1 QA agent has not committed yet: wait for its commit, and never stage, move or delete those files.
 - If the 3C-1 QA record is missing, or it records a failed item without the Director's ruling, stop and ask the controller: the spec starts 3C-2 only after the 3C-1 device QA passes.
-- The `comm` line lists production files changed since 82084d3 that the 3C-1 plan does not name (for example a 3C-1 QA fix). If it prints any file, stop and give the controller the list; it decides whether a block below must be rebased. A STOP from the `for` line means a file this plan rewrites whole has changed: stop and ask.
+- The `comm` line lists production files changed since f8acaec that the 3C-1 plan does not name (for example a 3C-1 QA fix). If it prints any file, stop and give the controller the list; it decides whether a block below must be rebased. A STOP from the whole-file check means a file this plan rewrites whole has changed: stop and ask.
 
 Otherwise branch and append both bases (line 3 is the build base Task 12's rollback APK uses, line 4 the plan base the guards use; lines 1 and 2 are 3C-1's):
 ```bash
 git checkout -b phase3c-2
-printf '%s\nplan-3c2 82084d3\n' "$(git rev-parse --short HEAD)" >> docs/superpowers/plans/phase3c-base.txt
+printf '%s\nplan-3c2 f8acaec\n' "$(git rev-parse --short HEAD)" >> docs/superpowers/plans/phase3c-base.txt
 cat docs/superpowers/plans/phase3c-base.txt          # four lines
 ```
 
@@ -291,7 +312,7 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 }
 ```
 
-Before writing it (3C-1 plan review G1): `git diff --quiet 82084d3 -- app/src/main/java/com/northwalessolutions/netprobe/data/NetProbeDb.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/data/NetProbeDb.kt changed since 82084d3"`; if it prints STOP, stop and ask the controller.
+Before writing it (3C-1 plan review G1): `git diff --quiet f8acaec -- app/src/main/java/com/northwalessolutions/netprobe/data/NetProbeDb.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/data/NetProbeDb.kt changed since f8acaec"`; if it prints STOP, stop and ask the controller.
 
 `app/src/main/java/com/northwalessolutions/netprobe/data/NetProbeDb.kt` (whole file):
 ```kotlin
@@ -407,10 +428,10 @@ class Migration34Test {
         v4.close()
         val room = NetProbeDb.open(context, MIGRATION_TEST_DB)     // Room's own validation through the production builder
         try {
+            assertEquals(2, room.openHelper.readableDatabase.query("SELECT COUNT(*) FROM hosts").use { it.moveToFirst(); it.getInt(0) })
             runBlocking {
-                assertEquals("the manual row is hidden", listOf("10.0.3.59"), room.hosts().forNetwork(1).first().map { it.ip })
-                assertEquals(2, room.hosts().allForNetwork(1).first().size)
                 assertEquals(listOf("OTHER", null), room.tools().runsForHost(7).first().map { it.route })   // newest first
+                // ROOM-FLOW CHECKS: Task 2 Step 5 inserts the hidden-row assertions here (HostDao.allForNetwork exists from Task 2, plan review G1).
             }
         } finally { room.close() }
         assertEquals("the app's own database file changed", before, stamp(appDb))
@@ -464,12 +485,17 @@ class DirectorCopyMigration34Test {
     @get:Rule val helper = MigrationTestHelper(instrumentation, NetProbeDb::class.java)
 
     private data class Stamp(val exists: Boolean, val length: Long, val modified: Long)
-    private data class Snapshot(val networks: List<String>, val hosts: List<String>, val ports: List<String>, val runs: List<String>, val findings: Int)
     private fun stamp(f: File) = if (f.exists()) Stamp(true, f.length(), f.lastModified()) else Stamp(false, -1, -1)
     private fun rows(query: (String) -> Cursor, sql: String): List<String> = query(sql).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
     private fun count(query: (String) -> Cursor, sql: String): Int = query(sql).use { it.moveToFirst(); it.getInt(0) }
-    private fun snapshot(query: (String) -> Cursor) =
-        Snapshot(rows(query, NETWORKS_SQL), rows(query, HOSTS_SQL), rows(query, PORTS_SQL), rows(query, RUNS_SQL), count(query, "SELECT COUNT(*) FROM tool_findings"))
+    /** Every schema 3 column of every table, read once at version 3 (plan review G17). */
+    private fun columns(query: (String) -> Cursor): Map<String, List<String>> = TABLES.associateWith { t ->
+        query("PRAGMA table_info(`$t`)").use { c -> buildList { while (c.moveToNext()) add(c.getString(c.getColumnIndexOrThrow("name"))) } }
+    }
+    /** Those columns, row by row in rowid order; quote() keeps NULL, numbers, text and blobs distinct. */
+    private fun snapshot(query: (String) -> Cursor, cols: Map<String, List<String>>): Map<String, List<String>> = cols.mapValues { (t, cs) ->
+        rows(query, "SELECT " + cs.joinToString(" || '|' || ") { "quote(`$it`)" } + " FROM `$t` ORDER BY rowid")
+    }
     @After fun tidy() { listOf("", "-wal", "-shm", "-journal").forEach { context.getDatabasePath(MIGRATION_COPY_DB + it).delete() } }
 
     @Test fun theDirectorsSchema3CopyMigratesWithEveryMarkNotePortAndToolRun() {
@@ -479,26 +505,23 @@ class DirectorCopyMigration34Test {
         val appDb = context.getDatabasePath(DB_NAME); val before = stamp(appDb)
         val v3 = SQLiteDatabase.openDatabase(copy.path, null, SQLiteDatabase.OPEN_READWRITE)
         assertEquals("the copy must be schema 3 (the 3C-1 build)", 3, v3.version)
-        val was = snapshot { v3.rawQuery(it, null) }
+        val cols = columns { v3.rawQuery(it, null) }
+        val was = snapshot({ v3.rawQuery(it, null) }, cols)
         v3.close()
         val v4 = helper.runMigrationsAndValidate(MIGRATION_COPY_DB, 4, true, MIGRATION_3_4)
-        assertEquals("every network, host, mark, note, override, port and tool run unchanged", was, snapshot { v4.query(it) })
+        for (t in TABLES) assertEquals("$t: every schema 3 column of every row unchanged", was.getValue(t), snapshot({ v4.query(it) }, cols).getValue(t))
         assertEquals("no existing host is hidden", 0, count({ v4.query(it) }, "SELECT COUNT(*) FROM hosts WHERE manualOnly != 0"))
         assertEquals("no existing run gains a route", 0, count({ v4.query(it) }, "SELECT COUNT(*) FROM tool_runs WHERE route IS NOT NULL"))
         v4.close()
         val room = NetProbeDb.open(context, MIGRATION_COPY_DB)     // Room's own validation through the production builder
-        try { assertEquals(was.hosts.size, room.openHelper.readableDatabase.query("SELECT COUNT(*) FROM hosts").use { it.moveToFirst(); it.getInt(0) }) }
+        try { assertEquals(was.getValue("hosts").size, room.openHelper.readableDatabase.query("SELECT COUNT(*) FROM hosts").use { it.moveToFirst(); it.getInt(0) }) }
         finally { room.close() }
         assertEquals("the app's own database file changed", before, stamp(appDb))
     }
 
     private companion object {
         const val MIGRATION_COPY_DB = "netprobe-migration-copy.db"
-        const val NETWORKS_SQL = "SELECT id || '|' || signature || '|' || displayName || '|' || IFNULL(gatewayIp, '') || '|' || prefixLength || '|' || IFNULL(lastRunAt, '') FROM networks ORDER BY id"
-        const val HOSTS_SQL = "SELECT id || '|' || networkId || '|' || ip || '|' || status || '|' || note || '|' || IFNULL(customName, '') || '|' || IFNULL(userType, '') || '|' || " +
-            "IFNULL(userVendor, '') || '|' || IFNULL(userModel, '') || '|' || IFNULL(mac, '') || '|' || lastDiscoveryRun FROM hosts ORDER BY id"
-        const val PORTS_SQL = "SELECT id || '|' || hostId || '|' || port || '|' || serviceName || '|' || IFNULL(product, '') || '|' || IFNULL(version, '') FROM ports ORDER BY id"
-        const val RUNS_SQL = "SELECT id || '|' || hostId || '|' || toolId || '|' || port || '|' || status || '|' || summary || '|' || optionsJson FROM tool_runs ORDER BY id"
+        val TABLES = listOf("networks", "hosts", "ports", "vuln_cache", "tool_runs", "tool_findings")
     }
 }
 ```
@@ -534,7 +557,8 @@ git commit -m "Phase 3C-2: schema 4 with manualOnly and route, additive migratio
 
 **Files:**
 - Modify: `app/src/main/java/com/northwalessolutions/netprobe/data/Daos.kt`, `data/Repositories.kt`, `data/NetworkSignature.kt`, `engine/tools/ToolStore.kt`, `ui/home/HomeViewModel.kt`, `AppContainer.kt`, `MainActivity.kt`
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/data/HeardRunTest.kt`, `data/NetworkKeyTest.kt`; compile only (run in Task 12): `app/src/androidTest/java/com/northwalessolutions/netprobe/data/ManualHostDaoTest.kt`
+- Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/StaleRule.kt` (plan review G16)
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/data/HeardRunTest.kt`, `data/NetworkKeyTest.kt`, `ui/home/StaleRuleTest.kt`; compile only (run in Task 12): `app/src/androidTest/java/com/northwalessolutions/netprobe/data/ManualHostDaoTest.kt`, and the Room-flow half of Task 1's `data/Migration34Test.kt` (plan review G1)
 
 **Interfaces:**
 - Consumes: `HostEntity.manualOnly`, `ToolRunEntity.route` (Task 1); `HostRepository.upsertDiscovered`, `applyScan`, `ToolRepository`, `NetworkRepository.deleteNetworkCascade` (3A, 3B); `HomeViewModel.hosts`, `discoverOn`'s `known` line (3C-1 Task 6).
@@ -555,6 +579,7 @@ class ToolRepository { fun recentForNetwork(networkId: Long, limit: Int): Flow<L
                        override suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String, route: String?): Long }
 interface ToolStore { suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String, route: String?): Long }   // default: the 5-argument form
 object NetworkSignature { fun identityKey(n: NetworkEntity): String }        // the same "gateway/prefix" as identityKey(env)
+object StaleRule { fun of(latestRun: Long, h: HostEntity): Boolean }         // ui.home: Home's dim rule, extracted so a test can pin it (G16)
 class AppContainer { fun onActivityCreated() }                               // once per process, from MainActivity.onCreate
 ```
 
@@ -601,6 +626,27 @@ class NetworkKeyTest {
 }
 ```
 
+`app/src/test/java/com/northwalessolutions/netprobe/ui/home/StaleRuleTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.ui.home
+
+import com.northwalessolutions.netprobe.data.TestHosts
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** Home's dim rule (3A spec 5.5), extracted so the heard-row case of 3C spec 3.4 is pinned on the rule baseState uses (plan review G16). */
+class StaleRuleTest {
+    @Test fun `with no run on the network nothing is dimmed, a heard row with run 0 included`() {
+        assertFalse(StaleRule.of(0, TestHosts.host().copy(lastDiscoveryRun = 0)))
+    }
+    @Test fun `a row the latest run did not reach is dimmed and one it reached is not`() {
+        assertTrue(StaleRule.of(9, TestHosts.host().copy(lastDiscoveryRun = 3)))
+        assertFalse(StaleRule.of(9, TestHosts.host().copy(lastDiscoveryRun = 9)))
+    }
+}
+```
+
 `app/src/androidTest/java/com/northwalessolutions/netprobe/data/ManualHostDaoTest.kt`:
 ```kotlin
 package com.northwalessolutions.netprobe.data
@@ -609,7 +655,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveredHost
-import com.northwalessolutions.netprobe.ui.home.RowRules
+import com.northwalessolutions.netprobe.ui.home.StaleRule
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -674,8 +720,8 @@ class ManualHostDaoTest {
         val id = hosts.upsertHeard(1, DiscoveredHost(ip("10.0.3.8")), runIdForNew = 0)
         val h = hosts.byIdOnce(id)!!
         assertEquals(0L, h.lastDiscoveryRun)
-        val latestRun = 0L   // HomeViewModel's latestRun with no run on this network (StaleRun.seed of a null lastRunAt)
-        assertFalse(RowRules.row(h, null, 22, 0, stale = latestRun > 0 && h.lastDiscoveryRun < latestRun).stale)
+        // HomeViewModel's latestRun with no run on this network is 0 (StaleRun.seed of a null lastRunAt); StaleRule is the rule baseState uses.
+        assertFalse(StaleRule.of(latestRun = 0, h))
     }
     @Test fun deleteOrphanManualRemovesOnlyRunlessManualRows() = runBlocking {
         val visible = hosts.upsertDiscovered(1, DiscoveredHost(ip("10.0.3.5")), runId = 1)
@@ -995,6 +1041,29 @@ with
         setContent { NetProbeTheme { Surface(Modifier.fillMaxSize()) { NetProbeNav(container) } } }
 ```
 
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/StaleRule.kt` (plan review G16):
+```kotlin
+package com.northwalessolutions.netprobe.ui.home
+
+import com.northwalessolutions.netprobe.data.HostEntity
+
+/** Home's dim rule (3A spec 5.5): a row the latest completed run did not reach. With no run (latestRun 0) nothing is dimmed (3C spec 3.4). */
+object StaleRule {
+    fun of(latestRun: Long, h: HostEntity): Boolean = latestRun > 0 && h.lastDiscoveryRun < latestRun
+}
+```
+`app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt` (3C-1 Task 6's `baseState`): replace `stale = run > 0 && h.lastDiscoveryRun < run` with `stale = StaleRule.of(run, h)`.
+
+`app/src/androidTest/java/com/northwalessolutions/netprobe/data/Migration34Test.kt` (Task 1's file, plan review G1): replace
+```kotlin
+                // ROOM-FLOW CHECKS: Task 2 Step 5 inserts the hidden-row assertions here (HostDao.allForNetwork exists from Task 2, plan review G1).
+```
+with
+```kotlin
+                assertEquals("the manual row is hidden", listOf("10.0.3.59"), room.hosts().forNetwork(1).first().map { it.ip })
+                assertEquals(2, room.hosts().allForNetwork(1).first().size)
+```
+
 - [ ] **Step 6: Run the tests to see them pass, and check every forNetwork caller**
 
 ```bash
@@ -1015,10 +1084,12 @@ Expected: `BUILD SUCCESSFUL`.
 
 ```bash
 git add app/src/main/java/com/northwalessolutions/netprobe/data/Daos.kt app/src/main/java/com/northwalessolutions/netprobe/data/Repositories.kt \
-  app/src/main/java/com/northwalessolutions/netprobe/data/NetworkSignature.kt app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/data/NetworkSignature.kt app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolStore.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeViewModel.kt app/src/main/java/com/northwalessolutions/netprobe/ui/home/StaleRule.kt \
   app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt app/src/main/java/com/northwalessolutions/netprobe/MainActivity.kt \
   app/src/test/java/com/northwalessolutions/netprobe/data/HeardRunTest.kt app/src/test/java/com/northwalessolutions/netprobe/data/NetworkKeyTest.kt \
-  app/src/androidTest/java/com/northwalessolutions/netprobe/data/ManualHostDaoTest.kt
+  app/src/test/java/com/northwalessolutions/netprobe/ui/home/StaleRuleTest.kt \
+  app/src/androidTest/java/com/northwalessolutions/netprobe/data/ManualHostDaoTest.kt app/src/androidTest/java/com/northwalessolutions/netprobe/data/Migration34Test.kt
 git status --short
 git commit -m "Phase 3C-2: hidden manual rows, promotion, discard, orphan sweep, upsertHeard, recent runs"
 ```
@@ -1029,7 +1100,7 @@ git commit -m "Phase 3C-2: hidden manual rows, promotion, discard, orphan sweep,
 
 **Files:**
 - Create: `app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/KnownRanges.kt`, `engine/tools/ManualRoute.kt`
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolId.kt` (`ToolTarget`), `engine/tools/ToolRunner.kt`, `AppContainer.kt` (the tool runner's `routeBind`)
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolId.kt` (`ToolTarget`), `engine/tools/ToolRunner.kt`, `netenv/NetworkEnvMonitor.kt` (`routeContext`, R4), `AppContainer.kt` (the tool runner's `routeBind`)
 - Test: `app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/KnownRangesTest.kt`, `engine/tools/ManualRouteTest.kt`, `engine/tools/ToolRunnerRouteTest.kt`
 
 **Interfaces:**
@@ -1039,8 +1110,13 @@ git commit -m "Phase 3C-2: hidden manual rows, promotion, discard, orphan sweep,
 class KnownRanges(val ranges: List<Subnet>) { fun contains(ip: Inet4Address): Boolean
     companion object { fun of(home: Subnet, manual: List<Subnet>, hosts: List<HostEntity>): KnownRanges } }   // engine.discovery
 enum class ToolRoute { WIFI, ETHERNET, OTHER; companion object { fun parse(s: String?): ToolRoute? } }     // engine.tools
-object ManualRoute { fun of(ip: Inet4Address, known: KnownRanges, env: NetworkEnv): ToolRoute; fun needsBinder(route: ToolRoute): Boolean
+data class RouteContext(val lanHasInternet: Boolean, val defaultIsVpn: Boolean) { companion object { val CONNECTED: RouteContext } }   // engine.tools
+object ManualRoute { const val PRIVATE_TARGETS_OVER_LAN_WITHOUT_INTERNET = true   // Director ruling R4
+    fun of(ip: Inet4Address, known: KnownRanges, env: NetworkEnv, ctx: RouteContext = RouteContext.CONNECTED,
+           privateOverLan: Boolean = PRIVATE_TARGETS_OVER_LAN_WITHOUT_INTERNET): ToolRoute
+    fun isPrivate(ip: Inet4Address): Boolean; fun needsBinder(route: ToolRoute): Boolean
     suspend fun <T> bind(route: ToolRoute, env: NetworkEnv, binderFor: (NetworkEnv) -> SocketBinder?, block: suspend () -> T): T }
+class NetworkEnvMonitor { fun routeContext(env: NetworkEnv): RouteContext }
 data class ToolTarget(hostId, ip, port, tls, serverName, val route: ToolRoute? = null)                     // last, defaulted
 class ToolRunner(..., log, routeBind: suspend (ToolRoute, NetworkEnv, suspend () -> Unit) -> Unit = <refuses WIFI and ETHERNET>)   // last, defaulted
 ```
@@ -1142,6 +1218,18 @@ class ManualRouteTest {
         var ran = false
         try { ManualRoute.bind(ToolRoute.WIFI, wifi, { null }) { ran = true }; fail("expected BindFailedException") } catch (_: BindFailedException) { }
         assertFalse("the block never ran", ran)
+    }
+    @Test fun `R4 on, a private target outside the known ranges goes over the LAN when it has no internet and no VPN is the default`() {
+        val offline = RouteContext(lanHasInternet = false, defaultIsVpn = false)
+        for (t in listOf("10.20.0.5", "100.64.1.1", "169.254.10.10")) assertEquals(t, ToolRoute.WIFI, ManualRoute.of(ip(t), known, wifi, offline, privateOverLan = true))
+        assertEquals(ToolRoute.ETHERNET, ManualRoute.of(ip("10.20.0.5"), known, ethernet, offline, privateOverLan = true))
+        assertEquals("a public target stays unbound", ToolRoute.OTHER, ManualRoute.of(ip("8.8.8.8"), known, wifi, offline, privateOverLan = true))
+        assertEquals("a VPN as the default carries it", ToolRoute.OTHER, ManualRoute.of(ip("10.20.0.5"), known, wifi, RouteContext(false, defaultIsVpn = true), privateOverLan = true))
+        assertEquals("a LAN with internet: ruling 4", ToolRoute.OTHER, ManualRoute.of(ip("10.20.0.5"), known, wifi, RouteContext.CONNECTED, privateOverLan = true))
+    }
+    @Test fun `R4 off is ruling 4 as written`() {
+        assertEquals(ToolRoute.OTHER, ManualRoute.of(ip("10.20.0.5"), known, wifi, RouteContext(lanHasInternet = false, defaultIsVpn = false), privateOverLan = false))
+        assertTrue("the shipped default is the controller's recommendation", ManualRoute.PRIVATE_TARGETS_OVER_LAN_WITHOUT_INTERNET)
     }
     @Test fun `route names round trip and anything else parses to null`() {
         ToolRoute.entries.forEach { assertEquals(it, ToolRoute.parse(it.name)) }
@@ -1288,6 +1376,8 @@ import com.northwalessolutions.netprobe.engine.common.BoundNetwork
 import com.northwalessolutions.netprobe.engine.common.SocketBinder
 import com.northwalessolutions.netprobe.engine.discovery.KnownRanges
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
+import com.northwalessolutions.netprobe.netenv.Rfc1918
+import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.Transport
 import kotlinx.coroutines.withContext
 import java.net.Inet4Address
@@ -1303,12 +1393,29 @@ enum class ToolRoute {
  * listener keep their own bindings. A target inside the network's known ranges goes over the Wi-Fi or Ethernet Network, and with no
  * binder fails rather than run unbound; any other target goes out on the system's routing, so a VPN or Tailscale route can carry it.
  */
+/** What Android says about the LAN and the default network at the Run tap (Director ruling R4); CONNECTED keeps ruling 4 as written. */
+data class RouteContext(val lanHasInternet: Boolean, val defaultIsVpn: Boolean) {
+    companion object { val CONNECTED = RouteContext(lanHasInternet = true, defaultIsVpn = false) }
+}
+
 object ManualRoute {
-    fun of(ip: Inet4Address, known: KnownRanges, env: NetworkEnv): ToolRoute = when {
-        !known.contains(ip) -> ToolRoute.OTHER
-        env.transport == Transport.ETHERNET -> ToolRoute.ETHERNET
-        else -> ToolRoute.WIFI
+    /**
+     * Director ruling R4 (pending; default per the controller's recommendation). true: on a Wi-Fi or Ethernet network with no internet and no
+     * VPN as the default, a private target outside the known ranges goes over that LAN, the only route that can reach it (plan review G10);
+     * false: ruling 4 as written (unbound). Public targets are unbound either way.
+     */
+    const val PRIVATE_TARGETS_OVER_LAN_WITHOUT_INTERNET = true
+    private val CGNAT = Subnet(0x64400000, 10)                    // 100.64.0.0/10
+    private val LINK_LOCAL = Subnet(0xA9FE0000.toInt(), 16)       // 169.254.0.0/16
+
+    fun of(ip: Inet4Address, known: KnownRanges, env: NetworkEnv, ctx: RouteContext = RouteContext.CONNECTED,
+           privateOverLan: Boolean = PRIVATE_TARGETS_OVER_LAN_WITHOUT_INTERNET): ToolRoute {
+        val lanRoute = if (env.transport == Transport.ETHERNET) ToolRoute.ETHERNET else ToolRoute.WIFI
+        if (known.contains(ip)) return lanRoute
+        if (privateOverLan && isPrivate(ip) && !ctx.lanHasInternet && !ctx.defaultIsVpn) return lanRoute
+        return ToolRoute.OTHER
     }
+    fun isPrivate(ip: Inet4Address): Boolean = Rfc1918.contains(ip) || CGNAT.contains(ip) || LINK_LOCAL.contains(ip)
     fun needsBinder(route: ToolRoute): Boolean = route != ToolRoute.OTHER
 
     suspend fun <T> bind(route: ToolRoute, env: NetworkEnv, binderFor: (NetworkEnv) -> SocketBinder?, block: suspend () -> T): T {
@@ -1317,6 +1424,30 @@ object ManualRoute {
         return withContext(BoundNetwork(b)) { block() }
     }
 }
+```
+
+`app/src/main/java/com/northwalessolutions/netprobe/netenv/NetworkEnvMonitor.kt`: add `import com.northwalessolutions.netprobe.engine.tools.RouteContext` after `import com.northwalessolutions.netprobe.engine.common.SocketBinder`, and replace
+```kotlin
+    private fun snapshot(nc: NetworkCapabilities, lp: LinkProperties): LinkSnapshot {
+```
+with
+```kotlin
+    /**
+     * Director ruling R4 (plan review G10): does the Wi-Fi or Ethernet Network carrying [env] have validated internet, and is a VPN the
+     * default network? Read once at a manual Run tap; not a JVM seam (ManualRouteTest drives RouteContext directly).
+     */
+    @Suppress("DEPRECATION")
+    fun routeContext(env: NetworkEnv): RouteContext {
+        val lan = cm.allNetworks.firstOrNull { n ->
+            val nc = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            !nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) && cm.getLinkProperties(n)?.linkAddresses?.any { it.address == env.interfaceIp } == true
+        }
+        val validated = lan?.let { cm.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) } ?: true
+        val defaultIsVpn = cm.activeNetwork?.let { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) } ?: false
+        return RouteContext(lanHasInternet = validated, defaultIsVpn = defaultIsVpn)
+    }
+
+    private fun snapshot(nc: NetworkCapabilities, lp: LinkProperties): LinkSnapshot {
 ```
 
 `app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolId.kt`: replace
@@ -1404,6 +1535,7 @@ Expected: `BUILD SUCCESSFUL`.
 ```bash
 git add app/src/main/java/com/northwalessolutions/netprobe/engine/discovery/KnownRanges.kt \
   app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ManualRoute.kt app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolId.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/netenv/NetworkEnvMonitor.kt \
   app/src/main/java/com/northwalessolutions/netprobe/engine/tools/ToolRunner.kt app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
   app/src/test/java/com/northwalessolutions/netprobe/engine/discovery/KnownRangesTest.kt \
   app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ManualRouteTest.kt app/src/test/java/com/northwalessolutions/netprobe/engine/tools/ToolRunnerRouteTest.kt
@@ -1744,9 +1876,9 @@ data class ManualResult(val start: ToolRunner.Start, val hostId: Long?)
 enum class ManualStep { OPEN_SHEET, START }
 object ManualFlow { fun firstStep(tool: ToolId): ManualStep }
 object ManualMessages { fun of(result: ManualResult, busy: Map<Long, HostBusyRegistry.Work>): String? }
-class ManualStarter(committedBefore, network, known, hasBinder, target, discard, runnerStart) { suspend fun startManual(r: ManualRequest): ManualResult }
+class ManualStarter(committedBefore, network, known, hasBinder, routeContext, envNow, target, discard, runnerStart) { suspend fun startManual(r: ManualRequest): ManualResult }
 ```
-The start order is spec 4.3: inside `committedBefore` (a pending Remove or Forget is final first), resolve the network (null or forgotten: `NoNetwork`, no row), choose the route from the live known ranges, refuse a Wi-Fi or Ethernet route with no binder (`NoNetwork`, no row), take or create the row, start the runner, and delete the row when this call created it and the start was not `Started` (or threw). The row transaction and the runner start are deliberately separate transactions (self-review gap 4): the runner takes its own locks and writes `tool_runs` in its own transaction, and the conditional delete (`manualOnly = 1` and no run) can never remove a promoted or started row.
+The start order is spec 4.3: inside `committedBefore` (a pending Remove or Forget is final first), resolve the network (null or forgotten: `NoNetwork`, no row), choose the route from the live known ranges and the LAN's route context (R4), refuse a Wi-Fi or Ethernet route with no binder (`NoNetwork`, no row), take or create the row, refuse when the current env is no longer the tap's (plan review G15: `NoNetwork`, the row discarded), start the runner, and delete the row when this call created it and the start was not `Started` (or threw). The row transaction and the runner start are deliberately separate transactions (self-review gap 4): the runner takes its own locks and writes `tool_runs` in its own transaction, and the conditional delete (`manualOnly = 1` and no run) can never remove a promoted or started row.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1769,17 +1901,21 @@ import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.netenv.Transport
 import com.northwalessolutions.netprobe.ui.home.ScanController
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.engine.tools.RouteContext
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 
+private val RIG_ENV = NetworkEnv(Ipv4.parse("10.0.3.20")!!, 24, Ipv4.parse("10.0.3.1")!!, emptyList(), "Home", null, Transport.WIFI)
+
 /** 3C spec 8.1 item 22 (4.3, G8, Review Focus 2 and 3). */
 class ManualStarterTest {
     private fun ip(s: String) = Ipv4.parse(s)!!
-    private val env = NetworkEnv(ip("10.0.3.20"), 24, ip("10.0.3.1"), emptyList(), "Home", null, Transport.WIFI)
+    private val env = RIG_ENV
 
     private class Rig(var networkId: Long? = 1, var binder: Boolean = true, var existing: HostEntity? = null,
-                      var result: ToolRunner.Start = ToolRunner.Start.Started(5), var throwOnStart: Boolean = false) {
+                      var result: ToolRunner.Start = ToolRunner.Start.Started(5), var throwOnStart: Boolean = false,
+                      var envNow: NetworkEnv? = RIG_ENV, var ctx: RouteContext = RouteContext.CONNECTED) {
         val calls = mutableListOf<String>()
         val targets = mutableListOf<ToolTarget>()
         val discarded = mutableListOf<Long>()
@@ -1789,6 +1925,8 @@ class ManualStarterTest {
             network = { calls += "network"; networkId },
             known = { _, _ -> KnownRanges.of(SubnetMath.of(Ipv4.parse("10.0.3.20")!!, 24), emptyList(), emptyList()) },
             hasBinder = { binder },
+            routeContext = { ctx },
+            envNow = { envNow },
             target = { id, ipText ->
                 calls += "target"
                 existing?.let { ManualRow(it, inserted = false) }
@@ -1854,6 +1992,18 @@ class ManualStarterTest {
         val fresh = Rig(); fresh.starter.startManual(req("10.0.3.200", ToolId.TLS_CERTIFICATE))
         assertNull("a fresh manual row has no name to send", fresh.targets.single().serverName)
     }
+    @Test fun `a network change between the tap and the start refuses and discards the new row`() = runBlocking {
+        val rig = Rig(envNow = RIG_ENV.copy(gateway = Ipv4.parse("10.0.9.1")!!))
+        assertEquals(ManualResult(ToolRunner.Start.NoNetwork, Rig.NEW_ROW), rig.starter.startManual(req("10.0.3.200")))
+        assertEquals(listOf(Rig.NEW_ROW), rig.discarded); assertFalse("start" in rig.calls)
+        assertEquals("no LAN at all refuses too", ToolRunner.Start.NoNetwork, Rig(envNow = null).starter.startManual(req("10.0.3.200")).start)
+    }
+    @Test fun `R4 sends an offline LAN's private outside target over Wi-Fi, so it needs the binder`() = runBlocking {
+        val offline = RouteContext(lanHasInternet = false, defaultIsVpn = false)
+        val rig = Rig(ctx = offline); rig.starter.startManual(req("10.20.0.5"))
+        assertEquals(ToolRoute.WIFI, rig.targets.single().route)
+        assertEquals(ManualResult(ToolRunner.Start.NoNetwork, null), Rig(ctx = offline, binder = false).starter.startManual(req("10.20.0.5")))
+    }
     @Test fun `each refusal maps to the 3B message`() {
         assertNull(ManualMessages.of(ManualResult(ToolRunner.Start.Started(1), 9), emptyMap()))
         assertEquals(ToolCopy.BUSY_TOOL, ManualMessages.of(ManualResult(ToolRunner.Start.HostBusy, 9), mapOf(9L to HostBusyRegistry.Work.TOOL)))
@@ -1885,7 +2035,9 @@ package com.northwalessolutions.netprobe.ui.manual
 import com.northwalessolutions.netprobe.data.ManualRow
 import com.northwalessolutions.netprobe.engine.discovery.KnownRanges
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
+import com.northwalessolutions.netprobe.data.NetworkSignature
 import com.northwalessolutions.netprobe.engine.tools.ManualRoute
+import com.northwalessolutions.netprobe.engine.tools.RouteContext
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.engine.tools.ToolOptions
@@ -1931,6 +2083,10 @@ class ManualStarter(
     private val network: suspend (NetworkEnv) -> Long?,
     private val known: suspend (Long, NetworkEnv) -> KnownRanges,
     private val hasBinder: (NetworkEnv) -> Boolean,
+    /** NetworkEnvMonitor.routeContext: the LAN's internet and the default network, for Director ruling R4. */
+    private val routeContext: (NetworkEnv) -> RouteContext,
+    /** The env now, read just before the runner starts (plan review G15). */
+    private val envNow: () -> NetworkEnv?,
     private val target: suspend (Long, String) -> ManualRow,
     /** Deletes the row only while it is still manualOnly with no run (HostRepository.discardManual). */
     private val discard: suspend (Long) -> Unit,
@@ -1940,12 +2096,17 @@ class ManualStarter(
 
     private suspend fun begin(r: ManualRequest): ManualResult {
         val networkId = network(r.env) ?: return ManualResult(ToolRunner.Start.NoNetwork, null)
-        val route = ManualRoute.of(r.ip, known(networkId, r.env), r.env)
+        val route = ManualRoute.of(r.ip, known(networkId, r.env), r.env, routeContext(r.env))
         // Spec 4.5: a known-range target with no Wi-Fi or Ethernet Network to bind is refused here, before any row, never run unbound.
         if (ManualRoute.needsBinder(route) && !hasBinder(r.env)) return ManualResult(ToolRunner.Start.NoNetwork, null)
         val row = target(networkId, r.ip.hostAddress)
         // Brute-force always sends the IP (3B 4.9); the other tools send the row's known name, which a fresh manual row does not have.
         val name = if (r.tool == ToolId.DIR_BRUTEFORCE) null else ToolApplicability.serverName(row.host)
+        // Plan review G15: a route chosen for the tap's network must never be bound on another; the runner reads its own env at start.
+        if (envNow()?.let { NetworkSignature.identityKey(it) } != NetworkSignature.identityKey(r.env)) {
+            if (row.inserted) discard(row.host.id)
+            return ManualResult(ToolRunner.Start.NoNetwork, row.host.id)
+        }
         val started = try {
             runnerStart(ToolTarget(row.host.id, r.ip, r.port, r.tls, name, route), r.tool, r.options)
         } catch (t: Throwable) {
@@ -2093,11 +2254,18 @@ with
             route = ToolCopy.routeLine(ToolRoute.parse(run.route)))
 ```
 
-`app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolResultsSheet.kt`: insert this line as the statement directly before the status-line statement, inside the header `Column`, after the title `Row`:
+`app/src/main/java/com/northwalessolutions/netprobe/ui/tools/ToolResultsSheet.kt` (F4's shape at f8acaec): replace
+```kotlin
+                if (liveStatus != null) LiveLine(liveStatus, style = NetProbeText.data, color = NetProbeColors.textMuted)
+                else Text(state.statusLine, style = NetProbeText.data, color = NetProbeColors.textMuted)
+```
+with
 ```kotlin
                 state.route?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.testTag("routeLine")) }   // 3C spec 4.5
+                if (liveStatus != null) LiveLine(liveStatus, style = NetProbeText.data, color = NetProbeColors.textMuted)
+                else Text(state.statusLine, style = NetProbeText.data, color = NetProbeColors.textMuted)
 ```
-At 82084d3 the status-line statement is the single line `Text(state.statusLine, style = NetProbeText.data, color = NetProbeColors.textMuted)`. The 3B device QA's fix F4 (uncommitted in the working tree when this plan was written) turns it into the pair `if (liveStatus != null) LiveText(...)` / `else Text(state.statusLine, ...)`; if that has landed, the line goes before the `if`, never between the `if` and its `else`.
+The route never changes during a run, so it is plain `Text`, outside F4's live line.
 
 - [ ] **Step 4: Run the tests to see them pass**
 
@@ -2105,7 +2273,7 @@ At 82084d3 the status-line statement is the single line `Text(state.statusLine, 
 ./gradlew :app:testDebugUnitTest --tests "com.northwalessolutions.netprobe.ui.tools.*" --console=plain 2>&1 | tail -20
 ./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
 ```
-Expected: `BUILD SUCCESSFUL` twice; 3B's `ToolResultsSheetTest` and `ToolsFakes` compile unchanged.
+Expected: `BUILD SUCCESSFUL` twice; 3B's `ToolResultsSheetTest`, `ToolsFakes` and F4's `DetailContent` call (with `liveStatus`) compile unchanged.
 
 - [ ] **Step 5: Task gate**
 
@@ -2126,31 +2294,28 @@ git commit -m "Phase 3C-2: results sheet names a manual run's route"
 
 ---
 
-### Task 7: The "Run a tool" screen: ManualPresenter, ManualToolsViewModel, ManualToolsScreen, the Home overflow item and the "tools" route
+### Task 7a: The "Run a tool" state: ManualPresenter (structural, F4) and ManualToolsViewModel
 
 **Files:**
-- Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualPresenter.kt`, `ui/manual/ManualToolsViewModel.kt`, `ui/manual/ManualToolsScreen.kt`
-- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt` (`HomeMenu`), `ui/home/HomeContent.kt` (`HomeActions`, the `HomeMenu` call), `ui/home/HomeScreen.kt`, `ui/Nav.kt` (whole file)
-- Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/manual/ManualPresenterTest.kt`; compile only (run in Task 12): `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsContentTest.kt`, `ui/home/HomeMenuTest.kt`
+- Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualPresenter.kt`, `ui/manual/ManualToolsViewModel.kt`
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt` (`manualStartedHostId`, plan review G13)
+- Test: `app/src/test/java/com/northwalessolutions/netprobe/ui/manual/ManualPresenterTest.kt`
 
 **Interfaces:**
-- Consumes: `ManualCopy`, `ManualTarget` (Task 4), `ManualStarter`, `ManualRequest`, `ManualFlow`, `ManualMessages` (Task 5), `KnownRanges` (Task 3), `NetworkRun`, `HostRepository.manualTarget`, `discardManual`, `ToolRepository.recentForNetwork`, `NetworkSignature.identityKey(NetworkEntity)` (Task 2), `ToolResultsState.route` (Task 6), `HomeRange` (3C-1); `ToolResultsSheet`, `DirBruteSheet`, `DirBruteSheetState`, `ToolResultsModel`, `ToolsUiModel`, `ToolExport`, `ActionPill`, `SwitchRow`, `BackToHome`, `npFieldColors`, `RelativeTime`, `DisplayName` (3A, 3B).
+- Consumes: `ManualCopy`, `ManualTarget` (Task 4), `ManualStarter`, `ManualRequest`, `ManualFlow`, `ManualMessages` (Task 5), `KnownRanges`, `RouteContext`, `NetworkEnvMonitor.routeContext` (Task 3), `NetworkRun`, `HostRepository.manualTarget`, `discardManual`, `ToolRepository.recentForNetwork` (Task 2), `ToolResultsState.route` (Task 6), `HomeRange` (3C-1); `ToolResultsModel`, `ToolsUiModel`, `ToolExport`, `DirBruteSheetState`, `RelativeTime`, `DisplayName` (3A, 3B), the F4 pattern of `DetailViewModel.toolBar` (f8acaec).
 - Produces:
 ```kotlin
 data class ManualForm(val ipText: String = "", val portText: String = "", val tool: ToolId = ToolId.HTTP_FINGERPRINT, val httpsChoice: Boolean? = null, val attempted: Boolean = false)
 data class KnownTarget(val host: HostEntity, val services: Map<Int, ServiceInfo>)
 data class ManualHistoryRow(val runId: Long, val title: String, val line: String, val description: String)
-data class ManualUiState(form, ipError, portError, portEnabled, showHttps, https, fixedLine, infoLine, lan, running, progress, history, results, dirBrute, message, appMessage)
-object ManualPresenter { const val RECENT_RUNS = 20; fun present(...): ManualUiState }
-class ManualToolsViewModel(c: AppContainer) : ViewModel() { val state: StateFlow<ManualUiState>; fun setIp/setPort/setTool/setHttps/runTool/stopTool/openRun/olderRun/newerRun/closeResults/shareRun/copyFinding/openFinding/startDirBrute/closeDirBrute/dismissMessage/dismissAppMessage }
-data class ManualActions(...); @Composable fun ManualToolsContent(state: ManualUiState, actions: ManualActions); @Composable fun ManualToolsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists: () -> Unit = {})
-fun HomeMenu(..., onForget: () -> Unit = {}, onRunTool: () -> Unit = {})      // item tag menuRunTool, always enabled
-data class HomeActions(..., val onRunTool: () -> Unit = {}); fun HomeScreen(container, onOpenHost, onOpenSettings, onOpenTools: () -> Unit = {})
-fun NetProbeNavHost(nav, home, detail, settings, wordlists = {}, tools: @Composable () -> Unit = {})   // route "tools"
+data class ManualUiState(form, ipError, portError, portEnabled, showHttps, https, fixedLine, infoLine, lan, running, history, results, dirBrute, message, appMessage)   // no per-tick field
+object ManualPresenter { const val RECENT_RUNS = 20; fun present(...): ManualUiState
+    fun frozen(a: ToolRunner.Active): ToolRunner.Active; fun liveProgress(a: ToolRunner.Active?): String?; fun liveResultsStatus(a: ToolRunner.Active?): String? }
+class ManualToolsViewModel(c: AppContainer) : ViewModel() { val state: StateFlow<ManualUiState>; val liveProgress: StateFlow<String?>; val liveResults: StateFlow<String?>
+    fun setIp/setPort/setTool/setHttps/runTool/stopTool/openRun/olderRun/newerRun/closeResults/shareRun/copyFinding/openFinding/startDirBrute/closeDirBrute/dismissMessage/dismissAppMessage }
+AppContainer.manualStartedHostId: MutableStateFlow<Long?>
 ```
-Per-tick updates (3B device QA F4, uncommitted in the working tree when this plan was written): F4 moves the Device screen's per-tick progress out of its tool state so the screen does not recompose on every runner tick. The manual screen below combines `c.toolRunner.active` like 3B's Device screen did, and its `state` ends with `distinctUntilChanged()`, so it re-emits only when the shown values change (the progress text changes at most once per tick of the running run). If F4 lands as a reusable pattern (a separate bar flow and a live text composable), the controller rebases this task to use it; Task 1 Step 0 stops on F4's files.
-
-Screen layout (spec 4.1): a pinned top block (status-bar padding, background colour, never scrolls) with the back row, the title, the IP (weight 0.65) and Port (0.35) fields, the tool row, the option row (the "Use HTTPS" switch for the two web tools, "Uses port 445" or "Uses UDP 161", nothing for TLS certificate), the known-device or no-LAN line, and the Run / Stop pill with the 3B progress text; below it the only scrolling part, the `LazyColumn` `manualHistory`. Errors show as each field's supporting text from the first Run tap on (self-review gap 6).
+Per-tick updates follow F4 (f8acaec, Global Constraints): `state` sees every run frozen and ends with `distinctUntilChanged()`, so a runner tick never re-emits it; `liveProgress` and `liveResults` carry the per-tick text, as `DetailViewModel.toolBar` does, and Task 7b reads them only in `LiveLine`'s draw and `ToolResultsSheet`'s `liveStatus`. The network is always resolved with `networks.ensure` (G7); `runTool` takes "Use HTTPS" from the form (G14); the start is refused when the env changed since the tap (G15, in `ManualStarter`).
 
 - [ ] **Step 1: Write the failing JVM test**
 
@@ -2204,10 +2369,15 @@ class ManualPresenterTest {
         present(ManualForm(ipText = "10.0.3.59"), lan = false, known = nas).let { assertEquals(ManualCopy.NO_LAN, it.infoLine); assertFalse(it.lan) }
         assertNull(present(ManualForm(ipText = "10.20.0.5")).infoLine)
     }
-    @Test fun `the run this screen started shows Stop with the 3B progress`() {
+    @Test fun `the run this screen started shows Stop, and its progress is live text, never screen state (F4)`() {
         val a = ToolRunner.Active(1, 9, ToolId.DIR_BRUTEFORCE, 5000, 3_000, 12, 300, 2, 0, false)
-        present(ManualForm(), active = a).let { assertTrue(it.running); assertEquals("12 of 300, 2 found  3 s", it.progress) }
-        present(ManualForm()).let { assertFalse(it.running); assertNull(it.progress) }
+        assertTrue(present(ManualForm(), active = a).running); assertFalse(present(ManualForm()).running)
+        assertEquals("12 of 300, 2 found  3 s", ManualPresenter.liveProgress(a)); assertNull(ManualPresenter.liveProgress(null))
+        assertEquals("Running, 12 of 300, 2 found  3 s", ManualPresenter.liveResultsStatus(a))
+        val later = a.copy(activeMs = 9_000, done = 200, found = 7, errors = 1)
+        assertEquals("a runner tick never changes the structural state", present(ManualForm(), active = ManualPresenter.frozen(a)),
+            present(ManualForm(), active = ManualPresenter.frozen(later)))
+        ManualPresenter.frozen(a).let { assertEquals(1L, it.runId); assertEquals(300, it.total); assertEquals(ToolId.DIR_BRUTEFORCE, it.toolId) }
     }
     @Test fun `history rows read tool on ip and port, then summary and age`() {
         val rows = present(ManualForm(), history = listOf(NetworkRun(runOn(2, "http-fingerprint", 5000, "Synology DSM, 6 findings"), "10.0.3.5"),
@@ -2259,14 +2429,24 @@ data class ManualHistoryRow(val runId: Long, val title: String, val line: String
 data class ManualUiState(
     val form: ManualForm = ManualForm(), val ipError: String? = null, val portError: String? = null,
     val portEnabled: Boolean = true, val showHttps: Boolean = true, val https: Boolean = false, val fixedLine: String? = null,
-    val infoLine: String? = null, val lan: Boolean = true, val running: Boolean = false, val progress: String? = null,
+    val infoLine: String? = null, val lan: Boolean = true, val running: Boolean = false,
     val history: List<ManualHistoryRow> = emptyList(), val results: ToolResultsState? = null, val dirBrute: DirBruteSheetState? = null,
     val message: String? = null, val appMessage: AppMessage? = null,
 )
 
-/** Pure state for the "Run a tool" screen (3C spec 4.1, 4.2); the view model only gathers its inputs. */
+/**
+ * Pure state for the "Run a tool" screen (3C spec 4.1, 4.2); the view model only gathers its inputs. Per-tick progress is never part of it
+ * (3B QA F4): the structural state sees [frozen] runs and the live text comes from [liveProgress] and [liveResultsStatus], read in draw.
+ */
 object ManualPresenter {
     const val RECENT_RUNS = 20
+
+    /** A run with its per-tick counts zeroed: what the structural state may see (which run, its tool, whether its total is known). */
+    fun frozen(a: ToolRunner.Active): ToolRunner.Active = a.copy(activeMs = 0, done = 0, found = 0, errors = 0)
+    /** The pill's live progress text (3B ToolsUiModel.bar wording). */
+    fun liveProgress(a: ToolRunner.Active?): String? = a?.let { ToolsUiModel.bar(it).progress }
+    /** The results sheet's live status line for a running run (3B ToolCopy.resultsRunning wording). */
+    fun liveResultsStatus(a: ToolRunner.Active?): String? = a?.let { ToolCopy.resultsRunning(ToolsUiModel.bar(it).progress) }
 
     fun present(form: ManualForm, home: Subnet?, lan: Boolean, known: KnownTarget?, history: List<NetworkRun>, active: ToolRunner.Active?,
                 results: ToolResultsState?, dirBrute: DirBruteSheetState?, message: String?, appMessage: AppMessage?, now: Long,
@@ -2284,7 +2464,7 @@ object ManualPresenter {
         val info = if (!lan) ManualCopy.NO_LAN else known?.let { ManualCopy.knownDevice(DisplayName.of(it.host)) }
         val rows = history.mapNotNull { nr -> ToolId.byKey(nr.run.toolId)?.let { id -> historyRow(nr, id, now, formatDate) } }
         return ManualUiState(form, checked.ipError, checked.portError, portEnabled = fixed == null, showHttps = webTool, https = https, fixedLine = fixedLine,
-            infoLine = info, lan = lan, running = active != null, progress = active?.let { ToolsUiModel.bar(it).progress }, history = rows,
+            infoLine = info, lan = lan, running = active != null, history = rows,
             results = results, dirBrute = dirBrute, message = message, appMessage = appMessage)
     }
 
@@ -2305,140 +2485,7 @@ object ManualPresenter {
 ```
 Expected: `BUILD SUCCESSFUL`, 0 failures.
 
-- [ ] **Step 5: Write the Compose tests (compile only, run in Task 12)**
-
-`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsContentTest.kt`:
-```kotlin
-package com.northwalessolutions.netprobe.ui.manual
-
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.northwalessolutions.netprobe.engine.tools.ToolId
-import com.northwalessolutions.netprobe.ui.home.HomeCopy
-import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
-import com.northwalessolutions.netprobe.ui.tools.ToolCopy
-import com.northwalessolutions.netprobe.ui.tools.ToolsFakes
-import org.junit.Assert.*
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
-
-/** 3C spec 8.2 item 6: fake state only, no container, no database. */
-@RunWith(AndroidJUnit4::class)
-class ManualToolsContentTest {
-    @get:Rule val rule = createComposeRule()
-    private val events = mutableListOf<String>()
-    private var s by mutableStateOf(ManualUiState())
-    private val actions = ManualActions(onRun = { events += "run" }, onStop = { events += "stop" }, onOpenRun = { events += "open $it" },
-        onTool = { events += "tool ${it.key}" })
-    private fun show(state: ManualUiState) { s = state; rule.setContent { NetProbeTheme { ManualToolsContent(s, actions) } } }
-    private fun history(n: Int) = (1..n).map {
-        ManualHistoryRow(it.toLong(), ManualCopy.historyRow(ToolCopy.HTTP_FINGERPRINT, "10.0.3.$it", "80"), ManualCopy.historyLine("Done", "2 minutes ago"),
-            ManualCopy.historyDescription(ToolCopy.HTTP_FINGERPRINT, "10.0.3.$it", "80"))
-    }
-
-    @Test fun theRunPillIsPinnedOutsideTheHistoryAndScrollingNeverMovesIt() {
-        show(ManualUiState(history = history(30)))
-        val pill = rule.onNodeWithTag("manualRun")
-        assertFalse(generateSequence(pill.fetchSemanticsNode().parent) { it.parent }.any { SemanticsProperties.VerticalScrollAxisRange in it.config })
-        val y = pill.fetchSemanticsNode().positionInRoot.y
-        rule.onNodeWithTag("manualHistory").performScrollToIndex(30)
-        rule.waitForIdle()
-        assertEquals(y, rule.onNodeWithTag("manualRun").fetchSemanticsNode().positionInRoot.y)
-        rule.onNodeWithTag("manualRun").performClick()
-        assertEquals(listOf("run"), events)
-    }
-    @Test fun errorsShowUnderTheirFields() {
-        show(ManualUiState(form = ManualForm(ipText = "10.0.3", attempted = true), ipError = ManualCopy.ERR_IP, portError = ManualCopy.ERR_PORT_NEEDED))
-        rule.onNodeWithText(ManualCopy.ERR_IP).assertExists()
-        rule.onNodeWithText(ManualCopy.ERR_PORT_NEEDED).assertExists()
-    }
-    @Test fun smbDisablesThePortFieldAndSaysWhichPort() {
-        show(ManualUiState(form = ManualForm(tool = ToolId.SMB_SESSION), portEnabled = false, showHttps = false, fixedLine = ManualCopy.FIXED_SMB))
-        rule.onNodeWithTag("manualPort").assertIsNotEnabled()
-        rule.onNodeWithText(ManualCopy.FIXED_SMB).assertExists()
-        rule.onNodeWithText(ManualCopy.USE_HTTPS).assertDoesNotExist()
-    }
-    @Test fun theToolRowListsTheFiveToolsInOrder() {
-        show(ManualUiState())
-        rule.onNodeWithTag("manualTool").assert(hasText(ManualCopy.toolRow(ToolCopy.HTTP_FINGERPRINT))).performClick()
-        val ys = ToolId.entries.map { rule.onNodeWithTag("manualTool:${it.key}").fetchSemanticsNode().positionInRoot.y }
-        assertEquals(ys.sorted(), ys)
-        rule.onNodeWithTag("manualTool:${ToolId.SNMP_WALK.key}").performClick()
-        assertEquals(listOf("tool snmp-walk"), events)
-    }
-    @Test fun aRunningRunShowsStopAndItsProgressAndLocksTheFields() {
-        show(ManualUiState(running = true, progress = "12 of 300, 2 found  3 s"))
-        rule.onNodeWithTag("manualRun").assert(hasText(HomeCopy.STOP)).assert(hasContentDescription(ToolCopy.STOP_DESCRIPTION)).performClick()
-        rule.onNodeWithTag("manualProgress").assertTextEquals("12 of 300, 2 found  3 s")
-        rule.onNodeWithTag("manualIp").assertIsNotEnabled()
-        assertEquals(listOf("stop"), events)
-    }
-    @Test fun aHistoryRowOpensItsRunAndTheSheetShowsItsRoute() {
-        show(ManualUiState(history = history(2)))
-        rule.onNodeWithTag("historyRow:2").assert(hasContentDescription(ManualCopy.historyDescription(ToolCopy.HTTP_FINGERPRINT, "10.0.3.2", "80"))).performClick()
-        assertEquals(listOf("open 2"), events)
-        s = s.copy(results = ToolsFakes.results().copy(route = ToolCopy.ROUTE_WIFI))
-        rule.waitForIdle()
-        rule.onNodeWithTag("routeLine").assertTextEquals("via Wi-Fi")
-    }
-    @Test fun withNoLanTheFieldsAndRunAreDisabledAndTheLineSaysWhy() {
-        show(ManualUiState(lan = false, infoLine = ManualCopy.NO_LAN))
-        rule.onNodeWithTag("manualIp").assertIsNotEnabled()
-        rule.onNodeWithTag("manualRun").assertIsNotEnabled()
-        rule.onNodeWithText(ManualCopy.NO_LAN).assertExists()
-    }
-    @Test fun anEmptyHistorySaysSo() {
-        show(ManualUiState())
-        rule.onNodeWithText(ManualCopy.HISTORY_EMPTY).assertExists()
-    }
-}
-```
-
-`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeMenuTest.kt`:
-```kotlin
-package com.northwalessolutions.netprobe.ui.home
-
-import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
-import org.junit.Assert.assertEquals
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
-
-/** 3C spec 8.2 item 5: the Home overflow is exactly these four items, in this order (G1: no Aggressive item). */
-@RunWith(AndroidJUnit4::class)
-class HomeMenuTest {
-    @get:Rule val rule = createComposeRule()
-
-    @Test fun theOverflowListsQuickScanAllRunAToolForgetAndSettingsInThatOrderAndNothingElse() {
-        val events = mutableListOf<String>()
-        rule.setContent { NetProbeTheme { HomeMenu(quickEnabled = true, quickScanning = false, onQuick = {}, onStopQuick = {}, onSettings = {},
-            forgetEnabled = true, onForget = {}, onRunTool = { events += "tool" }) } }
-        rule.onNodeWithTag("homeMenu").performClick()
-        val labels = listOf("Quick scan all", HomeCopy.MENU_RUN_TOOL, HomeCopy.FORGET_NETWORK, "Settings")
-        val ys = labels.map { rule.onNodeWithText(it).fetchSemanticsNode().positionInRoot.y }
-        assertEquals(ys.sorted(), ys)
-        rule.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(4)
-        rule.onNodeWithTag("menuRunTool").assert(hasText(HomeCopy.MENU_RUN_TOOL)).assertIsEnabled().performClick()
-        assertEquals(listOf("tool"), events)
-    }
-    @Test fun runAToolIsEnabledWithNothingScannedAndNothingToForget() {
-        rule.setContent { NetProbeTheme { HomeMenu(quickEnabled = false, quickScanning = false, onQuick = {}, onStopQuick = {}, onSettings = {}) } }
-        rule.onNodeWithTag("homeMenu").performClick()
-        rule.onNodeWithTag("menuRunTool").assertIsEnabled()
-    }
-}
-```
-
-- [ ] **Step 6: Implement the view model**
+- [ ] **Step 5: Implement the view model and the process-wide started host**
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsViewModel.kt`:
 ```kotlin
@@ -2450,7 +2497,6 @@ import androidx.lifecycle.viewModelScope
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.NetworkRun
-import com.northwalessolutions.netprobe.data.NetworkSignature
 import com.northwalessolutions.netprobe.data.SettingsState
 import com.northwalessolutions.netprobe.data.ToolRunEntity
 import com.northwalessolutions.netprobe.engine.discovery.KnownRanges
@@ -2474,9 +2520,9 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 /**
- * The "Run a tool" screen (3C spec 4). Every run goes through ManualStarter and the existing ToolRunner; the screen remembers only the host
- * of the run it started, so Stop and the progress follow that run. Starts and the brute-force sheet's Run use appScope, as the Device
- * screen does, so leaving the screen never cancels a start half-way.
+ * The "Run a tool" screen (3C spec 4). Every run goes through ManualStarter and the existing ToolRunner. The host of the run this screen
+ * started lives in AppContainer (plan review G13), so Stop survives the screen being recreated. Starts and the brute-force sheet's Run use
+ * appScope, as the Device screen does. [state] is structural only (3B QA F4); the per-tick text is [liveProgress] and [liveResults].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
@@ -2485,7 +2531,7 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
 
     private val form = MutableStateFlow(ManualForm())
     private val message = MutableStateFlow<String?>(null)
-    private val startedHostId = MutableStateFlow<Long?>(null)
+    private val startedHostId: MutableStateFlow<Long?> = c.manualStartedHostId
     private val resultsRunId = MutableStateFlow<Long?>(null)
     private val pending = MutableStateFlow<PendingBrute?>(null)
     private val env: StateFlow<NetworkEnv?> = c.networkEnvMonitor.env.stateIn(viewModelScope, SharingStarted.Eagerly, c.networkEnvMonitor.current())
@@ -2496,14 +2542,18 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         network = { e -> networkFor(e) },
         known = { id, e -> knownRanges(id, e) },
         hasBinder = { e -> c.networkEnvMonitor.binderFor(e) != null },
+        routeContext = { e -> c.networkEnvMonitor.routeContext(e) },
+        envNow = { c.networkEnvMonitor.current() },
         target = { id, ip -> c.hosts.manualTarget(id, ip) },
         discard = { id -> c.hosts.discardManual(id) },
         runnerStart = { t, tool, options -> c.toolRunner.start(t, tool, options) })
 
-    /** The current network row only when it is this env's network (same gateway and prefix), else resolved as a scan does (spec 4.3 step 1). */
+    /**
+     * Always resolved as a scan does, MAC-aware (plan review G7, amendment A5): the gateway-and-prefix key alone cannot tell two sites with the
+     * same addressing apart, so Home's current row is never taken on trust. One transaction; a Run tap is not a hot path.
+     */
     private suspend fun networkFor(e: NetworkEnv): Long? {
-        val current = c.currentNetwork.value?.takeIf { NetworkSignature.identityKey(it) == NetworkSignature.identityKey(e) }
-        val net = current ?: c.networks.ensure(e, GatewayMac.lookup(e.gateway))
+        val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway))
         return net?.id?.takeIf { it != c.forgottenNetworkId.value }
     }
     /** Spec 4.5: read at the Run tap from the live settings, this network's manual ranges and its visible hosts. */
@@ -2513,8 +2563,9 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
             c.hosts.hostsForNetwork(networkId).first())
     }
 
-    private val known: Flow<KnownTarget?> = combine(networkId, form.map { it.ipText.trim() }.distinctUntilChanged()) { id, ip -> id to ip }
-        .mapLatest { (id, ip) -> lookupKnown(id, ip) }
+    /** Eager, so runTool reads the same known service the switch shows (plan review G14). */
+    private val known: StateFlow<KnownTarget?> = combine(networkId, form.map { it.ipText.trim() }.distinctUntilChanged()) { id, ip -> id to ip }
+        .mapLatest { (id, ip) -> lookupKnown(id, ip) }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private suspend fun lookupKnown(id: Long?, ip: String): KnownTarget? {
         if (id == null || Ipv4.parse(ip) == null) return null
         val h = c.hosts.findOnce(id, ip)?.takeUnless { it.manualOnly } ?: return null
@@ -2534,7 +2585,8 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
     val state: StateFlow<ManualUiState> = combine(listOf(form, env, known, history, c.toolRunner.active, resultsSource, pending, message,
         c.appMessages.current, startedHostId, c.settings.state)) { arr ->
         @Suppress("UNCHECKED_CAST") val historyRuns = arr[3] as List<NetworkRun>
-        @Suppress("UNCHECKED_CAST") val activeMap = arr[4] as Map<Long, ToolRunner.Active>
+        // Structural only (3B QA F4): every run is frozen, so a runner tick produces an equal state, which distinctUntilChanged drops.
+        @Suppress("UNCHECKED_CAST") val activeMap = (arr[4] as Map<Long, ToolRunner.Active>).mapValues { ManualPresenter.frozen(it.value) }
         val e = arr[1] as NetworkEnv?; val s = arr[10] as SettingsState
         val home = e?.let { HomeRange.of(it.interfaceIp, it.prefixLength, s.maxPrefix, s.extEnabled).subnet }
         val now = System.currentTimeMillis()
@@ -2542,6 +2594,14 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         ManualPresenter.present(arr[0] as ManualForm, home, e != null, arr[2] as KnownTarget?, historyRuns, (arr[9] as Long?)?.let { activeMap[it] },
             results, (arr[6] as PendingBrute?)?.sheet, arr[7] as String?, arr[8] as AppMessage?, now)
     }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ManualUiState())
+
+    /** The pill's per-tick progress for the run this screen started, read only in LiveLine's draw (3B QA F4). */
+    val liveProgress: StateFlow<String?> = combine(c.toolRunner.active, startedHostId) { m, id -> ManualPresenter.liveProgress(id?.let { m[it] }) }
+        .distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
+    /** The open results sheet's live status line while its run is live, for ToolResultsSheet's liveStatus (3B QA F4). */
+    val liveResults: StateFlow<String?> = combine(c.toolRunner.active, resultsSource) { m, src ->
+        ManualPresenter.liveResultsStatus(src?.let { s -> m[s.run.hostId]?.takeIf { it.runId == s.run.id } })
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     init {
         // The results sheet closes when its run disappears (pruned by a newer run, or its network forgotten), as on the Device screen.
@@ -2564,7 +2624,9 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         val checked = ManualTarget.check(f.ipText, f.portText, f.tool, HomeRange.of(e.interfaceIp, e.prefixLength, s.maxPrefix, s.extEnabled).subnet, attempted = true)
         val ip = checked.ip ?: return
         val port = checked.port ?: return
-        val request = ManualRequest(e, ip, port, f.tool, ManualTarget.tls(f.tool, state.value.https))
+        // From the form, as the presenter computes it, never from the published state (plan review G14).
+        val https = f.httpsChoice ?: ManualTarget.httpsDefault(f.tool, port, known.value?.services?.get(port))
+        val request = ManualRequest(e, ip, port, f.tool, ManualTarget.tls(f.tool, https))
         when (ManualFlow.firstStep(f.tool)) {
             ManualStep.OPEN_SHEET -> openSheet(request)
             ManualStep.START -> c.appScope.launch(Dispatchers.Default) { begin(request) }
@@ -2644,7 +2706,194 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
 }
 ```
 
-- [ ] **Step 7: Implement the screen, the Home item and the route**
+
+`app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt`: replace
+```kotlin
+    val removedHostIds = MutableStateFlow<Set<Long>>(emptySet())
+```
+with
+```kotlin
+    val removedHostIds = MutableStateFlow<Set<Long>>(emptySet())
+    /** The host of the run the "Run a tool" screen last started (plan review G13): process-wide, so Stop survives the screen being recreated. */
+    val manualStartedHostId = MutableStateFlow<Long?>(null)
+```
+
+- [ ] **Step 6: Task gate**
+
+```bash
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
+grep -n "toolRunner.active" app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsViewModel.kt
+```
+Expected: `BUILD SUCCESSFUL`. The grep shows `toolRunner.active` in `state` (behind `frozen`), `liveProgress`, `liveResults` and `openSheet`'s count only.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualPresenter.kt app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsViewModel.kt \
+  app/src/main/java/com/northwalessolutions/netprobe/AppContainer.kt \
+  app/src/test/java/com/northwalessolutions/netprobe/ui/manual/ManualPresenterTest.kt
+git status --short
+git commit -m "Phase 3C-2: Run a tool presenter and view model, structural state with live progress"
+```
+
+---
+
+### Task 7b: The "Run a tool" screen: ManualToolsScreen with LiveLine, the Home overflow item and the "tools" route
+
+**Files:**
+- Create: `app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsScreen.kt`
+- Modify: `app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt` (`HomeMenu`), `ui/home/HomeContent.kt` (`HomeActions`, the `HomeMenu` call), `ui/home/HomeScreen.kt`, `ui/Nav.kt` (whole file)
+- Test (compile only, run in Task 12): `app/src/androidTest/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsContentTest.kt`, `ui/home/HomeMenuTest.kt`
+
+**Interfaces:**
+- Consumes: `ManualUiState`, `ManualHistoryRow`, `ManualForm`, `ManualToolsViewModel` (`state`, `liveProgress`, `liveResults`) (Task 7a); `ManualCopy` (Task 4); `ToolCopy.ROUTE_*` (Task 4), `ToolResultsState.route` (Task 6); `LiveLine` (`ui/LiveLine.kt`, f8acaec), `ToolResultsSheet(..., liveStatus)` (f8acaec), `DirBruteSheet`, `ActionPill`, `SwitchRow`, `BackToHome`, `npFieldColors`, `ToolsFakes` (3A, 3B).
+- Produces:
+```kotlin
+data class ManualActions(...)
+@Composable fun ManualToolsContent(state: ManualUiState, actions: ManualActions, liveProgress: () -> String? = { null }, liveResultsStatus: () -> String? = { null })
+@Composable fun ManualToolsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists: () -> Unit = {})
+fun HomeMenu(..., onForget: () -> Unit = {}, onRunTool: () -> Unit = {})      // item tag menuRunTool, always enabled
+data class HomeActions(..., val onRunTool: () -> Unit = {}); fun HomeScreen(container, onOpenHost, onOpenSettings, onOpenTools: () -> Unit = {})
+fun NetProbeNavHost(nav, home, detail, settings, wordlists = {}, tools: @Composable () -> Unit = {})   // route "tools"
+```
+Screen layout (spec 4.1): a pinned top block (status-bar padding, background colour, never scrolls) with the back row, the title, the IP (weight 0.65) and Port (0.35) fields, the tool row, the option row (the "Use HTTPS" switch for the two web tools, "Uses port 445" or "Uses UDP 161", nothing for TLS certificate), the known-device or no-LAN line, and the Run / Stop pill with the live progress beside it (`LiveLine`, tag `manualProgress` on its text node); below it the only scrolling part, the `LazyColumn` `manualHistory`. Errors show as each field's supporting text from the first Run tap on (self-review gap 6). An open results sheet of a live run gets `liveStatus`, exactly as `DetailContent` passes it (f8acaec).
+
+- [ ] **Step 1: Write the Compose tests (compile only, run in Task 12)**
+
+`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsContentTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.ui.manual
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.ui.home.HomeCopy
+import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolsFakes
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/** 3C spec 8.2 item 6: fake state only, no container, no database. */
+@RunWith(AndroidJUnit4::class)
+class ManualToolsContentTest {
+    @get:Rule val rule = createComposeRule()
+    private val events = mutableListOf<String>()
+    private var s by mutableStateOf(ManualUiState())
+    private val actions = ManualActions(onRun = { events += "run" }, onStop = { events += "stop" }, onOpenRun = { events += "open $it" },
+        onTool = { events += "tool ${it.key}" })
+    private var live: String? = null
+    private fun show(state: ManualUiState) { s = state; rule.setContent { NetProbeTheme { ManualToolsContent(s, actions, liveProgress = { live }) } } }
+    private fun history(n: Int) = (1..n).map {
+        ManualHistoryRow(it.toLong(), ManualCopy.historyRow(ToolCopy.HTTP_FINGERPRINT, "10.0.3.$it", "80"), ManualCopy.historyLine("Done", "2 minutes ago"),
+            ManualCopy.historyDescription(ToolCopy.HTTP_FINGERPRINT, "10.0.3.$it", "80"))
+    }
+
+    @Test fun theRunPillIsPinnedOutsideTheHistoryAndScrollingNeverMovesIt() {
+        show(ManualUiState(history = history(30)))
+        val pill = rule.onNodeWithTag("manualRun")
+        assertFalse(generateSequence(pill.fetchSemanticsNode().parent) { it.parent }.any { SemanticsProperties.VerticalScrollAxisRange in it.config })
+        val y = pill.fetchSemanticsNode().positionInRoot.y
+        rule.onNodeWithTag("manualHistory").performScrollToIndex(30)
+        rule.waitForIdle()
+        assertEquals(y, rule.onNodeWithTag("manualRun").fetchSemanticsNode().positionInRoot.y)
+        rule.onNodeWithTag("manualRun").performClick()
+        assertEquals(listOf("run"), events)
+    }
+    @Test fun errorsShowUnderTheirFields() {
+        show(ManualUiState(form = ManualForm(ipText = "10.0.3", attempted = true), ipError = ManualCopy.ERR_IP, portError = ManualCopy.ERR_PORT_NEEDED))
+        rule.onNodeWithText(ManualCopy.ERR_IP).assertExists()
+        rule.onNodeWithText(ManualCopy.ERR_PORT_NEEDED).assertExists()
+    }
+    @Test fun smbDisablesThePortFieldAndSaysWhichPort() {
+        show(ManualUiState(form = ManualForm(tool = ToolId.SMB_SESSION), portEnabled = false, showHttps = false, fixedLine = ManualCopy.FIXED_SMB))
+        rule.onNodeWithTag("manualPort").assertIsNotEnabled()
+        rule.onNodeWithText(ManualCopy.FIXED_SMB).assertExists()
+        rule.onNodeWithText(ManualCopy.USE_HTTPS).assertDoesNotExist()
+    }
+    @Test fun theToolRowListsTheFiveToolsInOrder() {
+        show(ManualUiState())
+        rule.onNodeWithTag("manualTool").assert(hasText(ManualCopy.toolRow(ToolCopy.HTTP_FINGERPRINT))).performClick()
+        val ys = ToolId.entries.map { rule.onNodeWithTag("manualTool:${it.key}").fetchSemanticsNode().positionInRoot.y }
+        assertEquals(ys.sorted(), ys)
+        rule.onNodeWithTag("manualTool:${ToolId.SNMP_WALK.key}").performClick()
+        assertEquals(listOf("tool snmp-walk"), events)
+    }
+    @Test fun aRunningRunShowsStopAndItsProgressAndLocksTheFields() {
+        live = "12 of 300, 2 found  3 s"
+        show(ManualUiState(running = true))
+        rule.onNodeWithTag("manualRun").assert(hasText(HomeCopy.STOP)).assert(hasContentDescription(ToolCopy.STOP_DESCRIPTION)).performClick()
+        rule.onNodeWithTag("manualProgress").assertTextEquals("12 of 300, 2 found  3 s")
+        rule.onNodeWithTag("manualIp").assertIsNotEnabled()
+        assertEquals(listOf("stop"), events)
+    }
+    @Test fun aHistoryRowOpensItsRunAndTheSheetShowsItsRoute() {
+        show(ManualUiState(history = history(2)))
+        rule.onNodeWithTag("historyRow:2").assert(hasContentDescription(ManualCopy.historyDescription(ToolCopy.HTTP_FINGERPRINT, "10.0.3.2", "80"))).performClick()
+        assertEquals(listOf("open 2"), events)
+        s = s.copy(results = ToolsFakes.results().copy(route = ToolCopy.ROUTE_WIFI))
+        rule.waitForIdle()
+        rule.onNodeWithTag("routeLine").assertTextEquals("via Wi-Fi")
+    }
+    @Test fun withNoLanTheFieldsAndRunAreDisabledAndTheLineSaysWhy() {
+        show(ManualUiState(lan = false, infoLine = ManualCopy.NO_LAN))
+        rule.onNodeWithTag("manualIp").assertIsNotEnabled()
+        rule.onNodeWithTag("manualRun").assertIsNotEnabled()
+        rule.onNodeWithText(ManualCopy.NO_LAN).assertExists()
+    }
+    @Test fun anEmptyHistorySaysSo() {
+        show(ManualUiState())
+        rule.onNodeWithText(ManualCopy.HISTORY_EMPTY).assertExists()
+    }
+}
+```
+
+`app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeMenuTest.kt`:
+```kotlin
+package com.northwalessolutions.netprobe.ui.home
+
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/** 3C spec 8.2 item 5: the Home overflow is exactly these four items, in this order (G1: no Aggressive item). */
+@RunWith(AndroidJUnit4::class)
+class HomeMenuTest {
+    @get:Rule val rule = createComposeRule()
+
+    @Test fun theOverflowListsQuickScanAllRunAToolForgetAndSettingsInThatOrderAndNothingElse() {
+        val events = mutableListOf<String>()
+        rule.setContent { NetProbeTheme { HomeMenu(quickEnabled = true, quickScanning = false, onQuick = {}, onStopQuick = {}, onSettings = {},
+            forgetEnabled = true, onForget = {}, onRunTool = { events += "tool" }) } }
+        rule.onNodeWithTag("homeMenu").performClick()
+        val labels = listOf("Quick scan all", HomeCopy.MENU_RUN_TOOL, HomeCopy.FORGET_NETWORK, "Settings")
+        val ys = labels.map { rule.onNodeWithText(it).fetchSemanticsNode().positionInRoot.y }
+        assertEquals(ys.sorted(), ys)
+        rule.onAllNodes(hasClickAction() and hasAnyAncestor(isPopup())).assertCountEquals(4)
+        rule.onNodeWithTag("menuRunTool").assert(hasText(HomeCopy.MENU_RUN_TOOL)).assertIsEnabled().performClick()
+        assertEquals(listOf("tool"), events)
+    }
+    @Test fun runAToolIsEnabledWithNothingScannedAndNothingToForget() {
+        rule.setContent { NetProbeTheme { HomeMenu(quickEnabled = false, quickScanning = false, onQuick = {}, onStopQuick = {}, onSettings = {}) } }
+        rule.onNodeWithTag("homeMenu").performClick()
+        rule.onNodeWithTag("menuRunTool").assertIsEnabled()
+    }
+}
+```
+
+- [ ] **Step 2: Implement the screen, the Home item and the route**
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsScreen.kt`:
 ```kotlin
@@ -2679,6 +2928,7 @@ import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.ui.BackToHome
+import com.northwalessolutions.netprobe.ui.LiveLine
 import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.settings.SwitchRow
@@ -2710,11 +2960,15 @@ private val PROGRESS_START = 12.dp
 fun ManualToolsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists: () -> Unit = {}) {
     val vm: ManualToolsViewModel = viewModel(factory = viewModelFactory { initializer { ManualToolsViewModel(container) } })
     val s by vm.state.collectAsStateWithLifecycle()
+    // Not delegated: the per-tick text is read only inside LiveLine's draw and the sheet's live status, through the lambdas below (3B QA F4).
+    val liveProgress = vm.liveProgress.collectAsStateWithLifecycle()
+    val liveResults = vm.liveResults.collectAsStateWithLifecycle()
     ManualToolsContent(s, ManualActions(onBack = onBack, onIp = vm::setIp, onPort = vm::setPort, onTool = vm::setTool, onHttps = vm::setHttps,
         onRun = vm::runTool, onStop = vm::stopTool, onOpenRun = vm::openRun, onOlderRun = vm::olderRun, onNewerRun = vm::newerRun,
         onCloseResults = vm::closeResults, onShare = vm::shareRun, onCopyFinding = vm::copyFinding, onOpenFinding = vm::openFinding,
         onStartDirBrute = vm::startDirBrute, onCloseDirBrute = vm::closeDirBrute, onManageWordlists = onOpenWordlists,
-        onDismissMessage = vm::dismissMessage, onDismissApp = vm::dismissAppMessage))
+        onDismissMessage = vm::dismissMessage, onDismissApp = vm::dismissAppMessage),
+        liveProgress = { liveProgress.value }, liveResultsStatus = { liveResults.value })
 }
 
 /**
@@ -2722,7 +2976,7 @@ fun ManualToolsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlis
  * history list below is the only scrolling part.
  */
 @Composable
-fun ManualToolsContent(state: ManualUiState, actions: ManualActions) {
+fun ManualToolsContent(state: ManualUiState, actions: ManualActions, liveProgress: () -> String? = { null }, liveResultsStatus: () -> String? = { null }) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
     LaunchedEffect(state.appMessage?.id) { state.appMessage?.let { m -> snackbar.showSnackbar(m.text); actions.onDismissApp(m.id) } }
@@ -2754,9 +3008,9 @@ fun ManualToolsContent(state: ManualUiState, actions: ManualActions) {
                         ActionPill(if (state.running) HomeCopy.STOP else ToolCopy.RUN, enabled = state.lan || state.running,
                             onClick = if (state.running) actions.onStop else actions.onRun, tag = "manualRun",
                             modifier = if (state.running) Modifier.semantics { contentDescription = ToolCopy.STOP_DESCRIPTION } else Modifier)
-                        state.progress?.let {
-                            Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.padding(start = PROGRESS_START).testTag("manualProgress"))
-                        }
+                        // Drawn per tick, never recomposed (3B QA F4): the text is read in LiveLine's draw only.
+                        if (state.running) LiveLine({ liveProgress() ?: ToolCopy.STARTING }, style = NetProbeText.data, color = NetProbeColors.textMuted,
+                            modifier = Modifier.weight(1f).padding(start = PROGRESS_START), textModifier = Modifier.testTag("manualProgress"))
                     }
                 }
             }
@@ -2775,8 +3029,11 @@ fun ManualToolsContent(state: ManualUiState, actions: ManualActions) {
     state.dirBrute?.let {
         DirBruteSheet(it, onRun = actions.onStartDirBrute, onManageWordlists = { actions.onCloseDirBrute(); actions.onManageWordlists() }, onDismiss = actions.onCloseDirBrute)
     }
-    state.results?.let {
-        ToolResultsSheet(it, actions.onOlderRun, actions.onNewerRun, actions.onCopyFinding, actions.onOpenFinding, actions.onShare, actions.onCloseResults)
+    state.results?.let { r ->
+        // A live run's status line follows the per-tick text, read inside the sheet's status line only (as DetailContent does, 3B QA F4).
+        val liveStatus: (() -> String)? = if (r.active) { { liveResultsStatus() ?: r.statusLine } } else null
+        ToolResultsSheet(r, actions.onOlderRun, actions.onNewerRun, actions.onCopyFinding, actions.onOpenFinding, actions.onShare, actions.onCloseResults,
+            liveStatus = liveStatus)
     }
 }
 
@@ -2857,7 +3114,7 @@ with
 1. Replace `fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettings: () -> Unit) {` with `fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettings: () -> Unit, onOpenTools: () -> Unit = {}) {`.
 2. Replace `onForget = vm::forgetNetwork, onUndo = vm::undo, onDismissUndo = vm::dismissUndo, onDismissApp = vm::dismissAppMessage),` with `onForget = vm::forgetNetwork, onUndo = vm::undo, onDismissUndo = vm::dismissUndo, onDismissApp = vm::dismissAppMessage, onRunTool = onOpenTools),`.
 
-Before writing it (3C-1 plan review G1): `git diff --quiet 82084d3 -- app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt changed since 82084d3"`; if it prints STOP, stop and ask the controller.
+Before writing it (3C-1 plan review G1): `git diff --quiet f8acaec -- app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt changed since f8acaec"`; if it prints STOP, stop and ask the controller.
 
 `app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt` (whole file):
 ```kotlin
@@ -2926,7 +3183,8 @@ fun NetProbeNavHost(nav: NavHostController, home: @Composable () -> Unit, detail
 }
 ```
 
-- [ ] **Step 8: Compile and run the JVM suite**
+
+- [ ] **Step 3: Compile and run the JVM suite**
 
 ```bash
 ./gradlew :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -8
@@ -2935,21 +3193,19 @@ grep -n "verticalScroll\|LazyColumn" app/src/main/java/com/northwalessolutions/n
 ```
 Expected: `BUILD SUCCESSFUL` twice; `NavTransitionTest`, `HomeContentTest` and `HomeScreenTest` compile unchanged (every new parameter is defaulted); the grep shows exactly one `LazyColumn` (the history) and no `verticalScroll`.
 
-- [ ] **Step 9: Task gate**
+- [ ] **Step 4: Task gate**
 
 ```bash
 ./gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidTestKotlin --console=plain 2>&1 | tail -6
 ```
 Expected: `BUILD SUCCESSFUL`.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualPresenter.kt app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsViewModel.kt \
-  app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsScreen.kt app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt \
+git add app/src/main/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsScreen.kt app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeComponents.kt \
   app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeContent.kt app/src/main/java/com/northwalessolutions/netprobe/ui/home/HomeScreen.kt \
   app/src/main/java/com/northwalessolutions/netprobe/ui/Nav.kt \
-  app/src/test/java/com/northwalessolutions/netprobe/ui/manual/ManualPresenterTest.kt \
   app/src/androidTest/java/com/northwalessolutions/netprobe/ui/manual/ManualToolsContentTest.kt \
   app/src/androidTest/java/com/northwalessolutions/netprobe/ui/home/HomeMenuTest.kt
 git status --short
@@ -3436,7 +3692,7 @@ git commit -m "Phase 3C-2: mDNS answer and SSDP NOTIFY parsers with hostile-pack
 data class SettingsState(..., val listenMulticast: Boolean = false)          // key "listenMulticast"; covered by SettingsDefaults.reset (15 values)
 data class ListenPlan(val mdns: Boolean, val ssdp: Boolean)
 object ListenGate { fun plan(listen: Boolean, mdns: Boolean, ssdp: Boolean, foreground: Boolean, hasLan: Boolean): ListenPlan? }
-enum class ListenStatus { OFF, BOTH, MDNS_ONLY, SSDP_ONLY, NO_PORTS, NO_NETWORK, PAUSED_SCAN, BOTH_OFF }
+enum class ListenStatus { OFF, BOTH, MDNS_ONLY, SSDP_ONLY, NO_PORTS, NO_NETWORK, PAUSED_SCAN, BOTH_OFF, NOT_SCANNED, RETRYING }
 object ListenStatusRules { fun opened(mdns: Boolean, ssdp: Boolean): ListenStatus
                            fun of(listen: Boolean, mdns: Boolean, ssdp: Boolean, foreground: Boolean, hasLan: Boolean, session: ListenStatus?, scanActive: Boolean): ListenStatus }
 object ListenCopy { const val LABEL; SUPPORT; BOTH; MDNS_ONLY; SSDP_ONLY; NO_PORTS; NO_NETWORK; PAUSED_SCAN; BOTH_OFF; fun status(s: ListenStatus): String? }
@@ -3479,6 +3735,8 @@ class ListenGateTest {
         assertEquals(ListenStatus.BOTH, of()); assertEquals(ListenStatus.MDNS_ONLY, of(session = ListenStatus.MDNS_ONLY))
         assertEquals(ListenStatus.PAUSED_SCAN, of(scan = true)); assertEquals(ListenStatus.PAUSED_SCAN, of(session = ListenStatus.SSDP_ONLY, scan = true))
         assertEquals("nothing to pause when no port opened", ListenStatus.NO_PORTS, of(session = ListenStatus.NO_PORTS, scan = true))
+        assertEquals("R3: an unscanned network says so", ListenStatus.NOT_SCANNED, of(session = ListenStatus.NOT_SCANNED, scan = true))
+        assertEquals("G4: a failed session says it is retrying", ListenStatus.RETRYING, of(session = ListenStatus.RETRYING))
     }
 }
 ```
@@ -3521,10 +3779,11 @@ with
     @Test fun `listening strings`() {
         val listenTemplates = listOf("Listen between scans", "While NetProbe is open, adds devices heard announcing themselves over mDNS and SSDP\\.",
             "Listening for (mDNS and SSDP|mDNS only|SSDP only)", "Could not open the multicast ports", "Not listening: connect to Wi-Fi or Ethernet",
-            "Paused while a scan runs", "mDNS and SSDP are off above").map { Regex(it) }
+            "Paused while a scan runs", "mDNS and SSDP are off above", "Scan this network once to start listening",
+            "Listening stopped after an error, retrying").map { Regex(it) }
         val strings = listOf(ListenCopy.LABEL, ListenCopy.SUPPORT) + ListenStatus.entries.mapNotNull { ListenCopy.status(it) }
         strings.forEach { s -> assertTrue("not in the listening copy table: '$s'", listenTemplates.any { it.matches(s) }); assertFalse("em-dash in '$s'", s.contains('\u2014')) }
-        assertEquals(9, strings.size)   // label, subtitle and the seven status lines (spec 3.1); OFF shows nothing
+        assertEquals(11, strings.size)   // label, subtitle and the nine status lines (spec 3.1, amendment A3); OFF shows nothing
         assertEquals(null, ListenCopy.status(ListenStatus.OFF))
     }
 ```
@@ -3607,7 +3866,7 @@ object ListenGate {
 }
 
 /** The Settings status line under "Listen between scans" (spec 3.1); OFF shows nothing. */
-enum class ListenStatus { OFF, BOTH, MDNS_ONLY, SSDP_ONLY, NO_PORTS, NO_NETWORK, PAUSED_SCAN, BOTH_OFF }
+enum class ListenStatus { OFF, BOTH, MDNS_ONLY, SSDP_ONLY, NO_PORTS, NO_NETWORK, PAUSED_SCAN, BOTH_OFF, NOT_SCANNED, RETRYING }
 
 object ListenStatusRules {
     private val LISTENING = setOf(ListenStatus.BOTH, ListenStatus.MDNS_ONLY, ListenStatus.SSDP_ONLY)
@@ -3647,6 +3906,10 @@ object ListenCopy {
     const val NO_NETWORK = "Not listening: connect to Wi-Fi or Ethernet"
     const val PAUSED_SCAN = "Paused while a scan runs"
     const val BOTH_OFF = "mDNS and SSDP are off above"
+    /** Director ruling R3 (amendment A3): no completed scan on this network yet. */
+    const val NOT_SCANNED = "Scan this network once to start listening"
+    /** Plan review G4 (amendment A3): a session failed and is waiting its backoff before the next attempt. */
+    const val RETRYING = "Listening stopped after an error, retrying"
 
     fun status(s: ListenStatus): String? = when (s) {
         ListenStatus.OFF -> null
@@ -3657,6 +3920,8 @@ object ListenCopy {
         ListenStatus.NO_NETWORK -> NO_NETWORK
         ListenStatus.PAUSED_SCAN -> PAUSED_SCAN
         ListenStatus.BOTH_OFF -> BOTH_OFF
+        ListenStatus.NOT_SCANNED -> NOT_SCANNED
+        ListenStatus.RETRYING -> RETRYING
     }
 }
 ```
@@ -3751,24 +4016,25 @@ git commit -m "Phase 3C-2: Listen between scans setting, gate, status rules and 
 - Produces:
 ```kotlin
 const val HEARD_QUEUE = 64; const val HEARD_REPEAT_MS = 60_000L; const val HEARD_REPEAT_KEYS = 1_024
-data class Heard(val identityKey: String, val host: DiscoveredHost, val repeatKey: String, val location: String? = null)
+data class Heard(val identityKey: String, val host: DiscoveredHost, val repeatKey: String, val location: String? = null, val source: Inet4Address = host.ip)
 fun heardQueue(): Channel<Heard>                                   // HEARD_QUEUE, DROP_OLDEST
 class HeardRepeats(clock: () -> Long, windowMs: Long = HEARD_REPEAT_MS, maxKeys: Int = HEARD_REPEAT_KEYS) { fun admit(key: String): Boolean; fun size(): Int }
-object HeardPackets { fun mdns(bytes: ByteArray, identityKey: String): List<Heard>; fun ssdp(from: Inet4Address, bytes: ByteArray, identityKey: String): Heard? }
+object HeardPackets { fun mdns(bytes: ByteArray, from: Inet4Address, identityKey: String): List<Heard>; fun ssdp(from: Inet4Address, bytes: ByteArray, identityKey: String): Heard? }
+const val HEARD_FETCH_DESCRIPTIONS = true   // Director ruling R2
 const val HEARD_NEW_MAX = 32; const val HEARD_FETCH_MAX = 32; const val HEARD_LOCATION_MAX_CHARS = 512
 data class HeardContext(val networkId: Long, val identityKey: String, val forgotten: Boolean, val scanActive: Boolean, val undoPending: Boolean)
 enum class HeardOutcome { WRITTEN, WRONG_NETWORK, BUSY, OUT_OF_RANGE, REMOVED, CAP_REACHED, NOT_STORED }
 interface HeardSink { fun context(): HeardContext?; suspend fun known(networkId: Long): KnownRanges; suspend fun exists(networkId: Long, ip: String): Boolean
                       fun removed(): Set<Pair<Long, String>>; suspend fun describe(location: String, host: Inet4Address): UpnpDevice?
                       suspend fun store(networkId: Long, h: DiscoveredHost): Boolean }
-class HeardWriter(sessionNetworkId: Long, sink: HeardSink) { suspend fun accept(heard: Heard): HeardOutcome }
+class HeardWriter(sessionNetworkId: Long, sink: HeardSink, fetchDescriptions: Boolean = HEARD_FETCH_DESCRIPTIONS) { suspend fun accept(heard: Heard): HeardOutcome }
 enum class Source { ..., HEARD }                                   // in memory only, never stored
 class UpnpFetcher { suspend fun fetch(location: String, allowedHost: Inet4Address, opener: (URL) -> URLConnection = NO_PROXY_OPENER): UpnpDevice? }
 class RadarCollector(..., hintsFor, upsert: suspend (Long, DiscoveredHost, Long) -> Long = hosts::upsertDiscovered, removed)
 class ContainerHeardSink(c: AppContainer, env: NetworkEnv) : HeardSink
 AppContainer.removedWhileListening: MutableStateFlow<Set<Pair<Long, String>>>
 ```
-The drop rules, in order (spec 3.4, G4, G5, G22): (1) no current network, its Forget pending, its id not the session's network row, or its identity key not the packet's tag: `WRONG_NETWORK`; (2) a radar scan running or an Undo pending: `BUSY`; (3) the address outside the network's `KnownRanges`: `OUT_OF_RANGE`; (4) the (network, ip) removed this session: `REMOVED`; (5) no row for (network, ip) and `HEARD_NEW_MAX` new rows already inserted by this writer: `CAP_REACHED`. Then, for an SSDP sighting with a `LOCATION`, the description is fetched at most once per IP, at most `HEARD_FETCH_MAX` times per session, never for a `LOCATION` over `HEARD_LOCATION_MAX_CHARS`, bound to Wi-Fi, by the existing `UpnpFetcher` (2 s, 64 KB, host must equal the packet source, no redirects) (controller ruling). Then the write goes through `RadarCollector.store` with `upsertHeard`, which takes `hostWriteLock`, checks `RemovedHosts.skip` again and applies `IdentityWrite.sameDevice`.
+The drop rules, in order (spec 3.4, G4, G5, G22, plan review G3 and G11): (1) no current network, its Forget pending, its id not the session's network row, or its identity key not the packet's tag: `WRONG_NETWORK`; (2) a radar scan running or an Undo pending: `BUSY`; (3) the address, or the packet's source (G11: a datagram from another interface or a host outside the network), outside the network's `KnownRanges`: `OUT_OF_RANGE`; (4) the (network, ip) removed this session: `REMOVED`; (5) no row for (network, ip) and `HEARD_NEW_MAX` new rows already inserted by this writer: `CAP_REACHED`. Then, for an SSDP sighting with a `LOCATION`, the description is fetched at most once per IP, at most `HEARD_FETCH_MAX` times per session, never for a `LOCATION` over `HEARD_LOCATION_MAX_CHARS`, bound to Wi-Fi, by the existing `UpnpFetcher` (2 s, 64 KB, host must equal the packet source, no redirects) (controller ruling). After the fetch the writer reads the context again and re-applies rules 1 and 2, so a Forget committed or a scan started during the up to 2 s fetch drops the write (G3); `ContainerHeardSink.store` also refuses a network row that is gone or forgotten (`hosts` has no foreign key to `networks`, so a write there would be a permanent invisible row). With R2 off no description is fetched. Then the write goes through `RadarCollector.store` with `upsertHeard`, which takes `hostWriteLock`, checks `RemovedHosts.skip` again and applies `IdentityWrite.sameDevice`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3791,14 +4057,19 @@ class FakeSink(var ctx: HeardContext? = HOME, var ranges: KnownRanges = KnownRan
     var gate: CompletableDeferred<Unit>? = null
     var storeCalls = 0
         private set
+    /** The next store throws once (plan review G4: one failed write never ends the session). */
+    var failNextStore = false
 
     override fun context(): HeardContext? = ctx
     override suspend fun known(networkId: Long): KnownRanges = ranges
     override suspend fun exists(networkId: Long, ip: String): Boolean = ip in existing
     override fun removed(): Set<Pair<Long, String>> = removedSet
-    override suspend fun describe(location: String, host: Inet4Address): UpnpDevice? { described += location; return device }
+    /** Runs inside describe, so a test can change the context while the fetch is "in flight" (plan review G3). */
+    var duringDescribe: () -> Unit = {}
+    override suspend fun describe(location: String, host: Inet4Address): UpnpDevice? { described += location; duringDescribe(); return device }
     override suspend fun store(networkId: Long, h: DiscoveredHost): Boolean {
         storeCalls++
+        if (failNextStore) { failNextStore = false; throw IllegalStateException("database busy") }
         gate?.await()
         stored += networkId to h.ip.hostAddress; storedHosts += h; existing += h.ip.hostAddress
         return true
@@ -3893,6 +4164,27 @@ class HeardWriterTest {
         assertEquals("Living Room", h.upnpFriendlyName); assertEquals("Sonos", h.upnpManufacturer); assertEquals("One", h.upnpModel)
         assertEquals("urn:schemas-upnp-org:device:ZonePlayer:1", h.upnpDeviceType)
     }
+    @Test fun `a Forget or a scan landing during the description fetch drops the write`() = runBlocking {
+        for (flip in listOf(HOME.copy(forgotten = true), HOME.copy(scanActive = true), HOME.copy(undoPending = true), null)) {
+            val sink = FakeSink(device = UpnpDevice("Living Room", "Sonos", "One", null, null, null))
+            sink.duringDescribe = { sink.ctx = flip }
+            val outcome = writer(sink).accept(heard("10.0.3.30", location = "http://10.0.3.30:1400/d.xml"))
+            assertTrue("$flip: $outcome", outcome == HeardOutcome.WRONG_NETWORK || outcome == HeardOutcome.BUSY)
+            assertTrue("$flip: nothing stored", sink.stored.isEmpty())
+        }
+    }
+    @Test fun `a datagram whose source is outside the known ranges is dropped`() = runBlocking {
+        val sink = FakeSink()
+        val fromTun = Heard(KEY_A, DiscoveredHost(Ipv4.parse("10.0.3.7")!!, sources = setOf(Source.MDNS, Source.HEARD)), "m|10.0.3.7|_x._tcp", source = Ipv4.parse("100.64.0.9")!!)
+        assertEquals(HeardOutcome.OUT_OF_RANGE, writer(sink).accept(fromTun))
+        assertTrue(sink.stored.isEmpty())
+    }
+    @Test fun `R2 off fetches no description and still writes the sighting`() = runBlocking {
+        val sink = FakeSink(device = UpnpDevice("Living Room", "Sonos", "One", null, null, null))
+        assertEquals(HeardOutcome.WRITTEN, HeardWriter(1, sink, fetchDescriptions = false).accept(heard("10.0.3.30", location = "http://10.0.3.30:1400/d.xml")))
+        assertTrue(sink.described.isEmpty()); assertNull(sink.storedHosts.single().upnpFriendlyName)
+        assertTrue("the shipped default is the controller's recommendation", HEARD_FETCH_DESCRIPTIONS)
+    }
     @Test fun `the description budget is capped per session and a long location is never fetched`() = runBlocking {
         val sink = FakeSink()
         (1..HEARD_FETCH_MAX + 5).forEach { sink.existing += "10.0.3.$it" }      // updates only, so the new-row cap is not what stops it
@@ -3956,7 +4248,7 @@ class HeardPacketsTest {
 
     @Test fun `an mDNS announcement becomes a heard host tagged with the session's network`() {
         val p = MdnsTestPackets.announce(MdnsTestPackets.Builder(), "CHNAS", "_http._tcp", "chnas", "10.0.3.59", 5000, arrayOf("model=DS220+")).build()
-        val h = HeardPackets.mdns(p, key).single()
+        val h = HeardPackets.mdns(p, Ipv4.parse("10.0.3.59")!!, key).single()
         assertEquals(key, h.identityKey); assertEquals("m|10.0.3.59|_http._tcp", h.repeatKey); assertNull(h.location)
         assertEquals(setOf(Source.MDNS, Source.HEARD), h.host.sources); assertEquals("CHNAS", h.host.mdnsName)
         assertEquals(setOf("_http._tcp"), h.host.mdnsServiceTypes); assertEquals(mapOf("_http._tcp" to mapOf("model" to "DS220+")), h.host.mdnsTxt)
@@ -3970,7 +4262,7 @@ class HeardPacketsTest {
     }
     @Test fun `byebye and a malformed packet give nothing`() {
         assertNull(HeardPackets.ssdp(Ipv4.parse("10.0.3.40")!!, "NOTIFY * HTTP/1.1\r\nNTS: ssdp:byebye\r\nUSN: x\r\n\r\n".toByteArray(), key))
-        assertTrue(HeardPackets.mdns(byteArrayOf(1, 2, 3), key).isEmpty())
+        assertTrue(HeardPackets.mdns(byteArrayOf(1, 2, 3), Ipv4.parse("10.0.3.59")!!, key).isEmpty())
     }
 }
 ```
@@ -4009,8 +4301,8 @@ const val HEARD_REPEAT_MS = 60_000L
 /** The repeat filter remembers at most this many keys (spec 3.3, G4). */
 const val HEARD_REPEAT_KEYS = 1_024
 
-/** One heard announcement, tagged with the identity key of the env its session was started on (spec 3.3, G5). */
-data class Heard(val identityKey: String, val host: DiscoveredHost, val repeatKey: String, val location: String? = null)
+/** One heard announcement, tagged with the identity key of the env its session was started on (spec 3.3, G5); [source] is the datagram's sender (G11). */
+data class Heard(val identityKey: String, val host: DiscoveredHost, val repeatKey: String, val location: String? = null, val source: Inet4Address = host.ip)
 
 /** Drops the oldest when the writer falls behind; cancelling it at the session's end discards whatever is left (spec 3.2). */
 fun heardQueue(): Channel<Heard> = Channel(HEARD_QUEUE, BufferOverflow.DROP_OLDEST)
@@ -4036,10 +4328,11 @@ object HeardPackets {
     private const val MDNS_KEY = "m|"
     private const val SSDP_KEY = "s|"
 
-    fun mdns(bytes: ByteArray, identityKey: String): List<Heard> = MdnsPacket.parse(bytes).map { r ->
+    /** [from] is the datagram's source; the address written is the A record's (a UniFi reflector's source is its gateway, inside the known ranges). */
+    fun mdns(bytes: ByteArray, from: Inet4Address, identityKey: String): List<Heard> = MdnsPacket.parse(bytes).map { r ->
         val h = DiscoveredHost(r.ip, mdnsName = r.instanceName, mdnsServiceTypes = setOf(r.type), mdnsTxt = mapOf(r.type to r.txt),
             mdnsInstanceNames = setOf(r.instanceName), ipv6LinkLocal = r.ipv6.toSet(), sources = setOf(Source.MDNS, Source.HEARD)).withDerivedMac()
-        Heard(identityKey, h, MDNS_KEY + r.ip.hostAddress + "|" + r.type)
+        Heard(identityKey, h, MDNS_KEY + r.ip.hostAddress + "|" + r.type, source = from)
     }
 
     fun ssdp(from: Inet4Address, bytes: ByteArray, identityKey: String): Heard? {
@@ -4064,6 +4357,11 @@ const val HEARD_NEW_MAX = 32
 const val HEARD_FETCH_MAX = 32
 /** A LOCATION longer than this is never fetched. */
 const val HEARD_LOCATION_MAX_CHARS = 512
+/**
+ * Director ruling R2 (pending; default per the controller's ruling and recommendation, amendment A1): true fetches the bounded UPnP description of a
+ * heard SSDP device inside the known ranges; false never sends anything from the listener.
+ */
+const val HEARD_FETCH_DESCRIPTIONS = true
 
 /** What the writer needs to know about "now" (spec 3.4 rules 1 and 2), read at every packet. */
 data class HeardContext(val networkId: Long, val identityKey: String, val forgotten: Boolean, val scanActive: Boolean, val undoPending: Boolean)
@@ -4089,28 +4387,39 @@ interface HeardSink {
  * for its env; a packet is written only while Home's current network is that same row with the packet's identity key, so nothing heard on
  * one network lands in another, including the window before Home catches up with a network change (G5). Counts are per session (G4).
  */
-class HeardWriter(private val sessionNetworkId: Long, private val sink: HeardSink) {
+class HeardWriter(private val sessionNetworkId: Long, private val sink: HeardSink, private val fetchDescriptions: Boolean = HEARD_FETCH_DESCRIPTIONS) {
     private var inserted = 0
     private val fetchedIps = HashSet<String>()
 
     suspend fun accept(heard: Heard): HeardOutcome {
-        val ctx = sink.context()
-        if (ctx == null || ctx.networkId != sessionNetworkId || ctx.forgotten || ctx.identityKey != heard.identityKey) return HeardOutcome.WRONG_NETWORK
-        if (ctx.scanActive || ctx.undoPending) return HeardOutcome.BUSY
+        gate(heard)?.let { return it }
+        val ctx = sink.context() ?: return HeardOutcome.WRONG_NETWORK
         val ip = heard.host.ip
         val ipText: String = ip.hostAddress
-        if (!sink.known(ctx.networkId).contains(ip)) return HeardOutcome.OUT_OF_RANGE
+        val known = sink.known(ctx.networkId)
+        if (!known.contains(ip) || !known.contains(heard.source)) return HeardOutcome.OUT_OF_RANGE
         if ((ctx.networkId to ipText) in sink.removed()) return HeardOutcome.REMOVED
         val exists = sink.exists(ctx.networkId, ipText)
         if (!exists && inserted >= HEARD_NEW_MAX) return HeardOutcome.CAP_REACHED
-        if (!sink.store(ctx.networkId, described(heard, ipText))) return HeardOutcome.NOT_STORED
+        val host = described(heard, ipText)
+        // Plan review G3: the fetch can take 2 s; a Forget, a scan or an Undo that landed meanwhile drops the write.
+        gate(heard)?.let { return it }
+        if (!sink.store(ctx.networkId, host)) return HeardOutcome.NOT_STORED
         if (!exists) inserted++
         return HeardOutcome.WRITTEN
     }
 
+    /** Rules 1 and 2 (spec 3.4) against the context as it is now; null when the write may go ahead. */
+    private fun gate(heard: Heard): HeardOutcome? {
+        val ctx = sink.context()
+        if (ctx == null || ctx.networkId != sessionNetworkId || ctx.forgotten || ctx.identityKey != heard.identityKey) return HeardOutcome.WRONG_NETWORK
+        if (ctx.scanActive || ctx.undoPending) return HeardOutcome.BUSY
+        return null
+    }
+
     /** The UPnP description of an SSDP sighting, merged as discovery merges it (DiscoveryEngine's SSDP branch). */
     private suspend fun described(heard: Heard, ipText: String): DiscoveredHost {
-        val location = heard.location ?: return heard.host
+        val location = heard.location?.takeIf { fetchDescriptions } ?: return heard.host
         if (location.length > HEARD_LOCATION_MAX_CHARS || fetchedIps.size >= HEARD_FETCH_MAX || !fetchedIps.add(ipText)) return heard.host
         val d = sink.describe(location, heard.host.ip) ?: return heard.host
         val h = heard.host
@@ -4235,7 +4544,12 @@ class ContainerHeardSink(private val c: AppContainer, private val env: NetworkEn
         return upnp.fetch(location, host) { url -> binder.openConnection(url) }
     }
     /** A new or promoted row takes the network's last completed run, so it shows undimmed; "Last scan" never moves (spec 3.4). */
-    override suspend fun store(networkId: Long, h: DiscoveredHost): Boolean = collector.store(networkId, h, c.networks.byId(networkId)?.lastRunAt ?: 0L)
+    override suspend fun store(networkId: Long, h: DiscoveredHost): Boolean {
+        // hosts has no foreign key to networks: a row for a deleted or forgotten network would never be cleaned up (plan review G3).
+        val net = c.networks.byId(networkId) ?: return false
+        if (net.forgotten != null || net.id == c.forgottenNetworkId.value) return false
+        return collector.store(networkId, h, net.lastRunAt ?: 0L)
+    }
 }
 ```
 
@@ -4338,14 +4652,18 @@ fun interface ListenSockets { fun open(group: String, port: Int, env: NetworkEnv
 class MulticastListenSockets(binderFor: (NetworkEnv) -> SocketBinder?, interfaceFor: (Inet4Address) -> NetworkInterface? = ..., newSocket: () -> MulticastSocket = ..., log: (Throwable) -> Unit = {}) : ListenSockets
 class ListenController(scope, settings: StateFlow<SettingsState>, foreground: StateFlow<Boolean>, env: StateFlow<NetworkEnv?>, epoch: StateFlow<Int>,
                        scanActive: StateFlow<Boolean>, lock: LockHandle, sockets: ListenSockets, resolve: suspend (NetworkEnv) -> Long?,
-                       writerFor: (NetworkEnv, Long) -> HeardWriter, onSessionStart: () -> Unit = {}, io: CoroutineDispatcher = Dispatchers.IO,
-                       clock: () -> Long = System::currentTimeMillis, log: (Throwable) -> Unit = {}) {
+                       scanned: suspend (Long) -> Boolean, writerFor: (NetworkEnv, Long) -> HeardWriter, onSessionStart: (Long) -> Unit = {},
+                       io: CoroutineDispatcher = Dispatchers.IO, clock: () -> Long = System::currentTimeMillis, log: (Throwable) -> Unit = {},
+                       scannedOnly: Boolean = LISTEN_SCANNED_NETWORKS_ONLY) {
     val status: StateFlow<ListenStatus>; fun start()
     companion object { const val MDNS_GROUP = "224.0.0.251"; const val MDNS_PORT = 5353; const val SSDP_GROUP = "239.255.255.250"; const val SSDP_PORT = 1900
-                       const val MDNS_MAX_PACKET = 9000; const val SSDP_MAX_PACKET = 4096 } }
+                       const val MDNS_MAX_PACKET = 9000; const val SSDP_MAX_PACKET = 4096; const val LISTEN_RETRY_FIRST_MS = 1_000L; const val LISTEN_RETRY_MAX_MS = 60_000L
+                       const val LISTEN_SCANNED_NETWORKS_ONLY = true /* Director ruling R3 */ } }
 AppContainer.listen: ListenController
 ```
-Session lifecycle (spec 3.2, D10, G5, G11): the controller keys on (plan, env, network epoch) with `distinctUntilChanged` and `collectLatest`. A session resolves its network row (none, or its Forget pending: status "Not listening", nothing held), acquires `Locks.listen`, clears `removedWhileListening`, opens the planned sockets (a null interface or no binder opens nothing for that socket; none open: the lock is released at once and the status says so), then runs one reader per socket and one writer over a fresh `heardQueue()`; its `finally` closes the sockets, cancels the queue (discarding anything in it) and releases the lock. `collectLatest` joins the old session before the next starts, so the lock is released before it is re-acquired. ON_STOP (foreground false), the switch off, a reset, network loss or change, and a Forget or its Undo (the epoch) all end the session.
+Session lifecycle (spec 3.2, D10, G5, G11, amendments A2 and A3): the controller keys on (plan, the env's identity key, interface address and transport, network epoch) with `distinctUntilChanged` and `collectLatest`, so roaming between access points never restarts a session (plan review G12). A session resolves its network row (none, or its Forget pending: status "Not listening", nothing held); with R3 on, a row with no completed scan holds nothing, shows "Scan this network once to start listening" and waits for a scan to end; then it acquires `Locks.listen`, reports its row through `onSessionStart` (AppContainer clears `removedWhileListening` only when the row differs from the last session's, G12), opens the planned sockets (a null interface or no binder opens nothing for that socket; none open: the lock is released at once and the status says so), then runs one reader per socket and one writer over a fresh `heardQueue()`; its `finally` closes the sockets, cancels the queue (discarding anything in it) and releases the lock. `collectLatest` joins the old session before the next starts, so the lock is released before it is re-acquired. ON_STOP (foreground false), the switch off, a reset, network loss or change, and a Forget or its Undo (the epoch) all end the session. A packet a parser chokes on is logged and skipped; any other failure ends the session, shows "Listening stopped after an error, retrying", and a new session starts after 1 s, doubling to 60 s (plan review G4); listening never stops silently.
+
+Port 5353 beside the system mDNS daemon (plan review G5, controller ruling): the socket sets `SO_REUSEADDR` before binding, which on Linux and Android lets it share 5353 with the system's `mdnsd`, and every socket joined to 224.0.0.251 receives each multicast datagram. A unicast datagram to 5353 (a reply to a QU question) is delivered to one of the sharing sockets only, so while listening the system daemon may miss some unicast replies. `SO_REUSEPORT` is not set: Java's `DatagramSocket` exposes it only through `setOption(StandardSocketOptions.SO_REUSEPORT)` from API 33 and the app's minimum is 26, and it would not change the unicast behaviour. `ListenSocketsTest` pins the shared bind; Task 12 item 6 measures the scan's own mDNS results with listening off and on. Pre-agreed fallback if that check fails: close the mDNS socket while `radarScanActive` (the writer drops everything during a scan anyway) and reopen it when the scan ends; one change in `ListenController.listen`, recorded for the Director.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4436,6 +4754,25 @@ class ListenSocketsTest {
         assertNull(s.open(ListenController.MDNS_GROUP, 0, env))
         assertTrue(closed)
     }
+    /**
+     * Plan review G5: the system mDNS daemon holds 5353 with SO_REUSEADDR; ours must bind the same port beside it. The "daemon" here binds an
+     * ephemeral port (no test binds the PC's real 5353) and the group join is stubbed, so only the shared bind is under test.
+     */
+    @Test fun `a listener socket binds the mDNS port beside a daemon that holds it with SO_REUSEADDR`() {
+        val lo = loopback(); assumeNotNull(lo)
+        val daemon = MulticastSocket(null as SocketAddress?).apply { reuseAddress = true; bind(InetSocketAddress(0)) }
+        try {
+            var ours: MulticastSocket? = null
+            val s = MulticastListenSockets({ FakeBinder }, interfaceFor = { lo }, newSocket = {
+                object : MulticastSocket(null as SocketAddress?) { override fun joinGroup(mcastaddr: SocketAddress?, netIf: NetworkInterface?) {} }.also { ours = it }
+            })
+            val opened = s.open(ListenController.MDNS_GROUP, daemon.localPort, env)
+            assertNotNull("bound beside the daemon", opened)
+            assertTrue(ours!!.reuseAddress); assertEquals(daemon.localPort, ours!!.localPort)
+            opened!!.close()
+        } finally { daemon.close() }
+        assertEquals(5353, ListenController.MDNS_PORT)
+    }
 }
 ```
 
@@ -4455,6 +4792,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -4487,8 +4825,12 @@ class ListenControllerTest {
     }
     private class FakeSockets : ListenSockets {
         var fail = false
+        var throwTimes = 0
         val opened = mutableListOf<Pair<String, FakeSocket>>()
-        override fun open(group: String, port: Int, env: NetworkEnv): HeardSocket? = if (fail) null else FakeSocket().also { opened += group to it }
+        override fun open(group: String, port: Int, env: NetworkEnv): HeardSocket? {
+            if (throwTimes > 0) { throwTimes--; throw IllegalStateException("socket layer failed") }
+            return if (fail) null else FakeSocket().also { opened += group to it }
+        }
         fun latest(group: String): FakeSocket = opened.last { it.first == group }.second
     }
     private inner class Rig(scope: CoroutineScope, initial: SettingsState = SettingsState(listenMulticast = true)) {
@@ -4500,9 +4842,11 @@ class ListenControllerTest {
         val lock = FakeLock(); val sockets = FakeSockets(); val sink = FakeSink()
         val writers = mutableListOf<Long>()
         var resolveTo: (NetworkEnv) -> Long? = { e -> if (e == envA) 1L else 2L }
+        var scannedFlag = true
+        val sessionRows = mutableListOf<Long>()
         val controller = ListenController(scope, settings, foreground, env, epoch, scan, lock, sockets,
-            resolve = { e -> resolveTo(e) }, writerFor = { _, id -> writers += id; HeardWriter(id, sink) },
-            io = scope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher, clock = { 0L })
+            resolve = { e -> resolveTo(e) }, scanned = { scannedFlag }, writerFor = { _, id -> writers += id; HeardWriter(id, sink) },
+            onSessionStart = { sessionRows += it }, io = scope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher, clock = { 0L })
         fun hear(ipText: String, usn: String) {
             sockets.latest(ListenController.SSDP_GROUP).inbox.trySend(HeardTestSupport.notify(ipText, usn).toByteArray(Charsets.ISO_8859_1) to ip(ipText))
         }
@@ -4601,6 +4945,44 @@ class ListenControllerTest {
         assertEquals(ListenStatus.PAUSED_SCAN, rig.controller.status.value)
         assertTrue("the sockets stay open during a scan", rig.lock.held)
     }
+    @Test fun `roaming between access points of one network keeps the session`() = runTest {
+        val rig = Rig(backgroundScope)
+        rig.controller.start(); runCurrent()
+        rig.env.value = envA.copy(bssid = "aa:bb:cc:dd:ee:02", dnsServers = listOf(ip("10.0.3.1"))); runCurrent()
+        assertEquals("no restart, so the 32-row count and the removed set survive (G12)", 1, rig.lock.acquires)
+        assertEquals(listOf(1L), rig.sessionRows)
+    }
+    @Test fun `a failed write is logged and the next packet is still written`() = runTest {
+        val rig = Rig(backgroundScope)
+        rig.controller.start(); runCurrent()
+        rig.sink.failNextStore = true
+        rig.hear("10.0.3.7", "uuid:a"); rig.hear("10.0.3.8", "uuid:b"); runCurrent()
+        assertEquals(listOf(1L to "10.0.3.8"), rig.sink.stored)
+        assertEquals(ListenStatus.BOTH, rig.controller.status.value)
+    }
+    @Test fun `a failed session says so and restarts after its backoff, never silently`() = runTest {
+        val rig = Rig(backgroundScope); rig.sockets.throwTimes = 1
+        rig.controller.start(); runCurrent()
+        assertEquals(ListenStatus.RETRYING, rig.controller.status.value); assertFalse("released while waiting", rig.lock.held)
+        advanceTimeBy(ListenController.LISTEN_RETRY_FIRST_MS); runCurrent()
+        assertEquals(ListenStatus.BOTH, rig.controller.status.value); assertTrue(rig.lock.held); assertEquals(2, rig.lock.acquires)
+    }
+    @Test fun `R3 on, an unscanned network holds nothing until a scan completes`() = runTest {
+        val rig = Rig(backgroundScope); rig.scannedFlag = false
+        rig.controller.start(); runCurrent()
+        assertEquals(0, rig.lock.acquires); assertEquals(ListenStatus.NOT_SCANNED, rig.controller.status.value)
+        rig.scan.value = true; runCurrent(); rig.scannedFlag = true; rig.scan.value = false; runCurrent()
+        assertEquals(1, rig.lock.acquires); assertEquals(ListenStatus.BOTH, rig.controller.status.value)
+        assertTrue("the shipped default is the controller's recommendation", ListenController.LISTEN_SCANNED_NETWORKS_ONLY)
+    }
+    @Test fun `R3 off listens on an unscanned network at once`() = runTest {
+        val sink = FakeSink(); val lock = FakeLock()
+        val controller = ListenController(backgroundScope, MutableStateFlow(SettingsState(listenMulticast = true)), MutableStateFlow(true), MutableStateFlow<NetworkEnv?>(envA),
+            MutableStateFlow(0), MutableStateFlow(false), lock, FakeSockets(), resolve = { 1L }, scanned = { false }, writerFor = { _, id -> HeardWriter(id, sink) },
+            io = backgroundScope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher, clock = { 0L }, scannedOnly = false)
+        controller.start(); runCurrent()
+        assertEquals(1, lock.acquires); assertEquals(ListenStatus.BOTH, controller.status.value)
+    }
     @Test fun `packets from network A queued at a change are discarded and B's are dropped until Home catches up`() = runTest {
         val rig = Rig(backgroundScope)
         val gate = CompletableDeferred<Unit>(); rig.sink.gate = gate
@@ -4626,7 +5008,7 @@ Expected: `BUILD FAILED` with `Unresolved reference 'LockHandle'`, `'MulticastLi
 
 - [ ] **Step 3: Implement the lock, the sockets and the controller**
 
-Before writing it (3C-1 plan review G1): `git diff --quiet 82084d3 -- app/src/main/java/com/northwalessolutions/netprobe/engine/common/Locks.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/engine/common/Locks.kt changed since 82084d3"`; if it prints STOP, stop and ask the controller.
+Before writing it (3C-1 plan review G1): `git diff --quiet f8acaec -- app/src/main/java/com/northwalessolutions/netprobe/engine/common/Locks.kt || echo "STOP: app/src/main/java/com/northwalessolutions/netprobe/engine/common/Locks.kt changed since f8acaec"`; if it prints STOP, stop and ask the controller.
 
 `app/src/main/java/com/northwalessolutions/netprobe/engine/common/Locks.kt` (whole file; the scan's two locks behave exactly as before):
 ```kotlin
@@ -4756,6 +5138,7 @@ import com.northwalessolutions.netprobe.data.NetworkSignature
 import com.northwalessolutions.netprobe.data.SettingsState
 import com.northwalessolutions.netprobe.engine.common.LockHandle
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
+import com.northwalessolutions.netprobe.netenv.Transport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -4763,12 +5146,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -4776,8 +5161,10 @@ import java.net.Inet4Address
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * "Listen between scans" (3C spec 3.2, D10, D11). Hears and never sends, except the writer's bounded UPnP description GET. One session per
- * (plan, env, network epoch); see the Task 11 interface notes for the lifecycle. Nothing runs in the background: foreground false ends it.
+ * "Listen between scans" (3C spec 3.2, D10, D11, amendments A1 to A4). Hears and never sends, except the writer's bounded UPnP description
+ * GET (R2). One session per (plan, network identity, interface address, transport, network epoch): roaming between access points of one
+ * network does not restart it (plan review G12). A failed session is restarted with a bounded backoff and says so (G4); it never ends
+ * listening silently. Nothing runs in the background: foreground false ends the session.
  */
 class ListenController(
     private val scope: CoroutineScope,
@@ -4786,18 +5173,23 @@ class ListenController(
     private val env: StateFlow<NetworkEnv?>,
     /** AppContainer.networkEpoch: bumped by Forget, its Undo and its commit, so a session re-resolves its network row. */
     private val epoch: StateFlow<Int>,
-    scanActive: StateFlow<Boolean>,
+    private val scanActive: StateFlow<Boolean>,
     private val lock: LockHandle,
     private val sockets: ListenSockets,
     /** The network row for the env (null when none or its Forget is pending): the only row this session may write to. */
     private val resolve: suspend (NetworkEnv) -> Long?,
+    /** Whether the row has a completed scan (lastRunAt set), for Director ruling R3. */
+    private val scanned: suspend (Long) -> Boolean,
     private val writerFor: (NetworkEnv, Long) -> HeardWriter,
-    private val onSessionStart: () -> Unit = {},
+    /** Called with the session's network row each time a session opens its sockets. */
+    private val onSessionStart: (Long) -> Unit = {},
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val clock: () -> Long = System::currentTimeMillis,
     private val log: (Throwable) -> Unit = {},
+    private val scannedOnly: Boolean = LISTEN_SCANNED_NETWORKS_ONLY,
 ) {
-    private data class Key(val plan: ListenPlan, val env: NetworkEnv, val epoch: Int)
+    /** What a session depends on: the plan and the network's identity, never its BSSID, SSID or DNS servers (G12). */
+    private data class Key(val plan: ListenPlan, val identity: String, val interfaceIp: Inet4Address, val transport: Transport, val epoch: Int)
     private val session = MutableStateFlow<ListenStatus?>(null)
     private val started = AtomicBoolean(false)
 
@@ -4811,33 +5203,57 @@ class ListenController(
         scope.launch {
             combine(settings, foreground, env, epoch) { s, fg, e, n ->
                 val plan = ListenGate.plan(s.listenMulticast, s.mdns, s.ssdp, fg, e != null)
-                if (plan == null || e == null) null else Key(plan, e, n)
-            }.distinctUntilChanged().collectLatest { key -> if (key == null) session.value = null else listen(key) }
+                if (plan == null || e == null) null else Key(plan, NetworkSignature.identityKey(e), e.interfaceIp, e.transport, n)
+            }.distinctUntilChanged().collectLatest { key -> if (key == null) session.value = null else supervise(key) }
+        }
+    }
+
+    /** Runs sessions for [key] until the key changes; an unexpected failure waits a bounded, doubling backoff and tries again (G4). */
+    private suspend fun supervise(key: Key) {
+        var backoff = LISTEN_RETRY_FIRST_MS
+        while (true) {
+            try {
+                listen(key)
+                return
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                log(e)
+                session.value = ListenStatus.RETRYING
+                delay(backoff)
+                backoff = (backoff * 2).coerceAtMost(LISTEN_RETRY_MAX_MS)
+            }
         }
     }
 
     private suspend fun listen(key: Key) {
-        val networkId = try { resolve(key.env) } catch (ce: CancellationException) { throw ce } catch (e: Exception) { log(e); null }
+        val e = env.value?.takeIf { NetworkSignature.identityKey(it) == key.identity } ?: return
+        val networkId = resolve(e)
         if (networkId == null) { session.value = ListenStatus.NO_NETWORK; return }
+        // Director ruling R3: a network nobody has scanned is not listened on; wait for a completed scan, then start (amendment A3).
+        while (scannedOnly && !scanned(networkId)) {
+            session.value = ListenStatus.NOT_SCANNED
+            scanActive.first { it }
+            scanActive.first { !it }
+        }
         val opened = ArrayList<HeardSocket>(2)
         val queue = heardQueue()
         lock.acquire()
         try {
-            onSessionStart()
-            val mdns = if (key.plan.mdns) sockets.open(MDNS_GROUP, MDNS_PORT, key.env)?.also { opened += it } else null
-            val ssdp = if (key.plan.ssdp) sockets.open(SSDP_GROUP, SSDP_PORT, key.env)?.also { opened += it } else null
+            onSessionStart(networkId)
+            val mdns = if (key.plan.mdns) sockets.open(MDNS_GROUP, MDNS_PORT, e)?.also { opened += it } else null
+            val ssdp = if (key.plan.ssdp) sockets.open(SSDP_GROUP, SSDP_PORT, e)?.also { opened += it } else null
             session.value = ListenStatusRules.opened(mdns != null, ssdp != null)
             if (opened.isEmpty()) { lock.release(); awaitCancellation() }   // nothing to hear: hold nothing until the key changes
-            val identityKey = NetworkSignature.identityKey(key.env)
-            val writer = writerFor(key.env, networkId)
+            val writer = writerFor(e, networkId)
             val repeats = HeardRepeats(clock)
             coroutineScope {
-                if (mdns != null) launch(io) { read(mdns, MDNS_MAX_PACKET) { bytes, _ -> HeardPackets.mdns(bytes, identityKey).forEach { offer(queue, repeats, it) } } }
-                if (ssdp != null) launch(io) { read(ssdp, SSDP_MAX_PACKET) { bytes, from -> HeardPackets.ssdp(from, bytes, identityKey)?.let { offer(queue, repeats, it) } } }
+                if (mdns != null) launch(io) { read(mdns, MDNS_MAX_PACKET) { bytes, from -> HeardPackets.mdns(bytes, from, key.identity).forEach { offer(queue, repeats, it) } } }
+                if (ssdp != null) launch(io) { read(ssdp, SSDP_MAX_PACKET) { bytes, from -> HeardPackets.ssdp(from, bytes, key.identity)?.let { offer(queue, repeats, it) } } }
                 launch {
                     for (h in queue) {
                         // One failed write (a database error) is logged and never ends the session.
-                        try { writer.accept(h) } catch (ce: CancellationException) { throw ce } catch (e: Exception) { log(e) }
+                        try { writer.accept(h) } catch (ce: CancellationException) { throw ce } catch (ex: Exception) { log(ex) }
                     }
                 }
             }
@@ -4853,11 +5269,15 @@ class ListenController(
         if (repeats.admit(h.repeatKey)) queue.trySend(h)   // DROP_OLDEST: never fails, never suspends a reader
     }
 
+    /**
+     * A closed socket (IOException) ends this reader quietly: the session is ending. A packet the parsers choke on is logged and skipped
+     * (G4). Any other failure of receive escapes, fails the session and is retried by [supervise].
+     */
     private suspend fun read(socket: HeardSocket, size: Int, onPacket: (ByteArray, Inet4Address) -> Unit) {
         val buf = ByteArray(size)
         while (true) {
             val d = (try { socket.receive(buf) } catch (ce: CancellationException) { throw ce } catch (e: IOException) { log(e); return }) ?: continue
-            onPacket(buf.copyOf(d.length), d.from)
+            try { onPacket(buf.copyOf(d.length), d.from) } catch (e: Exception) { log(e) }
         }
     }
 
@@ -4869,6 +5289,14 @@ class ListenController(
         /** mDNS packets can reach the jumbo-frame size (RFC 6762 section 17); SSDP NOTIFYs are small. */
         const val MDNS_MAX_PACKET = 9000
         const val SSDP_MAX_PACKET = 4096
+        /** Plan review G4: the first retry after a failed session, doubling to the cap. */
+        const val LISTEN_RETRY_FIRST_MS = 1_000L
+        const val LISTEN_RETRY_MAX_MS = 60_000L
+        /**
+         * Director ruling R3 (pending; default per the controller's recommendation, amendment A3): true listens only on a network with at least
+         * one completed scan; false listens on any network.
+         */
+        const val LISTEN_SCANNED_NETWORKS_ONLY = true
     }
 }
 ```
@@ -4912,13 +5340,17 @@ with
      * "Listen between scans" (3C spec 3.2): sessions on appScope, gated by the switch, the foreground and the LAN, with their own lock.
      * Started only by onActivityCreated. Each session resolves its env's network row and writes only while Home's current network is that row.
      */
+    /** The network row of the last listening session; Long.MIN_VALUE before the first (row ids are positive). */
+    private val listenRow = java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE)
     val listen: ListenController by lazy {
         ListenController(appScope, settings.state, foreground,
             networkEnvMonitor.env.stateIn(appScope, SharingStarted.Eagerly, networkEnvMonitor.current()), networkEpoch, radarScanActive,
             locks.listen, MulticastListenSockets(networkEnvMonitor::binderFor, log = { Log.w(AppScopes.LOG_TAG, "listen socket", it) }),
             resolve = { e -> networks.ensure(e, GatewayMac.lookup(e.gateway))?.id?.takeIf { it != forgottenNetworkId.value } },
+            scanned = { id -> networks.byId(id)?.lastRunAt != null },
             writerFor = { e, id -> HeardWriter(id, ContainerHeardSink(this@AppContainer, e)) },
-            onSessionStart = { removedWhileListening.value = emptySet() },
+            // G12: the removed set is cleared only when listening moves to another network row, not on every restart.
+            onSessionStart = { id -> if (listenRow.getAndSet(id) != id) removedWhileListening.value = emptySet() },
             log = { Log.e(AppScopes.LOG_TAG, "listen", it) })
     }
 ```
@@ -4980,7 +5412,7 @@ This task is NOT executed during the plan. Tasks 1 to 11 end with JVM tests gree
 
 Destructive checks (Forget this network, Remove device) run only on a disposable network: the UniFi guest SSID if the Director keeps one, or the phone's hotspot from a second device. Never on the home network. Each is recorded with the network used.
 
-**Approval gate (one internet contact).** Item 3 makes the app open a TLS handshake to `1.1.1.1:443` (Cloudflare's public resolver) to prove a public target goes "via VPN or other route". That is the only internet contact in this task; the Director approves it with the plan, or item 3 uses a public address he names instead. No agent fetches anything on the PC.
+**Approval gate (one internet contact), Director ruling R1.** Item 3 makes the app open a TLS handshake to `1.1.1.1:443` (Cloudflare's public resolver) to prove a public target goes "via VPN or other route". That is the only internet contact in this task. Ruling line: `R1: APPROVED: TLS handshake to 1.1.1.1:443` (pending the Director; the controller's recommendation). If the Director refuses or names another address, the controller edits this one line and item 3 follows it; with R1 refused, item 3 records "NOT RUN, refused". No agent fetches anything on the PC.
 
 **Files:**
 - Create (at execution time): `docs/qa/phase3c-2-on-device.md`, `docs/qa/shots/phase3c-2/*.png`, `docs/qa/shots/phase3c-2/*.mp4`
@@ -5121,17 +5553,33 @@ probe "$BK/probe"; echo "hidden after $(rows "$BK/probe" "SELECT COUNT(*) FROM h
    Expected: the two counts are equal.
 3. Route (spec 8.4 item 3; the approval gate above). TLS certificate of `1.1.1.1:443`: the run completes and its header reads "via VPN or other route". If a VPN app is already installed on the phone (no installs), connect it, run TLS certificate on an address only the VPN routes, and confirm the same header and a result; otherwise record "NOT RUN, covered by `ManualRouteTest` and `ToolRunnerRouteTest`". A known LAN target (the gateway) reads "via Wi-Fi" with the VPN connected too.
 4. Forget while a manual run holds a hidden row. Start a brute-force on a hidden target; open Home's overflow: "Forget this network" is disabled until the run ends. Observe only: do not tap it on the home network.
-5. Listening (spec 8.4 item 4). Settings: "Listen between scans" sits directly after "HTTP page titles", off; turn it on: the status line reads "Listening for mDNS and SSDP" (or records which protocol could not open, assumption A2). Go to Home and do not scan. Within 10 minutes, at least one device not yet in the inventory appears, or a known device's `lastSeen` moves:
+5. Listening (spec 8.4 item 4, plan review G8). With listening still off, read the baseline, then start the app again:
 ```bash
-probe "$BK/probe"; rows "$BK/probe" "SELECT MAX(lastSeen) FROM hosts WHERE manualOnly = 0"; "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
+probe "$BK/probe"; echo "lastSeen before $(rows "$BK/probe" "SELECT MAX(lastSeen) FROM hosts WHERE manualOnly = 0")  rows before $(rows "$BK/probe" "SELECT COUNT(*) FROM hosts WHERE manualOnly = 0")"
+"$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
+```
+   Settings: "Listen between scans" sits directly after "HTTP page titles", off; turn it on: the status line reads "Listening for mDNS and SSDP" (or records which protocol could not open, assumption A2; with R3 on, the home network has completed scans, so "Scan this network once to start listening" here is a fail). Go to Home and do not scan. Take no `probe` for the next 10 minutes: each one force-stops the app, which ends the session and resets its 32-row count and removed set. While Home is open:
+```bash
 "$ADB" -s $DEV shell dumpsys wifi | grep -i -A2 "netprobe-listen"     # with Home open: listed
+```
+   After the 10 minutes, send Home to the background and check the lock, then read the same numbers again:
+```bash
 "$ADB" -s $DEV shell input keyevent KEYCODE_HOME; "$ADB" -s $DEV shell sleep 3
 "$ADB" -s $DEV shell dumpsys wifi | grep -i -A2 "netprobe-listen" || echo "netprobe-listen not held in the background"
+probe "$BK/probe"; echo "lastSeen after $(rows "$BK/probe" "SELECT MAX(lastSeen) FROM hosts WHERE manualOnly = 0")  rows after $(rows "$BK/probe" "SELECT COUNT(*) FROM hosts WHERE manualOnly = 0")"
+"$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
 ```
-   (the phone-side `sleep 3` lets ON_STOP land; it is the only wait in this task.) Record what was heard, by which protocol, and the two `dumpsys` results; expected: held in the foreground, not held after Home is sent to the background.
+   (the phone-side `sleep 3` lets ON_STOP land; it is the only wait in this task.) Expected: `lastSeen after` is later than `lastSeen before`, or `rows after` is larger; the lock is held in the foreground and not in the background. Record what was heard, by which protocol, and both `dumpsys` results.
+   Process death (G8): with listening on and Home open, `"$ADB" -s $DEV shell am force-stop $PKG`, then `"$ADB" -s $DEV shell dumpsys wifi | grep -i -A2 "netprobe-listen" || echo "released on process death"`; expected: released.
 6. Listening during a scan (spec 8.4 item 5). With listening on, start a radar scan: Settings' status line reads "Paused while a scan runs"; when the scan ends, no device appears twice, `netprobe-mdns` is gone from `dumpsys wifi` and `netprobe-listen` is still held. Then Wi-Fi off and on from the quick settings: the status line reads "Not listening: connect to Wi-Fi or Ethernet" while off, `netprobe-listen` is released, and it is held again once Wi-Fi is back. Record a 20 s screen recording `r2-listen-scan`.
+   Scan parity beside the system mDNS daemon (plan review G5, controller ruling; `ListenSocketsTest` pins the shared bind). Run one radar scan with listening off and one with it on, back to back, and after each count the devices that scan found with mDNS evidence:
+```bash
+probe "$BK/probe"; rows "$BK/probe" "SELECT COUNT(*) FROM hosts h JOIN networks n ON n.id = h.networkId WHERE h.manualOnly = 0 AND h.mdnsName IS NOT NULL AND h.lastDiscoveryRun = n.lastRunAt"; "$ADB" -s $DEV shell am start -W -n $PKG/.MainActivity
+```
+   A drop of more than two devices with listening on is a FAIL, not a note. The pre-agreed response (recorded in Task 11): close the mDNS socket while a radar scan runs and reopen it when the scan ends; the controller schedules that one change and this check runs again.
+
 7. Battery (spec 8.4 item 6). Screen on, Home open: `"$ADB" -s $DEV shell dumpsys batterystats --reset`, 15 minutes with listening on, then `"$ADB" -s $DEV shell dumpsys batterystats | grep -iE "wifi|cpu" | head -40 > "$BK/battery-on.txt"`; repeat with listening off into `battery-off.txt`. Record the Wi-Fi and CPU lines of both in the QA record.
-8. Network change mid-listen (spec 8.4 item 7, disposable network only). On the guest SSID (or the hotspot), with listening on, switch networks both ways: no guest device lands in the home network's inventory and no home device lands in the guest network's. On the guest network only, Forget this network once and Undo it, then Forget and let it commit: the listener keeps working afterwards (the status line returns to "Listening..."). If no disposable network is available, record "NOT RUN, covered by `ListenControllerTest.packets from network A queued at a change are discarded and B's are dropped until Home catches up` and `HeardWriterTest`".
+8. Network change mid-listen (spec 8.4 item 7, disposable network only, plan review G8). Needs a second network: the guest SSID or the phone's hotspot from a second device. With R3 on, scan the disposable network once first (its row needs a completed scan before it is listened on). With listening on, stay on it until at least one sighting is heard there (record it, from the status line and a `rows` count of that network's hosts after a `probe`); if nothing is heard in 10 minutes (client isolation on a guest SSID hears nothing), record the item as "inconclusive, nothing heard on the disposable network", not as a pass. Then switch networks both ways: no guest device lands in the home network's inventory and no home device lands in the guest network's. On the disposable network only, Forget this network once and Undo it, then Forget and let it commit: the listener keeps working afterwards (the status line returns to "Listening..." once the re-created row has been scanned, R3). Without a second network the cross-network rule cannot be shown on the device: Wi-Fi off and on (item 6) proves only the restart. Record "NOT RUN, covered by `ListenControllerTest.packets from network A queued at a change are discarded and B's are dropped until Home catches up` and `HeardWriterTest.a packet for another network or another row is dropped`", and do not improvise another check.
 9. Settings reset turns listening off: with listening on, Settings overflow, Reset to defaults: the switch turns off and the status line goes; Undo turns it back on. (Step 8 restores the Director's preferences.)
 
 - [ ] **Step 7: Screens for the Director at font scale 1.0 and 1.3** (`"$ADB" -s $DEV shell settings put system font_scale 1.3`, restored to 1.0 afterwards):
@@ -5150,7 +5598,7 @@ Expected: `MD5 OK`; Settings shows his tuning and "Listen between scans" off (th
 
 - [ ] **Step 9: Record and hand over**
 
-Write `docs/qa/phase3c-2-on-device.md`: the date, build commit, every step's result, the MD5s, the schema 3 and schema 4 counts, the test counts per class, the screenshot and recording names, what the listener heard (devices, protocol, time to first sighting), the battery figures, the networks used for items 3 and 8, the QA-created rows, and for the Director to rule on: spec section 10 assumptions A2 and A3, open items 1, 3 and 4 as the controller ruled them, and every deviation and gap in the Plan Self-Review Notes below. Then commit only the QA record and its shots:
+Write `docs/qa/phase3c-2-on-device.md`: the date, build commit, every step's result, the MD5s, the schema 3 and schema 4 counts, the test counts per class, the screenshot and recording names, what the listener heard (devices, protocol, time to first sighting), the battery figures, the networks used for items 3 and 8, the QA-created rows, and for the Director to rule on: the four ruling lines R1 to R4 (with what this QA saw for each), spec section 10 assumptions A2 and A3, open items 1, 3 and 4 as the controller ruled them, the wording of `ToolCopy.BIND_FAILED` ("could not bind to Wi-Fi") on an Ethernet route and of the "Not listening" line while a Forget is pending (plan review G18), and every deviation and gap in the Plan Self-Review Notes below. Then commit only the QA record and its shots:
 ```bash
 git add docs/qa/phase3c-2-on-device.md docs/qa/shots/phase3c-2
 git status --short    # nothing else may be staged
@@ -5180,46 +5628,76 @@ Expected: the app opens on the 3C-1 build with every mark, note, setting and imp
 ## Plan Self-Review Notes
 
 **Spec coverage, by section:**
-- Section 3 (multicast listening): 3.1 the switch, subtitle and status line, Task 9 (`ListenCopy`, the Settings row) and Task 11 (the status wiring); 3.2 gate, controller, lifecycle and the separate lock, Tasks 9 (`ListenGate`) and 11 (`ListenController`, `Locks.listen`, `onActivityCreated`); 3.3 sockets and parsers, Task 8 (`MdnsPacket`, `DnsWire`, `parseNotify`) and Task 11 (`MulticastListenSockets`, the null-interface rule), the per-packet cap Task 8, the repeat LRU and `Heard` tagging Task 10; 3.4 entry into the inventory, Task 10 (`HeardWriter` drop rules 1 to 5, `KnownRanges` from Task 3, `RadarCollector` with `upsertHeard` from Task 2) plus the controller ruling's bounded description fetch; 3.5 nothing to build (the permission is in the manifest), measured in Task 12 item 7.
-- Section 4 (manual tools): 4.1 entry and screen, Task 7 (`HomeMenu`, the route, `ManualToolsContent` with its pinned block); 4.2 validation, Task 4 (`ManualTarget`); 4.3 resolution, keying, the brute-force sheet, the discard and the orphan sweep, Tasks 2 (`manualTarget`, `discardManual`, `deleteOrphanManual`, `onActivityCreated`), 5 (`ManualStarter`) and 7 (the view model's sheet flow); 4.4 results, history and export, Tasks 2 (`recentForNetwork`) and 7 (history rows, the 3B sheet, `ToolExport`); 4.5 route, Tasks 3 (`ManualRoute`, `routeBind`), 2 (`tool_runs.route` written), 4 (the strings) and 6 (the header).
+- Section 3 (multicast listening): 3.1 the switch, subtitle and status line, Task 9 (`ListenCopy`, the Settings row, the two lines amendment A3 adds) and Task 11 (the status wiring); 3.2 gate, controller, lifecycle and the separate lock, Tasks 9 (`ListenGate`) and 11 (`ListenController` with its supervisor and R3, `Locks.listen`, `onActivityCreated`); 3.3 sockets and parsers, Task 8 (`MdnsPacket`, `DnsWire`, `parseNotify`) and Task 11 (`MulticastListenSockets`, the null-interface rule, the shared 5353 bind), the per-packet cap Task 8, the repeat LRU, `Heard` tagging and the source check Task 10; 3.4 entry into the inventory, Task 10 (`HeardWriter` drop rules 1 to 5, the re-check after the fetch, `KnownRanges` from Task 3, `RadarCollector` with `upsertHeard` from Task 2) plus R2's bounded description fetch; 3.5 nothing to build (the permission is in the manifest), measured in Task 12 item 7.
+- Section 4 (manual tools): 4.1 entry and screen, Task 7b (`HomeMenu`, the route, `ManualToolsContent` with its pinned block and `LiveLine`); 4.2 validation, Task 4 (`ManualTarget`); 4.3 resolution, keying, the brute-force sheet, the discard and the orphan sweep, Tasks 2 (`manualTarget`, `discardManual`, `deleteOrphanManual`, `onActivityCreated`), 5 (`ManualStarter`, the env re-check) and 7a (the view model's sheet flow, `networks.ensure`); 4.4 results, history and export, Tasks 2 (`recentForNetwork`) and 7a/7b (history rows, the 3B sheet with `liveStatus`, `ToolExport`); 4.5 route, Tasks 3 (`ManualRoute`, R4, `routeBind`), 2 (`tool_runs.route` written), 4 (the strings) and 6 (the header).
 - Section 6: the 3C-2 order is followed with the schema first and the listener last; nothing from 3C-1 is rebuilt.
 - Section 7.1: every row of the table is Task 1 or Task 2, including `allForNetwork` for `toolRunningOnNetwork` and the canary `knownIps` (Task 2 Step 5). Section 7.2: every 3C-2 row is a Copy member with a template (Tasks 4 and 9; `ToolCopy.ROUTE_*` in `ToolCopyTableTest`); the removed names `MENU_AGGRESSIVE` and `ERR_PRIVATE` are asserted absent; "Run a tool..." is pinned with three full stops.
-- Section 8: 8.1 items 14 to 24 are Tasks 9 (14), 11 (15), 8 (16, 17), 10 and 11 (18), 3 (19, 21), 4 (20, 24), 5 (22), 6 (23); 8.2 items 1 to 3, 5 and 6 are written and compiled in Tasks 1, 2, 6, 7 and 9 and run in Task 12; 8.4 is Task 12 with the full data-safety preamble.
+- Section 8: 8.1 items 14 to 24 are Tasks 9 (14), 11 (15), 8 (16, 17), 10 and 11 (18), 3 (19, 21), 4 (20, 24), 5 (22), 6 (23); 8.2 items 1 to 3, 5 and 6 are written and compiled in Tasks 1, 2, 6, 7b and 9 and run in Task 12; 8.4 is Task 12 with the full data-safety preamble.
 
-**Placeholder scan:** `grep -nE "TBD|TODO|similar to Task|implementer (completes|finishes|adds)|stub|<[a-z ]+>"` over this file. Remaining hits are prose angle brackets naming a pattern (`<tool> on <ip>:<port>`, `<pattern>` in the standard JVM command, `<file>`), not unwritten code. Every task gives its failing tests, complete production code or an exact replacement block, exact names, exact commands, the gate and an explicit staging list.
+**Placeholder scan (re-run after the plan review, against f8acaec):** `grep -nE "TBD|TODO|similar to Task|implementer (completes|finishes|adds)|stub|rebases this task|<[a-z ]+>"` over this file. Remaining hits are prose angle brackets naming a pattern (`<tool> on <ip>:<port>`, `<pattern>` in the standard JVM command, `<file>`, `<base>`), not unwritten code. The one cross-task marker (`ROOM-FLOW CHECKS` in Task 1's `Migration34Test`) is a comment Task 1 commits as is and Task 2 Step 5 replaces with exact lines, so both tasks are complete on their own (plan review G1). No task asks the controller to rebase it any more (G2): Task 7 is written against F4 as committed. Every task gives its failing tests, complete production code or an exact replacement block, exact names, exact commands, the gate and an explicit staging list.
 
-**Type consistency (checked against the code at 82084d3 and the 3C-1 plan's blocks):**
-- `HostEntity.manualOnly` and `ToolRunEntity.route` are the last fields with defaults (Task 1), so `TestHosts.host`, `ToolRunnerTestSupport`, `DaoTest`, `ToolDaoTest` and every `copy(...)` compile unchanged.
+**Type consistency (re-checked against the code at f8acaec and the 3C-1 plan's blocks):**
+- `HostEntity.manualOnly` and `ToolRunEntity.route` are the last fields with defaults (Task 1), so `TestHosts.host`, `ToolRunnerTestSupport`, `DaoTest`, `ToolDaoTest` and every `copy(...)` compile unchanged. Task 1's `Migration34Test` uses only `HostDao`, `ToolDao` and `openHelper` members that exist after Task 1 (`runsForHost` is 3B's; `route` is Task 1's); its `forNetwork` and `allForNetwork` checks arrive in Task 2 (G1).
 - `ToolStore.startRun(..., route)` has a default body (Task 2), so 3B's `FakeStore` and `object : ToolStore by store` fakes compile unchanged; `ToolRepository` overrides both forms and writes the route in its one insert.
-- `ToolTarget.route` and `ToolRunner(routeBind)` are last and defaulted (Task 3); `ToolOptionsJson.encode` writes only `tls` and `serverName`, so a route never leaks into `optionsJson`.
-- `RadarCollector`'s new `upsert` sits before the trailing `removed` lambda (Task 10), so the radar call in `HomeViewModel` and 3A's `RadarIdentityGuardTest` (`... Mutex()) { emptySet() }`) compile unchanged.
-- `HomeMenu(onRunTool)`, `HomeActions.onRunTool`, `HomeScreen(onOpenTools)`, `NetProbeNavHost(tools)`, `ToolResultsState.route` and `SettingsUi.listenStatus` are all last and defaulted; `HomeContentTest`, `NavTransitionTest`, `ToolsFakes` and 3C-1's `SettingsContentTest` compile unchanged.
+- `ToolTarget.route` and `ToolRunner(routeBind)` are last and defaulted (Task 3); `ToolOptionsJson.encode` writes only `tls` and `serverName`, so a route never leaks into `optionsJson`. `ManualRoute.of`'s new `ctx` and `privateOverLan` parameters are defaulted, so Task 3's own tests and `ManualStarter` call it with or without R4's context.
+- `ManualStarter` gains `routeContext` and `envNow` (Task 5); its only constructions are `ManualStarterTest.Rig` and `ManualToolsViewModel` (Task 7a), both updated.
+- F4 at f8acaec: `ToolResultsSheet(..., liveStatus: (() -> String)? = null)` and `LiveLine(text: () -> String, style, color, modifier, lead, leadColor, gap, leadModifier, textModifier)` in `ui/LiveLine.kt`; `ToolsUiState.kt`'s classes are `@Immutable` and `ToolResultsState` still ends with `val findings: List<FindingRow>, val active: Boolean)`, Task 6's anchor. `DetailViewModel.removeDevice` (Task 10's anchors `hostSnap to token` and the 28-space restore lines) is unchanged by F4. `ManualToolsContent` calls `LiveLine` and `ToolResultsSheet(liveStatus = ...)` exactly as `DetailComponents` and `DetailContent` do.
+- `RadarCollector`'s new `upsert` sits before the trailing `removed` lambda (Task 10), so the radar call in `HomeViewModel` and 3A's `RadarIdentityGuardTest` (`... Mutex()) { emptySet() }`) compile unchanged. `Heard.source` is last and defaults to the host's address, so `HeardRepeatsTest`'s three-argument `Heard(...)` compiles.
+- `ListenController` gains `scanned`, `onSessionStart: (Long) -> Unit` and `scannedOnly` (Task 11); its only constructions are `ListenControllerTest` (both rigs) and `AppContainer.listen`, both written here. `ListenStatus` gains `NOT_SCANNED` and `RETRYING` in Task 9, and the two `when (s)` over it (`ListenCopy.status`) are exhaustive.
+- `HomeMenu(onRunTool)`, `HomeActions.onRunTool`, `HomeScreen(onOpenTools)`, `NetProbeNavHost(tools)`, `ToolResultsState.route`, `SettingsUi.listenStatus` and `ManualToolsContent`'s two live lambdas are all last and defaulted; `HomeContentTest`, `NavTransitionTest`, `ToolsFakes` and 3C-1's `SettingsContentTest` compile unchanged.
 - `SettingsState.listenMulticast` is appended after `extGatewayProbe` (Task 9); 3C-1's `SettingsDefaultsTest` is edited for the 15th value (its key-set test would otherwise fail on the new key, which is the point of that test).
-- Checked against the code: `HostDao.forNetwork`'s callers are `HostRepository.hostsForNetwork` only, whose callers are `HomeViewModel.hosts`, `quickScanAllBody` and (3C-1) `discoverOn`'s `known`, which Task 2 moves to `allHostsForNetwork`; `RowRules.parseIpv4` and `Ipv4.parse` are the same rule (Task 4 uses `Ipv4`); `ToolApplicability.SMB_PORT` was private and is made public (Task 4); `MainActivity` already sets `foreground` on ON_START and ON_STOP (3B), which `ListenController` reads.
+- Checked against the code: `HostDao.forNetwork`'s callers are `HostRepository.hostsForNetwork` only, whose callers are `HomeViewModel.hosts`, `quickScanAllBody` and (3C-1) `discoverOn`'s `known`, which Task 2 moves to `allHostsForNetwork`; `RowRules.parseIpv4` and `Ipv4.parse` are the same rule (Task 4 uses `Ipv4`); `ToolApplicability.SMB_PORT` was private and is made public (Task 4); `MainActivity` already sets `foreground` on ON_START and ON_STOP (3B), which `ListenController` reads; the dim expression `stale = run > 0 && h.lastDiscoveryRun < run` occurs once in 3C-1's `baseState`, Task 2's `StaleRule` anchor.
 
-**Deviations, gaps and contradictions for the Director (the spec wins unless noted):**
-1. **The listener's description fetch.** Spec 3.1 says the listener sends nothing and does no description fetch, and section 6 lists "UPnP description fetches from the listener" as not in 3C; the controller ruling says it fetches for heard devices inside the known ranges. The plan follows the ruling (Task 10): at most once per IP and 32 per session, never for a LOCATION over 512 characters, through the existing `UpnpFetcher` (2 s, 64 KB, host equal to the packet source, no redirects), bound to Wi-Fi (discovery's own fetch is unbound; this is stricter).
-2. **Identity key alone cannot tell two sites with the same addressing apart.** `NetworkSignature.identityKey` is gateway IP and prefix only, so tagging packets with it (spec 3.3) would let a client network on `192.168.1.1/24` match the Director's home row of the same addressing during the window before Home re-resolves. The plan adds, beyond spec 3.2: each session resolves its own network row (gateway MAC, through `networks.ensure`) and writes only while Home's current network is that row (Task 10 rule 1), and sessions restart on `networkEpoch` (Forget, its Undo and its commit), so a re-created row never receives a stale session's writes.
-3. **Spec 4.3 step 1 "currentNetwork, else ensure".** A current network left over from the previous env could receive the manual row in the same window; the plan uses `currentNetwork` only when its gateway and prefix equal the env's (Task 7 `networkFor`), else `ensure`.
-4. **Spec 4.3 step 4 "in one hosts transaction ... then start".** The runner's start takes its own locks and writes `tool_runs` in its own transaction, so it cannot share the row's; the plan inserts the row in one transaction, starts, then deletes the row only while it is still `manualOnly` with no run (a promotion or a started run is never deleted), and the start-up sweep covers a process killed in between.
-5. **"Hidden from exports and the Forget cascade" (the task brief) against the spec.** NetProbe has no inventory export: `ToolExport` exports one run, and spec 4.4 keeps it unchanged, so manual runs export like any run. Spec 7.1 says Forget deletes manual rows with the rest; the plan deletes them (`ManualHostDaoTest.forgetsCascadeRemovesManualRowsAndTheirRuns`) and keeps Forget disabled while a tool holds one. Nothing is hidden from the cascade.
-6. **Errors before the first Run tap.** Spec 4.2 says blank fields show no error until the first Run tap; the plan holds every error until then (a half-typed address would otherwise flag at each keystroke), then shows them live. One `takeIf { attempted }` if the Director wants live errors.
-7. **`KnownRanges.of` takes host rows, not IP strings**, so the "manual-only hosts contribute nothing" rule (spec 8.1 item 19) lives in the function and is tested there.
-8. **Wording nits for the Director:** a manual start with no network shows `ScanController.NO_NETWORK` ("Connect to Wi-Fi or Ethernet to scan"), as spec 4.3 step 6 names; the status line reads "Not listening: connect to Wi-Fi or Ethernet" also when Wi-Fi is up but the network's Forget is pending. One constant each.
-9. **The no-binder rule is checked twice.** At the Run tap a known-range target with no Wi-Fi or Ethernet binder is `NoNetwork` before any row exists (spec 4.5); a binder that vanishes between the start and the tool's first socket ends the run FAILED with 3B's "Tool skipped: could not bind to Wi-Fi". Never unbound either way.
-10. **The removed-this-session set is process-wide** (`AppContainer.removedWhileListening`), filled by Remove device, cleared at each listening session start and each radar scan start, and emptied of a pair by its Undo; spec 3.4 rule 5 describes a per-session set. Same effect, and it survives the listener restarting on a settings change mid-session only until that restart (the spec's "next listening session").
-11. **DnsWire's label limit is opt-in.** The 128-label cap that stops a label flood applies only to the listener; `DeviceInfoTxt` keeps its behaviour unchanged, as spec 3.3 requires.
-12. **QA row counts need a SQLite reader on the PC.** Spec 8.4 item 2 counts hidden rows "from the pulled database copy"; the plan uses Python's standard library on a copy under the backup folder (nothing installed), else records the check NOT RUN with the on-screen check.
-13. **3B's `DirectorCopyMigration23Test` is not run in 3C-2:** it asserts a schema 2 copy and would fail on the schema 3 copy pushed for `DirectorCopyMigration34Test` (it never touches `netprobe.db`).
-14. **QA item 3 contacts the internet** (`1.1.1.1:443`); it is behind an approval gate in Task 12.
-15. **The tool runner's network-change stop also ends OTHER-route runs** when the Wi-Fi network changes, even though their traffic may be on a VPN (spec 4.3 keeps the network-change stop untouched). Stated so a stopped VPN run is not reported as a bug.
-16. **Pinned at flow level, proved on the device:** "a cancelled brute-force sheet creates no row" (spec 8.1 item 22) is `ManualFlow.firstStep` plus Task 12 item 2's hidden-row count; the view model's Cancel needs an `AppContainer` and is not JVM-tested. "A heard row on a network with no run is undimmed" (8.2 item 3) is pinned with `RowRules.row` and the dim expression `HomeViewModel` uses.
-17. **`runIdForNew` is read per store from `networks.byId`**, not from the possibly stale `currentNetwork` entity (spec 3.4 says `lastRunAt ?: 0`).
-18. **The 3B device QA is still committing fixes** (F4, in the working tree at plan time: `ToolResultsSheet.kt`, `ToolsUiState.kt`, `DetailViewModel.kt`, the Detail composables, `Calibration.kt`, a new `ui/LiveText.kt`). Task 1 Step 0's `comm` line lists them and stops; the targeted edits this plan makes to `ToolResultsSheet.kt` (Task 6, written to fit either shape), `ToolsUiState.kt` (Task 6) and `DetailViewModel.kt` (Task 10, `removeDevice` only) do not touch F4's lines, and Task 7's per-tick behaviour should follow F4's pattern once it lands.
+**Deviations, gaps and contradictions for the Director (the spec wins unless noted; each spec change is in "Spec amendments" A1 to A7):**
+1. **The listener's description fetch (R2, A1).** Spec 3.1 says the listener sends nothing, and section 6 lists the fetch as not in 3C; the controller ruling turns it on. The plan follows the ruling behind the flag `HEARD_FETCH_DESCRIPTIONS` (Task 10): at most once per IP and 32 per session, never for a LOCATION over 512 characters, through the existing `UpnpFetcher` (2 s, 64 KB, host equal to the packet source, no redirects), bound to Wi-Fi, with the context re-checked after the fetch (G3).
+2. **Identity key alone cannot tell two sites with the same addressing apart (A2).** Each session resolves its own network row (gateway MAC) and writes only while Home's current network is that row; sessions restart on `networkEpoch`; a session is keyed on identity key, interface address and transport, not the whole env (G12).
+3. **Spec 4.3 step 1 (A5).** The manual start always calls `networks.ensure` (MAC-aware); `currentNetwork` is never taken on the gateway-and-prefix key (G7).
+4. **Spec 4.3 step 4 (A5).** The row is inserted in one transaction, the runner starts in its own, and a refused start deletes the row only while it is still `manualOnly` with no run; the start is refused (row discarded) when the env changed since the tap (G15); the start-up sweep covers a process killed in between.
+5. **"Hidden from exports and the Forget cascade" (the first brief) against the spec.** NetProbe has no inventory export: `ToolExport` exports one run and manual runs export like any run. Spec 7.1 says Forget deletes manual rows; the plan deletes them and keeps Forget disabled while a tool holds one.
+6. **Errors before the first Run tap (A7).** Every error is held until the first Run tap, then live. One `takeIf { attempted }` if the Director wants live errors.
+7. **`KnownRanges.of` takes host rows, not IP strings**, so "manual-only hosts contribute nothing" lives in the function and is tested there.
+8. **Wording nits for the Director (G18):** `ScanController.NO_NETWORK` ("Connect to Wi-Fi or Ethernet to scan") on a manual start; "Not listening: connect to Wi-Fi or Ethernet" while the network's Forget is pending; `ToolCopy.BIND_FAILED` ("could not bind to Wi-Fi") on an Ethernet route. No copy change now; one constant each.
+9. **The no-binder rule is checked twice.** At the Run tap a Wi-Fi or Ethernet route with no binder is `NoNetwork` before any row exists; a binder that vanishes before the tool's first socket ends the run FAILED with 3B's bind wording. Never unbound either way.
+10. **The removed-this-session set is process-wide (A7, G12):** filled by Remove device, cleared when listening moves to another network row and at each radar scan start, emptied of a pair by its Undo.
+11. **DnsWire's label limit is opt-in.** The 128-label cap applies only to the listener; `DeviceInfoTxt` keeps its behaviour.
+12. **QA row counts need a SQLite reader on the PC:** Python's standard library on a copy under the backup folder (nothing installed), else NOT RUN with the on-screen check.
+13. **3B's `DirectorCopyMigration23Test` is not run in 3C-2:** it asserts a schema 2 copy and would fail on the schema 3 copy.
+14. **QA item 3 contacts the internet** (`1.1.1.1:443`), behind ruling line R1.
+15. **The tool runner's network-change stop also ends OTHER-route runs** when the Wi-Fi network changes, even if their traffic is on a VPN (spec 4.3 keeps that stop). Stated so it is not reported as a bug.
+16. **Pinned at flow level, proved on the device:** "a cancelled brute-force sheet creates no row" is `ManualFlow.firstStep` plus Task 12 item 2's hidden-row count. "A heard row on a network with no run is undimmed" is now pinned on `StaleRule`, the rule `baseState` uses (G16).
+17. **`runIdForNew` is read per store from `networks.byId`**, and that read now also refuses a gone or forgotten row (G3).
+18. **R3 changes first use (A3):** with listening on, a network shows "Scan this network once to start listening" until its first completed scan, including a re-created row after Forget. That is the point of R3 (G9), stated so QA does not report it.
+19. **R4 changes ruling 4 (A6):** with no internet on the LAN and no VPN as the default, a private target outside the known ranges goes over the LAN; the header says "via Wi-Fi" or "via Ethernet" for it. With internet or a VPN default, ruling 4 as written.
+20. **Unicast replies on 5353 (G5):** while listening, the system mDNS daemon may miss some unicast (QU) replies, because Linux gives a shared port's unicast datagrams to one socket; Task 12 item 6 measures it, with a pre-agreed fallback (close the mDNS socket during radar scans).
 
 **Review Focus mapping:**
-1. Schema 4 and the Director's data: Task 1 `MigrationSql34Test` (3), `SchemaExportTest` (2 new), `Migration34Test` (2), `DirectorCopyMigration34Test` (1); Task 12 Steps 0 to 4.
-2. Hidden rows: Task 2 `ManualHostDaoTest` (9), `HeardRunTest` (3); Task 5 `ManualStarterTest` (10); Task 12 items 1, 2 and 4.
-3. Manual route: Task 3 `ManualRouteTest` (6), `ToolRunnerRouteTest` (5); Task 5 `ManualStarterTest`; Task 6 `ToolResultsRouteTest`; Task 12 item 3.
-4. Listener writes: Task 8 `MdnsPacketTest` (10), `SsdpNotifyTest` (5); Task 10 `HeardWriterTest` (8), `HeardRepeatsTest` (3), `HeardPacketsTest` (3); Task 11 `ListenControllerTest` (the network change); Task 12 items 5, 6 and 8.
-5. Lock lifecycle: Task 11 `ListenControllerTest` (13), `LocksTest` (3), `ListenSocketsTest` (4); Task 12 items 5 and 6.
+1. Schema 4 and the Director's data: Task 1 `MigrationSql34Test` (3), `SchemaExportTest` (2 new), `Migration34Test` (2, with Task 2's two Room-flow checks), `DirectorCopyMigration34Test` (1, every schema 3 column of every table, G17); Task 12 Steps 0 to 4.
+2. Hidden rows: Task 2 `ManualHostDaoTest` (9), `HeardRunTest` (3), `StaleRuleTest` (2); Task 5 `ManualStarterTest` (12); Task 12 items 1, 2 and 4.
+3. Manual route: Task 3 `ManualRouteTest` (8, R4 both ways), `ToolRunnerRouteTest` (5); Task 5 `ManualStarterTest` (the binder, R4 and env-change cases); Task 6 `ToolResultsRouteTest`; Task 12 item 3.
+4. Listener writes: Task 8 `MdnsPacketTest` (10), `SsdpNotifyTest` (5); Task 10 `HeardWriterTest` (11, the fetch-window, source and R2 cases included), `HeardRepeatsTest` (3), `HeardPacketsTest` (3); Task 11 `ListenControllerTest` (the network change, roaming, R3); Task 12 items 5, 6 and 8.
+5. Lock lifecycle: Task 11 `ListenControllerTest` (18, the retry case included), `LocksTest` (3), `ListenSocketsTest` (5, the shared 5353 bind included); Task 12 items 5 (process death included) and 6.
+
+## Gruff plan review response
+
+One line per finding of `docs/superpowers/plans/2026-10-21-phase3c-2-plan-gruff-review.md` (df19d5b). Applied unless marked otherwise.
+
+- G1 (BLOCKING) Applied. Task 1's `Migration34Test` keeps the raw-SQL half, a `SELECT COUNT(*)` through `openHelper` and the `runsForHost` route check; the `forNetwork` and `allForNetwork` assertions move to Task 2 Step 5 as an exact replacement of a marked comment.
+- G2 (BLOCKING) Applied against f8acaec. Task 7 is split (G19) and written on F4 as committed: the structural state sees frozen runs and ends with `distinctUntilChanged()`; `liveProgress` and `liveResults` feed `LiveLine` and `ToolResultsSheet`'s `liveStatus`. The names are `ui/LiveLine.kt` and `LiveLine`. Task 6 edits the committed `if (liveStatus != null) LiveLine(...) else Text(...)` pair. Task 1 Step 0 uses f8acaec as the base, states its expected `comm` output (nothing), and checks the three whole-file blocks with one `git diff --quiet f8acaec -- <files>`.
+- G3 Applied. `HeardWriter` re-applies rules 1 and 2 after the fetch; `ContainerHeardSink.store` refuses a gone or forgotten row; `HeardWriterTest.a Forget or a scan landing during the description fetch drops the write`.
+- G4 Applied per the controller ruling. A parser failure is logged and the packet skipped; any other session failure shows "Listening stopped after an error, retrying" and restarts after 1 s doubling to 60 s; tests for a failed write and a failed session.
+- G5 Applied per the controller ruling. `ListenSocketsTest.a listener socket binds the mDNS port beside a daemon that holds it with SO_REUSEADDR`; `SO_REUSEADDR` and `SO_REUSEPORT` behaviour documented in Task 11; Task 12 item 6 measures scan parity with a FAIL threshold and the pre-agreed fallback.
+- G6 Applied. The spec amendment list A1 to A7 sits under the Spec line, the UPnP fetch first (A1); the controller commits it to the spec before execution.
+- G7 Applied. `networkFor` always calls `networks.ensure`.
+- G8 Applied. Item 5 reads `lastSeen` and the row count before and after with no probe in the window; a process-death lock check; item 8 requires a heard sighting on the disposable network or records "inconclusive", and names its JVM fallback without improvising; the G5 parity check is in item 6.
+- G9 (Director decision) Ruling line R3, default on: `LISTEN_SCANNED_NETWORKS_ONLY`, status "Scan this network once to start listening", tests for both values.
+- G10 (Director decision) Ruling line R4, default on: `PRIVATE_TARGETS_OVER_LAN_WITHOUT_INTERNET` with `NetworkEnvMonitor.routeContext`, tests for both values.
+- G11 Applied. `Heard.source`; an mDNS datagram from outside the known ranges is `OUT_OF_RANGE`; one `HeardWriterTest` case.
+- G12 Applied. The session key is (plan, identity key, interface address, transport, epoch); `removedWhileListening` clears only when the session's row changes; a roaming test.
+- G13 Applied. `AppContainer.manualStartedHostId` replaces the view model's field.
+- G14 Applied. `runTool` computes "Use HTTPS" from the form and the eagerly held known service.
+- G15 Applied. `ManualStarter` refuses with `NoNetwork` (discarding a new row) when the current env's identity key differs from the tap's; one test.
+- G16 Applied. `StaleRule.of` is extracted, used by `baseState` and tested; the DAO test uses it.
+- G17 Applied. `DirectorCopyMigration34Test` compares every schema 3 column of every table, read with `PRAGMA table_info`, row by row with `quote()`.
+- G18 Recorded, no copy change (gap 8, Task 12 Step 9 list).
+- G19 Applied. Task 7 is 7a and 7b; the Roles line lets Tasks 4 and 6, and Tasks 8 and 9, run as standard-model batches; the stronger model stays on 1, 3, 5, 10 and 11.
+- Questions 1 to 4: ruling lines R1 to R4 under the Spec line, each one flippable line with the controller's recommendation as the default.
