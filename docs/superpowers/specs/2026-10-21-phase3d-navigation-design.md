@@ -370,6 +370,10 @@ Definition of done: 9.1 green, 9.2 passing on the device, 9.3 recorded with resu
 
 ## 11. Open items for the Director
 
+**Director rulings (2026-10-21):**
+- Open item 1: the second destination is labelled **"Scans"**, not "Activity". Every "Activity" label, route name and `ActivityCopy` reference in this spec reads "Scans" / `ScansCopy` when the plan is written; the behaviour is unchanged.
+- D16 confirmed: 3C-2 skips building the Home overflow "Run a tool..." item and its Compose test. "Run a tool" lives in the Tools destination only. `HomeCopy.MENU_RUN_TOOL` is not added; the overflow is "Quick scan all" and "Forget this network" (D17 without the conditional).
+
 1. Names: "Devices", "Activity", "Tools", "Settings". Alternatives: "Scans" (your word) or "Running" for Activity, "Network" for Devices.
 2. About as a Settings row opening a dialog, not a page of its own (D2).
 3. Icons: radar dish, pulse line, wrench, gear (shown on the device before merge).
