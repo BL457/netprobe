@@ -15,6 +15,10 @@ import com.northwalessolutions.netprobe.engine.tools.UdpSnmpExchange
 import com.northwalessolutions.netprobe.engine.tools.namedThenIp
 import com.northwalessolutions.netprobe.engine.common.Locks
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
+import com.northwalessolutions.netprobe.engine.discovery.HeardWriter
+import com.northwalessolutions.netprobe.engine.discovery.ListenController
+import com.northwalessolutions.netprobe.engine.discovery.MulticastListenSockets
+import com.northwalessolutions.netprobe.engine.neigh.GatewayMac
 import com.northwalessolutions.netprobe.engine.identify.DeviceIdentifier
 import com.northwalessolutions.netprobe.engine.identify.HostEvidenceBuilder
 import com.northwalessolutions.netprobe.engine.identify.IdentifyRules
@@ -37,6 +41,7 @@ import com.northwalessolutions.netprobe.engine.tools.dirbrute.Exchange
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.LoadedWordlist
 import com.northwalessolutions.netprobe.engine.tools.smb.SmbSessionTool
 import com.northwalessolutions.netprobe.ui.home.RunSettings
+import com.northwalessolutions.netprobe.ui.home.ContainerHeardSink
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.DirBruteOptionsStore
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
@@ -103,6 +108,25 @@ class AppContainer(val context: Context) {
     fun onActivityCreated() {
         if (!activityStarted.compareAndSet(false, true)) return
         appScope.launch { hostWriteLock.withLock { hosts.deleteOrphanManual() } }
+        listen.start()
+    }
+
+    /**
+     * "Listen between scans" (3C spec 3.2): sessions on appScope, gated by the switch, the foreground and the LAN, with their own lock.
+     * Started only by onActivityCreated. Each session resolves its env's network row and writes only while Home's current network is that row.
+     */
+    /** The network row of the last listening session; Long.MIN_VALUE before the first (row ids are positive). */
+    private val listenRow = java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE)
+    val listen: ListenController by lazy {
+        ListenController(appScope, settings.state, foreground,
+            networkEnvMonitor.env.stateIn(appScope, SharingStarted.Eagerly, networkEnvMonitor.current()), networkEpoch, radarScanActive,
+            locks.listen, MulticastListenSockets(networkEnvMonitor::binderFor, log = { Log.w(AppScopes.LOG_TAG, "listen socket", it) }),
+            resolve = { e -> networks.ensure(e, GatewayMac.lookup(e.gateway))?.id?.takeIf { it != forgottenNetworkId.value } },
+            scanned = { id -> networks.byId(id)?.lastRunAt != null },
+            writerFor = { e, id -> HeardWriter(id, ContainerHeardSink(this@AppContainer, e)) },
+            // G12: the removed set is cleared only when listening moves to another network row, not on every restart.
+            onSessionStart = { id -> if (listenRow.getAndSet(id) != id) removedWhileListening.value = emptySet() },
+            log = { Log.e(AppScopes.LOG_TAG, "listen", it) })
     }
     /** One run at a time per host, across Quick scan all, Detail scans and the tool runner (spec 4.3). */
     val hostBusy = HostBusyRegistry()

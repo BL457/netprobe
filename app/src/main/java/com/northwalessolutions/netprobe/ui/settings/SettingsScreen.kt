@@ -73,8 +73,10 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists:
         container.networkEnvMonitor.current()?.let { HomeRange.of(it.interfaceIp, it.prefixLength, s.maxPrefix, s.extEnabled).subnet } }
     val wordlists by rememberWordlists(container)
     val wordlistsLoaded = rememberWordlistStore(container).value != null
+    val listenStatus by container.listen.status.collectAsStateWithLifecycle()   // 3C spec 3.1
     SettingsContent(
-        SettingsUi(s, network?.displayName, network?.id, manual, local, if (wordlistsLoaded) wordlists.count { !it.builtIn } else null),
+        SettingsUi(s, network?.displayName, network?.id, manual, local, if (wordlistsLoaded) wordlists.count { !it.builtIn } else null,
+            ListenCopy.status(listenStatus)),
         SettingsActions(onBack = onBack, update = { container.settings.update(it) }, current = { container.settings.state.value },
             onManualChange = { list -> network?.id?.let { container.settings.manual.set(it, list) } },
             clearVulnCache = {
