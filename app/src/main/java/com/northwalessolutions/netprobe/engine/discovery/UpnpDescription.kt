@@ -11,6 +11,7 @@ import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.Proxy
 import java.net.URL
+import java.net.URLConnection
 import javax.xml.parsers.SAXParserFactory
 
 data class UpnpDevice(val friendlyName: String?, val manufacturer: String?, val modelName: String?,
@@ -76,13 +77,13 @@ object UpnpDescriptionParser {
 }
 
 class UpnpFetcher(private val timeoutMs: Int = 2000, private val maxBytes: Int = 65536) {
-    suspend fun fetch(location: String, allowedHost: Inet4Address): UpnpDevice? {
+    /** [opener] is the listener's Wi-Fi-bound connection (3C spec 3.4, controller ruling); discovery keeps the unbound NO_PROXY default. */
+    suspend fun fetch(location: String, allowedHost: Inet4Address, opener: (URL) -> URLConnection = NO_PROXY_OPENER): UpnpDevice? {
         return try {
             val url = URL(location)
             if (url.host != allowedHost.hostAddress) return null
             runInterruptible(Dispatchers.IO) {
-                // NO_PROXY: a LAN fetch must never be handed to a Wi-Fi proxy or PAC outside the network.
-                val c = url.openConnection(Proxy.NO_PROXY) as HttpURLConnection
+                val c = opener(url) as HttpURLConnection
                 c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs; c.instanceFollowRedirects = false
                 c.inputStream.use { ins ->
                     // Bounded manual read: InputStream.readNBytes needs API 33 and minSdk is 26.
@@ -102,5 +103,10 @@ class UpnpFetcher(private val timeoutMs: Int = 2000, private val maxBytes: Int =
         } catch (_: Exception) {
             null
         }
+    }
+
+    companion object {
+        /** NO_PROXY: a LAN fetch must never be handed to a Wi-Fi proxy or PAC outside the network. */
+        val NO_PROXY_OPENER: (URL) -> URLConnection = { it.openConnection(Proxy.NO_PROXY) }
     }
 }

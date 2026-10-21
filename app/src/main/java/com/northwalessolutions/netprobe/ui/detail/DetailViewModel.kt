@@ -323,6 +323,8 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
                         if (token != null) runCatching { c.toolRepo.dropSnapshot(token) }   // nothing was deleted, so the TEMP tables must not leak
                         throw e
                     }
+                    // 3C spec 3.4 rule 5: the listener must not re-add it before the next scan or listening session; Undo takes it out below.
+                    c.removedWhileListening.update { RemovedHosts.added(it, h.networkId, h.ip) }
                     hostSnap to token
                 }
             } finally {
@@ -347,6 +349,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
                         } finally {
                             c.removedHostIds.update { it - hostId }
                             c.removedDuringScan.update { RemovedHosts.without(it, h.networkId, h.ip) }
+                            c.removedWhileListening.update { RemovedHosts.without(it, h.networkId, h.ip) }
                         }
                     }
                 },

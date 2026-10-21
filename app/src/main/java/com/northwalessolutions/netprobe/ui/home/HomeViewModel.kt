@@ -203,6 +203,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         c.undo.committedBefore {
             // No suspension between the commit and these lines (review M2): from here a Remove is marked for this scan (spec 5.3 step 2).
             c.removedDuringScan.value = emptySet()          // a new radar scan starts with nothing removed
+            c.removedWhileListening.value = emptySet()      // 3C spec 3.4 rule 5: after a scan the listener may add a device again
             c.radarScanActive.value = true
             try { discoverOn(e) } finally { c.radarScanActive.value = false; c.radarScanNetworkId.value = null }
         }

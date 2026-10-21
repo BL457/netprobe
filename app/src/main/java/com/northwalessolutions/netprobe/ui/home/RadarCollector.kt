@@ -19,6 +19,8 @@ class RadarCollector(
     private val hosts: HostRepository, private val ports: PortRepository, private val identifier: DeviceIdentifier,
     private val ouiLookup: (String) -> String?, private val lock: Mutex,
     private val hintsFor: suspend (Long) -> List<String> = { emptyList() },
+    /** The row write: a scan's upsertDiscovered, or the listener's upsertHeard (3C spec 3.4); the lock, the removed check and the identity rule are shared. */
+    private val upsert: suspend (Long, DiscoveredHost, Long) -> Long = hosts::upsertDiscovered,
     private val removed: () -> Set<Pair<Long, String>>,
 ) {
     /** Ports seen open per IP during this run: later emissions for the host carry none. */
@@ -29,7 +31,7 @@ class RadarCollector(
         val ip = h.ip.hostAddress ?: return@withLock false
         if (RemovedHosts.skip(removed(), networkId, ip)) return@withLock false
         val previousMac = hosts.findOnce(networkId, ip)?.mac
-        val id = hosts.upsertDiscovered(networkId, h, runId)
+        val id = upsert(networkId, h, runId)
         val merged = hosts.byIdOnce(id) ?: return@withLock true
         val seen = openPorts.getOrPut(ip) { HashSet() }.also { it += h.probedOpenPorts }.toSet()
         // Stored port findings are part of the evidence, so a rediscovery never downgrades an identity a port scan established.

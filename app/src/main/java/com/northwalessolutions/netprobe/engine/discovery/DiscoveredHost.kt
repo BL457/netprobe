@@ -2,7 +2,8 @@ package com.northwalessolutions.netprobe.engine.discovery
 
 import java.net.Inet4Address
 
-enum class Source { SWEEP, MDNS, SSDP, NETBIOS, NEIGH, SNMP, HTTP, GATEWAY }
+/** HEARD marks a listener sighting (3C spec 3.3); like every Source it lives in memory only and is never stored. */
+enum class Source { SWEEP, MDNS, SSDP, NETBIOS, NEIGH, SNMP, HTTP, GATEWAY, HEARD }
 
 /** MAC provenance. Higher rank wins on merge: netlink neighbour table is primary, NetBIOS and UPnP secondary, names and EUI-64 tertiary. */
 enum class MacSource(val rank: Int) { EUI64(1), NAME(1), UPNP_UDN(2), NETBIOS(3), NEIGH(4) }

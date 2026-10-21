@@ -78,6 +78,11 @@ class AppContainer(val context: Context) {
     val removedDuringScan = MutableStateFlow<Set<Pair<Long, String>>>(emptySet())
     /** Host ids removed in this process; Quick scan all skips them radar or not (plan review G2). Ids are AUTOINCREMENT, never reused. */
     val removedHostIds = MutableStateFlow<Set<Long>>(emptySet())
+    /**
+     * (network, ip) removed with Remove device since the last radar scan or listening session started (3C spec 3.4 rule 5, G22): the
+     * listener does not re-add them. Cleared by both starts; Undo takes its pair out.
+     */
+    val removedWhileListening = MutableStateFlow<Set<Pair<Long, String>>>(emptySet())
     /** The host of the run the "Run a tool" screen last started (plan review G13): process-wide, so Stop survives the screen being recreated. */
     val manualStartedHostId = MutableStateFlow<Long?>(null)
     /** The network a radar scan is running on, or null; set once the scan has resolved its network row. */
