@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.northwalessolutions.netprobe.ui.rootInsets
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
@@ -82,7 +83,7 @@ fun ManualToolsContent(state: ManualUiState, actions: ManualActions, liveProgres
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
     LaunchedEffect(state.appMessage?.id) { state.appMessage?.let { m -> snackbar.showSnackbar(m.text); actions.onDismissApp(m.id) } }
     val editable = state.lan && !state.running
-    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime),
+    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).padding(bottom = 10.dp)) {

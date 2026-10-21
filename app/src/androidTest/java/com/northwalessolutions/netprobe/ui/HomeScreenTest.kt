@@ -47,4 +47,8 @@ class HomeScreenTest {
         rule.onNodeWithTag("scanButton").assertIsNotEnabled()
         rule.onAllNodesWithText("Connect to Wi-Fi or Ethernet to scan").assertCountEquals(1)
     }
+    @Test fun theBottomBarShowsFourDestinationsWithDevicesSelected() {   // 3D spec 1.2: the real shell around the real Devices root
+        listOf("devices", "scans", "tools", "settings").forEach { rule.onNodeWithTag("tab:$it").assertIsDisplayed() }
+        rule.onNodeWithTag("tab:devices").assertIsSelected()
+    }
 }

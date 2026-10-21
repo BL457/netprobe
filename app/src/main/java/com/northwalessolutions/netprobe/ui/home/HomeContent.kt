@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.northwalessolutions.netprobe.ui.rootInsets
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.ui.EmptyState
@@ -78,7 +79,7 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
         )
     }
     // The IME joins the content insets so an empty state or the last rows never sit behind the keyboard while searching.
-    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), topBar = {
+    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)
             .padding(top = Dimens.gutter, bottom = 10.dp)) {
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {

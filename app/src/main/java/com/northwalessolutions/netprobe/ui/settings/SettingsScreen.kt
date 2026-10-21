@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.northwalessolutions.netprobe.ui.rootInsets
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.data.SettingsDefaults
 import com.northwalessolutions.netprobe.data.SettingsReset
@@ -100,7 +101,7 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             }
         }
     }
-    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) },
+    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), snackbarHost = { SnackbarHost(snackbar) },
         topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
             BackToHome(actions.onBack) { SettingsMenu(resetEnabled = SettingsDefaults.differs(s), onReset = onReset) }
         } }) { pad ->
