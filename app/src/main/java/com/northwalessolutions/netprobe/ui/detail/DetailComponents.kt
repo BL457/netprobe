@@ -173,6 +173,10 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
     val progressHeight = remember(density, measurer) {
         with(density) { maxOf(NetProbeText.data.lineHeight.toDp(), measurer.measure(PROGRESS_PROBE, NetProbeText.data).size.height.toDp()) }
     }
+    // The last live bar of this run, held so the frame where the live bar has turned null but toolBar has not yet never redraws the
+    // run-start snapshot (toolBar's progress and fraction are from the start of the run). Written in draw, so it is a plain holder.
+    val lastLive = remember(toolBar?.label) { arrayOfNulls<ToolRunBar>(1) }
+    val heldBar: () -> ToolRunBar? = { liveToolBar()?.also { lastLive[0] = it } ?: lastLive[0] }
     Column(Modifier.fillMaxWidth().testTag("detailScanBar")) {
         Row(Modifier.padding(horizontal = Dimens.gutter), verticalAlignment = Alignment.CenterVertically) {
             PinnedSegmented(PROFILES.map { it.label }, PROFILES.indexOfFirst { it.label == profile.label }, { onProfile(PROFILES[it]) },
@@ -190,8 +194,8 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
         Box(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).heightIn(min = progressHeight), contentAlignment = Alignment.CenterEnd) {
             when {
                 // The per-tick progress is read in LiveLine's draw only: a tick neither recomposes, relayouts nor changes the semantics
-                // of the Device screen (3B QA F4). The fallback covers the frame where the run has ended and the live bar is null.
-                toolBar != null -> LiveLine({ liveToolBar()?.progress ?: toolBar.progress }, style = NetProbeText.data, color = NetProbeColors.textMuted,
+                // of the Device screen (3B QA F4). heldBar keeps the last live value for the frame where the run has ended.
+                toolBar != null -> LiveLine({ heldBar()?.progress ?: toolBar.progress }, style = NetProbeText.data, color = NetProbeColors.textMuted,
                     lead = toolBar.label, leadModifier = Modifier.testTag("toolBarLabel"), textModifier = Modifier.testTag("toolBarProgress"))
                 scanning -> Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
             }
@@ -205,7 +209,7 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
                 // cost a whole-tree accessibility diff (3B QA F4). The live fraction is read in draw only (3A per-frame rule).
                 toolFraction != null -> Box(Modifier.fillMaxSize().graphicsLayer {}.drawBehind {
                     drawRect(NetProbeColors.surface)
-                    val f = (liveToolBar()?.fraction ?: toolFraction).coerceIn(0f, 1f)
+                    val f = (heldBar()?.fraction ?: toolFraction).coerceIn(0f, 1f)
                     val w = size.width * f
                     drawRect(NetProbeColors.signal, topLeft = Offset(if (layoutDirection == LayoutDirection.Rtl) size.width - w else 0f, 0f), size = Size(w, size.height))
                 }.testTag("toolBarLine"))

@@ -98,8 +98,8 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
      * run this host has (and whether its total is known, which picks the determinate line), and whether the runner is full. The
      * per-tick counts go to [toolBar] instead, so the Device screen does not recompose on every tick (3B QA F4).
      */
-    private val structuralActive: Flow<Map<Long, ToolRunner.Active>> = c.toolRunner.active.distinctUntilChanged { a, b -> activeKey(a) == activeKey(b) }
-    private fun activeKey(m: Map<Long, ToolRunner.Active>) = m[hostId]?.let { Triple(it.runId, it.total == null, it.toolId) } to (m.size >= ToolRunner.MAX_ACTIVE_RUNS)
+    private val structuralActive: Flow<Map<Long, ToolRunner.Active>> =
+        c.toolRunner.active.distinctUntilChanged { a, b -> ToolStateKey.of(a, hostId) == ToolStateKey.of(b, hostId) }
 
     /** The pinned bar's per-tick fields, read only by the bar's leaf composables and the live results status line (3B QA F4). */
     val toolBar: StateFlow<ToolRunBar?> = c.toolRunner.active.map { it[hostId]?.let(ToolsUiModel::bar) }.distinctUntilChanged()

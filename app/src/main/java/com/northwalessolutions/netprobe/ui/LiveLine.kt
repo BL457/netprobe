@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -53,7 +54,8 @@ fun LiveLine(text: () -> String, style: TextStyle, color: Color, modifier: Modif
     val leadStyle = remember(style, leadColor) { style.copy(color = leadColor) }
     val lineHeight = remember(measurer, style, density) { with(density) { measurer.measure(LINE_PROBE, style).size.height.toDp() } }
     val current by rememberUpdatedState(text)
-    var spoken by remember { mutableStateOf(text()) }
+    // Read without observation: composition must never subscribe to the live source, or every tick recomposes this line.
+    var spoken by remember { mutableStateOf(Snapshot.withoutReadObservation { text() }) }
     LaunchedEffect(Unit) { while (true) { delay(LIVE_TEXT_A11Y_REFRESH_MS); spoken = current() } }
     val a11y = spoken
     // Its own layer, so a tick re-records this line's drawing only, not the whole window's.
