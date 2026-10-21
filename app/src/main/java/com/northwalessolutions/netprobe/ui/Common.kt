@@ -12,8 +12,12 @@ import com.northwalessolutions.netprobe.ui.theme.NetProbeText
 
 /** Centred placeholder for an empty list area (spec 4.4); [pad] is the Scaffold content padding when the caller has one. */
 @Composable
-fun EmptyState(text: String, pad: PaddingValues = PaddingValues(0.dp)) {
+fun EmptyState(text: String, pad: PaddingValues = PaddingValues(0.dp), line: String? = null) {
     Box(Modifier.padding(pad).fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Text(text, style = NetProbeText.secondary, textAlign = TextAlign.Center, color = NetProbeColors.textMuted)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text, style = NetProbeText.secondary, textAlign = TextAlign.Center, color = NetProbeColors.textMuted)
+            // The optional second line (Scans: what shows here); Home's callers pass nothing and look as before.
+            line?.let { Text(it, style = NetProbeText.data, textAlign = TextAlign.Center, color = NetProbeColors.textMuted, modifier = Modifier.padding(top = 6.dp)) }
+        }
     }
 }
