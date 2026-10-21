@@ -9,6 +9,7 @@ import com.northwalessolutions.netprobe.engine.tools.AppMessage
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
 import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolRoute
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.ui.home.RelativeTime
@@ -22,7 +23,9 @@ import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 @Immutable data class ToolRunBar(val label: String, val progress: String, val fraction: Float?)
 @Immutable data class FindingRow(val id: Long, val value: String, val detail: String?, val url: String?)
 @Immutable data class ToolResultsState(val runId: Long, val title: String, val statusLine: String, val summary: String, val index: Int, val count: Int,
-                            val findings: List<FindingRow>, val active: Boolean)
+                            val findings: List<FindingRow>, val active: Boolean,
+                            /** "via Wi-Fi", "via Ethernet" or "via VPN or other route" for a manual run (3C spec 4.5); null shows nothing. */
+                            val route: String? = null)
 @Immutable data class DirBruteSheetState(val port: Int, val targetUrl: String, val lists: List<WordlistMeta>, val initial: DirBruteOptions, val busyReason: String?)
 @Immutable data class DetailToolsState(val tools: ToolsUiState? = null, val bar: ToolRunBar? = null, val busy: HostBusyRegistry.Work? = null,
                             val results: ToolResultsState? = null, val dirBrute: DirBruteSheetState? = null, val appMessage: AppMessage? = null,
@@ -82,6 +85,7 @@ object ToolResultsModel {
         val status = if (live != null) ToolCopy.resultsRunning(ToolsUiModel.bar(live).progress)
                      else ToolCopy.resultsStatus(ToolCopy.statusLabel(run.status), RelativeTime.of(run.startedAt, now, formatDate), ToolRunOptions.parse(run.optionsJson).serverName)
         val index = sameTool.indexOfFirst { it.id == run.id }.let { if (it < 0) 1 else it + 1 }
-        return ToolResultsState(run.id, ToolCopy.resultsTitle(ToolCopy.toolName(tool), ip, run.port), status, run.summary, index, maxOf(sameTool.size, 1), rows, live != null)
+        return ToolResultsState(run.id, ToolCopy.resultsTitle(ToolCopy.toolName(tool), ip, run.port), status, run.summary, index, maxOf(sameTool.size, 1), rows, live != null,
+            route = ToolCopy.routeLine(ToolRoute.parse(run.route)))
     }
 }

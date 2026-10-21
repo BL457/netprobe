@@ -55,6 +55,7 @@ fun ToolResultsSheet(state: ToolResultsState, onOlder: () -> Unit, onNewer: () -
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = if (state.index < state.count) NetProbeColors.textSecondary else NetProbeColors.border)
                     }
                 }
+                state.route?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.testTag("routeLine")) }   // 3C spec 4.5
                 if (liveStatus != null) LiveLine(liveStatus, style = NetProbeText.data, color = NetProbeColors.textMuted)
                 else Text(state.statusLine, style = NetProbeText.data, color = NetProbeColors.textMuted)
                 val (fallback, summary) = ToolCopy.splitFallback(state.summary)
