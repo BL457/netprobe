@@ -27,10 +27,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Wordlist import from a URL (3C spec 5.2, 5.3). HttpURLConnection, not the LAN HttpClient: platform DNS, the system trust store with
  * hostname checks, streaming, and the default network (never bound to Wi-Fi; it may be cellular). Redirects are followed here, never
  * by the platform, so every hop passes UrlImportRules.redirect. No Authorization and no Cookie are ever sent; the app installs no
- * CookieHandler. The only internet code in the app.
+ * CookieHandler. The only code that fetches a URL the Director types.
  */
 class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
-                         private val resolve: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() }) {
+                         private val resolve: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() },
+                         private val readTimeoutMs: Int = URL_READ_TIMEOUT_MS) {
 
     suspend fun fetch(url: URL, store: WordlistStore, onProgress: (Long, Long?) -> Unit = { _, _ -> }): UrlImportResult =
         withContext(Dispatchers.IO) { follow(url, store, onProgress) }
@@ -71,7 +72,7 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
             conn.instanceFollowRedirects = false
             conn.useCaches = false
             conn.connectTimeout = URL_CONNECT_TIMEOUT_MS
-            conn.readTimeout = URL_READ_TIMEOUT_MS
+            conn.readTimeout = readTimeoutMs
             conn.setRequestProperty(USER_AGENT_HEADER, HttpClient.USER_AGENT)
             conn.setRequestProperty(ACCEPT_HEADER, ACCEPT)
             val code = try {
@@ -124,20 +125,29 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
     private suspend fun importBody(conn: HttpURLConnection, finalUrl: URL, total: Long?, store: WordlistStore, onProgress: (Long, Long?) -> Unit): UrlImportResult {
         onProgress(0, total)
         val raw = try { conn.inputStream } catch (e: IOException) { return UrlImportResult.Failed(UrlImportRules.failureOf(e)) }
-        val buffered = BufferedInputStream(CountingStream(raw, total, onProgress), SNIFF_BUFFER_BYTES)
+        val recording = ErrorRecordingStream(CountingStream(raw, total, onProgress))
+        val buffered = BufferedInputStream(recording, SNIFF_BUFFER_BYTES)
         val prefix = try {
             buffered.mark(UrlImportRules.BINARY_SNIFF_BYTES)
             readUpTo(buffered, UrlImportRules.BINARY_SNIFF_BYTES).also { buffered.reset() }
         } catch (e: IOException) {
             runCatching { buffered.close() }   // cleanup only
-            return UrlImportResult.Stored(ImportResult.Unreadable)
+            return bodyFailure(recording.lastError ?: e) ?: UrlImportResult.Stored(ImportResult.Unreadable)
         }
         if (UrlImportRules.looksBinary(prefix)) {
             runCatching { buffered.close() }   // cleanup only
             return UrlImportResult.Failed(FetchFailure.NotText(null))
         }
-        return UrlImportResult.Stored(store.import(UrlImportRules.displayName(finalUrl), buffered))   // the store closes the stream
+        val stored = store.import(UrlImportRules.displayName(finalUrl), buffered)   // the store closes the stream
+        // A network fault mid-body is a fetch failure, not a file-format one: the store only sees an IOException as Unreadable.
+        val fault = recording.lastError
+        if (stored == ImportResult.Unreadable && fault != null) bodyFailure(fault)?.let { return it }
+        return UrlImportResult.Stored(stored)
     }
+
+    /** The fetch failure for a body-phase IOException, or null when the job was cancelled (the disconnect is then the cancellation, not a fault). */
+    private suspend fun bodyFailure(e: IOException): UrlImportResult? =
+        if (currentCoroutineContext()[Job]?.isActive == false) null else UrlImportResult.Failed(UrlImportRules.failureOf(e))
 
     /** Disconnects [conn] the moment the caller is cancelled, so a read blocked inside [block] ends at once instead of at its timeout. */
     private suspend fun <T> disconnectOnCancel(conn: HttpURLConnection, block: suspend () -> T): T = coroutineScope {
@@ -172,6 +182,14 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
         private const val ACCEPT = "text/plain, */*;q=0.5"
         private const val LOCATION_HEADER = "Location"
     }
+}
+
+/** Remembers the last IOException the network stream threw, so a mid-body fault is told apart from a bad file. */
+internal class ErrorRecordingStream(inner: InputStream) : FilterInputStream(inner) {
+    @Volatile var lastError: IOException? = null
+        private set
+    override fun read(): Int = try { super.read() } catch (e: IOException) { lastError = e; throw e }
+    override fun read(b: ByteArray, off: Int, len: Int): Int = try { super.read(b, off, len) } catch (e: IOException) { lastError = e; throw e }
 }
 
 /** Counts the bytes read from the network (after any transparent gzip) and reports at most every PROGRESS_STEP_BYTES. */

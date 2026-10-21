@@ -115,6 +115,20 @@ class UrlWordlistFetcherTest {
         val port = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }   // free, then closed: nothing listens
         assertEquals(UrlImportResult.Failed(FetchFailure.Connection), fetch(store(), URL("http://127.0.0.1:$port/l.txt")))
     }
+    @Test fun `a server that sends headers then stalls past the read timeout is no answer, not an unreadable file`() = runBlocking {
+        val srv = serve { LoopbackHttpServer.Response(plainHead("Content-Length: 5000\r\n")) { out -> out.write("abc\n".toByteArray()); out.flush(); Thread.sleep(STALL_MS) } }
+        val s = store()
+        val fetcher = UrlWordlistFetcher(readTimeoutMs = SHORT_READ_TIMEOUT_MS)
+        assertEquals(UrlImportResult.Failed(FetchFailure.NoAnswer), fetcher.fetch(srv.url("/stall.txt"), s))
+        assertTrue(s.lists.value.isEmpty()); assertTrue(noListFiles(s))
+    }
+    @Test fun `a stall after the sniffed prefix is also no answer`() = runBlocking {
+        val first = "abcdefghi\n".repeat(1_000).toByteArray()   // 10,000 bytes: past the 8 KB sniff, so the store's read is what times out
+        val srv = serve { LoopbackHttpServer.Response(plainHead("Content-Length: 50000\r\n")) { out -> out.write(first); out.flush(); Thread.sleep(STALL_MS) } }
+        val s = store()
+        assertEquals(UrlImportResult.Failed(FetchFailure.NoAnswer), UrlWordlistFetcher(readTimeoutMs = SHORT_READ_TIMEOUT_MS).fetch(srv.url("/stall2.txt"), s))
+        assertTrue(s.lists.value.isEmpty()); assertTrue(noListFiles(s))
+    }
     @Test fun `cancel during a slow body ends within a second and stores nothing`() = runBlocking {
         val started = CompletableDeferred<Unit>()
         val srv = serve { LoopbackHttpServer.Response(plainHead()) { out ->
@@ -130,5 +144,5 @@ class UrlWordlistFetcherTest {
         assertTrue(s.lists.value.isEmpty()); assertTrue(noListFiles(s))
     }
 
-    private companion object { const val SLOW_CHUNK_MS = 100L }
+    private companion object { const val SLOW_CHUNK_MS = 100L; const val SHORT_READ_TIMEOUT_MS = 300; const val STALL_MS = 3_000L }
 }
