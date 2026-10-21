@@ -85,8 +85,9 @@ class DirBruteforceTool(
             val producer = launch {
                 try {
                     list.stream { w ->
-                        channel.send(Item("/" + encodePath(w), ""))
-                        for (ext in o.extensions) channel.send(Item("/" + encodePath("$w.$ext"), ext))
+                        val bare = "/" + encodePath(w)
+                        channel.send(Item(bare, groupOf(bare, "")))
+                        for (ext in o.extensions) { val withExt = "/" + encodePath("$w.$ext"); channel.send(Item(withExt, groupOf(withExt, ext))) }
                     }
                 } finally { channel.close() }
             }
@@ -191,7 +192,11 @@ class DirBruteforceTool(
         private const val CHANNEL_CAPACITY = 16; private const val MS_PER_S = 1000; private const val METHOD_USED = "methodUsed"
         private const val WORDLIST_ID = "wordlistId"; private const val WORDLIST_NAME = "wordlistName"; private const val WORDLIST_ENTRIES = "wordlistEntries"
 
-        /** spec 5.4.3: true when more than RUNAWAY_MIN_ALIKE findings share one status and their sizes lie within RUNAWAY_BAND bytes. */
+        /**
+         * spec 5.4.3: true when more than RUNAWAY_MIN_ALIKE findings share one status and their sizes lie within RUNAWAY_BAND bytes.
+         * Only findings are sampled ([report] samples after the not-found filter), so an answer calibration classified as not-found,
+         * including a dot-path 403 banded by the dot twin, never counts; a catch-all calibration could not band still does.
+         */
         fun runaway(samples: List<Pair<Int, Long?>>): Boolean {
             for ((_, group) in samples.groupBy { it.first }) {
                 val unknown = group.count { it.second == null }

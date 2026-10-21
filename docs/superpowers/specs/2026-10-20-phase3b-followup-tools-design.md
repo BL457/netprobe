@@ -381,7 +381,7 @@ Both controls apply to every tool's requests, not only brute-force; the companio
 #### 5.4.1 Calibration requests
 
 - Groups: "bare", and one group per extension.
-- For each group, GET 5 random paths (`/<12 random lowercase letters and digits>` for bare, the same with `.<ext>` for an extension group). At most 5 x (1 + 8) = 45 requests.
+- For each group, GET 5 random paths (`/<12 random lowercase letters and digits>` for bare, the same with `.<ext>` for an extension group). Each group also has a dot twin sampled as `/.<random>` (bare) or `/.<random>.<ext>`; a wordlist path with any segment starting with a dot (`/.env`, `/.git/HEAD`) is filtered against its group's dot twin (Phase 3B QA F2: DSM answers every dot path with a fixed 403 page). At most 5 x 2 x (1 + 8) = 90 requests.
 - HEAD `/` and GET `/`; HEAD the first bare random path. If either HEAD status differs from its GET status (the bare random path's GET is already in hand), the run uses GET_ONLY.
 - If no calibration request gets a response, the run fails (5.2 step 1). Individual calibration failures are retried once; a group with fewer than 3 responses is calibrated from what it has.
 

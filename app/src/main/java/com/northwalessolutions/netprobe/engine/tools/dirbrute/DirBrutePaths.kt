@@ -21,6 +21,16 @@ fun encodePath(word: String): String {
     }
     return sb.toString()
 }
+private const val DOT = "."
+/** The dot twin of a calibration group ("" to ".", "php" to ".php"); extensions are alphanumeric, so the prefix is unambiguous. */
+fun dotGroup(group: String): String = DOT + group
+fun isDotGroup(group: String): Boolean = group.startsWith(DOT)
+/** The extension a group (or its dot twin) stands for; "" for bare. */
+fun extOf(group: String): String = group.removePrefix(DOT)
+/** True when any segment of [path] starts with a dot (`/.env`, `/.git/HEAD`, `/a/.htaccess.php`): such paths band in the dot twin. */
+fun hasDotSegment(path: String): Boolean = path.split('/').any { it.startsWith(DOT) }
+/** The calibration group a wordlist path belongs to: its extension group, or that group's dot twin for a dot-segment path. */
+fun groupOf(path: String, ext: String): String = if (hasDotSegment(path)) dotGroup(ext) else ext
 /** 12 random lowercase letters and digits (spec 5.4.1). */
 fun randomToken(): String { val a = "abcdefghijklmnopqrstuvwxyz0123456789"; return (1..12).map { a.random() }.joinToString("") }
 fun urlOf(target: ToolTarget, path: String): String = (if (target.tls) "https" else "http") + "://" + target.ip.hostAddress + ":" + target.port + path
