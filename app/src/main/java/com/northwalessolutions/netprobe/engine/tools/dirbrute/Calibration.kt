@@ -12,7 +12,8 @@ data class Calibration(val baselines: Map<String, Baseline>, val forceGetOnly: B
  *
  * Each group also has a dot twin ([DirBrutePaths.dotGroup]) sampled as `/.<random>[.<ext>]`: servers such as DSM's nginx answer
  * every path with a dot segment by a fixed 403 page, which plain random paths never see, so without the twin those 403s leak
- * through as findings and trip the runaway check (Phase 3B QA F2). At most 5 x 2 x (1 + 8) = 90 GETs, each behind its own gate.
+ * through as findings and trip the runaway check (Phase 3B QA F2). At most 5 x 2 x (1 + 8) = 90 random-path GETs,
+ * plus HEAD /, GET / and one HEAD on the first bare random path; each may retry once, and every request is behind its own gate.
  */
 object Calibrator {
     const val SAMPLES_PER_GROUP = 5

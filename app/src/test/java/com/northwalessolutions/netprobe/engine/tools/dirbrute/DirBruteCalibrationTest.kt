@@ -58,6 +58,22 @@ class DirBruteCalibrationTest {
         assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("The server did not answer the first request", r.summary)
         assertEquals(4, requests.get()); assertEquals(4, gates.get())
     }
+    @Test fun `calibration with eight extensions costs 93 gated requests, 90 random gets with 45 dot twins and one random head`() = runTest {
+        // spec 5.4.1: 5 x 2 x (1 + 8) = 90 random-path GETs, plus HEAD /, GET / and one HEAD on the first bare random path; no retries here.
+        val sent = java.util.Collections.synchronizedList(mutableListOf<Pair<String, String>>()); val gates = AtomicInteger(0)
+        val control = object : RunControl {
+            override suspend fun gate() { gates.incrementAndGet() }
+            override val pauseEpoch: Int get() = 0
+            override fun excused(startEpoch: Int) = false
+        }
+        val r = tool(Exchange { method, path -> sent += method to path; resp(404, "nf") }, emptyList())
+            .run(target(), options(DirBruteOptions(concurrency = 1, extensions = listOf("php", "html", "txt", "asp", "aspx", "jsp", "bak", "old"))), control, CollectingProgress())
+        assertEquals(ToolRunStatus.DONE, r.status)
+        assertEquals(93, sent.size); assertEquals("every request passes its own gate", sent.size, gates.get())
+        val random = sent.filter { it.second != "/" }
+        assertEquals(90, random.count { it.first == "GET" }); assertEquals(45, random.count { it.first == "GET" && it.second.startsWith("/.") })
+        assertEquals("one HEAD on a random path, the first bare one, never on a dot twin", listOf("HEAD" to "/abcdef012345"), random.filter { it.first == "HEAD" })
+    }
     @Test fun `a path echoing 200 is filtered`() = runTest {
         val ex = Exchange { _, path -> if (path == "/admin") resp(200, "A".repeat(3000)) else resp(200, "Not found: $path") }
         val (_, p) = run(ex, listOf("home", "a-much-longer-word", "admin"))
