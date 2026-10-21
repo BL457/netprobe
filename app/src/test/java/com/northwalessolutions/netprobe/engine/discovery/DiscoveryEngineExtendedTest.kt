@@ -322,4 +322,22 @@ class DiscoveryEngineExtendedTest {
         assertTrue("the row stays", "10.0.3.30" in h.keys)
         assertNull("the gateway's MAC on another IP is not claimed (the MVP loop would claim it)", h["10.0.3.30"]!!.mac)
     }
+    @Test fun `aggressive off on a wide mask sweeps the phone's slash 24 then the manual range, bound`() = runBlocking {
+        val eng = engine()
+        eng.hosts(runOpts(aggressive = false, manual = listOf("172.20.5.0/24")), e = env16)
+        assertEquals(listOf("172.20.9.1", "172.20.5.1"), swept())
+        assertEquals(listOf("172.20.9.1 bound=false", "172.20.5.1 bound=true"), log.toList())
+    }
+    @Test fun `aggressive on with a manual range inside the limit block does not sweep it twice`() = runBlocking {
+        val eng = engine()
+        eng.hosts(runOpts(aggressive = true, manual = listOf("172.20.9.0/24"), probe = false), e = env16)
+        assertEquals(listOf("172.20.8.1"), swept())
+        assertEquals(1, eng.status.value.ranges.size)
+    }
+    @Test fun `aggressive off with a manual range overlapping the phone's slash 24 sweeps it once`() = runBlocking {
+        val eng = engine()
+        eng.hosts(runOpts(aggressive = false, manual = listOf("10.0.3.0/24")))
+        assertEquals(listOf("10.0.3.1"), swept())
+        assertEquals(1, eng.status.value.ranges.size)
+    }
 }
