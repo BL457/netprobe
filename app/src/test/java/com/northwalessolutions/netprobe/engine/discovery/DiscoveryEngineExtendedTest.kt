@@ -16,6 +16,9 @@ import org.junit.Test
 import java.net.*
 import java.util.Collections
 import kotlin.random.Random
+import com.northwalessolutions.netprobe.data.SettingsState
+import com.northwalessolutions.netprobe.ui.home.ExtendedOptionsOf
+import com.northwalessolutions.netprobe.ui.home.RunSettings
 
 class DiscoveryEngineExtendedTest {
     private fun ip(s: String) = Ipv4.parse(s)!!
@@ -267,5 +270,56 @@ class DiscoveryEngineExtendedTest {
         assertEquals(setOf("10.0.3.1", "10.0.3.20", "10.0.3.21", "10.0.3.22", "10.0.3.30"), h.keys)
         assertTrue(listOf(20, 21, 22).all { h["10.0.3.$it"]!!.mac == shared && h["10.0.3.$it"]!!.macSource == MacSource.NEIGH })
         assertEquals(gwMac, h["10.0.3.30"]!!.mac); assertEquals(gwMac, h["10.0.3.1"]!!.mac)
+    }
+    // 3C-1 (spec 8.1 item 7): what ExtendedOptionsOf gives the engine for each Aggressive scan state.
+    private fun runOpts(aggressive: Boolean, manual: List<String>, probe: Boolean = true, cap: Int = 4) = DiscoveryOptions(
+        extended = ExtendedOptionsOf.from(RunSettings(aggressive, 22, manual.map(::net)), SettingsState(extEnabled = aggressive, extMax = cap, extGatewayProbe = probe), emptySet()),
+        aggressive = aggressive)
+    private val env16 = NetworkEnv(ip("172.20.9.40"), 16, ip("172.20.0.1"), emptyList(), "Client", null, Transport.WIFI)
+
+    @Test fun `aggressive off with one manual range sweeps only that range, bound, with no evidence and no probe`() = runBlocking {
+        val sighting = MdnsRecord(ip("10.0.6.5"), "x", "_http._tcp", 80, emptyMap(), emptyList())
+        val eng = engine(mdns = listOf(sighting), gatewayHits = listOf("10.0.10.0/24"))
+        eng.hosts(runOpts(aggressive = false, manual = listOf("10.0.4.0/24")), e = env.copy(dnsServers = listOf(ip("10.0.9.53"))))
+        assertEquals(listOf("10.0.3.1 bound=false", "10.0.4.1 bound=true"), log.toList())
+        assertTrue("Smart discovery never runs with Aggressive scan off", gatewayCalls.isEmpty())
+        assertTrue("no TEST-NET pre-check", canaryCalls.none { it.startsWith("192.0.2.1") || it.startsWith("198.51.100.1") })
+        assertEquals(listOf(null, RangeSource.MANUAL), eng.status.value.ranges.map { it.source })
+        assertTrue(eng.status.value.notes.isEmpty())
+    }
+    @Test fun `aggressive on with smart discovery off sweeps the manual range first and never probes`() = runBlocking {
+        val eng = engine(gatewayHits = listOf("10.0.10.0/24"))
+        eng.hosts(runOpts(aggressive = true, manual = listOf("10.0.4.0/24"), probe = false), e = env.copy(dnsServers = listOf(ip("10.0.9.53"))))
+        assertEquals(listOf("10.0.3.1", "10.0.4.1", "10.0.9.1"), swept())   // manual first, then the evidence range
+        assertTrue(gatewayCalls.isEmpty())
+    }
+    @Test fun `aggressive off with no manual ranges is the toggle off result`() = runBlocking {   // Review Focus 1, Phase 2 12.2 regression
+        val eng = engine(alive = { it.hostAddress == "10.0.3.5" })
+        val h = eng.hosts(runOpts(aggressive = false, manual = emptyList()))
+        assertEquals(listOf("10.0.3.1"), swept()); assertTrue(gatewayCalls.isEmpty()); assertTrue(canaryCalls.isEmpty())
+        assertEquals(setOf("10.0.3.1", "10.0.3.5"), h.keys)
+        assertEquals(listOf(RangeState.DONE), eng.states()); assertTrue(eng.status.value.notes.isEmpty()); assertEquals(254, eng.status.value.total)
+    }
+    @Test fun `aggressive on sweeps the limit block of a wide mask and the probe excludes it`() = runBlocking {
+        val eng = engine()
+        eng.hosts(DiscoveryOptions(maxPrefix = 22, aggressive = true, extended = ExtendedOptions(enabled = true, gatewayProbe = true)), e = env16)
+        assertEquals("172.20.8.1", swept().first())
+        assertEquals(1022, eng.status.value.total); assertEquals(16, eng.status.value.clampedFrom)
+        assertEquals("172.20.8.0/22", gatewayCalls.single().exclude.toString())
+    }
+    @Test fun `aggressive off keeps the phone's slash 24 on the same wide mask`() = runBlocking {
+        val eng = engine()
+        eng.hosts(DiscoveryOptions(maxPrefix = 22), e = env16)
+        assertEquals(listOf("172.20.9.1"), swept()); assertEquals(254, eng.status.value.total); assertEquals(16, eng.status.value.clampedFrom)
+    }
+    @Test fun `aggressive off with a manual range uses the neighbour rules - a local MAC is kept and a gateway MAC on another IP is not claimed`() = runBlocking {   // plan review G18
+        val gatewayMac = "aa:bb:cc:00:00:01"
+        val neigh = listOf(com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.1", gatewayMac, "REACHABLE"),
+            com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.20", "de:ad:be:ef:00:20", "REACHABLE"),
+            com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry("10.0.3.30", gatewayMac, "REACHABLE"))
+        val h = engine(neigh = neigh).hosts(runOpts(aggressive = false, manual = listOf("10.0.4.0/24")))
+        assertEquals("de:ad:be:ef:00:20", h["10.0.3.20"]!!.mac)
+        assertTrue("the row stays", "10.0.3.30" in h.keys)
+        assertNull("the gateway's MAC on another IP is not claimed (the MVP loop would claim it)", h["10.0.3.30"]!!.mac)
     }
 }

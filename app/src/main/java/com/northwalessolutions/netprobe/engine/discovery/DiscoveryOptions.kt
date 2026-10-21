@@ -9,6 +9,8 @@ data class ExtendedOptions(
     val gatewayProbe: Boolean = false,
     val manual: List<Subnet> = emptyList(),  // the current network's list (spec 4.4)
     val knownIps: Set<String> = emptySet(),
+    /** False with Aggressive scan off and manual ranges set: no DNS-server or sighting evidence becomes a range (3C spec 2.4). */
+    val evidence: Boolean = true,
 )
 
 data class DiscoveryOptions(
@@ -16,6 +18,8 @@ data class DiscoveryOptions(
     val snmp: Boolean = true, val httpTitle: Boolean = true,
     val sweepConcurrency: Int = 128, val connectTimeoutMs: Int = 600, val maxPrefix: Int = 22, val mdnsDurationMs: Long = 6000,
     val extended: ExtendedOptions = ExtendedOptions(),
+    /** Aggressive scan: a mask wider than [maxPrefix] sweeps the limit-sized block that holds the phone (3C spec 2.1, HomeRange). */
+    val aggressive: Boolean = false,
 )
 
 enum class RangeState { PENDING, RUNNING, DONE, CANCELLED, PHANTOM, TRUNCATED }

@@ -8,6 +8,7 @@ import com.northwalessolutions.netprobe.engine.common.SocketBinder
 import com.northwalessolutions.netprobe.engine.common.currentBinder
 import com.northwalessolutions.netprobe.engine.neigh.NeighbourEntry
 import com.northwalessolutions.netprobe.engine.neigh.NeighbourTable
+import com.northwalessolutions.netprobe.netenv.HomeRange
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.SubnetMath
@@ -76,7 +77,7 @@ class DiscoveryEngine(
     }
 
     fun discover(env: NetworkEnv, options: DiscoveryOptions, binder: SocketBinder? = null): Flow<DiscoveredHost> = channelFlow {
-        val range = SubnetMath.sweepRange(env.interfaceIp, env.prefixLength, options.maxPrefix)
+        val range = HomeRange.of(env.interfaceIp, env.prefixLength, options.maxPrefix, options.aggressive)   // the one home-range rule (3C spec 2.1)
         val local = range.subnet
         val found = HashSet<Inet4Address>()
         val evidence = LinkedHashSet<Inet4Address>()
@@ -167,7 +168,9 @@ class DiscoveryEngine(
             if (b == null || !bindWorks(b)) { addNote(ExtendedNote.SKIPPED_BIND_FAILED); return }
             try {
                 val highPort = RandomHighPort.pick(random)   // one per run, for the TEST-NET pre-check and every canary (spec 4.3, 4.7)
-                Evidence.dnsServers(env, local).forEach { noteEvidence(it) }
+                // Aggressive scan off with manual ranges: the typed ranges only, never an evidence range (3C spec 2.4).
+                if (ext.evidence) Evidence.dnsServers(env, local).forEach { noteEvidence(it) }
+                fun evidenceNow(): List<Inet4Address> = if (ext.evidence) synchronized(evidence) { evidence.toList() } else emptyList()
                 var hits = emptyList<Subnet>()
                 var gatewayAnswered = emptySet<Inet4Address>()
                 if (ext.gatewayProbe) {
@@ -189,7 +192,7 @@ class DiscoveryEngine(
                     }
                 }
                 // Only now: every local strategy has joined, so the evidence is complete (spec 4.2). New sightings below add no ranges.
-                val cand = CandidateRanges.derive(local, ext.manual, synchronized(evidence) { evidence.toList() }, hits, ext.maxRanges)
+                val cand = CandidateRanges.derive(local, ext.manual, evidenceNow(), hits, ext.maxRanges)
                 if (cand.ranges.isEmpty()) { addNote(ExtendedNote.NO_EXTRA_RANGES); return }
                 _status.update { s -> s.copy(phase = DiscoveryPhase.EXTENDED, truncatedRanges = cand.truncated.size,
                     ranges = s.ranges + cand.ranges.map { RangeProgress(it.subnet.toString(), it.source, RangeState.PENDING, 0, it.subnet.size, 0) } +
