@@ -11,6 +11,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -26,7 +32,14 @@ data class HomeActions(
     val onFilter: (StatusFilter) -> Unit = {}, val onQuery: (String) -> Unit = {}, val onQuickScanAll: () -> Unit = {},
     val onStopQuickScan: () -> Unit = {}, val onOpenSettings: () -> Unit = {}, val onRequestLocation: () -> Unit = {},
     val onForget: () -> Unit = {}, val onUndo: () -> Unit = {}, val onDismissUndo: () -> Unit = {}, val onDismissApp: () -> Unit = {},
+    val onAbout: () -> Unit = {},
 )
+
+/** What the About dialog shows; HomeScreen fills it from BuildConfig so tests can pass fakes. */
+data class AboutInfo(val versionName: String, val versionCode: Int, val gitSha: String, val buildTime: String,
+                     val androidRelease: String = Build.VERSION.RELEASE) {
+    val lines: List<String> get() = listOf(HomeCopy.version(versionName, versionCode), HomeCopy.build(gitSha, buildTime), HomeCopy.android(androidRelease))
+}
 
 private const val MS_PER_S = 1000L
 
@@ -43,7 +56,10 @@ private fun emptyText(s: HomeUiState): String = when {
  */
 @Composable
 fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoveryStatus? = state.status,
-                now: Long = System.currentTimeMillis(), ownModel: String = Build.MODEL) {
+                now: Long = System.currentTimeMillis(), ownModel: String = Build.MODEL,
+                about: AboutInfo = AboutInfo("", 0, "", "")) {
+    var aboutOpen by rememberSaveable { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
     // True from the start of a scan until the radar's settle ends: Quick scan all and Forget wait for it (spec 1.7).
     var radarBusy by remember { mutableStateOf(false) }
     // lastScanAt is null when a finished scan stored no host; the in-memory finish time keeps that case SETTLED (spec 3.1), not HERO.
@@ -51,6 +67,15 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
     val localSubnet = state.env?.let { SubnetMath.of(it.interfaceIp, it.prefixLength).toString() }
     val elapsedS = state.scanStartedAt?.let { ((now - it) / MS_PER_S).coerceAtLeast(0) } ?: 0L
     val summary = RadarSummaries.settled(state.totalHosts, state.otherSubnetHosts, state.lastScanAt, state.scanStartedAt, state.scanFinishedAt, now, completed = state.scanCompleted)
+    if (aboutOpen) {
+        AlertDialog(
+            onDismissRequest = { aboutOpen = false }, containerColor = NetProbeColors.surface, modifier = Modifier.testTag("aboutDialog"),
+            title = { Text(HomeCopy.APP_NAME, style = NetProbeText.rowName, color = NetProbeColors.text) },
+            text = { Column { about.lines.forEach { Text(it, style = NetProbeText.secondary, color = NetProbeColors.textSecondary) } } },
+            confirmButton = { TextButton({ aboutOpen = false }, Modifier.testTag("aboutClose")) { Text(HomeCopy.CLOSE, color = NetProbeColors.signal) } },
+            dismissButton = { TextButton({ clipboard.setText(AnnotatedString(about.lines.joinToString("\n"))) }, Modifier.testTag("aboutCopy")) { Text(HomeCopy.COPY_VERSION, color = NetProbeColors.textSecondary) } },
+        )
+    }
     // The IME joins the content insets so an empty state or the last rows never sit behind the keyboard while searching.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)
@@ -58,7 +83,8 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
                 HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && !radarBusy && state.totalHosts > 0 && state.env != null),
                     quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan, onSettings = actions.onOpenSettings,
-                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.toolRunningOnNetwork, onForget = actions.onForget)
+                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.toolRunningOnNetwork, onForget = actions.onForget,
+                    onAbout = { aboutOpen = true; actions.onAbout() })
             }
             RadarBlock(mode, progress?.found ?: 0, ProgressLine.of(progress, elapsedS), summary, canScan = state.env != null,
                 onScan = { actions.onDismissMessage(); actions.onScan() }, onStop = actions.onStop, modifier = Modifier.padding(top = 12.dp),

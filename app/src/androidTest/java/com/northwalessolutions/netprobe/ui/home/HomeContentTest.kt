@@ -230,6 +230,16 @@ class HomeContentTest {
         rule.mainClock.advanceTimeBy(1_000)
         rule.onNodeWithText("Quick scan all").assertIsEnabled(); rule.onNodeWithText("Forget this network").assertIsEnabled()
     }
+    @Test fun aboutOpensTheDialogWithTheBuildLinesAndCloseDismissesIt() {
+        val info = AboutInfo("0.3.0", 3, "c8a62e6", "2026-10-21 14:05", "14")
+        rule.setContent { NetProbeTheme { HomeContent(HomeFakes.settled(), rec.actions, now = 121_000L, ownModel = "Pixel 7 Pro", about = info) } }
+        rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithTag("menuAbout").performClick()
+        rule.onNodeWithTag("aboutDialog").assertIsDisplayed()
+        rule.onNodeWithText("Version 0.3.0 (3)").assertIsDisplayed()
+        rule.onNodeWithText("Build c8a62e6, 2026-10-21 14:05").assertIsDisplayed()
+        rule.onNodeWithText("Android 14").assertIsDisplayed()
+        rule.onNodeWithTag("aboutClose").performClick(); rule.onNodeWithTag("aboutDialog").assertDoesNotExist()
+    }
     @Test fun aHeldHostShowsRunningInPlaceOfItsPortCount() {
         val base = HomeFakes.settled()
         val rows = base.rows.mapIndexed { i, r -> if (i == 0) r.copy(openPorts = 3, running = true) else r }

@@ -37,6 +37,7 @@ class CopyTableTest {
         "Scan (finished|stopped), (\\d+ devices?|no devices found)", "Scan skipped: could not bind to Wi-Fi", "identifying \\d+ ports?",
         "\\d+ of \\d+, found \\d+",
         "Runs .+",
+        "About", "NetProbe", "Copy", "Close", "Version \\S+ \\(\\d+\\)", "Build \\S+, \\S+ \\d\\d:\\d\\d", "Android \\S+",
         "Set by you: (type (Router|Phone|Computer|Printer|Media|IoT|NAS|Camera|Server)(, vendor .+)?(, model .+)?|vendor .+(, model .+)?|model .+)",
         "Edit device, .+", "More options", "Edit device", "Remove device", "Name", "Type", "Vendor", "Model", "Detected: .+", "Reset to detected",
         "Router", "Phone", "Computer", "Printer", "Media", "IoT", "NAS", "Camera", "Server", "Not set", "Save", "Cancel",
@@ -50,6 +51,12 @@ class CopyTableTest {
     @Test fun `forget and undo strings`() {
         listOf(HomeCopy.FORGET_NETWORK, HomeCopy.UNDO, HomeCopy.forgot("Home"), HomeCopy.removed("DiskStation")).forEach { inTable(it) }
         assertEquals("Forgot Home", HomeCopy.forgot("Home")); assertEquals("Removed DiskStation", HomeCopy.removed("DiskStation"))
+    }
+
+    @Test fun `about strings`() {
+        listOf(HomeCopy.ABOUT, HomeCopy.APP_NAME, HomeCopy.COPY_VERSION, HomeCopy.CLOSE, HomeCopy.version("0.3.0", 3),
+            HomeCopy.build("c8a62e6", "2026-10-21 14:05"), HomeCopy.android("14")).forEach { inTable(it) }
+        assertEquals("Version 0.3.0 (3)", HomeCopy.version("0.3.0", 3))
     }
 
     @Test fun `progress states`() {

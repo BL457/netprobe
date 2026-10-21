@@ -1,3 +1,6 @@
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +8,15 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
+
+/** Short HEAD at configuration time; "unknown" when git is missing or this is not a checkout. */
+fun gitShortSha(): String = try {
+    val proc = ProcessBuilder("git", "rev-parse", "--short=7", "HEAD").directory(rootDir).redirectErrorStream(true).start()
+    val out = proc.inputStream.bufferedReader().readText().trim()
+    if (proc.waitFor() == 0 && out.isNotEmpty()) out else "unknown"
+} catch (e: java.io.IOException) { "unknown" }
+
+fun buildTimeStamp(): String = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
 
 android {
     namespace = "com.northwalessolutions.netprobe"
@@ -15,8 +27,10 @@ android {
         applicationId = "com.northwalessolutions.netprobe"
         minSdk = 26
         targetSdk = 30   // deliberate: untrusted_app_30 domain (targetSdk <= 31) keeps netlink RTM_GETNEIGH on Android 13+, see spec section 4
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.3.0"
+        buildConfigField("String", "GIT_SHA", "\"${gitShortSha()}\"")
+        buildConfigField("String", "BUILD_TIME", "\"${buildTimeStamp()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
@@ -27,7 +41,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     lint {
         // targetSdk 30 is a documented decision; these checks exist for Play Store policy only.
         disable += setOf("ExpiredTargetSdkVersion", "OldTargetApi")

@@ -20,6 +20,13 @@ object HomeCopy {
     const val YESTERDAY = "yesterday"
     const val FORGET_NETWORK = "Forget this network"
     const val UNDO = "Undo"
+    const val ABOUT = "About"
+    const val APP_NAME = "NetProbe"
+    const val COPY_VERSION = "Copy"
+    const val CLOSE = "Close"
+    fun version(name: String, code: Int) = "Version $name ($code)"
+    fun build(sha: String, time: String) = "Build $sha, $time"
+    fun android(release: String) = "Android $release"
     fun forgot(network: String) = "Forgot $network"
     fun removed(device: String) = "Removed $device"
 

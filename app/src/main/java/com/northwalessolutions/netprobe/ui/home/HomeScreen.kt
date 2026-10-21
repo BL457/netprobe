@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.northwalessolutions.netprobe.AppContainer
+import com.northwalessolutions.netprobe.BuildConfig
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.ui.theme.Motion
 import kotlinx.coroutines.FlowPreview
@@ -46,5 +47,6 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit, onOpenSettin
             onOpenSettings = onOpenSettings, onRequestLocation = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
             onForget = vm::forgetNetwork, onUndo = vm::undo, onDismissUndo = vm::dismissUndo, onDismissApp = vm::dismissAppMessage),
         progress = latched, now = now,
+        about = AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME),
     )
 }
