@@ -29,7 +29,6 @@ import com.northwalessolutions.netprobe.ui.rootInsets
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
-import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.LiveLine
 import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.npFieldColors
@@ -43,7 +42,7 @@ import com.northwalessolutions.netprobe.ui.tools.ToolResultsSheet
 
 /** Every action the screen fires; ManualToolsScreen wires them to ManualToolsViewModel, the Compose tests record them. */
 data class ManualActions(
-    val onBack: () -> Unit = {}, val onIp: (String) -> Unit = {}, val onPort: (String) -> Unit = {}, val onTool: (ToolId) -> Unit = {},
+    val onIp: (String) -> Unit = {}, val onPort: (String) -> Unit = {}, val onTool: (ToolId) -> Unit = {},
     val onHttps: (Boolean) -> Unit = {}, val onRun: () -> Unit = {}, val onStop: () -> Unit = {}, val onOpenRun: (Long) -> Unit = {},
     val onOlderRun: () -> Unit = {}, val onNewerRun: () -> Unit = {}, val onCloseResults: () -> Unit = {}, val onShare: () -> Unit = {},
     val onCopyFinding: (FindingRow) -> Unit = {}, val onOpenFinding: (FindingRow) -> Unit = {}, val onStartDirBrute: (DirBruteOptions) -> Unit = {},
@@ -59,18 +58,33 @@ private val ROW_VERTICAL = 8.dp
 private val PROGRESS_START = 12.dp
 
 @Composable
-fun ManualToolsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists: () -> Unit = {}) {
+fun ManualToolsScreen(container: AppContainer, onOpenWordlists: () -> Unit = {}) {
     val vm: ManualToolsViewModel = viewModel(factory = viewModelFactory { initializer { ManualToolsViewModel(container) } })
     val s by vm.state.collectAsStateWithLifecycle()
     // Not delegated: the per-tick text is read only inside LiveLine's draw and the sheet's live status, through the lambdas below (3B QA F4).
     val liveProgress = vm.liveProgress.collectAsStateWithLifecycle()
     val liveResults = vm.liveResults.collectAsStateWithLifecycle()
-    ManualToolsContent(s, ManualActions(onBack = onBack, onIp = vm::setIp, onPort = vm::setPort, onTool = vm::setTool, onHttps = vm::setHttps,
+    ManualToolsContent(s, ManualActions(onIp = vm::setIp, onPort = vm::setPort, onTool = vm::setTool, onHttps = vm::setHttps,
         onRun = vm::runTool, onStop = vm::stopTool, onOpenRun = vm::openRun, onOlderRun = vm::olderRun, onNewerRun = vm::newerRun,
         onCloseResults = vm::closeResults, onShare = vm::shareRun, onCopyFinding = vm::copyFinding, onOpenFinding = vm::openFinding,
         onStartDirBrute = vm::startDirBrute, onCloseDirBrute = vm::closeDirBrute, onManageWordlists = onOpenWordlists,
         onDismissMessage = vm::dismissMessage, onDismissApp = vm::dismissAppMessage),
         liveProgress = { liveProgress.value }, liveResultsStatus = { liveResults.value })
+}
+
+private val TITLE_ROW_MIN = 56.dp
+
+/** "Tools" with a trailing 48 dp "Wordlists" action (3D spec 4): the screen is a root now, so it has a title row and no back row. */
+@Composable
+private fun ToolsTitleRow(onWordlists: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = TITLE_ROW_MIN), verticalAlignment = Alignment.CenterVertically) {
+        Text(ToolsCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text,
+            modifier = Modifier.weight(1f).padding(start = Dimens.gutter).semantics { heading() })
+        Box(Modifier.heightIn(min = Dimens.touch).widthIn(min = Dimens.touch).clickable(role = Role.Button, onClick = onWordlists).testTag("toolsWordlists"),
+            contentAlignment = Alignment.Center) {
+            Text(ToolsCopy.WORDLISTS, style = NetProbeText.action, color = NetProbeColors.signal, modifier = Modifier.padding(horizontal = Dimens.gutter))
+        }
+    }
 }
 
 /**
@@ -87,9 +101,8 @@ fun ManualToolsContent(state: ManualUiState, actions: ManualActions, liveProgres
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).padding(bottom = 10.dp)) {
-                BackToHome(actions.onBack)
+                ToolsTitleRow(actions.onManageWordlists)
                 Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter)) {
-                    Text(ManualCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.semantics { heading() })
                     Row(Modifier.fillMaxWidth().padding(top = ROW_VERTICAL), horizontalArrangement = Arrangement.spacedBy(FIELD_GAP)) {
                         OutlinedTextField(state.form.ipText, actions.onIp, Modifier.weight(IP_WEIGHT).testTag("manualIp"), enabled = editable,
                             label = { Text(ManualCopy.IP) }, placeholder = { Text(ManualCopy.IP_PLACEHOLDER) }, singleLine = true,

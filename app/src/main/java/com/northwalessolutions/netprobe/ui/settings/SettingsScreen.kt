@@ -11,9 +11,11 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -29,12 +31,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.northwalessolutions.netprobe.ui.rootInsets
 import com.northwalessolutions.netprobe.AppContainer
+import com.northwalessolutions.netprobe.BuildConfig
 import com.northwalessolutions.netprobe.data.SettingsDefaults
 import com.northwalessolutions.netprobe.data.SettingsReset
 import com.northwalessolutions.netprobe.data.SettingsState
 import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.HomeRange
-import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.npFieldColors
@@ -49,6 +51,7 @@ private const val CONC_MIN = 32; private const val CONC_MAX = 512; private const
 private const val TIMEOUT_MIN = 200; private const val TIMEOUT_MAX = 2000; private const val TIMEOUT_STEP = 100
 private val PREFIX_OPTIONS = listOf(20, 22, 24)
 private val SWITCH_ROW_MIN = 56.dp
+private val TITLE_ROW_MIN = 56.dp
 private val MARKER_PAD = 8.dp
 private const val NO_UNIT = ""
 private const val MS_UNIT = " ms"
@@ -57,15 +60,17 @@ private const val MS_UNIT = " ms"
 data class SettingsUi(val state: SettingsState, val networkName: String? = null, val networkId: Long? = null, val manual: List<Subnet> = emptyList(),
                       val local: Subnet? = null, val importedWordlists: Int? = null,
                       /** The listener's status line (3C spec 3.1), already worded; null shows nothing. */
-                      val listenStatus: String? = null)
+                      val listenStatus: String? = null,
+                      /** The About row and its dialog (3D spec 5). */
+                      val about: AboutInfo = AboutInfo("", 0, "", ""))
 
 /** [current] reads the live settings at the Reset tap, so the Undo snapshot is never a stale recomposition value. */
-data class SettingsActions(val onBack: () -> Unit = {}, val update: ((SettingsState) -> SettingsState) -> Unit = {}, val current: () -> SettingsState = { SettingsState() },
+data class SettingsActions(val update: ((SettingsState) -> SettingsState) -> Unit = {}, val current: () -> SettingsState = { SettingsState() },
                            val onManualChange: (List<Subnet>) -> Unit = {}, val clearVulnCache: suspend () -> String = { "" }, val onOpenWordlists: () -> Unit = {})
 
-// The IME joins the content insets, as on Home and Detail; a separate imePadding would count the navigation bar twice.
+// The bar inset and the IME join the content insets (3D spec 1.4); a separate imePadding would count the navigation bar twice.
 @Composable
-fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists: () -> Unit = {}) {
+fun SettingsScreen(container: AppContainer, onOpenWordlists: () -> Unit = {}) {
     val s by container.settings.state.collectAsStateWithLifecycle()
     val network by container.currentNetwork.collectAsStateWithLifecycle()
     val revision by container.settings.manual.revision.collectAsStateWithLifecycle()
@@ -77,8 +82,8 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists:
     val listenStatus by container.listen.status.collectAsStateWithLifecycle()   // 3C spec 3.1
     SettingsContent(
         SettingsUi(s, network?.displayName, network?.id, manual, local, if (wordlistsLoaded) wordlists.count { !it.builtIn } else null,
-            ListenCopy.status(listenStatus)),
-        SettingsActions(onBack = onBack, update = { container.settings.update(it) }, current = { container.settings.state.value },
+            ListenCopy.status(listenStatus), AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME)),
+        SettingsActions(update = { container.settings.update(it) }, current = { container.settings.state.value },
             onManualChange = { list -> network?.id?.let { container.settings.manual.set(it, list) } },
             clearVulnCache = {
                 try { container.vulnCache.clear(); "Vulnerability cache cleared" } catch (ce: CancellationException) { throw ce } catch (e: Exception) { "Could not clear cache: ${e.message}" }
@@ -86,7 +91,7 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists:
             onOpenWordlists = onOpenWordlists))
 }
 
-/** Settings layout (Radar spec 6, 3C spec 1 and 2.3). PINNED: the back row and the overflow menu sit in the topBar, never in the scroll. */
+/** Settings layout (Radar spec 6, 3C spec 1 and 2.3). PINNED: the title row and the overflow menu sit in the topBar, never in the scroll. */
 @Composable
 fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
     val s = ui.state
@@ -102,9 +107,13 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
         }
     }
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
-            BackToHome(actions.onBack) { SettingsMenu(resetEnabled = SettingsDefaults.differs(s), onReset = onReset) }
-        } }) { pad ->
+        topBar = {
+            Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).heightIn(min = TITLE_ROW_MIN), verticalAlignment = Alignment.CenterVertically) {
+                Text(SettingsCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text,
+                    modifier = Modifier.weight(1f).padding(start = Dimens.gutter).semantics { heading() })
+                SettingsMenu(resetEnabled = SettingsDefaults.differs(s), onReset = onReset)
+            }
+        }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter)) {
             Section("Discovery")
             SwitchRow("mDNS (Bonjour)", s.mdns) { v -> update { it.copy(mdns = v) } }
@@ -145,9 +154,26 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
                 Text("Clear vulnerability cache", style = NetProbeText.action, color = NetProbeColors.signal)
             }
             ToolsSection(imported = ui.importedWordlists, onOpenWordlists = actions.onOpenWordlists)
+
+            Section(SettingsCopy.ABOUT_SECTION)
+            AboutRow(ui.about)
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+/** The last Settings row (3D spec 5): "About" with the version line and a chevron; it opens the existing About dialog. */
+@Composable
+private fun AboutRow(about: AboutInfo) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().heightIn(min = SWITCH_ROW_MIN).clickable(role = Role.Button) { open = true }.testTag("aboutRow"), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(SettingsCopy.ABOUT_ROW, style = NetProbeText.secondary, color = NetProbeColors.text)
+            Text(HomeCopy.version(about.versionName, about.versionCode), style = NetProbeText.data, color = NetProbeColors.textMuted)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = NetProbeColors.textMuted)
+    }
+    if (open) AboutDialog(about) { open = false }
 }
 
 /** The Settings overflow (3C spec 1.2): one item, enabled only while some covered value differs from its default. */

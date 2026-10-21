@@ -12,6 +12,7 @@ import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolsFakes
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -24,7 +25,7 @@ class ManualToolsContentTest {
     private val events = mutableListOf<String>()
     private var s by mutableStateOf(ManualUiState())
     private val actions = ManualActions(onRun = { events += "run" }, onStop = { events += "stop" }, onOpenRun = { events += "open $it" },
-        onTool = { events += "tool ${it.key}" })
+        onTool = { events += "tool ${it.key}" }, onManageWordlists = { events += "manage wordlists" })
     private var live: String? = null
     private fun show(state: ManualUiState) { s = state; rule.setContent { NetProbeTheme { ManualToolsContent(s, actions, liveProgress = { live }) } } }
     private fun history(n: Int) = (1..n).map {
@@ -87,5 +88,12 @@ class ManualToolsContentTest {
     @Test fun anEmptyHistorySaysSo() {
         show(ManualUiState())
         rule.onNodeWithText(ManualCopy.HISTORY_EMPTY).assertExists()
+    }
+    @Test fun theTitleRowIsToolsWithAWordlistsActionAndThereIsNoBackRow() {   // 3D spec 4
+        show(ManualUiState())
+        rule.onNodeWithText("Tools").assertIsDisplayed()
+        rule.onNodeWithText("Back to Home").assertDoesNotExist(); rule.onNodeWithText("Run a tool").assertDoesNotExist()
+        rule.onNodeWithTag("toolsWordlists").assertHeightIsAtLeast(48.dp).performClick()
+        assertEquals("manage wordlists", events.last())
     }
 }

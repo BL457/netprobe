@@ -2,7 +2,6 @@ package com.northwalessolutions.netprobe.ui.manual
 
 /** Every manual tools string (3C spec 7.2). Templates live in CopyTableTest; Run, Stop and the results sheet reuse ToolCopy and HomeCopy. */
 object ManualCopy {
-    const val TITLE = "Run a tool"
     const val IP = "IP address"
     const val IP_PLACEHOLDER = "10.0.3.20"
     const val PORT = "Port"

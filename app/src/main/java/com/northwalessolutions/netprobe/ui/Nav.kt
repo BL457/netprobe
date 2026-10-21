@@ -125,7 +125,6 @@ fun NetProbeNav(container: AppContainer) {
     KeepScreenOn(extended || toolRun || portScan)
     val running by container.scansRunning.collectAsStateWithLifecycle()
     val nav = rememberNavController()
-    // Tasks 8 and 9 remove the temporary onOpenSettings and onBack arguments when the roots lose their old back rows.
     NetProbeShell(nav, running, NavSlots(
         devices = { HomeScreen(container, onOpenHost = { nav.navigate(Routes.host(Tab.DEVICES, it)) }) },
         scans = {
@@ -133,11 +132,11 @@ fun NetProbeNav(container: AppContainer) {
                 onOpenWordlists = { nav.navigate(Routes.wordlists(Tab.SCANS)) { launchSingleTop = true } })
         },
         tools = {
-            ManualToolsScreen(container, onBack = { TabSwitch.select(nav, Tab.DEVICES) },
+            ManualToolsScreen(container,
                 onOpenWordlists = { nav.navigate(Routes.wordlists(Tab.TOOLS)) { launchSingleTop = true } })
         },
         settings = {
-            SettingsScreen(container, onBack = { TabSwitch.select(nav, Tab.DEVICES) },
+            SettingsScreen(container,
                 onOpenWordlists = { nav.navigate(Routes.wordlists(Tab.SETTINGS)) { launchSingleTop = true } })
         },
         host = { tab, id, _ ->

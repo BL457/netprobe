@@ -68,4 +68,26 @@ class SettingsContentTest {
         val discovery = headingY("Discovery"); val aggressive = headingY(ExtendedCopy.TITLE); val speed = headingY("Speed")
         assertTrue("Discovery $discovery, ${ExtendedCopy.TITLE} $aggressive, Speed $speed", discovery < aggressive && aggressive < speed)
     }
+    @Test fun thereIsNoBackRowAndTheTitleRowCarriesTheOverflow() {   // 3D spec 9.2 item 6
+        show()
+        rule.onNodeWithText("Back to Home").assertDoesNotExist()
+        rule.onNode(hasText("Settings") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).assertIsDisplayed()
+        rule.onNodeWithTag("settingsMenu").assertIsDisplayed()
+    }
+    @Test fun aboutIsTheLastRowAndOpensTheDialogWithThreeLines() {
+        val info = AboutInfo("0.3.0", 3, "c8a62e6", "2026-10-21 14:05", "14")
+        s = SettingsState()
+        rule.setContent { NetProbeTheme {
+            SettingsContent(SettingsUi(s, "Home", 1L, emptyList(), CidrParser.subnetOf("10.0.3.0/24"), about = info), SettingsActions(update = { f -> s = f(s) }, current = { s }))
+        } }
+        rule.onNodeWithTag("aboutRow").performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Version 0.3.0 (3)").assertIsDisplayed()          // the row's own version line
+        val headings = rule.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).fetchSemanticsNodes().map { it.positionInRoot.y }
+        assertEquals("the About section is the last heading", headings.max(), headingY("About"))
+        rule.onNodeWithTag("aboutRow").performClick()
+        rule.onNodeWithTag("aboutDialog").assertIsDisplayed()
+        rule.onNodeWithText("Build c8a62e6, 2026-10-21 14:05").assertIsDisplayed(); rule.onNodeWithText("Android 14").assertIsDisplayed()
+        rule.onNodeWithTag("aboutCopy").assertIsDisplayed()
+        rule.onNodeWithTag("aboutClose").performClick(); rule.onNodeWithTag("aboutDialog").assertDoesNotExist()
+    }
 }
