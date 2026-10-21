@@ -64,7 +64,8 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
     var radarBusy by remember { mutableStateOf(false) }
     // lastScanAt is null when a finished scan stored no host; the in-memory finish time keeps that case SETTLED (spec 3.1), not HERO.
     val mode = RadarModes.of(state.scanning, state.totalHosts, state.lastScanAt ?: state.scanFinishedAt)
-    val localSubnet = state.env?.let { SubnetMath.of(it.interfaceIp, it.prefixLength).toString() }
+    // The hero names the home range (3C spec 2.1): the running scan's while it runs, else what the next scan will sweep (plan review G7); the mask only before the first state arrives.
+    val localSubnet = state.homeRange ?: state.env?.let { SubnetMath.of(it.interfaceIp, it.prefixLength).toString() }
     val elapsedS = state.scanStartedAt?.let { ((now - it) / MS_PER_S).coerceAtLeast(0) } ?: 0L
     val summary = RadarSummaries.settled(state.totalHosts, state.otherSubnetHosts, state.lastScanAt, state.scanStartedAt, state.scanFinishedAt, now, completed = state.scanCompleted)
     if (aboutOpen) {

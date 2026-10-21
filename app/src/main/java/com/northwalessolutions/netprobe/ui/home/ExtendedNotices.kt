@@ -12,9 +12,13 @@ import com.northwalessolutions.netprobe.netenv.Subnet
 object ExtendedNotices {
     private const val MAX_RANGE_LINES = 2
 
-    fun of(status: DiscoveryStatus): List<String> {
+    /**
+     * [aggressive] false means the run swept manual ranges only (3C spec 2.4): every per-range notice and the bind failure still show,
+     * the Aggressive and Smart discovery notes never do.
+     */
+    fun of(status: DiscoveryStatus, aggressive: Boolean = true): List<String> {
         val out = ArrayList<String>()
-        status.notes.forEach { n ->
+        status.notes.filter { aggressive || it == ExtendedNote.SKIPPED_BIND_FAILED }.forEach { n ->
             out += when (n) {
                 ExtendedNote.GATEWAY_PROBE_SKIPPED_ANSWERS_ALL -> HomeCopy.GATEWAY_ANSWERS_ALL
                 ExtendedNote.GATEWAY_PROBE_FOUND_NONE -> HomeCopy.GATEWAY_FOUND_NONE
@@ -70,17 +74,32 @@ object LastRun {
 /** What one run publishes when it ends, or null when its network is no longer current (a slow unwind must not touch the new network's state). */
 data class RunEnd(val swept: List<Subnet>?, val progress: List<RangeProgress>?, val notice: String?) {
     companion object {
-        /** [completed] is true only for a scan that ran to its end: the MVP's large-network notice is not shown after Stop, failure or a network change. */
-        fun of(currentNetworkId: Long?, runNetworkId: Long, extEnabled: Boolean, completed: Boolean, status: DiscoveryStatus): RunEnd? {
+        private const val FALLBACK_PREFIX = 24
+
+        /**
+         * [completed] is true only for a scan that ran to its end: the large-network notice is not shown after Stop, failure or a network
+         * change. [extEnabled] is the run's ExtendedOptions.enabled (Aggressive scan on, or manual ranges set); [aggressive] is the run's
+         * snapshot (3C spec 2.1, 2.4).
+         */
+        fun of(currentNetworkId: Long?, runNetworkId: Long, extEnabled: Boolean, completed: Boolean, status: DiscoveryStatus,
+               aggressive: Boolean = extEnabled): RunEnd? {
             if (currentNetworkId != runNetworkId) return null
-            val notices = listOfNotNull(status.clampedFrom?.takeIf { completed }?.let { HomeCopy.largeNetwork(it) }) + if (extEnabled) ExtendedNotices.of(status) else emptyList()
+            val large = status.clampedFrom?.takeIf { completed }?.let { from ->
+                if (aggressive) HomeCopy.largeNetworkPartial(from, sweptPrefix(status)) else HomeCopy.largeNetwork(from)
+            }
+            val notices = listOfNotNull(large) + if (extEnabled) ExtendedNotices.of(status, aggressive) else emptyList()
             return RunEnd(if (extEnabled) LastRun.sweptRanges(status) else null, if (extEnabled) status.ranges else null, notices.takeIf { it.isNotEmpty() }?.joinToString("\n"))
         }
+
+        /** The local range is ranges[0] (for example "172.20.8.0/22"); its prefix is what was swept. */
+        private fun sweptPrefix(status: DiscoveryStatus): Int =
+            status.ranges.firstOrNull()?.subnet?.substringAfterLast('/')?.toIntOrNull() ?: FALLBACK_PREFIX
     }
 }
 
-/** The per-network memory of the last run (finish time and the extended range lists): all of it belongs to one network. */
-data class RunMemory(val finishedAt: Long?, val swept: List<Subnet>, val progress: List<RangeProgress>) {
+/** The per-network memory of the last run (finish time, the extended range lists and the run's settings): all of it belongs to one network. */
+data class RunMemory(val finishedAt: Long?, val swept: List<Subnet>, val progress: List<RangeProgress>, val settings: RunSettings? = null) {
     fun afterNetworkChange(previousNetworkId: Long?, networkId: Long?): RunMemory =
-        if (previousNetworkId == networkId) this else RunMemory(ScanFinish.afterNetworkChange(previousNetworkId, networkId, finishedAt), emptyList(), emptyList())
+        if (previousNetworkId == networkId) this
+        else RunMemory(ScanFinish.afterNetworkChange(previousNetworkId, networkId, finishedAt), emptyList(), emptyList(), null)
 }

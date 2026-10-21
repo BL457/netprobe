@@ -21,6 +21,10 @@ data class RunSettings(val aggressive: Boolean, val maxPrefix: Int, val manual: 
         fun of(s: SettingsState, manual: List<Subnet>): RunSettings = RunSettings(s.extEnabled, s.maxPrefix, manual)
         /** The last radar run's snapshot when this network has one in memory, else the live settings (spec 2.2). */
         fun effective(snapshot: RunSettings?, live: SettingsState, liveManual: List<Subnet>): RunSettings = snapshot ?: of(live, liveManual)
+
+        /** What Home groups and names the hero with (plan review G7): the running scan's snapshot while it runs, the live settings otherwise. */
+        fun forDisplay(snapshot: RunSettings?, scanning: Boolean, live: SettingsState, liveManual: List<Subnet>): RunSettings =
+            effective(snapshot.takeIf { scanning }, live, liveManual)
     }
 }
 

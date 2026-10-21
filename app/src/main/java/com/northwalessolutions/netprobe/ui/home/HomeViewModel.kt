@@ -8,7 +8,6 @@ import com.northwalessolutions.netprobe.data.*
 import android.util.Log
 import com.northwalessolutions.netprobe.engine.common.BindFailedException
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryOptions
-import com.northwalessolutions.netprobe.engine.discovery.ExtendedOptions
 import com.northwalessolutions.netprobe.engine.discovery.RangeProgress
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
@@ -41,7 +40,8 @@ data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = fals
                        val lastScanAt: Long? = null, val totalHosts: Int = 0, val otherSubnetHosts: Int = 0, val scanStartedAt: Long? = null, val scanFinishedAt: Long? = null,
                        val groups: List<HostGroup> = emptyList(), val lastRunRanges: List<RangeProgress> = emptyList(),
                        val scanCompleted: Boolean = true, val networkId: Long? = null, val undoText: String? = null,
-                       val appMessage: String? = null, val appMessageId: Long? = null, val toolRunningOnNetwork: Boolean = false)
+                       val appMessage: String? = null, val appMessageId: Long? = null, val toolRunningOnNetwork: Boolean = false,
+                       val homeRange: String? = null)
 
 object IdentityLine {
     val DeviceType.label: String get() = when (this) { DeviceType.ROUTER -> "Router"; DeviceType.PHONE -> "Phone"; DeviceType.COMPUTER -> "Computer"; DeviceType.PRINTER -> "Printer"
@@ -114,6 +114,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private val lastRunProgress = MutableStateFlow<List<RangeProgress>>(emptyList())
     /** False from the start of a run until it completes; a stopped or failed run keeps it false so the summary reads "Stopped after N s" (spec 5.4). */
     private val lastRunCompleted = MutableStateFlow(true)
+    /** The radar run's settings (3C spec 2.2, D21): grouping and the hero read it while the scan runs, so a mid-run toggle or reset never regroups the running list. Memory only; a network change clears it. */
+    private val runSnapshot = MutableStateFlow<RunSettings?>(null)
     private val controller = ScanController(viewModelScope, env) { e -> discover(e) }
     /** Quick scan all is network-bound like discovery: a Wi-Fi switch or loss cancels it, and Stop cancels it. */
     private val quick = ScanController(viewModelScope, env) { e -> quickScanAllOn(e) }
@@ -123,7 +125,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         .flatMapLatest { id -> if (id == null) flowOf(emptyList()) else c.hosts.hostsForNetwork(id) }
 
     private val baseState: Flow<HomeUiState> = combine(env, controller.state, c.discoveryEngine.status, hosts, filter, query, latestRun, quick.state, extraMessage, portCounts,
-        finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress, lastRunCompleted, networkId, c.undo.pending) { arr ->
+        finishedAt, lastRunRanges, c.settings.manual.revision, lastRunProgress, lastRunCompleted, networkId, c.undo.pending, runSnapshot, c.settings.state) { arr ->
         @Suppress("UNCHECKED_CAST")
         val hs = arr[3] as List<HostEntity>
         @Suppress("UNCHECKED_CAST")
@@ -135,16 +137,17 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val e = arr[0] as NetworkEnv?; val cs = arr[1] as ScanController.State; val st = arr[2] as DiscoveryStatus
         val f = arr[4] as StatusFilter; val q = arr[5] as String; val run = arr[6] as Long; val qs = arr[7] as ScanController.State; val msg = arr[8] as String?
         val done = arr[10] as Long?
-        val maxPrefix = c.settings.state.value.maxPrefix
-        val manual = if (c.settings.state.value.extEnabled) c.settings.manual.forNetwork(networkId.value) else emptyList()   // toggle off: the MVP path reads nothing extra
-        val all = hs.map { h -> RowRules.row(h, e, maxPrefix, pc[h.id] ?: 0, stale = run > 0 && h.lastDiscoveryRun < run, extraRanges = extra, manualRanges = manual) }
+        // The running scan's snapshot while it runs, the live settings otherwise (3C spec 2.2, plan review G7); manual ranges are read whatever Aggressive scan says (D8).
+        val runSettings = RunSettings.forDisplay(arr[17] as RunSettings?, cs.scanning, arr[18] as SettingsState, c.settings.manual.forNetwork(networkId.value))
+        val all = hs.map { h -> RowRules.row(h, e, runSettings.maxPrefix, pc[h.id] ?: 0, stale = run > 0 && h.lastDiscoveryRun < run, extraRanges = extra,
+            manualRanges = runSettings.manual, aggressive = runSettings.aggressive) }
         val stats = HomeStats.of(hs, all, done)
         val shown = HomeFilter.apply(all, f, q)
         HomeUiState(e, cs.scanning, if (cs.scanning) st else null, shown, f, q, cs.message ?: qs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs.scanning,
             lastScanAt = stats.lastScanAt, totalHosts = stats.totalHosts, otherSubnetHosts = stats.otherSubnetHosts,
             scanStartedAt = run.takeIf { it > 0 }, scanFinishedAt = done, groups = HomeGroups.of(shown),
             lastRunRanges = lastRun, scanCompleted = arr[14] as Boolean,
-            networkId = arr[15] as Long?, undoText = (arr[16] as PendingUndo?)?.text)
+            networkId = arr[15] as Long?, undoText = (arr[16] as PendingUndo?)?.text, homeRange = e?.let { runSettings.home(it).toString() })
     }
 
     /** Rows held by a port scan or a tool show "running"; the newest end-of-run message is offered to the notice line (spec 4.3, 8.8).
@@ -172,8 +175,8 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             combine(env, c.networkEpoch) { e, _ -> e }.collectLatest { e ->
                 val net = try { e?.let { c.networks.ensure(it, GatewayMac.lookup(it.gateway)) } } catch (ce: CancellationException) { throw ce } catch (_: Exception) { null }
                 // "Scanned in N s" and the range list describe one network: a different network id clears both (ruling 1).
-                val kept = RunMemory(finishedAt.value, lastRunRanges.value, lastRunProgress.value).afterNetworkChange(networkId.value, net?.id)
-                finishedAt.value = kept.finishedAt; lastRunRanges.value = kept.swept; lastRunProgress.value = kept.progress
+                val kept = RunMemory(finishedAt.value, lastRunRanges.value, lastRunProgress.value, runSnapshot.value).afterNetworkChange(networkId.value, net?.id)
+                finishedAt.value = kept.finishedAt; lastRunRanges.value = kept.swept; lastRunProgress.value = kept.progress; runSnapshot.value = kept.settings
                 latestRun.value = StaleRun.seed(networkId.value, net?.id, latestRun.value, net?.lastRunAt)
                 networkId.value = net?.id; c.currentNetwork.value = net
             }
@@ -212,10 +215,15 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val runId = System.currentTimeMillis(); latestRun.value = runId
         lastRunCompleted.value = false
         val s = c.settings.state.value
-        val ext = if (!s.extEnabled) ExtendedOptions() else ExtendedOptions(enabled = true, maxRanges = s.extMax, gatewayProbe = s.extGatewayProbe,
-            manual = c.settings.manual.get(net.id), knownIps = c.hosts.hostsForNetwork(net.id).first().map { it.ip }.toSet())
+        // One read at the start (3C spec D21): this run's home range, binding and grouping use only this snapshot.
+        val runSettings = RunSettings.of(s, c.settings.manual.get(net.id))
+        runSnapshot.value = runSettings
+        // The stored IPs are read only when the extended phase will run (canary picks); the MVP path reads nothing extra.
+        val known = if (runSettings.bindOutside) c.hosts.hostsForNetwork(net.id).first().map { it.ip }.toSet() else emptySet()
+        val ext = ExtendedOptionsOf.from(runSettings, s, known)
         if (ext.enabled) extraMessage.value = null   // extended runs only: a notice stays until dismissed or the next scan starts (Radar spec 4.4)
-        val opts = DiscoveryOptions(s.mdns, s.ssdp, s.netbios, s.reverseDns, s.snmp, s.httpTitle, s.sweepConcurrency, s.connectTimeoutMs, s.maxPrefix, extended = ext)
+        val opts = DiscoveryOptions(s.mdns, s.ssdp, s.netbios, s.reverseDns, s.snmp, s.httpTitle, s.sweepConcurrency, s.connectTimeoutMs, runSettings.maxPrefix,
+            extended = ext, aggressive = runSettings.aggressive)
         val binder = if (ext.enabled) c.networkEnvMonitor.binderFor(e) else null   // null skips the extended phase with its notice
         if (ext.enabled) lastRunRanges.value = emptyList()
         lastRunProgress.value = emptyList()   // the range list always describes the latest run only
@@ -238,7 +246,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             val st = c.discoveryEngine.status.value
             st.gatewayProbe?.let { Log.i(EXT_LOG_TAG, "gateway probe: ${it.done} of ${it.total} units, ${it.attempts} connect attempts") }   // read by Task 20 check 3
             // A run that unwinds after a network switch publishes nothing: its ranges and notices describe the old network.
-            RunEnd.of(networkId.value, net.id, ext.enabled, completed, st)?.let { end ->
+            RunEnd.of(networkId.value, net.id, ext.enabled, completed, st, aggressive = runSettings.aggressive)?.let { end ->
                 end.swept?.let { lastRunRanges.value = it }; end.progress?.let { lastRunProgress.value = it }
                 end.notice?.let { extraMessage.value = it }
             }
