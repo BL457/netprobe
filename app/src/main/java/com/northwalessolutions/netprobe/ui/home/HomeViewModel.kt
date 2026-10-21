@@ -19,6 +19,9 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.scans.LiveWork
+import com.northwalessolutions.netprobe.scans.tracked
+import com.northwalessolutions.netprobe.ui.scans.ScansCopy
 import com.northwalessolutions.netprobe.netenv.HomeRange
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.Subnet
@@ -205,16 +208,33 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             c.removedDuringScan.value = emptySet()          // a new radar scan starts with nothing removed
             c.removedWhileListening.value = emptySet()      // 3C spec 3.4 rule 5: after a scan the listener may add a device again
             c.radarScanActive.value = true
-            try { discoverOn(e) } finally { c.radarScanActive.value = false; c.radarScanNetworkId.value = null }
+            try { trackRadar { discoverOn(e) } } finally { c.radarScanActive.value = false; c.radarScanNetworkId.value = null }
         }
     }
-    private suspend fun quickScanAllOn(e: NetworkEnv) { c.undo.committedBefore { quickScanAllBody(e) } }
+    /**
+     * The radar scan as a Scans item (3D spec 3.2): Stop there calls [stopScan]. [body] returns the devices found, or null when the scan
+     * did not run (a Forget in flight), which removes the entry without recording it. A cleared ViewModel cancels the job, which ends
+     * the entry STOPPED, so a Scans row never stays RUNNING with a Stop that does nothing.
+     */
+    private suspend fun trackRadar(body: suspend () -> Int?) {
+        c.liveWork.tracked<Int>(LiveWork.Kind.RADAR, c.currentNetwork.value?.id, null, null, stop = { stopScan() },
+            summarize = { found, seconds -> LiveWork.Outcome.DONE to ScansCopy.radarDone(found, seconds) },
+            stopped = { seconds -> ScansCopy.stoppedAfter(seconds) }, failed = { t -> ScanController.failureMessage(t) }) { body() }
+    }
 
-    private suspend fun discoverOn(e: NetworkEnv) {
+    private suspend fun quickScanAllOn(e: NetworkEnv) {
+        c.undo.committedBefore {
+            c.liveWork.tracked<Int>(LiveWork.Kind.QUICK_SCAN_ALL, networkId.value, null, null, stop = { stopQuickScan() },
+                summarize = { scanned, seconds -> LiveWork.Outcome.DONE to ScansCopy.quickDone(scanned, seconds) },
+                stopped = { seconds -> ScansCopy.stoppedAfter(seconds) }, failed = { t -> ScanController.failureMessage(t) }) { id -> quickScanAllBody(e, id) }
+        }
+    }
+
+    private suspend fun discoverOn(e: NetworkEnv): Int? {
         runSnapshot.value = null   // the previous run's snapshot must not group the start frames of this one; live settings show until the new snapshot is taken
         // null only while this network's Forget is pending, which committedBefore has already ended; the guard stays for a Forget racing in.
-        val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return
-        if (net.id == c.forgottenNetworkId.value) return   // a Forget on this network is in flight: it is unavailable
+        val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return null
+        if (net.id == c.forgottenNetworkId.value) return null   // a Forget on this network is in flight: it is unavailable
         c.radarScanNetworkId.value = net.id
         networkId.value = net.id; c.currentNetwork.value = net
         val runId = System.currentTimeMillis(); latestRun.value = runId
@@ -234,6 +254,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         if (ext.enabled) lastRunRanges.value = emptyList()
         lastRunProgress.value = emptyList()   // the range list always describes the latest run only
         var completed = false
+        var found = 0
         c.locks.acquire()
         try {
             // Inside the try (Task 19 M1): if anything before here throws, the window is never left holding FLAG_KEEP_SCREEN_ON.
@@ -243,6 +264,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 hintsFor = { id -> if (id in withRuns) c.toolRepo.hintsFor(id) else emptyList() }) { c.removedDuringScan.value }
             c.discoveryEngine.discover(e, opts, binder).collect { h -> collector.store(net.id, h, runId) }
             completed = true; lastRunCompleted.value = true
+            found = c.discoveryEngine.status.value.found
         } finally {
             c.extendedRunActive.value = false
             c.locks.release()
@@ -257,6 +279,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 end.notice?.let { extraMessage.value = it }
             }
         }
+        return found
     }
 
     /** Home overflow "Forget this network": a soft delete until the Undo ends; the UI disables it while a scan or the settle runs (spec 5.3). */
@@ -296,13 +319,15 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     fun quickScanAll() { if (!quick.isRunning) quick.start() }
     fun stopQuickScan() = quick.stop()
 
-    private suspend fun quickScanAllBody(e: NetworkEnv) {
-        var failed = 0; var unbound = 0; var skipped = 0
+    private suspend fun quickScanAllBody(e: NetworkEnv, liveId: Long): Int? {
+        var failed = 0; var unbound = 0; var skipped = 0; var scanned = 0; var handled = 0
         try {
-            val net = networkId.value ?: return
+            val net = networkId.value ?: return null
             // One settings read per Quick scan all (3C spec D21): a toggle mid-run never changes which hosts are bound.
             val runSettings = RunSettings.of(c.settings.state.value, c.settings.manual.forNetwork(net))
-            QuickScanAllLoop.run(c.hosts.hostsForNetwork(net).first(), { it.id },
+            val toScan = c.hosts.hostsForNetwork(net).first()
+            c.liveWork.progress(liveId, 0, toScan.size, 0)
+            QuickScanAllLoop.run(toScan, { it.id },
                 { RemovedHosts.skipQuickScan(c.removedHostIds.value, c.removedDuringScan.value, net, it.id, it.ip) }, c.hostScanJobs) scanOne@{ h ->
                 // A host a tool holds is skipped and counted (spec 4.3); a host another port scan holds is skipped silently.
                 if (!c.hostBusy.tryClaim(h.id, HostBusyRegistry.Work.PORT_SCAN)) {
@@ -311,13 +336,17 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
                 }
                 try {
                     // One unreachable or odd host must not end the sweep for the rest; an off-subnet host that cannot be bound is skipped and said so.
-                    try { quickScanHost(h, e, runSettings) } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
-                } finally { c.hostBusy.release(h.id, HostBusyRegistry.Work.PORT_SCAN) }
+                    try { quickScanHost(h, e, runSettings); scanned++ } catch (ce: CancellationException) { throw ce } catch (_: BindFailedException) { unbound++ } catch (_: Exception) { failed++ }
+                } finally {
+                    c.hostBusy.release(h.id, HostBusyRegistry.Work.PORT_SCAN)
+                    c.liveWork.progress(liveId, ++handled, toScan.size, 0)
+                }
             }
         } finally {
             val parts = listOfNotNull(ToolCopy.quickEnd(failed, skipped), if (unbound > 0) HomeCopy.BIND_FAILED else null)
             if (parts.isNotEmpty()) extraMessage.value = parts.joinToString(". ")
         }
+        return scanned
     }
 
     private suspend fun quickScanHost(h: HostEntity, e: NetworkEnv, runSettings: RunSettings) {

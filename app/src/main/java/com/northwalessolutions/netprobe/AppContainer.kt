@@ -236,7 +236,7 @@ class AppContainer(val context: Context) {
     /** Wordlist import from a URL (3C spec 5): one at a time on appScope. Building it touches no file and no network. */
     val urlImport: UrlImportController by lazy {
         UrlImportController(appScope, { url, progress -> UrlWordlistFetcher().fetch(url, wordlistStore, progress) }, appMessages,
-            log = { Log.e(AppScopes.LOG_TAG, "url import", it) })
+            log = { Log.e(AppScopes.LOG_TAG, "url import", it) }, liveWork = liveWork)
     }
     /** Last-used brute-force options, saved globally (spec 5.1). */
     val dirBruteOptions by lazy {

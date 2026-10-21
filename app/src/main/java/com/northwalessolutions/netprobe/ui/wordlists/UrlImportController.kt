@@ -1,6 +1,8 @@
 package com.northwalessolutions.netprobe.ui.wordlists
 
 import com.northwalessolutions.netprobe.engine.tools.AppMessages
+import com.northwalessolutions.netprobe.scans.LiveWork
+import com.northwalessolutions.netprobe.scans.tracked
 import com.northwalessolutions.netprobe.wordlists.FetchFailure
 import com.northwalessolutions.netprobe.wordlists.UrlImportResult
 import kotlinx.coroutines.CancellationException
@@ -26,7 +28,7 @@ sealed interface UrlImportState {
  * [message], else to [messages] (the Home notice line).
  */
 class UrlImportController(private val scope: CoroutineScope, private val fetch: suspend (URL, (Long, Long?) -> Unit) -> UrlImportResult,
-                          private val messages: AppMessages, private val log: (Throwable) -> Unit = {}) {
+                          private val messages: AppMessages, private val log: (Throwable) -> Unit = {}, private val liveWork: LiveWork? = null) {
     private val _state = MutableStateFlow<UrlImportState>(UrlImportState.Idle)
     val state: StateFlow<UrlImportState> = _state
     private val _message = MutableStateFlow<String?>(null)
@@ -57,7 +59,7 @@ class UrlImportController(private val scope: CoroutineScope, private val fetch: 
             synchronized(this@UrlImportController) { }
             var text = WordlistImport.failure(FetchFailure.Connection)    // what a non-Exception Throwable leaves behind
             try {
-                text = WordlistImport.message(fetch(url) { read, total -> _state.value = UrlImportState.Fetching(read, total) })
+                text = WordlistImport.message(fetchTracked(url))
             } catch (ce: CancellationException) {
                 text = WordlistCopy.CANCELLED
                 throw ce
@@ -72,6 +74,30 @@ class UrlImportController(private val scope: CoroutineScope, private val fetch: 
     }
 
     fun cancel() { job?.cancel() }
+
+    /**
+     * The fetch as a Scans item (3D spec 3.2): the URL's host is the label; progress is bytes read of bytes expected, at most 10 MB, so Int
+     * holds both. The fetcher already reports at most once per PROGRESS_STEP_BYTES, and LiveWork publishes at most every 250 ms.
+     */
+    private suspend fun fetchTracked(url: URL): UrlImportResult {
+        val report: (Long, Long?) -> Unit = { read, total -> _state.value = UrlImportState.Fetching(read, total) }
+        val live = liveWork ?: return fetch(url, report)
+        val result = live.tracked<UrlImportResult>(LiveWork.Kind.WORDLIST_IMPORT, null, null, url.host, stop = { cancel() },
+            summarize = { r, _ -> outcomeOf(r) }, stopped = { WordlistCopy.CANCELLED }, failed = { WordlistImport.failure(FetchFailure.Connection) }) { id ->
+            fetch(url) { read, total ->
+                report(read, total)
+                live.progress(id, read.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(), total?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt(), 0)
+            }
+        }
+        return checkNotNull(result) { "the import body never returns null" }
+    }
+
+    /** Stored is DONE whatever the store said about the file (3D spec 3.2); its words are the existing import messages. */
+    private fun outcomeOf(r: UrlImportResult): Pair<LiveWork.Outcome, String> = when (r) {
+        is UrlImportResult.Stored -> LiveWork.Outcome.DONE to WordlistImport.message(r)
+        is UrlImportResult.Failed -> LiveWork.Outcome.FAILED to WordlistImport.message(r)
+        UrlImportResult.Cancelled -> LiveWork.Outcome.STOPPED to WordlistCopy.CANCELLED
+    }
 
     /** Only the current import ends the Fetching state; its message is delivered either way. */
     private fun finish(owner: Job?, text: String) {
