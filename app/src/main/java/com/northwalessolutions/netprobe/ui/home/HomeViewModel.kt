@@ -207,6 +207,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     private suspend fun quickScanAllOn(e: NetworkEnv) { c.undo.committedBefore { quickScanAllBody(e) } }
 
     private suspend fun discoverOn(e: NetworkEnv) {
+        runSnapshot.value = null   // the previous run's snapshot must not group the start frames of this one; live settings show until the new snapshot is taken
         // null only while this network's Forget is pending, which committedBefore has already ended; the guard stays for a Forget racing in.
         val net = c.networks.ensure(e, GatewayMac.lookup(e.gateway)) ?: return
         if (net.id == c.forgottenNetworkId.value) return   // a Forget on this network is in flight: it is unavailable
