@@ -42,3 +42,14 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_tool_findings_runId` ON `tool_findings` (`runId`)")
     }
 }
+
+/**
+ * Schema 3 to 4 (3C spec 7.1): two additive columns. manualOnly has a SQL default of 0, so every existing host stays visible; route is
+ * nullable with no default, so every existing run reads "no route". No row is rewritten, nothing is dropped or recreated.
+ */
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE hosts ADD COLUMN manualOnly INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE tool_runs ADD COLUMN route TEXT")
+    }
+}

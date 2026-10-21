@@ -73,4 +73,29 @@ class SchemaExportTest {
         assertEquals("INTEGER", v3.getValue("tool_runs").getValue("port")["affinity"]!!.jsonPrimitive.content)
         assertTrue("port is NOT NULL", v3.getValue("tool_runs").getValue("port")["notNull"]!!.jsonPrimitive.boolean)
     }
+
+    @Test fun `version 4 is exported`() {
+        assertEquals(4, root(4)["database"]!!.jsonObject["version"]!!.jsonPrimitive.int)
+    }
+    @Test fun `version 4 keeps every version 3 table and column unchanged and adds only manualOnly and route`() {
+        val v3 = columns(3); val v4 = columns(4)
+        assertEquals("no table added or dropped", v3.keys, v4.keys)
+        for ((table, cols) in v3) for ((name, field) in cols) {
+            val col = v4.getValue(table)[name]
+            assertNotNull("$table.$name was dropped", col)
+            assertEquals("$table.$name affinity", field["affinity"], col!!["affinity"])
+            assertEquals("$table.$name notNull", field["notNull"], col["notNull"])
+            assertEquals("$table.$name default", field["defaultValue"], col["defaultValue"])
+        }
+        val added = v4.mapValues { (t, cols) -> cols.keys - v3.getValue(t).keys }.filterValues { it.isNotEmpty() }
+        assertEquals(mapOf("hosts" to setOf("manualOnly"), "tool_runs" to setOf("route")), added)
+        val manualOnly = v4.getValue("hosts").getValue("manualOnly")
+        assertEquals("INTEGER", manualOnly["affinity"]!!.jsonPrimitive.content)
+        assertTrue("manualOnly is NOT NULL", manualOnly["notNull"]!!.jsonPrimitive.boolean)
+        assertEquals("0", manualOnly["defaultValue"]!!.jsonPrimitive.content)
+        val route = v4.getValue("tool_runs").getValue("route")
+        assertEquals("TEXT", route["affinity"]!!.jsonPrimitive.content)
+        assertNotEquals("route must be nullable", true, route["notNull"]?.jsonPrimitive?.boolean)
+        assertNull("route has no default", route["defaultValue"])
+    }
 }

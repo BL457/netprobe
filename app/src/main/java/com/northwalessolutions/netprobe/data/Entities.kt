@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -32,6 +33,11 @@ data class HostEntity(
     val userType: DeviceType? = null, val userVendor: String? = null, val userModel: String? = null,
     /** Software names joined by a newline, written with the identity (spec 3.6). */
     val identSoftware: String? = null,
+    /**
+     * 3C spec 7.1: a manual tool target nothing has discovered. Hidden from every device list and count (HostDao.forNetwork); a scan or a
+     * heard packet finding the IP clears it (HostDao.updateScan), keeping the row's tool history. SQL default 0, so MIGRATION_3_4 rewrites no row.
+     */
+    @ColumnInfo(defaultValue = "0") val manualOnly: Boolean = false,
 )
 
 @Entity(tableName = "ports", indices = [Index("hostId", "port", unique = true)])
@@ -56,6 +62,8 @@ enum class ToolRunStatus { RUNNING, DONE, STOPPED, FAILED, INTERRUPTED }
 data class ToolRunEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0, val hostId: Long, val toolId: String, val port: Int,
     val startedAt: Long, val finishedAt: Long?, val status: ToolRunStatus, val optionsJson: String, val summary: String,
+    /** 3C spec 4.5: how a manual run left the phone, a ToolRoute name ("WIFI", "ETHERNET", "OTHER"); null for Device-screen and pre-4 runs. */
+    val route: String? = null,
 )
 
 /** One finding of a run (spec 7.1). [kind] is TEXT, parsed leniently; [extra] is a JSON object or null. */
