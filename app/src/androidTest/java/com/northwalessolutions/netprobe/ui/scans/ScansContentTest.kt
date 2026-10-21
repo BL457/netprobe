@@ -40,8 +40,8 @@ class ScansContentTest {
         rule.onNodeWithTag("scansRecent").performScrollToIndex(40)
         assertEquals(before, rule.onNodeWithTag("running:live:2").getBoundsInRoot())
         val runningNode = rule.onNodeWithTag("running:live:1").fetchSemanticsNode()
-        assertFalse("no running row lives inside the scrolling list",
-            generateSequence(runningNode.parent) { it.parent }.any { it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange) })
+        assertFalse("no running row lives inside the Recent list",
+            generateSequence(runningNode.parent) { it.parent }.any { it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.TestTag) && it.config[androidx.compose.ui.semantics.SemanticsProperties.TestTag] == "scansRecent" })
     }
     @Test fun eachRunningRowHasAStopWithItsDescriptionAndTheStopFires() {
         show(ScansUiState(ScansList(running = listOf(running(1))), visibleHostIds = setOf(1L)))
@@ -75,5 +75,16 @@ class ScansContentTest {
         show(ScansUiState(ScansList(running = (1..8).map(::running), recent = (1..5).map(::recent))), fontScale = 1.3f, bar = true)
         rule.onNodeWithTag("recent:live:101").assertIsDisplayed()
         rule.onNodeWithTag("stop:live:8").assertIsDisplayed()
+    }
+    @Test fun atFontScale13WithEightRunningRowsAndLongTitlesRecentAndEveryStopStayReachable() {
+        val longRunning = (1..8).map { n ->
+            running(n).copy(title = "Directory brute-force on Office NAS:443 behind the upstairs switch $n",
+                detail = "312 of 65535, found 4, 2 errors, 14 minutes active so far on this host")
+        }
+        show(ScansUiState(ScansList(running = longRunning, recent = (1..5).map(::recent))), fontScale = 1.3f, bar = true)
+        rule.onNodeWithTag("recent:live:101").assertIsDisplayed()
+        val block = rule.onNodeWithTag("scansRunning").getBoundsInRoot()
+        assertTrue("the Running block is capped below half the screen", (block.bottom - block.top) < 410.dp)
+        (1..8).forEach { n -> rule.onNodeWithTag("stop:live:$n").performScrollTo().assertIsDisplayed() }
     }
 }

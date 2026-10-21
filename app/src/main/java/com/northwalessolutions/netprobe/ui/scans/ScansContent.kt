@@ -3,6 +3,8 @@ package com.northwalessolutions.netprobe.ui.scans
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.LinearProgressIndicator
@@ -16,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -48,6 +51,7 @@ private val RECENT_ROW_MIN = 48.dp
 private val ROW_VERTICAL = 6.dp
 private val PROGRESS_HEIGHT = 2.dp
 private val STOP_GAP = 12.dp
+private const val RUNNING_MAX_FRACTION = 0.4f
 
 @Composable
 fun ScansScreen(container: AppContainer, onOpenDevices: () -> Unit, onOpenHost: (Long) -> Unit, onOpenWordlists: () -> Unit) {
@@ -89,7 +93,10 @@ fun ScansContent(state: ScansUiState, actions: ScansActions) {
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("scansPinned")) {
             TitleRow(canClear = list.recent.isNotEmpty(), onClear = actions.onClear)
-            if (list.running.isNotEmpty()) Column(Modifier.fillMaxWidth().testTag("scansRunning")) {
+            // Capped at a share of the screen and scrolling within itself past the cap, so the Recent list always keeps room and every
+            // Stop pill stays reachable at large font scales (final review S2). The Recent list's scroll container never holds a Stop.
+            val cap = (LocalConfiguration.current.screenHeightDp * RUNNING_MAX_FRACTION).dp
+            if (list.running.isNotEmpty()) Column(Modifier.fillMaxWidth().heightIn(max = cap).verticalScroll(rememberScrollState()).testTag("scansRunning")) {
                 Text(ScansCopy.RUNNING, style = NetProbeText.groupHeader, color = NetProbeColors.textMuted,
                     modifier = Modifier.padding(horizontal = Dimens.gutter, vertical = 4.dp).semantics { heading() })
                 list.running.forEach { item ->
