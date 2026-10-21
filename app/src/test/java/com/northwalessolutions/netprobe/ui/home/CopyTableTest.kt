@@ -16,6 +16,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.northwalessolutions.netprobe.ui.manual.ManualCopy
+import com.northwalessolutions.netprobe.ui.settings.ListenCopy
 
 /**
  * The Radar spec section 8 copy table held as regex templates. Each test generates a matrix of reachable states and asserts every
@@ -180,4 +181,15 @@ class CopyTableTest {
         assertEquals("Synology DSM, 6 findings, 2 min ago", ManualCopy.historyLine("Synology DSM, 6 findings", "2 min ago"))
         val removed = HomeCopy::class.java.declaredFields.map { it.name } + ManualCopy::class.java.declaredFields.map { it.name }
         for (gone in listOf("MENU_AGGRESSIVE", "ERR_PRIVATE")) assertFalse("$gone was removed from the spec", gone in removed)   // spec 7.2
-    }}
+    }
+    @Test fun `listening strings`() {
+        val listenTemplates = listOf("Listen between scans", "While NetProbe is open, adds devices heard announcing themselves over mDNS and SSDP\\.",
+            "Listening for (mDNS and SSDP|mDNS only|SSDP only)", "Could not open the multicast ports", "Not listening: connect to Wi-Fi or Ethernet",
+            "Paused while a scan runs", "mDNS and SSDP are off above", "Scan this network once to start listening",
+            "Listening stopped after an error, retrying").map { Regex(it) }
+        val strings = listOf(ListenCopy.LABEL, ListenCopy.SUPPORT) + ListenStatus.entries.mapNotNull { ListenCopy.status(it) }
+        strings.forEach { s -> assertTrue("not in the listening copy table: '$s'", listenTemplates.any { it.matches(s) }); assertFalse("em-dash in '$s'", s.contains('\u2014')) }
+        assertEquals(11, strings.size)   // label, subtitle and the nine status lines (spec 3.1, amendment A3); OFF shows nothing
+        assertEquals(null, ListenCopy.status(ListenStatus.OFF))
+    }
+}

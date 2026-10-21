@@ -54,7 +54,9 @@ private const val MS_UNIT = " ms"
 
 /** Everything Settings shows; no AppContainer, so the Compose tests drive it with in-memory state (3C spec 8.2 item 4). */
 data class SettingsUi(val state: SettingsState, val networkName: String? = null, val networkId: Long? = null, val manual: List<Subnet> = emptyList(),
-                      val local: Subnet? = null, val importedWordlists: Int? = null)
+                      val local: Subnet? = null, val importedWordlists: Int? = null,
+                      /** The listener's status line (3C spec 3.1), already worded; null shows nothing. */
+                      val listenStatus: String? = null)
 
 /** [current] reads the live settings at the Reset tap, so the Undo snapshot is never a stale recomposition value. */
 data class SettingsActions(val onBack: () -> Unit = {}, val update: ((SettingsState) -> SettingsState) -> Unit = {}, val current: () -> SettingsState = { SettingsState() },
@@ -108,6 +110,11 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             SwitchRow("Reverse DNS", s.reverseDns) { v -> update { it.copy(reverseDns = v) } }
             SwitchRow("SNMP", s.snmp) { v -> update { it.copy(snmp = v) } }
             SwitchRow("HTTP page titles", s.httpTitle) { v -> update { it.copy(httpTitle = v) } }
+            // 3C spec 3.1: directly after HTTP page titles; the status line only while the switch is on.
+            SwitchRow(ListenCopy.LABEL, s.listenMulticast, ListenCopy.SUPPORT) { v -> update { it.copy(listenMulticast = v) } }
+            if (s.listenMulticast) ui.listenStatus?.let {
+                Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.padding(bottom = 6.dp).testTag("listenStatus"))
+            }
 
             // Second, directly under Discovery (3C spec D6, 2.3): discoverable without a Home toggle.
             Section(ExtendedCopy.TITLE)
