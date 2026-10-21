@@ -66,4 +66,21 @@ class SettingsDefaultsTest {
         SettingsReset.run({ settings.state.value }, settings::update) { false }
         assertEquals(SettingsState(nvdApiKey = "key-1"), settings.state.value)
     }
+    @Test fun `undo after a reset with only one value changed restores exactly that state`() = runBlocking {
+        val one = SettingsState(sweepConcurrency = 256, nvdApiKey = "k")
+        val settings = AppSettings(FakePrefs()); settings.update { one }
+        SettingsReset.run({ settings.state.value }, settings::update) { true }
+        assertEquals(one, settings.state.value)
+    }
+    @Test fun `reset leaves the manual ranges untouched and a second reset changes nothing`() = runBlocking {
+        val settings = AppSettings(FakePrefs()); settings.update { tuned }
+        val ranges = listOfNotNull(com.northwalessolutions.netprobe.netenv.CidrParser.subnetOf("10.9.0.0/24"))
+        assertEquals(1, ranges.size)
+        settings.manual.set(7L, ranges)
+        SettingsReset.run({ settings.state.value }, settings::update) { false }
+        val afterOne = settings.state.value
+        SettingsReset.run({ settings.state.value }, settings::update) { false }
+        assertEquals(afterOne, settings.state.value)
+        assertEquals(ranges, settings.manual.get(7L))
+    }
 }

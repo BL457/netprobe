@@ -4,18 +4,23 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -23,10 +28,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.northwalessolutions.netprobe.AppContainer
+import com.northwalessolutions.netprobe.data.SettingsDefaults
+import com.northwalessolutions.netprobe.data.SettingsReset
 import com.northwalessolutions.netprobe.data.SettingsState
+import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.ui.BackToHome
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
+import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.theme.*
 import com.northwalessolutions.netprobe.ui.wordlists.rememberWordlistStore
@@ -39,16 +48,58 @@ private const val CONC_MIN = 32; private const val CONC_MAX = 512; private const
 private const val TIMEOUT_MIN = 200; private const val TIMEOUT_MAX = 2000; private const val TIMEOUT_STEP = 100
 private val PREFIX_OPTIONS = listOf(20, 22, 24)
 private val SWITCH_ROW_MIN = 56.dp
+private val MARKER_PAD = 8.dp
+private const val NO_UNIT = ""
+private const val MS_UNIT = " ms"
+
+/** Everything Settings shows; no AppContainer, so the Compose tests drive it with in-memory state (3C spec 8.2 item 4). */
+data class SettingsUi(val state: SettingsState, val networkName: String? = null, val networkId: Long? = null, val manual: List<Subnet> = emptyList(),
+                      val local: Subnet? = null, val importedWordlists: Int? = null)
+
+/** [current] reads the live settings at the Reset tap, so the Undo snapshot is never a stale recomposition value. */
+data class SettingsActions(val onBack: () -> Unit = {}, val update: ((SettingsState) -> SettingsState) -> Unit = {}, val current: () -> SettingsState = { SettingsState() },
+                           val onManualChange: (List<Subnet>) -> Unit = {}, val clearVulnCache: suspend () -> String = { "" }, val onOpenWordlists: () -> Unit = {})
 
 // The IME joins the content insets, as on Home and Detail; a separate imePadding would count the navigation bar twice.
 @Composable
 fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists: () -> Unit = {}) {
     val s by container.settings.state.collectAsStateWithLifecycle()
-    val update: ((SettingsState) -> SettingsState) -> Unit = { container.settings.update(it) }
+    val network by container.currentNetwork.collectAsStateWithLifecycle()
+    val revision by container.settings.manual.revision.collectAsStateWithLifecycle()
+    val manual = remember(network?.id, revision) { container.settings.manual.forNetwork(network?.id) }
+    val local = remember(network?.id, s.maxPrefix) {   // re-read on a network switch (Task 17 M2)
+        container.networkEnvMonitor.current()?.let { SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, s.maxPrefix).subnet } }
+    val wordlists by rememberWordlists(container)
+    val wordlistsLoaded = rememberWordlistStore(container).value != null
+    SettingsContent(
+        SettingsUi(s, network?.displayName, network?.id, manual, local, if (wordlistsLoaded) wordlists.count { !it.builtIn } else null),
+        SettingsActions(onBack = onBack, update = { container.settings.update(it) }, current = { container.settings.state.value },
+            onManualChange = { list -> network?.id?.let { container.settings.manual.set(it, list) } },
+            clearVulnCache = {
+                try { container.vulnCache.clear(); "Vulnerability cache cleared" } catch (ce: CancellationException) { throw ce } catch (e: Exception) { "Could not clear cache: ${e.message}" }
+            },
+            onOpenWordlists = onOpenWordlists))
+}
+
+/** Settings layout (Radar spec 6, 3C spec 1 and 2.3). PINNED: the back row and the overflow menu sit in the topBar, never in the scroll. */
+@Composable
+fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
+    val s = ui.state
+    val update = actions.update
+    val d = SettingsDefaults.DEFAULTS
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val onReset: () -> Unit = {
+        scope.launch {
+            SettingsReset.run(actions.current, update) {
+                snackbar.showSnackbar(SettingsCopy.RESET_DONE, actionLabel = HomeCopy.UNDO, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed
+            }
+        }
+    }
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) { BackToHome(onBack) } }) { pad ->
+        topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
+            BackToHome(actions.onBack) { SettingsMenu(resetEnabled = SettingsDefaults.differs(s), onReset = onReset) }
+        } }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter)) {
             Section("Discovery")
             SwitchRow("mDNS (Bonjour)", s.mdns) { v -> update { it.copy(mdns = v) } }
@@ -58,26 +109,20 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists:
             SwitchRow("SNMP", s.snmp) { v -> update { it.copy(snmp = v) } }
             SwitchRow("HTTP page titles", s.httpTitle) { v -> update { it.copy(httpTitle = v) } }
 
+            // Second, directly under Discovery (3C spec D6, 2.3): discoverable without a Home toggle.
+            Section(ExtendedCopy.TITLE)
+            ExtendedSection(s, update, networkName = ui.networkName, manual = ui.manual, local = ui.local, networkId = ui.networkId, onManualChange = actions.onManualChange)
+
             Section("Speed")
-            StepSlider("Sweep concurrency", s.sweepConcurrency, CONC_MIN, CONC_MAX, CONC_STEP, "") { v -> update { it.copy(sweepConcurrency = v) } }
-            StepSlider("Sweep connect timeout", s.connectTimeoutMs, TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_STEP, " ms") { v -> update { it.copy(connectTimeoutMs = v) } }
-            StepSlider("Port scan concurrency", s.scanConcurrency, CONC_MIN, CONC_MAX, CONC_STEP, "") { v -> update { it.copy(scanConcurrency = v) } }
-            StepSlider("Port scan timeout", s.scanTimeoutMs, TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_STEP, " ms") { v -> update { it.copy(scanTimeoutMs = v) } }
+            StepSlider("Sweep concurrency", s.sweepConcurrency, CONC_MIN, CONC_MAX, CONC_STEP, NO_UNIT, default = d.sweepConcurrency) { v -> update { it.copy(sweepConcurrency = v) } }
+            StepSlider("Sweep connect timeout", s.connectTimeoutMs, TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_STEP, MS_UNIT, default = d.connectTimeoutMs) { v -> update { it.copy(connectTimeoutMs = v) } }
+            StepSlider("Port scan concurrency", s.scanConcurrency, CONC_MIN, CONC_MAX, CONC_STEP, NO_UNIT, default = d.scanConcurrency) { v -> update { it.copy(scanConcurrency = v) } }
+            StepSlider("Port scan timeout", s.scanTimeoutMs, TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_STEP, MS_UNIT, default = d.scanTimeoutMs) { v -> update { it.copy(scanTimeoutMs = v) } }
 
             Section("Large networks")
-            Text("Largest network to sweep. Bigger networks are cut down to your own /24 unless widened here.", style = NetProbeText.data, color = NetProbeColors.textMuted)
+            Text(SettingsCopy.LARGE_NETWORKS_CAPTION, style = NetProbeText.data, color = NetProbeColors.textMuted)   // plan review G6
             PinnedSegmented(PREFIX_OPTIONS.map { "/$it" }, PREFIX_OPTIONS.indexOf(s.maxPrefix), { i -> update { it.copy(maxPrefix = PREFIX_OPTIONS[i]) } },
                 activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, modifier = Modifier.fillMaxWidth())
-
-            Section("Extended discovery")
-            val network by container.currentNetwork.collectAsStateWithLifecycle()
-            val revision by container.settings.manual.revision.collectAsStateWithLifecycle()
-            val manual = remember(network?.id, revision) { container.settings.manual.forNetwork(network?.id) }
-            val local = remember(network?.id, s.maxPrefix) {   // re-read on a network switch (Task 17 M2)
-                container.networkEnvMonitor.current()?.let { SubnetMath.sweepRange(it.interfaceIp, it.prefixLength, s.maxPrefix).subnet } }
-            ExtendedSection(s, update, networkName = network?.displayName, manual = manual, local = local, networkId = network?.id) { list ->
-                network?.id?.let { container.settings.manual.set(it, list) }
-            }
 
             Section("Permissions")
             LocationPermissionRow()
@@ -86,17 +131,35 @@ fun SettingsScreen(container: AppContainer, onBack: () -> Unit, onOpenWordlists:
             var key by remember { mutableStateOf(s.nvdApiKey) }
             OutlinedTextField(key, { key = it; update { st -> st.copy(nvdApiKey = it.trim()) } }, Modifier.fillMaxWidth(), label = { Text("NVD API key (optional)") },
                 singleLine = true, visualTransformation = PasswordVisualTransformation(), colors = npFieldColors(), shape = RoundedCornerShape(8.dp))
-            TextButton(onClick = {
-                scope.launch {
-                    val msg = try { container.vulnCache.clear(); "Vulnerability cache cleared" } catch (ce: CancellationException) { throw ce } catch (e: Exception) { "Could not clear cache: ${e.message}" }
-                    snackbar.showSnackbar(msg)
-                }
-            }, modifier = Modifier.heightIn(min = Dimens.touch)) { Text("Clear vulnerability cache", style = NetProbeText.action, color = NetProbeColors.signal) }
-            val wordlists by rememberWordlists(container)
-            val wordlistsLoaded = rememberWordlistStore(container).value != null
-            ToolsSection(imported = if (wordlistsLoaded) wordlists.count { !it.builtIn } else null, onOpenWordlists = onOpenWordlists)
+            TextButton(onClick = { scope.launch { snackbar.showSnackbar(actions.clearVulnCache()) } }, modifier = Modifier.heightIn(min = Dimens.touch)) {
+                Text("Clear vulnerability cache", style = NetProbeText.action, color = NetProbeColors.signal)
+            }
+            ToolsSection(imported = ui.importedWordlists, onOpenWordlists = actions.onOpenWordlists)
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+/** The Settings overflow (3C spec 1.2): one item, enabled only while some covered value differs from its default. */
+@Composable
+internal fun SettingsMenu(resetEnabled: Boolean, onReset: () -> Unit) {
+    Box {
+        var open by remember { mutableStateOf(false) }
+        IconButton(onClick = { open = true }, modifier = Modifier.size(Dimens.touch).testTag("settingsMenu")) {
+            Icon(Icons.Default.MoreVert, SettingsCopy.MENU, tint = NetProbeColors.textSecondary)
+        }
+        DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
+            DropdownMenuItem(text = { Text(SettingsCopy.RESET) }, enabled = resetEnabled, onClick = { open = false; onReset() }, modifier = Modifier.testTag("resetDefaults"))
+        }
+    }
+}
+
+/** "Default 128" in caption / textSecondary inside a 48 dp target (3C spec 1.3); a tap restores that one control. */
+@Composable
+internal fun DefaultMarkerButton(text: String, description: String, tag: String, enabled: Boolean = true, onReset: () -> Unit) {
+    Box(Modifier.heightIn(min = Dimens.touch).widthIn(min = Dimens.touch).clickable(enabled = enabled, role = Role.Button, onClick = onReset)
+        .semantics { contentDescription = description }.testTag(tag), contentAlignment = Alignment.Center) {
+        Text(text, style = NetProbeText.caption, color = NetProbeColors.textSecondary, modifier = Modifier.padding(horizontal = MARKER_PAD))
     }
 }
 
@@ -128,14 +191,20 @@ internal fun SwitchRow(label: String, checked: Boolean, supporting: String? = nu
     }
 }
 
-/** Moves locally while dragging and saves once on release, so preferences are not rewritten on every drag frame. */
+/**
+ * Moves locally while dragging and saves once on release, so preferences are not rewritten on every drag frame. With [default] set,
+ * a "Default N" marker shows before the value while the saved value differs (3C spec 1.3).
+ */
 @Composable
-internal fun StepSlider(label: String, value: Int, min: Int, max: Int, step: Int, unit: String, enabled: Boolean = true, onCommit: (Int) -> Unit) {
+internal fun StepSlider(label: String, value: Int, min: Int, max: Int, step: Int, unit: String, enabled: Boolean = true, default: Int? = null, onCommit: (Int) -> Unit) {
     var v by remember(value) { mutableFloatStateOf(value.toFloat()) }
     val snapped = ((v / step).roundToInt() * step).coerceIn(min, max)
     Column(Modifier.heightIn(min = Dimens.touch).alpha(if (enabled) 1f else DISABLED_ALPHA)) {
-        Row(Modifier.padding(top = 6.dp)) {
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = NetProbeText.secondary, color = NetProbeColors.text, modifier = Modifier.weight(1f))
+            if (default != null) DefaultMarker.text(value, default, unit)?.let { text ->
+                DefaultMarkerButton(text, SettingsCopy.resetDescription(label, default, unit), "default:$label", enabled) { onCommit(default) }
+            }
             Text("$snapped$unit", style = NetProbeText.data, color = NetProbeColors.signal)
         }
         Slider(value = v, onValueChange = { v = it }, valueRange = min.toFloat()..max.toFloat(), steps = (max - min) / step - 1, enabled = enabled,
