@@ -3,6 +3,7 @@ package com.northwalessolutions.netprobe.ui.home
 import com.northwalessolutions.netprobe.engine.discovery.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExtendedNoticesTest {
@@ -52,5 +53,10 @@ class ExtendedNoticesTest {
     @Test fun `no headline when no range was swept`() {   // M4: never "0 other ranges checked" after an early Stop
         val ranges = listOf(local, r("10.0.4.0/24", RangeState.CANCELLED), r("10.0.5.0/24", RangeState.PENDING), r("10.0.6.0/24", RangeState.TRUNCATED))
         assertNull(RangeSummaryText.checked(ranges))
+    }
+    @Test fun `the walk note says why nearby ranges were not checked, and only with Aggressive scan on`() {
+        val st = DiscoveryStatus(notes = listOf(ExtendedNote.GATEWAY_WALK_SKIPPED_MANY))
+        assertEquals(listOf("Smart discovery: too many ranges answered, nearby ranges not checked"), ExtendedNotices.of(st))
+        assertTrue(ExtendedNotices.of(st, aggressive = false).isEmpty())
     }
 }

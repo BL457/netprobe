@@ -36,6 +36,18 @@ object CandidateRanges {
         }
         return CandidateResult(accepted, truncated)
     }
+
+    /**
+     * Smart discovery's walk budget (3C spec 2.5 step 2): cap slots left after manual, evidence and [hits] (the first pass's, then the
+     * walk's so far), counted by the same derive that sweeps; 0 or less means no walk, or no further round (plan review G8).
+     */
+    fun walkBudget(scanned: Subnet, manual: List<Subnet>, evidence: List<Inet4Address>, hits: List<Subnet>, cap: Int): Int =
+        cap.coerceIn(MIN_CAP, MAX_CAP) - derive(scanned, manual, evidence, hits, cap).ranges.size
+
+    /** The manual units and evidence /24s: candidates already, so the outward walk never probes them (plan review G8). */
+    fun sweptUnits(scanned: Subnet, manual: List<Subnet>, evidence: List<Inet4Address>): List<Subnet> =
+        (manual.flatMap { CidrParser.units(it) } +
+            evidence.filter { Rfc1918.contains(it) && !scanned.contains(it) }.map { SubnetMath.of(it, UNIT_PREFIX) }).distinct()
 }
 
 object Evidence {

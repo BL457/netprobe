@@ -24,6 +24,7 @@ object ExtendedNotices {
                 ExtendedNote.GATEWAY_PROBE_FOUND_NONE -> HomeCopy.GATEWAY_FOUND_NONE
                 ExtendedNote.NO_EXTRA_RANGES -> HomeCopy.NO_EXTRA_RANGES
                 ExtendedNote.SKIPPED_BIND_FAILED -> HomeCopy.BIND_FAILED
+                ExtendedNote.GATEWAY_WALK_SKIPPED_MANY -> HomeCopy.GATEWAY_WALK_SKIPPED
             }
         }
         val extras = status.ranges.drop(1)

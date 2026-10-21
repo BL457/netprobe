@@ -60,7 +60,8 @@ class DiscoveryEngine(
     val neighbours: () -> Result<List<NeighbourEntry>>,
     val mdnsTypes: List<String>,
     val deviceInfo: suspend (String, Inet4Address) -> Map<String, String>?,
-    val gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?) -> GatewayProbeResult = { _, _, _ -> GatewayProbeResult(emptyList()) },
+    /** Smart discovery: targets, progress, the bound network, and the walk plan (budget and skipped units, 3C spec 2.5 step 2, plan review G8). */
+    val gatewayProbe: suspend (GatewayTargets, (Int, Int, Int) -> Unit, SocketBinder?, WalkPlan) -> GatewayProbeResult = { _, _, _, _ -> GatewayProbeResult(emptyList()) },
     val canaryProbe: suspend (Inet4Address, Int, SocketBinder?) -> Probe.Outcome = { _, _, _ -> Probe.Outcome.Timeout },
     val random: Random = Random.Default,
 ) {
@@ -184,8 +185,12 @@ class DiscoveryEngine(
                         val label = targets.enclosing?.toString() ?: OTHER_RANGES_LABEL
                         var ran = false
                         isolated {
-                            val r = gatewayProbe(targets, { d, t, n -> _status.update { it.copy(gatewayProbe = GatewayProbeProgress(label, d, t, n)) } }, b)
+                            // Counted by what derive would accept, so walked hits never push past the cap; manual and evidence units are never walked (3C spec 2.5 step 2, plan review G8).
+                            val plan = WalkPlan(budget = { hitsSoFar -> CandidateRanges.walkBudget(local, ext.manual, evidenceNow(), hitsSoFar, ext.maxRanges) },
+                                skip = CandidateRanges.sweptUnits(local, ext.manual, evidenceNow()))
+                            val r = gatewayProbe(targets, { d, t, n -> _status.update { it.copy(gatewayProbe = GatewayProbeProgress(label, d, t, n)) } }, b, plan)
                             hits = r.hits; gatewayAnswered = r.answered
+                            if (r.walkSkippedManySeeds) addNote(ExtendedNote.GATEWAY_WALK_SKIPPED_MANY)
                             ran = true
                         }
                         if (ran && hits.isEmpty()) addNote(ExtendedNote.GATEWAY_PROBE_FOUND_NONE)
@@ -302,11 +307,10 @@ class DiscoveryEngine(
                 httpTitle = { ip, port, tls -> titles.fetch(ip, port, tls) }, reverseDns = { rdns.lookup(it) },
                 neighbours = { NeighbourTable.dump() }, mdnsTypes = mdnsTypes,
                 deviceInfo = { name, host -> DeviceInfoTxt.query(name, host) },
-                gatewayProbe = { targets, onProgress, b ->
-                    val answered = java.util.concurrent.ConcurrentHashMap.newKeySet<Inet4Address>()
-                    val hits = GatewayProbe.run(targets, connect = { a, port -> Probe.connect(a, port, GatewayProbe.TIMEOUT_MS, binder = b) },
-                        onProgress = onProgress, onAnswer = { answered += it })
-                    GatewayProbeResult(hits, answered.toSet())
+                // The walk's probes use the same bound connect as the first pass (Phase 2 spec 5.5).
+                gatewayProbe = { targets, onProgress, b, plan ->
+                    GatewayProbe.run(targets, connect = { a, port -> Probe.connect(a, port, GatewayProbe.TIMEOUT_MS, binder = b) },
+                        onProgress = onProgress, walk = plan)
                 },
                 // Probe.connect blocks: never on the collector's (possibly Main) dispatcher.
                 canaryProbe = { a, port, b -> withContext(Dispatchers.IO) { Probe.connect(a, port, CANARY_TIMEOUT_MS, binder = b) } },

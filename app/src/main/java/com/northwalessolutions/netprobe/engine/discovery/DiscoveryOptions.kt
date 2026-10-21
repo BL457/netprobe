@@ -24,7 +24,7 @@ data class DiscoveryOptions(
 
 enum class RangeState { PENDING, RUNNING, DONE, CANCELLED, PHANTOM, TRUNCATED }
 enum class DiscoveryPhase { LOCAL, GATEWAY_PROBE, EXTENDED, DONE }
-enum class ExtendedNote { GATEWAY_PROBE_SKIPPED_ANSWERS_ALL, GATEWAY_PROBE_FOUND_NONE, NO_EXTRA_RANGES, SKIPPED_BIND_FAILED }
+enum class ExtendedNote { GATEWAY_PROBE_SKIPPED_ANSWERS_ALL, GATEWAY_PROBE_FOUND_NONE, NO_EXTRA_RANGES, SKIPPED_BIND_FAILED, GATEWAY_WALK_SKIPPED_MANY }
 
 /** Per-range progress; probed and total are this range's own and are not monotonic across ranges. [source] null is the local range. */
 /** [canaryFallback] is null when the canary ran on two clean addresses; otherwise how many (0 or 1) were left to probe (final review I3). */

@@ -61,9 +61,10 @@ class DiscoveryEngineExtendedTest {
     private val gatewayCalls = Collections.synchronizedList(mutableListOf<GatewayTargets>())
     private val canaryCalls = Collections.synchronizedList(mutableListOf<String>())
     private val rdnsCalls = Collections.synchronizedList(mutableListOf<String>())
+    private val plans = Collections.synchronizedList(mutableListOf<WalkPlan>())
 
     private fun engine(alive: (Inet4Address) -> Boolean = { false }, mdns: List<MdnsRecord> = emptyList(), mdnsDelayMs: Long = 0,
-                       gatewayHits: List<String> = emptyList(), gatewayThrows: Boolean = false, gatewayAnswered: List<String> = emptyList(),
+                       gatewayHits: List<String> = emptyList(), gatewayThrows: Boolean = false, gatewayAnswered: List<String> = emptyList(), walkSkipped: Boolean = false,
                        canary: (Inet4Address, Int) -> Probe.Outcome = { _, _ -> Probe.Outcome.Timeout },
                        delayFor: (Inet4Address) -> Long = { 0 }, onNetbios: suspend (Inet4Address) -> Unit = {},
                        completionOrder: (List<Inet4Address>) -> List<Inet4Address> = { it },
@@ -74,7 +75,8 @@ class DiscoveryEngineExtendedTest {
             upnpFetch = { _, _ -> null }, netbios = { a -> netbiosCalls += a.hostAddress; onNetbios(a); null }, snmp = { null },
             httpTitle = { _, _, _ -> null }, reverseDns = { a -> rdnsCalls += a.hostAddress; null }, neighbours = { Result.success(neigh) }, mdnsTypes = listOf("_http._tcp"),
             deviceInfo = { _, _ -> null },
-            gatewayProbe = { t, onProgress, _ -> gatewayCalls += t; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2); GatewayProbeResult(gatewayHits.map(::net), gatewayAnswered.map(::ip).toSet()) },
+            gatewayProbe = { t, onProgress, _, plan -> gatewayCalls += t; plans += plan; if (gatewayThrows) throw IllegalStateException("boom"); onProgress(1, 1, 2)
+                GatewayProbeResult(gatewayHits.map(::net), gatewayAnswered.map(::ip).toSet(), walkSkippedManySeeds = walkSkipped) },
             canaryProbe = { a, port, _ -> canaryCalls += "${a.hostAddress}:$port"; canary(a, port) },
             random = Random(1),
         )
@@ -339,5 +341,18 @@ class DiscoveryEngineExtendedTest {
         eng.hosts(runOpts(aggressive = false, manual = listOf("10.0.3.0/24")))
         assertEquals(listOf("10.0.3.1"), swept())
         assertEquals(1, eng.status.value.ranges.size)
+    }
+    @Test fun `the walk plan's budget is the cap less what is already accepted, and manual units are never walked`() = runBlocking {   // spec 2.5 step 2, plan review G8
+        engine().hosts(opts(manual = listOf("10.0.4.0/24"), cap = 4, probe = true))
+        val plan = plans.single()
+        assertEquals("one manual unit of four", 3, plan.budget(emptyList()))
+        assertEquals(1, plan.budget(listOf(net("10.0.10.0/24"), net("10.0.11.0/24"))))
+        assertEquals(0, plan.budget(listOf("10.0.10.0/24", "10.0.11.0/24", "10.0.12.0/24", "10.0.13.0/24").map(::net)))
+        assertEquals("a hit on the manual unit frees no slot", 3, plan.budget(listOf(net("10.0.4.0/24"))))
+        assertEquals(listOf("10.0.4.0/24"), plan.skip.map { it.toString() })
+    }
+    @Test fun `too many answering seeds is noted`() = runBlocking {
+        val eng = engine(walkSkipped = true); eng.hosts(opts(probe = true))
+        assertTrue(ExtendedNote.GATEWAY_WALK_SKIPPED_MANY in eng.status.value.notes)
     }
 }

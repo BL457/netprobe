@@ -51,7 +51,7 @@ class GatewayProbeTest {
             calls += "${a.hostAddress}:$port"
             when (a.hostAddress) { "10.0.4.1" -> Probe.Outcome.Refused; "10.0.9.254" -> if (port == 443) Probe.Outcome.Connected(3, null) else Probe.Outcome.Timeout
                 "10.0.5.1" -> Probe.Outcome.Unreachable; else -> Probe.Outcome.Timeout }
-        }, onAnswer = { answered += it.hostAddress }, dispatcher = Dispatchers.Default)
+        }, onAnswer = { answered += it.hostAddress }, dispatcher = Dispatchers.Default).hits
         assertEquals(setOf("10.0.4.1", "10.0.9.254"), answered.toSet())   // the canary must not reuse these (final review I3)
         assertEquals(listOf("10.0.4.0/24", "10.0.9.0/24"), hits.map { it.toString() })
         assertTrue(calls.all { it.endsWith(":80") || it.endsWith(":443") })
