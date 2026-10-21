@@ -120,6 +120,7 @@
  {"id":"hint-synology-dsm","field":"toolHint","pattern":"^http\\.framework=Synology DSM$","vendor":"Synology","type":"NAS","weight":90,"sample":"http.framework=Synology DSM"},
  {"id":"hint-pihole","field":"toolHint","pattern":"^http\\.framework=Pi-hole$","model":"Pi-hole","type":"SERVER","weight":90,"sample":"http.framework=Pi-hole"},
  {"id":"hint-unifi","field":"toolHint","pattern":"^http\\.framework=UniFi OS$","vendor":"Ubiquiti","type":"ROUTER","weight":70,"sample":"http.framework=UniFi OS"},
+ {"id":"hint-unifi-usg","field":"toolHint","pattern":"^http\\.framework=UniFi Security Gateway$","vendor":"Ubiquiti","model":"UniFi Security Gateway","type":"ROUTER","weight":90,"sample":"http.framework=UniFi Security Gateway"},
  {"id":"hint-hue","field":"toolHint","pattern":"^http\\.framework=Philips Hue$","vendor":"Philips Hue","type":"IOT","weight":90,"sample":"http.framework=Philips Hue"},
  {"id":"hint-home-assistant","field":"toolHint","pattern":"^http\\.framework=Home Assistant$","model":"Home Assistant","type":"SERVER","weight":90,"sample":"http.framework=Home Assistant"},
  {"id":"hint-proxmox","field":"toolHint","pattern":"^http\\.framework=Proxmox VE$","model":"Proxmox VE","type":"SERVER","weight":90,"sample":"http.framework=Proxmox VE"},

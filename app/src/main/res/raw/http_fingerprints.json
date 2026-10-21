@@ -1,8 +1,12 @@
 [
  {"id":"synology-title","source":"title","pattern":"Synology|DiskStation","name":"Synology DSM","sample":"Synology DiskStation"},
  {"id":"synology-body","source":"body","pattern":"SYNO\\.SDS|/webman/","name":"Synology DSM","sample":"var x = SYNO.SDS.Session; /webman/index.cgi"},
+ {"id":"synology-dsm7-body","source":"body","pattern":"SYNO\\.Core\\.","name":"Synology DSM","sample":"webapi/entry.cgi?api=SYNO.Core.Desktop.","negativeSample":"<title>CHNAS</title>"},
+ {"id":"synology-csp","source":"header:content-security-policy","pattern":"synology\\.com","name":"Synology DSM","sample":"default-src 'self' *.synology.com","negativeSample":"default-src 'self'"},
+ {"id":"synology-location","source":"header:location","pattern":"/webman/","name":"Synology DSM","sample":"/webman/index.cgi"},
  {"id":"pihole","source":"title","pattern":"Pi-hole","name":"Pi-hole","sample":"Pi-hole - Login"},
  {"id":"unifi-os","source":"title","pattern":"^UniFi OS$","name":"UniFi OS","sample":"UniFi OS","negativeSample":"UniFi Network"},
+ {"id":"unifi-usg","source":"title","pattern":"UniFi Security Gateway","name":"UniFi Security Gateway","sample":"UniFi Security Gateway","negativeSample":"UniFi OS"},
  {"id":"hue","source":"body","pattern":"hue personal wireless lighting","name":"Philips Hue","sample":"<title>hue personal wireless lighting</title>"},
  {"id":"home-assistant","source":"title","pattern":"Home Assistant","name":"Home Assistant","sample":"Home Assistant"},
  {"id":"proxmox","source":"title","pattern":"Proxmox Virtual Environment","name":"Proxmox VE","sample":"pve - Proxmox Virtual Environment"},

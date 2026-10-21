@@ -27,7 +27,7 @@ class DeviceIdentifierToolHintTest {
     }
     @Test fun `every seeded hint rule fires on its own sample`() {
         val rules = IdentifyRules.load(javaClass.classLoader!!.getResource("identify_rules.json")!!.readText()).filter { it.field == "toolHint" }
-        assertEquals(14, rules.size)
+        assertEquals(15, rules.size)
         for (r in rules) {
             val got = DeviceIdentifier(listOf(r)).identify(ev(listOf(r.sample!!)))
             assertNotEquals("${r.id} did not fire on its sample", DeviceIdentity.UNKNOWN, got)

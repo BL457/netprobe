@@ -79,10 +79,11 @@ class NewRulesTest {
         "p-idrac" to Expect(vendor = "Dell", model = "iDRAC", type = SERVER),
         "p-ilo" to Expect(vendor = "HPE", model = "iLO", type = SERVER),
         "p-airplay" to Expect(vendor = "Apple"),
+        "hint-unifi-usg" to Expect(vendor = "Ubiquiti", model = "UniFi Security Gateway", type = ROUTER),   // Phase 3B QA: the M4 fingerprint hint, consistent with p-unifi-usg
     )
 
     @Test fun `every new or replaced rule yields exactly its own values on its own sample`() {
-        assertEquals(66, expected.size)
+        assertEquals(67, expected.size)
         for ((ruleId, want) in expected) {
             val r = rules.single { it.id == ruleId }
             val got = DeviceIdentifier(listOf(r)).identify(SyntheticEvidence.forRule(r, ip))

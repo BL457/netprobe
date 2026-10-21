@@ -44,4 +44,41 @@ class FingerprintIdentityCouplingTest {
     @Test fun `openwrt sets os and type`() = runTest {
         identify("<title>OpenWrt - LuCI</title>").let { assertEquals("OpenWrt", it.os); assertEquals(DeviceType.ROUTER, it.type) }
     }
+
+    /** A device that answers [pages] by path (status, headers, body) and 404 elsewhere. */
+    private fun device(pages: Map<String, Triple<Int, List<Pair<String, String>>, String>>) = HttpGet { _, _, path ->
+        val (status, headers, body) = pages[path] ?: Triple(404, emptyList(), "")
+        HttpResult.Ok(HttpResponse(status, "", headers, body.toByteArray(), false, body.length.toLong()))
+    }
+    private suspend fun runOn(get: HttpGet, port: Int, tls: Boolean): Pair<ToolResult, CollectingProgress> {
+        val p = CollectingProgress()
+        return HttpFingerprintTool({ get }, fpRules) { "abcdef012345" }.run(ToolTarget(1, host, port, tls, null), ToolOptions.None, control(), p) to p
+    }
+    private val robotsDisallowAll = "User-agent: *" + LF + "Disallow: /" + LF   // CHNAS robots.txt: 26 bytes, one rule
+
+    /** Phase 3B QA: CHNAS 10.0.3.59:5001 (DS220+, DSM 7) answered "No product named, 4 findings": no Server header, title CHNAS. */
+    @Test fun `chnas dsm 7 login page names synology dsm and identifies a synology nas`() = runTest {
+        val chnas = device(mapOf(
+            "/" to Triple(200, emptyList(), "<!DOCTYPE html><html><head><title>CHNAS</title><script src=" + Q + "webapi/entry.cgi?api=SYNO.Core.Desktop.Defs" + Q + "></script></head></html>"),
+            "/robots.txt" to Triple(200, emptyList(), robotsDisallowAll),
+        ))
+        val (r, p) = runOn(chnas, 5001, tls = true)
+        assertEquals(26, robotsDisallowAll.length)
+        assertEquals("Synology DSM, 5 findings", r.summary)
+        assertTrue(p.hints().contains("http.framework=Synology DSM"))
+        val id = identifier.identify(HostEvidence(DiscoveredHost(host), emptySet(), emptyMap(), null, toolHints = p.hints()))
+        assertEquals("Synology", id.vendor); assertEquals(DeviceType.NAS, id.type); assertTrue(id.reasons.contains("toolHint: http.framework=Synology DSM"))
+    }
+    /** Phase 3B QA: the USG 10.0.3.1:443 answered "PHP, 5 findings" from the PHPSESSID cookie; review M4. */
+    @Test fun `the usg is named unifi security gateway ahead of php and identifies a ubiquiti router`() = runTest {
+        val usg = device(mapOf("/" to Triple(200, listOf("Server" to "Server", "Set-Cookie" to "PHPSESSID=0123456789abcdef; path=/; secure"),
+            "<html><head><title>UniFi Security Gateway</title></head></html>")))
+        val (r, p) = runOn(usg, 443, tls = true)
+        assertEquals("UniFi Security Gateway, 6 findings", r.summary)
+        assertEquals(listOf("UniFi Security Gateway", "PHP"), p.of(FindingKind.FRAMEWORK).map { it.value })
+        assertTrue(p.hints().contains("http.framework=UniFi Security Gateway"))
+        val id = identifier.identify(HostEvidence(DiscoveredHost(host), emptySet(), emptyMap(), null, toolHints = p.hints()))
+        assertEquals("Ubiquiti", id.vendor); assertEquals("UniFi Security Gateway", id.model); assertEquals(DeviceType.ROUTER, id.type)
+    }
+    private companion object { val LF = Char(10).toString(); val Q = Char(34).toString() }
 }
