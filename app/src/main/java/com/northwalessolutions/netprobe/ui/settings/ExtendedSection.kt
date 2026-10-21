@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.northwalessolutions.netprobe.data.AppSettings
+import com.northwalessolutions.netprobe.data.SettingsDefaults
 import com.northwalessolutions.netprobe.data.SettingsState
 import com.northwalessolutions.netprobe.netenv.CidrParser
 import com.northwalessolutions.netprobe.netenv.Subnet
@@ -27,13 +28,15 @@ import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.theme.*
 import kotlin.math.ceil
 
-/** Settings copy owned by the extended-discovery spec 8.3. */
+/** Settings copy owned by the extended-discovery spec 8.3, renamed by the 3C spec 2.3 and 7.2 ("Aggressive scan", "Smart discovery"). */
 object ExtendedCopy {
-    const val TITLE = "Extended discovery"
-    const val SUPPORT = "Sweep other ranges your phone can reach."
+    const val TITLE = "Aggressive scan"
+    const val SUPPORT = "Your subnet is always scanned; one wider than the Large networks limit gets your /24 only. Turn on to scan as much of it as the limit allows, plus other private ranges your phone can reach."
     const val MAX_LABEL = "Maximum extra ranges"
-    const val PROBE_LABEL = "Probe for gateways"
-    const val PROBE_SUPPORT = "Checks common gateway addresses on every /24 in your /16 (about 1,600 connection attempts, about 13 s). Noisy on networks you do not own."
+    const val PROBE_LABEL = "Smart discovery"
+    /** Worst case: 1,572 first-pass attempts plus at most 256 for the outward walk, about 13 s plus 12.8 s (3C spec 2.5). */
+    const val PROBE_SUPPORT = "Looks for gateways at the usual addresses on nearby ranges and sweeps only the ranges that answer. Up to about 1,850 connection attempts, about 30 s."
+    const val MANUAL_LINE = "Swept first on every scan, with Aggressive scan on or off"
     const val NO_NETWORK = "Connect to a network to edit its ranges"
     const val BEYOND_CAP = "Beyond cap, will be skipped"
     const val ADD = "Add range"
@@ -55,22 +58,32 @@ object ManualCap {
     }
 }
 
+private const val NO_UNIT = ""
+
+/**
+ * The Aggressive scan section (3C spec 2.3). Only "Smart discovery" depends on the switch: the stepper caps manual ranges with
+ * Aggressive scan off too, and the editor is enabled whenever a network is current, because manual ranges sweep on every scan (D8).
+ */
 @Composable
 fun ExtendedSection(state: SettingsState, update: ((SettingsState) -> SettingsState) -> Unit, networkName: String?,
                     manual: List<Subnet>, local: Subnet?, networkId: Long? = null, onManualChange: (List<Subnet>) -> Unit) {
     val on = state.extEnabled
-    SwitchRow(ExtendedCopy.TITLE, state.extEnabled, supporting = ExtendedCopy.SUPPORT) { v -> update { it.copy(extEnabled = v) } }
-    Stepper(ExtendedCopy.MAX_LABEL, state.extMax, AppSettings.EXT_MAX_MIN, AppSettings.EXT_MAX_MAX, ExtendedCopy.capLine(state.extMax), on) { v -> update { it.copy(extMax = v) } }
+    SwitchRow(ExtendedCopy.TITLE, on, supporting = ExtendedCopy.SUPPORT) { v -> update { it.copy(extEnabled = v) } }
+    Stepper(ExtendedCopy.MAX_LABEL, state.extMax, AppSettings.EXT_MAX_MIN, AppSettings.EXT_MAX_MAX, ExtendedCopy.capLine(state.extMax), enabled = true,
+        default = SettingsDefaults.DEFAULTS.extMax) { v -> update { it.copy(extMax = v) } }
     SwitchRow(ExtendedCopy.PROBE_LABEL, state.extGatewayProbe, supporting = ExtendedCopy.PROBE_SUPPORT, enabled = on) { v -> update { it.copy(extGatewayProbe = v) } }
-    ManualEditor(networkName, networkId, manual, local, state.extMax, enabled = on && networkName != null, onManualChange)
+    ManualEditor(networkName, networkId, manual, local, state.extMax, enabled = networkName != null, onManualChange)
 }
 
 @Composable
-private fun Stepper(label: String, value: Int, min: Int, max: Int, line: String, enabled: Boolean, onChange: (Int) -> Unit) {
+private fun Stepper(label: String, value: Int, min: Int, max: Int, line: String, enabled: Boolean, default: Int? = null, onChange: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).alpha(if (enabled) 1f else DISABLED_ALPHA), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
             Text(label, style = NetProbeText.secondary, color = NetProbeColors.text)
             Text(line, style = NetProbeText.data, color = NetProbeColors.textMuted)
+        }
+        if (default != null) DefaultMarker.text(value, default, NO_UNIT)?.let { text ->
+            DefaultMarkerButton(text, SettingsCopy.resetDescription(label, default, NO_UNIT), "default:$label", enabled) { onChange(default) }
         }
         StepButton(Icons.Default.Remove, "Fewer ranges", enabled && value > min) { onChange(value - 1) }
         Text("$value", style = NetProbeText.data, color = NetProbeColors.signal, textAlign = TextAlign.Center, modifier = Modifier.widthIn(min = 28.dp))
@@ -88,6 +101,7 @@ private fun ManualEditor(networkName: String?, networkId: Long?, manual: List<Su
     Column(Modifier.fillMaxWidth().alpha(if (enabled) 1f else DISABLED_ALPHA)) {
         Text(networkName?.let { ExtendedCopy.manualTitle(it) } ?: ExtendedCopy.NO_NETWORK, style = NetProbeText.secondary, color = NetProbeColors.text,
             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+        if (networkName != null) Text(ExtendedCopy.MANUAL_LINE, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.padding(bottom = 4.dp))
         val beyond = ManualCap.beyondCap(manual, cap)
         manual.forEachIndexed { i, s ->
             Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch), verticalAlignment = Alignment.CenterVertically) {

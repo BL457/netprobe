@@ -19,7 +19,7 @@ class RunEndTest {
     }
     @Test fun `toggle off publishes no ranges and the large network notice only after a completed scan`() {
         val clamped = DiscoveryStatus(clampedFrom = 16)
-        assertEquals("Large network (/16). Scanned your /24 only. Widen in Settings.", RunEnd.of(1L, 1L, false, true, clamped)!!.notice)
+        assertEquals("Large network (/16). Scanned your /24 only. Turn on Aggressive scan in Settings.", RunEnd.of(1L, 1L, false, true, clamped)!!.notice)
         assertNull(RunEnd.of(1L, 1L, false, false, clamped)!!.notice)   // Stop, failure or network change
         val off = RunEnd.of(1L, 1L, false, true, swept)!!
         assertNull(off.swept); assertNull(off.progress); assertNull(off.notice)

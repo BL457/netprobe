@@ -76,13 +76,21 @@ class ExtendedSectionTest {
         rule.onNodeWithText("Connect to a network to edit its ranges").assertIsDisplayed()
         rule.onNodeWithTag("addRange").assertIsNotEnabled()
     }
-    @Test fun masterSwitchOffDisablesButShowsTheRows() {
+    @Test fun aggressiveOffDisablesOnlySmartDiscovery() {   // 3C spec D8, 2.3: manual ranges sweep whatever the toggle says
         show(enabled = false)
-        rule.onNode(hasText("Probe for gateways", substring = true) and hasClickAction()).assertIsDisplayed().assertIsNotEnabled()
+        rule.onNode(hasText("Smart discovery", substring = true) and hasClickAction()).assertIsDisplayed().assertIsNotEnabled()
         rule.onNodeWithText("At most 4 extra /24 networks (about 2 minutes)").assertIsDisplayed()
-        rule.onNodeWithTag("addRange").assertIsNotEnabled()
-        rule.onNode(hasText("Extended discovery", substring = true) and hasClickAction()).assertIsEnabled().performClick()
-        rule.onNode(hasText("Probe for gateways", substring = true) and hasClickAction()).assertIsEnabled()
+        rule.onNodeWithContentDescription("More ranges").assertIsEnabled()
+        rule.onNodeWithTag("addRange").assertIsEnabled()
+        rule.onNodeWithText("Swept first on every scan, with Aggressive scan on or off").assertIsDisplayed()
+        rule.onNode(hasText("Aggressive scan", substring = true) and hasClickAction()).assertIsEnabled().performClick()
+        rule.onNode(hasText("Smart discovery", substring = true) and hasClickAction()).assertIsEnabled()
+    }
+    @Test fun theStepperShowsItsDefaultMarkerWhenMovedAndRestoresFour() {
+        show(cap = 7)
+        rule.onNodeWithTag("default:Maximum extra ranges").assert(hasContentDescription("Reset Maximum extra ranges to 4")).assert(hasText("Default 4")).performClick()
+        rule.onNodeWithText("At most 4 extra /24 networks (about 2 minutes)").assertIsDisplayed()
+        rule.onNodeWithTag("default:Maximum extra ranges").assertDoesNotExist()
     }
     @Test fun stepperChangesTheCapAndMarksEntriesBeyondIt() {
         store.set(1, listOf("10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24").map { CidrParser.subnetOf(it)!! })

@@ -9,6 +9,7 @@ import com.northwalessolutions.netprobe.ui.detail.DetailCopy
 import com.northwalessolutions.netprobe.ui.detail.EditCopy
 import com.northwalessolutions.netprobe.ui.detail.setByYouLine
 import com.northwalessolutions.netprobe.ui.settings.DefaultMarker
+import com.northwalessolutions.netprobe.ui.settings.ExtendedCopy
 import com.northwalessolutions.netprobe.ui.settings.SettingsCopy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,12 +31,12 @@ class CopyTableTest {
         "starting", "probing \\d+ of \\d+  \\d+ s", "identifying \\d+ devices?  \\d+ s", "Quick scanning", "Search name, IP, vendor or MAC",
         "Devices appear here as they are found", "Looking for devices", "No devices found\\. Check the network and scan again\\.",
         "No devices match \".+\"", "No devices marked \\w+", "Network changed, scan stopped",
-        "Large network \\(/\\d+\\)\\. Scanned your /24 only\\. Widen in Settings\\.",
+        "Large network \\(/\\d+\\)\\. Scanned your /\\d+ only\\.( Widen in Settings\\.| Turn on Aggressive scan in Settings\\.)?",
         "probing \\S+ for gateways, \\d+ of \\d+  \\d+ s", "probing for gateways, \\d+ of \\d+  \\d+ s", "\\S+ \\(\\d+ of \\d+\\), probing \\d+ of \\d+", "preparing next range  \\d+ s",
-        "\\d+ more ranges? found, raise the cap in Settings", "Extended discovery: no extra ranges to sweep", "Gateway probe found no other ranges",
-        "Gateway probe skipped: every address answered", "Other ranges skipped: could not bind to Wi-Fi", "\\S+ skipped: every address answered",
+        "\\d+ more ranges? found, raise Maximum extra ranges in Settings", "Aggressive scan: no extra ranges to sweep", "Smart discovery found no other ranges",
+        "Smart discovery skipped: every address answered", "Other ranges skipped: could not bind to Wi-Fi", "\\S+ skipped: every address answered", "Smart discovery: too many ranges answered, nearby ranges not checked",
         "Stopped at \\S+", "\\d+ other ranges?: nothing found", "\\d+ other ranges? answered for everything", "\\S+: nothing found", "\\d+ other ranges? checked",
-        "\\S+  (manual|evidence|gateway probe|local)  (swept, nothing reachable|swept, \\d+ found|skipped, every address answered|not swept, scan limit reached|stopped|not started)",
+        "\\S+  (manual|evidence|smart discovery|local)  (swept, nothing reachable|swept, \\d+ found|skipped, every address answered|not swept, scan limit reached|stopped|not started)",
         "Scan (finished|stopped), (\\d+ devices?|no devices found)", "Scan skipped: could not bind to Wi-Fi", "identifying \\d+ ports?",
         "\\d+ of \\d+, found \\d+",
         "Runs .+",
@@ -48,6 +49,7 @@ class CopyTableTest {
         // 3C-1 Settings (spec 7.2)
         "Settings menu", "Reset to defaults", "Settings reset to defaults", "Default \\d+( ms)?", "Reset .+ to \\d+( ms)?",
         "Largest block of a big network to sweep\\. With Aggressive scan off, a network wider than this gets your /24 only\\. .+",
+        "Aggressive scan", "Smart discovery", "Swept first on every scan, with Aggressive scan on or off", "Your subnet is always scanned; .+", "Looks for gateways at the usual addresses .+",
     ).map { Regex(it) }
     /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
     private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", templates.any { it.matches(s) })
@@ -146,5 +148,19 @@ class CopyTableTest {
             inTable(SettingsCopy.defaultMarker(v, unit)); inTable(SettingsCopy.resetDescription("Sweep connect timeout", v, unit))
             DefaultMarker.text(v + 1, v, unit)?.let { inTable(it) }
         }
+    }
+
+    @Test fun `aggressive scan and the large network notices`() {
+        listOf(ExtendedCopy.TITLE, ExtendedCopy.SUPPORT, ExtendedCopy.PROBE_LABEL, ExtendedCopy.PROBE_SUPPORT, ExtendedCopy.MANUAL_LINE,
+            HomeCopy.GATEWAY_WALK_SKIPPED, HomeCopy.largeNetwork(16), HomeCopy.largeNetwork(21), HomeCopy.largeNetworkPartial(16, 22), HomeCopy.largeNetworkPartial(16, 20)).forEach { inTable(it) }
+        assertEquals("Large network (/16). Scanned your /22 only. Widen in Settings.", HomeCopy.largeNetworkPartial(16, 22))
+        assertEquals("at the widest limit there is nothing to widen", "Large network (/16). Scanned your /20 only.", HomeCopy.largeNetworkPartial(16, 20))
+        assertEquals("widening cannot help a /16: Aggressive scan can", "Large network (/16). Scanned your /24 only. Turn on Aggressive scan in Settings.", HomeCopy.largeNetwork(16))
+        assertEquals("Large network (/21). Scanned your /24 only. Widen in Settings.", HomeCopy.largeNetwork(21))
+        assertEquals("1 more range found, raise Maximum extra ranges in Settings", HomeCopy.capDropped(1))
+    }
+    @Test fun `names removed from the draft do not exist`() {   // spec 7.2
+        val fields = HomeCopy::class.java.declaredFields.map { it.name }; val methods = HomeCopy::class.java.declaredMethods.map { it.name }
+        assertFalse("MENU_AGGRESSIVE" in fields); assertFalse("aggressiveDescription" in methods)
     }
 }

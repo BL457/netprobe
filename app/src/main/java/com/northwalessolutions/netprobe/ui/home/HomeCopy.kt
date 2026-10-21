@@ -30,14 +30,16 @@ object HomeCopy {
     fun forgot(network: String) = "Forgot $network"
     fun removed(device: String) = "Removed $device"
 
-    const val NO_EXTRA_RANGES = "Extended discovery: no extra ranges to sweep"
-    const val GATEWAY_FOUND_NONE = "Gateway probe found no other ranges"
+    const val NO_EXTRA_RANGES = "Aggressive scan: no extra ranges to sweep"
+    const val GATEWAY_FOUND_NONE = "Smart discovery found no other ranges"
     const val BIND_FAILED = "Other ranges skipped: could not bind to Wi-Fi"
     /** Controller ruling: the Radar copy table has no row for GATEWAY_PROBE_SKIPPED_ANSWERS_ALL, so it takes the PHANTOM row's form. */
-    const val GATEWAY_ANSWERS_ALL = "Gateway probe skipped: every address answered"
+    const val GATEWAY_ANSWERS_ALL = "Smart discovery skipped: every address answered"
+    /** ExtendedNote.GATEWAY_WALK_SKIPPED_MANY (3C spec 2.5 step 1): more than four seeds answered, so the outward walk did not run. */
+    const val GATEWAY_WALK_SKIPPED = "Smart discovery: too many ranges answered, nearby ranges not checked"
     const val SOURCE_MANUAL = "manual"
     const val SOURCE_EVIDENCE = "evidence"
-    const val SOURCE_GATEWAY = "gateway probe"
+    const val SOURCE_GATEWAY = "smart discovery"
     const val SOURCE_LOCAL = "local"
     const val OUTCOME_PHANTOM = "skipped, every address answered"
     const val OUTCOME_CAPPED = "not swept, scan limit reached"
@@ -51,7 +53,7 @@ object HomeCopy {
     fun gatewayProbingUnnamed(done: Int, total: Int, elapsedS: Long) = "probing for gateways, $done of $total  $elapsedS s"
     fun extendedRange(subnet: String, index: Int, count: Int, probed: Int, total: Int) = "$subnet ($index of $count), probing $probed of $total"
     fun preparing(elapsedS: Long) = "preparing next range  $elapsedS s"
-    fun capDropped(n: Int) = if (n == 1) "1 more range found, raise the cap in Settings" else "$n more ranges found, raise the cap in Settings"
+    fun capDropped(n: Int) = if (n == 1) "1 more range found, raise Maximum extra ranges in Settings" else "$n more ranges found, raise Maximum extra ranges in Settings"
     fun phantom(subnet: String) = "$subnet skipped: every address answered"
     fun cancelled(subnet: String) = "Stopped at $subnet"
     fun nothingFound(subnet: String) = "$subnet: nothing found"
@@ -66,7 +68,12 @@ object HomeCopy {
     fun onAnotherSubnet(k: Int) = "$k on another subnet"
     fun emptySearch(query: String) = "No devices match \"$query\""
     fun emptyFilter(label: String) = "No devices marked $label"
-    fun largeNetwork(prefix: Int) = "Large network (/$prefix). Scanned your /24 only. Widen in Settings."
+    /** Aggressive scan off (3C spec 2.1, plan review G6): widening helps only a mask within the widest limit; past it, Aggressive scan is the control that helps. */
+    fun largeNetwork(prefix: Int) = "Large network (/$prefix). Scanned your /24 only. " + if (prefix >= WIDEST_LIMIT) "Widen in Settings." else "Turn on Aggressive scan in Settings."
+    /** Aggressive scan on with a mask wider than the limit: the limit-sized block holding the phone was swept; at the widest limit there is nothing to widen. */
+    fun largeNetworkPartial(prefix: Int, swept: Int) = "Large network (/$prefix). Scanned your /$swept only." + if (swept > WIDEST_LIMIT) " Widen in Settings." else ""
+    /** The widest Large networks stop. */
+    private const val WIDEST_LIMIT = 20
     fun probing(probed: Int, total: Int, elapsedS: Long) = "probing $probed of $total  $elapsedS s"
     fun identifying(found: Int, elapsedS: Long) = "identifying ${devices(found)}  $elapsedS s"
 }
