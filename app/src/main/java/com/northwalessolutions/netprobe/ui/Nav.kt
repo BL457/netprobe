@@ -14,9 +14,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -159,7 +160,10 @@ fun NetProbeNav(container: AppContainer) {
 fun NetProbeShell(nav: NavHostController, scansRunning: Int, slots: NavSlots) {
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
-    val barVisible = BarRules.visible(route, WindowInsets.isImeVisible)
+    // The keyboard's height, not isImeVisible: on Android 17 a window can report the IME "visible" at zero height (the instrumented test
+    // activity does), and the bar must only make way for a keyboard that occupies space.
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val barVisible = BarRules.visible(route, imeVisible)
     val reduced = LocalReducedMotion.current
     val inset: WindowInsets = if (barVisible) WindowInsets(bottom = BAR_HEIGHT).add(WindowInsets.navigationBars) else WindowInsets.navigationBars
     CompositionLocalProvider(LocalBarInset provides inset) {

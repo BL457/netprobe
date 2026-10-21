@@ -74,7 +74,7 @@ class ScansContentTest {
     @Test fun atFontScale13WithEightRunningRowsAtLeastOneRecentRowIsStillVisible() {
         show(ScansUiState(ScansList(running = (1..8).map(::running), recent = (1..5).map(::recent))), fontScale = 1.3f, bar = true)
         rule.onNodeWithTag("recent:live:101").assertIsDisplayed()
-        rule.onNodeWithTag("stop:live:8").assertIsDisplayed()
+        rule.onNodeWithTag("stop:live:8").performScrollTo().assertIsDisplayed()   // the eighth Stop sits past the Running block's cap and scrolls within it (3D review S2)
     }
     @Test fun atFontScale13WithEightRunningRowsAndLongTitlesRecentAndEveryStopStayReachable() {
         val longRunning = (1..8).map { n ->
