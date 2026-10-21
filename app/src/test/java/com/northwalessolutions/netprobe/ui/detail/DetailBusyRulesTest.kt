@@ -30,4 +30,24 @@ class DetailBusyRulesTest {
         assertEquals("Wait for the port scan to finish", DetailBusyRules.toolRefusal(registry(Work.PORT_SCAN), host))
         assertNull(DetailBusyRules.toolRefusal(registry(null), host))
     }
+
+    @Test fun `at the cap another host's scan is refused with the stop one in Scans line`() {
+        assertEquals("Two port scans are already running, stop one in Scans", DetailBusyRules.scanRefusal(registry(null), host, running = 2))
+        assertNull("one slot left", DetailBusyRules.scanRefusal(registry(null), host, running = 1))
+        assertNull(DetailBusyRules.scanRefusal(registry(null), host))
+    }
+    @Test fun `work on the host itself wins over the cap`() {
+        assertEquals("Wait for the port scan to finish", DetailBusyRules.scanRefusal(registry(Work.PORT_SCAN), host, running = 2))
+        assertEquals("A tool is running on this device", DetailBusyRules.scanRefusal(registry(Work.TOOL), host, running = 2))
+    }
+    @Test fun `the cap refusal names the constant's value as a word`() {
+        val words = listOf("Zero", "One", "Two", "Three", "Four")
+        val line = DetailBusyRules.capRefusal(com.northwalessolutions.netprobe.engine.portscan.PortScans.MAX_PORT_SCANS)!!
+        assertTrue(line, line.startsWith(words[com.northwalessolutions.netprobe.engine.portscan.PortScans.MAX_PORT_SCANS]))
+        assertNull(DetailBusyRules.capRefusal(com.northwalessolutions.netprobe.engine.portscan.PortScans.MAX_PORT_SCANS - 1))
+    }
+    @Test fun `one running scan reads in the singular`() {
+        assertEquals("One port scan is already running, stop it in Scans", DetailCopy.portScansTooMany(1))
+        assertEquals("Three port scans are already running, stop one in Scans", DetailCopy.portScansTooMany(3))
+    }
 }

@@ -164,7 +164,9 @@ private const val STATIC_TOOL_FRACTION = 0.3f
 @Composable
 fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scanning: Boolean, progress: ScanProgress?, enabled: Boolean, identifying: Int = 0, identified: Int = 0,
             onProfile: (ScanProfile) -> Unit, onCustom: (String) -> Unit, onScan: () -> Unit,
-            toolBar: ToolRunBar? = null, onStopTool: () -> Unit = {}, liveToolBar: () -> ToolRunBar? = { toolBar }) {
+            toolBar: ToolRunBar? = null, onStopTool: () -> Unit = {}, liveToolBar: () -> ToolRunBar? = { toolBar },
+            /** Why Scan is disabled (3D spec 3.3); shown in the progress line's reserved row, so the bar never changes height. */
+            refusal: String? = null) {
     // Reserved from the data style's line height, so the bar never jumps when a scan starts (about 21 dp at 1.3). The sp line height
     // alone came out 1 px short of the laid-out text on the Pixel (pixel rounding), so the measured line wins when it is taller.
     val reduced = LocalReducedMotion.current
@@ -198,6 +200,8 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
                 toolBar != null -> LiveLine({ heldBar()?.progress ?: toolBar.progress }, style = NetProbeText.data, color = NetProbeColors.textMuted,
                     lead = toolBar.label, leadModifier = Modifier.testTag("toolBarLabel"), textModifier = Modifier.testTag("toolBarProgress"))
                 scanning -> Text(detailProgress(progress, identifying), style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End)
+                refusal != null -> Text(refusal, style = NetProbeText.data, color = NetProbeColors.textMuted, textAlign = TextAlign.End, maxLines = 2,
+                    modifier = Modifier.testTag("scanRefusal"))
             }
         }
         val target = detailFraction(progress, identified)

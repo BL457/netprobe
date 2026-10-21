@@ -26,7 +26,8 @@ import com.northwalessolutions.netprobe.ui.wordlists.WordlistsScreen
 fun NetProbeNav(container: AppContainer) {
     val extended by container.extendedRunActive.collectAsStateWithLifecycle()
     val toolRun by container.toolRunActive.collectAsStateWithLifecycle()
-    KeepScreenOn(extended || toolRun)
+    val portScan by container.portScans.active.collectAsStateWithLifecycle()
+    KeepScreenOn(extended || toolRun || portScan)
     val nav = rememberNavController()
     NetProbeNavHost(nav,
         home = { HomeScreen(container, onOpenHost = { nav.navigate("host/$it") }, onOpenSettings = { nav.navigate("settings") }) },

@@ -84,10 +84,10 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
                 StatusSegments(h.status, actions.onStatus)
                 NoteLine(h.id, h.note, actions.onNote, startExpanded = startNoteExpanded)
             }
-            ScanBar(state.profile, state.customPortsText, state.customError, state.scanning, state.progress, enabled = state.host != null,
+            ScanBar(state.profile, state.customPortsText, state.customError, state.scanning, state.progress, enabled = state.host != null && state.scanRefusal == null,
                 identifying = state.identifying, identified = state.identified,
                 onProfile = actions.onProfile, onCustom = actions.onCustom, onScan = { if (state.scanning) actions.onStop() else actions.onScan() },
-                toolBar = toolState.bar, onStopTool = toolActions.onStopTool, liveToolBar = liveToolBar ?: { toolState.bar })
+                toolBar = toolState.bar, onStopTool = toolActions.onStopTool, liveToolBar = liveToolBar ?: { toolState.bar }, refusal = state.scanRefusal)
         }
     }) { pad ->
         val tools = toolState.tools

@@ -270,4 +270,15 @@ class DetailContentTest {
         val header = rule.onNodeWithTag("toolsHeader").getBoundsInRoot(); val firstPort = rule.onAllNodesWithTag("portAction")[0].getBoundsInRoot()
         assertTrue(header.bottom <= firstPort.top)
     }
+
+    @Test fun scanIsDisabledAndTheRefusalShowsWhileTwoPortScansRunElsewhere() {   // 3D spec 9.2 item 7
+        show(DetailFakes.state().copy(scanRefusal = DetailCopy.portScansTooMany(2)))
+        rule.onNodeWithTag("detailScanButton").assertIsNotEnabled()
+        rule.onNodeWithTag("scanRefusal").assertIsDisplayed().assertTextEquals("Two port scans are already running, stop one in Scans")
+    }
+    @Test fun aScanRunningHereKeepsItsStopEnabledAndShowsNoRefusal() {
+        show(DetailFakes.state(scanning = true).copy(progress = ScanProgress(1, 10, 0, 0)))
+        rule.onNodeWithTag("detailScanButton").assertIsEnabled()
+        rule.onNodeWithTag("scanRefusal").assertDoesNotExist()
+    }
 }

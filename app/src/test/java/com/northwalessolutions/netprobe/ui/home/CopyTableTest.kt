@@ -51,6 +51,8 @@ class CopyTableTest {
         // 3C-1 Settings (spec 7.2)
         "Settings menu", "Reset to defaults", "Settings reset to defaults", "Default \\d+( ms)?", "Reset .+ to \\d+( ms)?",
         "Largest block of a big network to sweep\\. With Aggressive scan off, a network wider than this gets your /24 only\\. .+",
+        // 3D Device screen cap refusal (spec 3.3)
+        "(One port scan is already running, stop it|\\w+ port scans are already running, stop one) in Scans",
         "Aggressive scan", "Smart discovery", "Swept first on every scan, with Aggressive scan on or off", "Your subnet is always scanned; .+", "Looks for gateways at the usual addresses .+",
     ).map { Regex(it) }
     /** The only blank string a helper may return: a settled radar with stored hosts and no known scan time (summary detail). */
@@ -139,6 +141,7 @@ class CopyTableTest {
     }
     @Test fun `announcements, bind wording and the identify tail`() {
         for (h in listOf("No devices found", "1 device", "13 devices")) { inTable(RadarText.finished(h)); inTable(RadarText.stopped(h)) }
+        inTable(DetailCopy.portScansTooMany(1)); inTable(DetailCopy.portScansTooMany(2)); inTable(DetailCopy.portScansTooMany(3))
         inTable(DetailCopy.SCAN_BIND_FAILED); inTable(DetailCopy.identifying(1)); inTable(DetailCopy.identifying(3))
         for (p in listOf(com.northwalessolutions.netprobe.engine.portscan.ScanProgress(312, 65535, 4, 0), com.northwalessolutions.netprobe.engine.portscan.ScanProgress(9, 9, 2, 0)))
             for (n in listOf(0, 1, 3)) inTable(com.northwalessolutions.netprobe.ui.detail.detailProgress(p, n))
