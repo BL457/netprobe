@@ -281,4 +281,13 @@ class DetailContentTest {
         rule.onNodeWithTag("detailScanButton").assertIsEnabled()
         rule.onNodeWithTag("scanRefusal").assertDoesNotExist()
     }
+    @Test fun theBackRowNamesWhereBackGoes() {   // 3D spec 9.2 and D18
+        rule.setContent { NetProbeTheme { DetailContent(DetailFakes.state(), recording, backLabel = "Back to Scans") } }
+        rule.onNodeWithText("Back to Scans").assertIsDisplayed()
+        rule.onNodeWithText("Back to Home").assertDoesNotExist()
+    }
+    @Test fun theBackRowDefaultsToDevices() {
+        show(DetailFakes.state())
+        rule.onNodeWithText("Back to Devices").assertIsDisplayed()
+    }
 }

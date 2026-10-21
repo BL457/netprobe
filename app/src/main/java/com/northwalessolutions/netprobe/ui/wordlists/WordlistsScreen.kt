@@ -109,7 +109,9 @@ internal fun rememberWordlists(container: AppContainer): State<List<WordlistMeta
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: String?, onMessageShown: () -> Unit, actions: WordlistsActions,
-                     formatDate: (Long) -> String = RelativeTime::defaultDate, loading: Boolean = false, urlState: UrlImportState = UrlImportState.Idle) {
+                     formatDate: (Long) -> String = RelativeTime::defaultDate, loading: Boolean = false, urlState: UrlImportState = UrlImportState.Idle,
+                     /** Where Back goes (3D D18): "Back to device" from a Device screen, else the opening destination's name. */
+                     backLabel: String = WordlistCopy.BACK) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); onMessageShown() } }
     var confirm by remember { mutableStateOf<WordlistMeta?>(null) }
@@ -118,7 +120,7 @@ fun WordlistsContent(lists: List<WordlistMeta>, importing: Boolean, message: Str
     val busy = importing || fetching != null || loading
     Scaffold(containerColor = NetProbeColors.background, snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)) {
-            BackRow(WordlistCopy.BACK, actions.onBack)
+            BackRow(backLabel, actions.onBack)
             Text(WordlistCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.padding(horizontal = Dimens.gutter))
             // A FlowRow, so Cancel wraps to a second line at font scale 1.3 instead of clipping; still pinned.
             FlowRow(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter, vertical = PILL_ROW_PAD), horizontalArrangement = Arrangement.spacedBy(PILL_GAP)) {
@@ -208,7 +210,7 @@ private fun WordlistRow(name: String, line: String, deleteId: String?, onDelete:
 
 /** Route "wordlists": SAF import (ACTION_OPEN_DOCUMENT, text/plain, no permission), import on Dispatchers.IO, delete through the store. */
 @Composable
-fun WordlistsScreen(container: AppContainer, onBack: () -> Unit) {
+fun WordlistsScreen(container: AppContainer, onBack: () -> Unit, backLabel: String = WordlistCopy.BACK) {
     val store by rememberWordlistStore(container)
     val lists by rememberWordlists(container)
     val scope = rememberCoroutineScope(); val ctx = LocalContext.current
@@ -240,7 +242,7 @@ fun WordlistsScreen(container: AppContainer, onBack: () -> Unit) {
         WordlistsActions(onBack = onBack, onImport = { launcher.launch(arrayOf(PICKER_MIME)) },
             onDelete = { meta -> scope.launch { store?.delete(meta.id) } },
             onImportUrl = { url -> urlImport.start(url) }, onCancelUrl = { urlImport.cancel() }),
-        loading = store == null, urlState = urlState)
+        loading = store == null, urlState = urlState, backLabel = backLabel)
 }
 
 private fun displayName(ctx: Context, uri: Uri): String? =

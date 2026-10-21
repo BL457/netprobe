@@ -93,4 +93,12 @@ class WordlistsScreenTest {
         rule.waitUntil(5_000) { rule.onAllNodesWithText("Import cancelled").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("cancelUrl").assertDoesNotExist()
     }
+    @Test fun theBackRowNamesWhereBackGoes() {   // 3D D18: "Back to device" from a Device screen, the tab's name from a root
+        rule.setContent { NetProbeTheme { WordlistsContent(builtIns, false, null, {}, WordlistsActions(), backLabel = "Back to device") } }
+        rule.onNodeWithText("Back to device").assertIsDisplayed()
+    }
+    @Test fun theBackRowDefaultsToBack() {
+        rule.setContent { NetProbeTheme { WordlistsContent(builtIns, false, null, {}, WordlistsActions()) } }
+        rule.onNodeWithText("Back").assertIsDisplayed()
+    }
 }

@@ -84,7 +84,7 @@ fun IdentityText(text: String, name: String, onEdit: () -> Unit) {
         modifier = Modifier.clickable(role = Role.Button, onClick = onEdit).semantics { contentDescription = DetailCopy.editDescription(name) }.testTag("identityLine"))
 }
 
-/** Overflow on the "Back to Home" row (spec 4.5): "Edit device" and, from Task 14, "Remove device"; both always enabled. */
+/** Overflow on the back row (spec 4.5): "Edit device" and, from Task 14, "Remove device"; both always enabled. */
 @Composable
 fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null, removeEnabled: Boolean = true) {
     Box {

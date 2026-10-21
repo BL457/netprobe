@@ -21,7 +21,9 @@ import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
-import com.northwalessolutions.netprobe.ui.BackToHome
+import com.northwalessolutions.netprobe.ui.BackBar
+import com.northwalessolutions.netprobe.ui.NavCopy
+import com.northwalessolutions.netprobe.ui.Tab
 import com.northwalessolutions.netprobe.ui.EmptyState
 import com.northwalessolutions.netprobe.ui.home.IdentityLine
 import com.northwalessolutions.netprobe.ui.home.arrivalDelay
@@ -47,7 +49,9 @@ data class DetailActions(
 fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false,
                   toolState: DetailToolsState = DetailToolsState(), toolActions: ToolActions = ToolActions(),
                   /** The bar's per-tick fields (DetailViewModel.toolBar); null uses toolState.bar as it stands. Read only in leaf composables. */
-                  liveToolBar: (() -> ToolRunBar?)? = null) {
+                  liveToolBar: (() -> ToolRunBar?)? = null,
+                  /** Where Back goes (3D D18): the destination this page was opened from. */
+                  backLabel: String = NavCopy.backTo(Tab.DEVICES)) {
     val reduced = LocalReducedMotion.current
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
@@ -68,7 +72,7 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     // on the list counted the navigation bar twice and left a 48 dp gap above the keyboard on the Pixel.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("detailHeader")) {
-            BackToHome(actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.removeAllowed, onRemove = { if (state.scanning) actions.onStop(); actions.onRemove(); actions.onBack() }) }
+            BackBar(backLabel, actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.removeAllowed, onRemove = { if (state.scanning) actions.onStop(); actions.onRemove(); actions.onBack() }) }
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
                     DetailName(state.displayName) { editing = true }

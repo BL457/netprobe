@@ -139,10 +139,11 @@ fun NetProbeNav(container: AppContainer) {
             SettingsScreen(container,
                 onOpenWordlists = { nav.navigate(Routes.wordlists(Tab.SETTINGS)) { launchSingleTop = true } })
         },
-        host = { tab, id, _ ->
-            DetailScreen(container, id, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate(Routes.wordlists(tab)) { launchSingleTop = true } })
+        host = { tab, id, backLabel ->
+            DetailScreen(container, id, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate(Routes.wordlists(tab)) { launchSingleTop = true } },
+                backLabel = backLabel)
         },
-        wordlists = { _, _ -> WordlistsScreen(container, onBack = { nav.popBackStack() }) }))
+        wordlists = { _, backLabel -> WordlistsScreen(container, onBack = { nav.popBackStack() }, backLabel = backLabel) }))
 }
 
 /**
