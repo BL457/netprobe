@@ -3,6 +3,7 @@ package com.northwalessolutions.netprobe.netenv
 import android.content.Context
 import com.northwalessolutions.netprobe.engine.common.NetworkBinder
 import com.northwalessolutions.netprobe.engine.common.SocketBinder
+import com.northwalessolutions.netprobe.engine.tools.RouteContext
 import android.net.*
 import android.net.wifi.WifiManager
 import kotlinx.coroutines.channels.awaitClose
@@ -53,6 +54,21 @@ class NetworkEnvMonitor(private val context: Context) {
             (nc.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || nc.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) &&
             lp.linkAddresses.any { it.address == env.interfaceIp }
     }?.let { NetworkBinder(it) }
+
+    /**
+     * Director ruling R4 (plan review G10): does the Wi-Fi or Ethernet Network carrying [env] have validated internet, and is a VPN the
+     * default network? Read once at a manual Run tap; not a JVM seam (ManualRouteTest drives RouteContext directly).
+     */
+    @Suppress("DEPRECATION")
+    fun routeContext(env: NetworkEnv): RouteContext {
+        val lan = cm.allNetworks.firstOrNull { n ->
+            val nc = cm.getNetworkCapabilities(n) ?: return@firstOrNull false
+            !nc.hasTransport(NetworkCapabilities.TRANSPORT_VPN) && cm.getLinkProperties(n)?.linkAddresses?.any { it.address == env.interfaceIp } == true
+        }
+        val validated = lan?.let { cm.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) } ?: true
+        val defaultIsVpn = cm.activeNetwork?.let { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) } ?: false
+        return RouteContext(lanHasInternet = validated, defaultIsVpn = defaultIsVpn)
+    }
 
     private fun snapshot(nc: NetworkCapabilities, lp: LinkProperties): LinkSnapshot {
         @Suppress("DEPRECATION") val info = runCatching { wifi.connectionInfo }.getOrNull()

@@ -27,6 +27,7 @@ data class ToolTarget(
     val hostId: Long, val ip: Inet4Address, val port: Int,
     val tls: Boolean,                // HTTPS for the web tools; always true for TLS certificate; false otherwise
     val serverName: String?,         // known name for SNI and Host (4.9); null when none or for brute-force
+    val route: ToolRoute? = null,    // manual runs only (3C spec 4.5): the runner's routeBind; null keeps the scan binding
 )
 
 /** Run-wide controls owned by the runner: the pause gate, the rate ceiling and the pause epoch (spec 4.8, 5.3). */

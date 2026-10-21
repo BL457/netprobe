@@ -26,6 +26,7 @@ import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
 import android.util.Log
 import com.northwalessolutions.netprobe.engine.tools.AppMessages
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
+import com.northwalessolutions.netprobe.engine.tools.ManualRoute
 import com.northwalessolutions.netprobe.engine.tools.TOOL_THREADS
 import com.northwalessolutions.netprobe.engine.tools.Tool
 import com.northwalessolutions.netprobe.engine.tools.ToolId
@@ -157,7 +158,9 @@ class AppContainer(val context: Context) {
                 ScanBinding.forRun(ip, e, runSettings, networkEnvMonitor::binderFor) { block() }
             },
             onFinished = { hostId -> reidentifyFromTools(hostId) },
-            log = { Log.e(AppScopes.LOG_TAG, "tool run", it) })
+            log = { Log.e(AppScopes.LOG_TAG, "tool run", it) },
+            // Manual runs (3C spec 4.5, ruling 4): known-range targets over the Wi-Fi or Ethernet Network, never unbound; others on the system route.
+            routeBind = { route, e, block -> ManualRoute.bind(route, e, networkEnvMonitor::binderFor) { block() } })
     }
     /** True while any tool run is live; Nav keeps the screen on for it (spec 4.4). */
     val toolRunActive: StateFlow<Boolean> by lazy { toolRunner.active.map { it.isNotEmpty() }.stateIn(appScope, SharingStarted.Eagerly, false) }

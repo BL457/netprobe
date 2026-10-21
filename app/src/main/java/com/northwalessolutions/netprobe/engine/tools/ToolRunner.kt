@@ -34,6 +34,11 @@ class ToolRunner(
     private val onFinished: suspend (hostId: Long) -> Unit,
     private val clock: () -> Long = System::currentTimeMillis,
     private val log: (Throwable) -> Unit = {},
+    /**
+     * Manual runs only (ToolTarget.route set, 3C spec 4.5). The default never runs a Wi-Fi or Ethernet route unbound: with no binder it
+     * throws BindFailedException, which ends the run FAILED with the bind wording; AppContainer passes the real binder.
+     */
+    private val routeBind: suspend (ToolRoute, NetworkEnv, suspend () -> Unit) -> Unit = { route, e, block -> ManualRoute.bind(route, e, { null }) { block() } },
 ) {
     data class Active(val runId: Long, val hostId: Long, val toolId: ToolId, val port: Int, val activeMs: Long,
                       val done: Int, val total: Int?, val found: Int, val errors: Int, val paused: Boolean)
@@ -85,7 +90,7 @@ class ToolRunner(
             val startedAt = clock()
             val optionsJson = ToolOptionsJson.encode(target, options)
             val runId = try {
-                repo.startRun(target.hostId, toolId.key, target.port, startedAt, optionsJson)
+                repo.startRun(target.hostId, toolId.key, target.port, startedAt, optionsJson, target.route?.name)
             } catch (t: Throwable) {
                 busy.release(target.hostId, HostBusyRegistry.Work.TOOL); throw t
             }
@@ -134,7 +139,10 @@ class ToolRunner(
             run.registered.await()
             currentCoroutineContext().ensureActive()           // a run cancelled before its first dispatch never enters the tool
             var result: ToolResult? = null
-            bind(target.ip, run.env) { result = tool.run(target, options, Control(run), progress) }
+            val route = target.route
+            // A manual run follows its own route (3C spec 4.5); every other run keeps the scan binding through [bind].
+            if (route == null) bind(target.ip, run.env) { result = tool.run(target, options, Control(run), progress) }
+            else routeBind(route, run.env) { result = tool.run(target, options, Control(run), progress) }
             // A tool that swallows the closed socket's IOException (TlsPeek, TcpSmbTransport) returns FAILED after a Stop:
             // a cancelled run is STOPPED whatever the tool returned.
             currentCoroutineContext().ensureActive()
