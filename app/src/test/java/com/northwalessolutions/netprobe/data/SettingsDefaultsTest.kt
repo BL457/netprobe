@@ -9,7 +9,7 @@ class SettingsDefaultsTest {
     private val d = SettingsDefaults.DEFAULTS
     private val tuned = SettingsState(mdns = false, ssdp = false, netbios = false, reverseDns = false, snmp = false, httpTitle = false,
         sweepConcurrency = 256, connectTimeoutMs = 900, maxPrefix = 20, scanConcurrency = 64, scanTimeoutMs = 1200, nvdApiKey = "key-1",
-        extEnabled = true, extMax = 9, extGatewayProbe = true, listenMulticast = true, typeMarker = TypeMarker.ICON)
+        extEnabled = true, extMax = 9, extGatewayProbe = true, listenMulticast = true, typeMarker = TypeMarker.STRIPE)
 
     /** Each stored key and what the state looks like when only that key is missing from the tuned prefs. */
     private val oneDefault: Map<String, (SettingsState) -> SettingsState> = mapOf(
@@ -32,7 +32,7 @@ class SettingsDefaultsTest {
         assertFalse("the NVD key is not a covered value", SettingsDefaults.differs(SettingsState(nvdApiKey = "k")))
         val oneEach = listOf(d.copy(mdns = false), d.copy(ssdp = false), d.copy(netbios = false), d.copy(reverseDns = false), d.copy(snmp = false),
             d.copy(httpTitle = false), d.copy(sweepConcurrency = 160), d.copy(connectTimeoutMs = 700), d.copy(maxPrefix = 24), d.copy(scanConcurrency = 96),
-            d.copy(scanTimeoutMs = 500), d.copy(extEnabled = true), d.copy(extMax = 5), d.copy(extGatewayProbe = true), d.copy(listenMulticast = true), d.copy(typeMarker = TypeMarker.ICON))
+            d.copy(scanTimeoutMs = 500), d.copy(extEnabled = true), d.copy(extMax = 5), d.copy(extGatewayProbe = true), d.copy(listenMulticast = true), d.copy(typeMarker = TypeMarker.STRIPE))
         assertEquals(16, oneEach.size)
         oneEach.forEach { assertTrue("$it", SettingsDefaults.differs(it)) }
     }

@@ -64,8 +64,9 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     val reduced = LocalReducedMotion.current
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
+    val messageScope = rememberCoroutineScope()
     LaunchedEffect(toolState.appMessage?.id) {
-        toolState.appMessage?.let { m -> snackbar.showSnackbar(m.text); toolActions.onDismissAppMessage(m.id) }
+        toolState.appMessage?.let { m -> AppMessageDelivery.consume(messageScope, m, toolActions.onDismissAppMessage) { snackbar.showSnackbar(it) } }
     }
     var toolsExpanded by rememberSaveable(state.host?.id) { mutableStateOf(false) }
     var why by rememberSaveable { mutableStateOf(false) }

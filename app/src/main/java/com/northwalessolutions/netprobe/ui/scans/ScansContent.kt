@@ -15,6 +15,8 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import com.northwalessolutions.netprobe.engine.tools.AppMessage
+import com.northwalessolutions.netprobe.engine.tools.AppMessageDelivery
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -75,6 +77,7 @@ fun ScansScreen(container: AppContainer, onOpenDevices: () -> Unit, onOpenHost: 
 @Composable
 fun ScansContent(state: ScansUiState, actions: ScansActions) {
     val snackbar = remember { SnackbarHostState() }
+    val messageScope = rememberCoroutineScope()
     val snack = ScansRules.snack(state.undoText, state.clearPrompt, state.appMessage)
     LaunchedEffect(snack?.key) {
         when (snack) {
@@ -83,7 +86,7 @@ fun ScansContent(state: ScansUiState, actions: ScansActions) {
             ScansSnack.Cleared ->
                 if (snackbar.showSnackbar(ScansCopy.CLEARED, actionLabel = ScansCopy.UNDO, duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) actions.onUndoClear()
                 else actions.onClearDismissed()
-            is ScansSnack.App -> { snackbar.showSnackbar(snack.text); actions.onDismissApp(snack.id) }
+            is ScansSnack.App -> AppMessageDelivery.consume(messageScope, AppMessage(snack.id, snack.text, null), actions.onDismissApp) { snackbar.showSnackbar(it) }
             null -> Unit
         }
     }

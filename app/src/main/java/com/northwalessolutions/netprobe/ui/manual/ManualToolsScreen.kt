@@ -95,7 +95,8 @@ private fun ToolsTitleRow(onWordlists: () -> Unit) {
 fun ManualToolsContent(state: ManualUiState, actions: ManualActions, liveProgress: () -> String? = { null }, liveResultsStatus: () -> String? = { null }) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) { state.message?.let { snackbar.showSnackbar(it); actions.onDismissMessage() } }
-    LaunchedEffect(state.appMessage?.id) { state.appMessage?.let { m -> snackbar.showSnackbar(m.text); actions.onDismissApp(m.id) } }
+    val messageScope = rememberCoroutineScope()
+    LaunchedEffect(state.appMessage?.id) { state.appMessage?.let { m -> AppMessageDelivery.consume(messageScope, m, actions.onDismissApp) { snackbar.showSnackbar(it) } } }
     val editable = state.lan && !state.running
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(),
         snackbarHost = { SnackbarHost(snackbar) },

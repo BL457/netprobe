@@ -38,18 +38,18 @@ class EdgeColorTest {
     @Test fun `gateway overrides the type colour`() {
         for (t in DeviceType.entries) assertEquals(EdgeColors.router, t.edgeColor(isGateway = true))
     }
-    @Test fun `the marker setting defaults to the stripe, round-trips through the prefs and a reset restores the stripe`() {
-        assertEquals(TypeMarker.STRIPE, SettingsState().typeMarker)
-        val prefs = FakePrefs(); AppSettings(prefs).update { it.copy(typeMarker = TypeMarker.ICON) }
-        assertEquals("ICON", prefs.stored["typeMarker"])
-        assertEquals(TypeMarker.ICON, AppSettings(prefs).state.value.typeMarker)
-        assertTrue(SettingsDefaults.differs(SettingsState(typeMarker = TypeMarker.ICON)))
-        assertEquals(TypeMarker.STRIPE, SettingsDefaults.reset(SettingsState(typeMarker = TypeMarker.ICON)).typeMarker)
-    }
-    @Test fun `an unknown stored marker falls back to the stripe`() {
-        val prefs = FakePrefs(); AppSettings(prefs).update { it.copy(typeMarker = TypeMarker.ICON) }
-        prefs.stored["typeMarker"] = "GLOW"
+    @Test fun `the marker setting defaults to the icon, round-trips through the prefs and a reset restores the icon`() {
+        assertEquals(TypeMarker.ICON, SettingsState().typeMarker)
+        val prefs = FakePrefs(); AppSettings(prefs).update { it.copy(typeMarker = TypeMarker.STRIPE) }
+        assertEquals("STRIPE", prefs.stored["typeMarker"])
         assertEquals(TypeMarker.STRIPE, AppSettings(prefs).state.value.typeMarker)
+        assertTrue(SettingsDefaults.differs(SettingsState(typeMarker = TypeMarker.STRIPE)))
+        assertEquals(TypeMarker.ICON, SettingsDefaults.reset(SettingsState(typeMarker = TypeMarker.STRIPE)).typeMarker)
+    }
+    @Test fun `an unknown stored marker falls back to the icon`() {
+        val prefs = FakePrefs(); AppSettings(prefs).update { it.copy(typeMarker = TypeMarker.STRIPE) }
+        prefs.stored["typeMarker"] = "GLOW"
+        assertEquals(TypeMarker.ICON, AppSettings(prefs).state.value.typeMarker)
     }
     @Test fun `the Settings copy for the marker`() {
         val templates = listOf("Display", "Device type marker", "Stripe", "Icon").map { Regex(it) }

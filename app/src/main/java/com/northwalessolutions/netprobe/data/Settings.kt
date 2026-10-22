@@ -20,7 +20,7 @@ data class SettingsState(
     /** "Listen between scans" (3C spec 3.1): off by default; covered by SettingsDefaults.reset, so a reset turns it off (D3). */
     val listenMulticast: Boolean = false,
     /** "Device type marker" (R3): the stripe by default; covered by reset. */
-    val typeMarker: TypeMarker = TypeMarker.STRIPE,
+    val typeMarker: TypeMarker = TypeMarker.ICON,
 )
 
 /** The single source of defaults (3C spec 1.1). AppSettings.load reads every default from [DEFAULTS], so the two can never drift. */
