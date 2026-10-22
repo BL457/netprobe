@@ -3,13 +3,14 @@ package com.northwalessolutions.netprobe.data
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceMerge
 
-/** The one place a port row and a ServiceInfo convert: discovery, Detail and Quick scan all read all eleven fields (spec 3.1, Gruff M5). */
+/** The one place a port row and a ServiceInfo convert: discovery, Detail and Quick scan all read all fifteen fields (spec 3.1, Gruff M5). */
 fun PortEntity.toServiceInfo(): ServiceInfo =
-    ServiceInfo(serviceName, product, version, detail, confidence, title, server, realm, poweredBy, certCn, certOrg)
+    ServiceInfo(serviceName, product, version, detail, confidence, title, server, realm, poweredBy, certCn, certOrg, stack, stackRole, cpe, probe)
 
 fun PortEntity.withService(s: ServiceInfo, now: Long): PortEntity = copy(
     serviceName = s.name, product = s.product, version = s.version, detail = s.detail, confidence = s.confidence, lastSeen = now,
-    title = s.title, server = s.server, realm = s.realm, poweredBy = s.poweredBy, certCn = s.certCn, certOrg = s.certOrg)
+    title = s.title, server = s.server, realm = s.realm, poweredBy = s.poweredBy, certCn = s.certCn, certOrg = s.certOrg,
+    stack = s.stack, stackRole = s.stackRole, cpe = s.cpe, probe = s.probe)
 
 object PortMapping {
     /** A stored row updated by a new finding through [ServiceMerge]: never erases, never lowers a confirmed name. */

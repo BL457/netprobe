@@ -1,0 +1,637 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 5,
+    "identityHash": "dd1c40dfdb9fe710780a2ba36735e599",
+    "entities": [
+      {
+        "tableName": "networks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `signature` TEXT NOT NULL, `displayName` TEXT NOT NULL, `gatewayIp` TEXT, `prefixLength` INTEGER NOT NULL, `ssid` TEXT, `lastSeen` INTEGER NOT NULL, `lastRunAt` INTEGER, `forgotten` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "signature",
+            "columnName": "signature",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gatewayIp",
+            "columnName": "gatewayIp",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "prefixLength",
+            "columnName": "prefixLength",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ssid",
+            "columnName": "ssid",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastSeen",
+            "columnName": "lastSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastRunAt",
+            "columnName": "lastRunAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "forgotten",
+            "columnName": "forgotten",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_networks_signature",
+            "unique": true,
+            "columnNames": [
+              "signature"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_networks_signature` ON `${TABLE_NAME}` (`signature`)"
+          }
+        ]
+      },
+      {
+        "tableName": "hosts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `networkId` INTEGER NOT NULL, `ip` TEXT NOT NULL, `mac` TEXT, `reverseDnsName` TEXT, `mdnsName` TEXT, `netbiosName` TEXT, `upnpName` TEXT, `upnpManufacturer` TEXT, `upnpModel` TEXT, `vendor` TEXT, `deviceType` TEXT NOT NULL, `customName` TEXT, `identVendor` TEXT, `identModel` TEXT, `identOs` TEXT, `identConfidence` INTEGER NOT NULL, `identReasons` TEXT NOT NULL, `snmpSysDescr` TEXT, `httpTitle` TEXT, `mdnsTxtJson` TEXT, `status` TEXT NOT NULL, `note` TEXT NOT NULL, `isGateway` INTEGER NOT NULL, `firstSeen` INTEGER NOT NULL, `lastSeen` INTEGER NOT NULL, `lastPortScan` INTEGER, `lastDiscoveryRun` INTEGER NOT NULL, `macSource` INTEGER NOT NULL, `upnpDeviceType` TEXT, `upnpServer` TEXT, `httpServer` TEXT, `httpAuthRealm` TEXT, `userType` TEXT, `userVendor` TEXT, `userModel` TEXT, `identSoftware` TEXT, `manualOnly` INTEGER NOT NULL DEFAULT 0)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "networkId",
+            "columnName": "networkId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ip",
+            "columnName": "ip",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mac",
+            "columnName": "mac",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reverseDnsName",
+            "columnName": "reverseDnsName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mdnsName",
+            "columnName": "mdnsName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "netbiosName",
+            "columnName": "netbiosName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "upnpName",
+            "columnName": "upnpName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "upnpManufacturer",
+            "columnName": "upnpManufacturer",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "upnpModel",
+            "columnName": "upnpModel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "vendor",
+            "columnName": "vendor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "deviceType",
+            "columnName": "deviceType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customName",
+            "columnName": "customName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identVendor",
+            "columnName": "identVendor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identModel",
+            "columnName": "identModel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identOs",
+            "columnName": "identOs",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identConfidence",
+            "columnName": "identConfidence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identReasons",
+            "columnName": "identReasons",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snmpSysDescr",
+            "columnName": "snmpSysDescr",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "httpTitle",
+            "columnName": "httpTitle",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mdnsTxtJson",
+            "columnName": "mdnsTxtJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isGateway",
+            "columnName": "isGateway",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firstSeen",
+            "columnName": "firstSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeen",
+            "columnName": "lastSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastPortScan",
+            "columnName": "lastPortScan",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastDiscoveryRun",
+            "columnName": "lastDiscoveryRun",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "macSource",
+            "columnName": "macSource",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "upnpDeviceType",
+            "columnName": "upnpDeviceType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "upnpServer",
+            "columnName": "upnpServer",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "httpServer",
+            "columnName": "httpServer",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "httpAuthRealm",
+            "columnName": "httpAuthRealm",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userType",
+            "columnName": "userType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userVendor",
+            "columnName": "userVendor",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userModel",
+            "columnName": "userModel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "identSoftware",
+            "columnName": "identSoftware",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "manualOnly",
+            "columnName": "manualOnly",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_hosts_networkId_ip",
+            "unique": true,
+            "columnNames": [
+              "networkId",
+              "ip"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_hosts_networkId_ip` ON `${TABLE_NAME}` (`networkId`, `ip`)"
+          }
+        ]
+      },
+      {
+        "tableName": "ports",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `hostId` INTEGER NOT NULL, `port` INTEGER NOT NULL, `serviceName` TEXT NOT NULL, `product` TEXT, `version` TEXT, `detail` TEXT, `confidence` TEXT NOT NULL, `lastSeen` INTEGER NOT NULL, `title` TEXT, `server` TEXT, `realm` TEXT, `poweredBy` TEXT, `certCn` TEXT, `certOrg` TEXT, `stack` TEXT, `stackRole` TEXT, `cpe` TEXT, `probe` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hostId",
+            "columnName": "hostId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serviceName",
+            "columnName": "serviceName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "product",
+            "columnName": "product",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "detail",
+            "columnName": "detail",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeen",
+            "columnName": "lastSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "server",
+            "columnName": "server",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "realm",
+            "columnName": "realm",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "poweredBy",
+            "columnName": "poweredBy",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "certCn",
+            "columnName": "certCn",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "certOrg",
+            "columnName": "certOrg",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stack",
+            "columnName": "stack",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stackRole",
+            "columnName": "stackRole",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cpe",
+            "columnName": "cpe",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "probe",
+            "columnName": "probe",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ports_hostId_port",
+            "unique": true,
+            "columnNames": [
+              "hostId",
+              "port"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ports_hostId_port` ON `${TABLE_NAME}` (`hostId`, `port`)"
+          }
+        ]
+      },
+      {
+        "tableName": "vuln_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`query` TEXT NOT NULL, `json` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`query`))",
+        "fields": [
+          {
+            "fieldPath": "query",
+            "columnName": "query",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "json",
+            "columnName": "json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "query"
+          ]
+        }
+      },
+      {
+        "tableName": "tool_runs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `hostId` INTEGER NOT NULL, `toolId` TEXT NOT NULL, `port` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, `finishedAt` INTEGER, `status` TEXT NOT NULL, `optionsJson` TEXT NOT NULL, `summary` TEXT NOT NULL, `route` TEXT, FOREIGN KEY(`hostId`) REFERENCES `hosts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hostId",
+            "columnName": "hostId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toolId",
+            "columnName": "toolId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finishedAt",
+            "columnName": "finishedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "optionsJson",
+            "columnName": "optionsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "route",
+            "columnName": "route",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tool_runs_hostId_toolId_port_startedAt",
+            "unique": false,
+            "columnNames": [
+              "hostId",
+              "toolId",
+              "port",
+              "startedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tool_runs_hostId_toolId_port_startedAt` ON `${TABLE_NAME}` (`hostId`, `toolId`, `port`, `startedAt`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "hosts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "hostId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "tool_findings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `runId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `value` TEXT NOT NULL, `detail` TEXT, `extra` TEXT, FOREIGN KEY(`runId`) REFERENCES `tool_runs`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "runId",
+            "columnName": "runId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detail",
+            "columnName": "detail",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "extra",
+            "columnName": "extra",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tool_findings_runId",
+            "unique": false,
+            "columnNames": [
+              "runId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tool_findings_runId` ON `${TABLE_NAME}` (`runId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "tool_runs",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "runId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'dd1c40dfdb9fe710780a2ba36735e599')"
+    ]
+  }
+}

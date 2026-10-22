@@ -98,4 +98,30 @@ class SchemaExportTest {
         assertNotEquals("route must be nullable", true, route["notNull"]?.jsonPrimitive?.boolean)
         assertNull("route has no default", route["defaultValue"])
     }
+
+    @Test fun `version 5 is exported`() {
+        assertEquals(5, root(5)["database"]!!.jsonObject["version"]!!.jsonPrimitive.int)
+    }
+    @Test fun `version 5 keeps every version 4 table and column unchanged and adds only the four stack columns on ports`() {
+        val v4 = columns(4); val v5 = columns(5)
+        assertEquals("no table added or dropped", v4.keys, v5.keys)
+        for ((table, cols) in v4) for ((name, field) in cols) {
+            val col = v5.getValue(table)[name]
+            assertNotNull("$table.$name was dropped", col)
+            assertEquals("$table.$name affinity", field["affinity"], col!!["affinity"])
+            assertEquals("$table.$name notNull", field["notNull"], col["notNull"])
+            assertEquals("$table.$name default", field["defaultValue"], col["defaultValue"])
+        }
+        val added = v5.mapValues { (t, cols) -> cols.keys - v4.getValue(t).keys }.filterValues { it.isNotEmpty() }
+        assertEquals(mapOf("ports" to setOf("stack", "stackRole", "cpe", "probe")), added)
+        for (name in listOf("stack", "stackRole", "cpe", "probe")) {
+            val f = v5.getValue("ports").getValue(name)
+            assertEquals("ports.$name affinity", "TEXT", f["affinity"]!!.jsonPrimitive.content)
+            assertNotEquals("ports.$name must be nullable", true, f["notNull"]?.jsonPrimitive?.boolean)
+            assertNull("ports.$name must have no default", f["defaultValue"])
+        }
+        assertEquals("the four are the last columns", listOf("stack", "stackRole", "cpe", "probe"),
+            root(5)["database"]!!.jsonObject["entities"]!!.jsonArray.map { it.jsonObject }.single { it["tableName"]!!.jsonPrimitive.content == "ports" }["fields"]!!.jsonArray
+                .map { it.jsonObject["columnName"]!!.jsonPrimitive.content }.takeLast(4))
+    }
 }

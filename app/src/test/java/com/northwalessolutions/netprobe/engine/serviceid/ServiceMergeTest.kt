@@ -36,6 +36,27 @@ class ServiceMergeTest {
         val fresh = ServiceInfo("SSH", "OpenSSH", null, null, Confidence.CONFIRMED)
         assertSame(fresh, ServiceMerge.merge(null, fresh))
     }
+    private val withStack = ServiceInfo("HTTP", "nginx", "1.25", "200 OK", Confidence.CONFIRMED, title = "Home Assistant", stack = "Home Assistant", stackRole = "software",
+        cpe = "Home Assistant", probe = "home-assistant")
+    @Test fun `the four stack fields merge like product and a null never erases them`() {
+        val m = ServiceMerge.merge(withStack, ServiceInfo("HTTP", confidence = Confidence.CONFIRMED, probe = "http-head"))
+        assertEquals("Home Assistant", m.stack); assertEquals("software", m.stackRole); assertEquals("Home Assistant", m.cpe); assertEquals("http-head", m.probe)
+        val n = ServiceMerge.merge(withStack, ServiceInfo("HTTP", confidence = Confidence.CONFIRMED, stack = "Grafana", stackRole = "software", cpe = "Grafana", probe = "grafana"))
+        assertEquals("Grafana", n.stack); assertEquals("Grafana", n.cpe); assertEquals("grafana", n.probe)
+    }
+    @Test fun `a changed confirmed name clears the stored product version detail and stack fields before the merge`() {
+        val m = ServiceMerge.merge(withStack, ServiceInfo("SSH", confidence = Confidence.CONFIRMED, certCn = "box"))
+        assertEquals("SSH", m.name)
+        assertNull(m.product); assertNull(m.version); assertNull(m.detail); assertNull(m.stack); assertNull(m.stackRole); assertNull(m.cpe); assertNull(m.probe)
+        assertEquals("evidence fields are not part of the clearing", "Home Assistant", m.title); assertEquals("box", m.certCn)
+    }
+    @Test fun `a changed name that is only a port table guess clears nothing and the same name clears nothing`() {
+        assertEquals(withStack, ServiceMerge.merge(withStack, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)))
+        assertEquals(withStack, ServiceMerge.merge(withStack, ServiceInfo("HTTP", confidence = Confidence.CONFIRMED)))
+        val portTableStored = ServiceInfo("UPnP", "x", "1", "d", Confidence.PORT_TABLE, stack = "S")
+        val m = ServiceMerge.merge(portTableStored, ServiceInfo("HTTP", confidence = Confidence.CONFIRMED))
+        assertEquals("x", m.product); assertEquals("S", m.stack)        // only a CONFIRMED to CONFIRMED rename clears
+    }
     @Test fun `the evidence builder uses the same merge`() {
         val host = DiscoveredHost(InetAddress.getByName("10.0.3.59") as Inet4Address)
         val e = HostEvidenceBuilder.build(host, mapOf(5000 to stored), setOf(5000), mapOf(5000 to ServiceInfo("UPnP", confidence = Confidence.PORT_TABLE)), null)

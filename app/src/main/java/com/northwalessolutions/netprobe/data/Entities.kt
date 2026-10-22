@@ -47,6 +47,8 @@ data class PortEntity(
     /** Port evidence (spec 3.1): page title, full Server header, auth realm, X-Powered-By, certificate subject CN and O. */
     val title: String? = null, val server: String? = null, val realm: String? = null, val poweredBy: String? = null,
     val certCn: String? = null, val certOrg: String? = null,
+    /** Phase 3E (schema 5): the software stack the HTTP rules named, its role, the cpe_map product and the probe or rule id that settled the name. */
+    val stack: String? = null, val stackRole: String? = null, val cpe: String? = null, val probe: String? = null,
 )
 
 @Entity(tableName = "vuln_cache")

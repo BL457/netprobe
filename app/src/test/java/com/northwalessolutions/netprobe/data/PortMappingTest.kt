@@ -14,6 +14,23 @@ class PortMappingTest {
         assertEquals(s, e.toServiceInfo()); assertEquals(9L, e.lastSeen); assertEquals(7L, e.hostId); assertEquals(5001, e.port)
         assertEquals(s, PortMapping.newRow(7, 5001, s, 3).toServiceInfo())
     }
+    @Test fun `a port row carries the four stack fields both ways`() {
+        val s = ServiceInfo("HTTP", "nginx", "1.25", "200 OK", Confidence.CONFIRMED, title = "Home Assistant", stack = "Home Assistant", stackRole = "software",
+            cpe = "Home Assistant", probe = "home-assistant")
+        val e = PortMapping.newRow(7, 8123, s, 3)
+        assertEquals("Home Assistant", e.stack); assertEquals("software", e.stackRole); assertEquals("Home Assistant", e.cpe); assertEquals("home-assistant", e.probe)
+        assertEquals(s, e.toServiceInfo())
+        val plain = PortEntity(hostId = 7, port = 80, serviceName = "HTTP", product = null, version = null, detail = null, confidence = Confidence.CONFIRMED, lastSeen = 0)
+        assertNull(plain.stack); assertNull(plain.stackRole); assertNull(plain.cpe); assertNull(plain.probe)
+    }
+    @Test fun `merging keeps a stored stack when the new finding has none and clears it when the name changed`() {
+        val stored = PortMapping.newRow(7, 8123, ServiceInfo("HTTP", "nginx", "1.25", null, Confidence.CONFIRMED, stack = "Home Assistant", stackRole = "software", cpe = "Home Assistant", probe = "home-assistant"), 1)
+        val kept = PortMapping.merge(stored, ServiceInfo("HTTP", confidence = Confidence.CONFIRMED), now = 2)
+        assertEquals("Home Assistant", kept.stack); assertEquals("home-assistant", kept.probe)
+        val changed = PortMapping.merge(stored, ServiceInfo("SSH", "dropbear", null, null, Confidence.CONFIRMED, probe = "ssh"), now = 3)
+        assertEquals("SSH", changed.serviceName); assertNull(changed.stack); assertNull(changed.stackRole); assertNull(changed.cpe); assertEquals("ssh", changed.probe)
+        assertEquals("dropbear", changed.product); assertNull(changed.version)
+    }
     @Test fun `merging into a stored row never erases evidence`() {
         val stored = PortEntity(hostId = 7, port = 5000, serviceName = "HTTP", product = "nginx", version = null, detail = "200 OK",
             confidence = Confidence.CONFIRMED, lastSeen = 1, title = "DiskStation")

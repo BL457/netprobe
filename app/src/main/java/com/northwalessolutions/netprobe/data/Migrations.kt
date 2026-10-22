@@ -53,3 +53,16 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         db.execSQL("ALTER TABLE tool_runs ADD COLUMN route TEXT")
     }
 }
+
+/**
+ * Schema 4 to 5 (Phase 3E spec 7): four additive nullable columns on ports, the software stack, its role, the cpe_map product and the
+ * probe or rule id that settled the name. No default, no row rewritten, nothing dropped or recreated; an old row reads "no stack".
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE ports ADD COLUMN stack TEXT")
+        db.execSQL("ALTER TABLE ports ADD COLUMN stackRole TEXT")
+        db.execSQL("ALTER TABLE ports ADD COLUMN cpe TEXT")
+        db.execSQL("ALTER TABLE ports ADD COLUMN probe TEXT")
+    }
+}
