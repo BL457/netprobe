@@ -11,7 +11,8 @@ const val TOOL_THREADS = 16
 
 enum class ToolId(val key: String) {
     DIR_BRUTEFORCE("dir-bruteforce"), HTTP_FINGERPRINT("http-fingerprint"),
-    TLS_CERTIFICATE("tls-certificate"), SMB_SESSION("smb-session"), SNMP_WALK("snmp-walk"), IDENTIFY("identify-service");
+    TLS_CERTIFICATE("tls-certificate"), SMB_SESSION("smb-session"), SNMP_WALK("snmp-walk"), IDENTIFY("identify-service"),
+    IDENTIFY_ALL("identify-all-services");
     companion object { fun byKey(key: String): ToolId? = entries.firstOrNull { it.key == key } }
 }
 

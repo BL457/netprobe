@@ -123,3 +123,13 @@ A1 Quick scans and Quick scan all stay passive; the switch governs Full and Cust
 ## 13. For the plan writer
 
 `ServiceProbes` is a new class in `engine/serviceid` that `ServiceIdentifier` delegates its ladder to; the 3A steps become the first probes of the file (null, tls, http-head, http-get, rtsp-options, rdp-x224) so the old `when (port)` goes away and `BannerParsers` becomes the `parser` and match helpers. `ProbeTransport` as in section 10. Loader: `ServiceProbeRules.load(json)` and `HttpStackRules.load(json)`, each returning the valid entries plus a list of skipped ids with reasons; a bad regex skips its probe. `ActiveProbeBudget.tryEnter(hostId, port)`. New `ServiceCopy` object. `PortEntity` columns appended last. `Why this identity` reasons come from `probe` via `HostEvidenceBuilder`. `HttpPeek` from the ladder's GET is passed to the stack pass, never refetched.
+
+## 14. Director rulings 2026-10-22
+
+R1 Every port scan (Quick, Full, Custom, Quick scan all) is passive: the null read and the 3A-equivalent steps only, never the hello ladder, never the stack paths or favicon. The Settings "Service hellos" switch is removed, with its reset entry, copy and tests. Sections 3, 9 and A1 are superseded where they mention the switch.
+
+R2 Service identification is on demand: a per-port action ("Identify" on the Device screen port row, running the Identify service tool) and a per-device action ("Identify all services" in the Device screen overflow, one tool run over every open port, 64 ports and 60 s wall, progress "port N of M", summary "<n> of <m> ports named" or "No services recognised") run the full ladder, the HTTP stack tier with its paths and favicon included.
+
+R3 Device type marker: a Settings choice between the colour stripe and a small icon, with a palette of ten colours that are easy to tell apart.
+
+R4 Long-press copy options for a device's IP, MAC, name and details, and for a port's address.

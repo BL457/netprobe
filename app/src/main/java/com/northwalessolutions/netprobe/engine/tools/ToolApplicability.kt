@@ -28,13 +28,14 @@ object ToolApplicability {
         ToolId.SMB_SESSION -> port == SMB_PORT
         ToolId.SNMP_WALK -> false
         ToolId.IDENTIFY -> true
+        ToolId.IDENTIFY_ALL -> false   // a per-host tool: it works over the whole port list
     }
     /** Applicable per-port tools in ToolId order for the Device screen (SNMP walk is per host, and Identify service is a manual tool for now, 3E spec O1). */
-    fun toolsFor(port: Int, service: ServiceInfo): List<ToolId> = ToolId.entries.filter { it != ToolId.SNMP_WALK && it != ToolId.IDENTIFY && appliesTo(it, port, service) }
+    fun toolsFor(port: Int, service: ServiceInfo): List<ToolId> = ToolId.entries.filter { it != ToolId.SNMP_WALK && it != ToolId.IDENTIFY && it != ToolId.IDENTIFY_ALL && appliesTo(it, port, service) }
     fun targetTls(tool: ToolId, port: Int, service: ServiceInfo): Boolean = when (tool) {
         ToolId.TLS_CERTIFICATE -> true
         ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT -> webScheme(port, service) == "https"
-        ToolId.SMB_SESSION, ToolId.SNMP_WALK, ToolId.IDENTIFY -> false
+        ToolId.SMB_SESSION, ToolId.SNMP_WALK, ToolId.IDENTIFY, ToolId.IDENTIFY_ALL -> false
     }
     fun snmp(host: HostEntity): Boolean = host.snmpSysDescr != null
     /** mDNS name, else reverse DNS, trailing dot removed; null when absent or not a DNS-shaped name (spec 4.9). */

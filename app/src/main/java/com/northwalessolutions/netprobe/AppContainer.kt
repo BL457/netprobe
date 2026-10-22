@@ -11,6 +11,7 @@ import com.northwalessolutions.netprobe.engine.identify.StackIdentity
 import com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTool
 import com.northwalessolutions.netprobe.engine.tools.HttpGet
 import com.northwalessolutions.netprobe.engine.tools.SnmpWalkTool
+import com.northwalessolutions.netprobe.engine.tools.IdentifyAllServicesTool
 import com.northwalessolutions.netprobe.engine.tools.IdentifyServiceTool
 import com.northwalessolutions.netprobe.engine.serviceid.ProbeMode
 import com.northwalessolutions.netprobe.engine.tools.TlsCertificateTool
@@ -190,6 +191,10 @@ class AppContainer(val context: Context) {
         put(ToolId.TLS_CERTIFICATE, TlsCertificateTool(peek = { t, name -> TlsPeek().details(t.ip, t.port, name) }))
         put(ToolId.SNMP_WALK, SnmpWalkTool(exchangeFor = { t -> UdpSnmpExchange(t.ip) }))
         put(ToolId.IDENTIFY, IdentifyServiceTool(
+            identify = { t, budget, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe) },
+            apply = { hostId, port, info -> ports.applyIdentify(hostId, port, info) }))
+        put(ToolId.IDENTIFY_ALL, IdentifyAllServicesTool(
+            portsFor = { hostId -> ports.servicesFor(hostId).keys.toList() },
             identify = { t, budget, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe) },
             apply = { hostId, port, info -> ports.applyIdentify(hostId, port, info) }))
         // tcpConnect goes through Probe.connect, so off-subnet hosts are reached over Wi-Fi exactly as port scans are.

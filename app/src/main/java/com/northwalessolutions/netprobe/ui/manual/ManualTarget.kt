@@ -23,6 +23,8 @@ data class ManualCheck(val ip: Inet4Address?, val port: Int?, val ipError: Strin
 object ManualTarget {
     const val PORT_MIN = 1
     const val PORT_MAX = 65_535
+    /** Identify all services takes no port: the run reads the address stored open ports; 0 stands for all of them. */
+    const val ALL_PORTS = 0
     private const val MAX_PORT_DIGITS = 5
     private const val UNSIGNED_MASK = 0xFFFFFFFFL
     /** Below /31 a subnet has a network and a broadcast address (RFC 3021 point-to-point links have neither). */
@@ -34,6 +36,7 @@ object ManualTarget {
         ToolId.SNMP_WALK -> ToolApplicability.SNMP_PORT
         ToolId.SMB_SESSION -> ToolApplicability.SMB_PORT
         ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT, ToolId.TLS_CERTIFICATE, ToolId.IDENTIFY -> null
+        ToolId.IDENTIFY_ALL -> ALL_PORTS
     }
 
     fun check(ipText: String, portText: String, tool: ToolId, home: Subnet?, attempted: Boolean): ManualCheck {
@@ -59,7 +62,7 @@ object ManualTarget {
     /** TLS certificate always speaks TLS; SMB and SNMP never do; the web tools follow the "Use HTTPS" switch (spec 4.1 item 5). */
     fun tls(tool: ToolId, https: Boolean): Boolean = when (tool) {
         ToolId.TLS_CERTIFICATE -> true
-        ToolId.SMB_SESSION, ToolId.SNMP_WALK, ToolId.IDENTIFY -> false
+        ToolId.SMB_SESSION, ToolId.SNMP_WALK, ToolId.IDENTIFY, ToolId.IDENTIFY_ALL -> false
         ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT -> https
     }
 

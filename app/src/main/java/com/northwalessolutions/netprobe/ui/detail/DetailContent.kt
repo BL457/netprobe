@@ -21,6 +21,7 @@ import com.northwalessolutions.netprobe.actions.DeviceAction
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
+import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.ui.BackBar
 import com.northwalessolutions.netprobe.ui.NavCopy
 import com.northwalessolutions.netprobe.ui.Tab
@@ -72,7 +73,8 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     // on the list counted the navigation bar twice and left a 48 dp gap above the keyboard on the Pixel.
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets.navigationBars.union(WindowInsets.ime), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars).testTag("detailHeader")) {
-            BackBar(backLabel, actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.removeAllowed, onRemove = { actions.onRemove(); actions.onBack() }) }
+            BackBar(backLabel, actions.onBack) { if (state.host != null) DetailMenu(onEdit = { editing = true }, removeEnabled = toolState.removeAllowed, onRemove = { actions.onRemove(); actions.onBack() },
+                onIdentifyAll = if (state.ports.isNotEmpty()) ({ toolActions.onRunTool(ToolId.IDENTIFY_ALL, 0) }) else null) }
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
                     DetailName(state.displayName) { editing = true }
@@ -116,6 +118,9 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
                     fadeInSpec = if (arriving) tween(Motion.PORT_ROW_MS) else null,
                     placementSpec = tween(Motion.PORT_ROW_MS, easing = FastOutSlowInEasing), fadeOutSpec = null)
                 PortRowItem(ip, p, onAction = actions.onAction, onLongPress = { sheetPort = p.port },
+                    onIdentify = { toolActions.onRunTool(ToolId.IDENTIFY, p.port) },
+                    identifying = toolState.runTool == ToolId.IDENTIFY && toolState.runPort == p.port || toolState.runTool == ToolId.IDENTIFY_ALL,
+                    identifyMuted = toolState.busy != null,
                     modifier = itemModifier.graphicsLayer { translationY = rise.value * risePx }.semantics { arrivalDelay = if (arriving) 0 else -1 })
             }
         }

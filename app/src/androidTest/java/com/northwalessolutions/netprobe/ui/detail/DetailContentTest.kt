@@ -260,6 +260,29 @@ class DetailContentTest {
         rule.onNodeWithText("22").performTouchInput { longClick() }
         rule.onNodeWithText("Run tool").assertDoesNotExist()
     }
+    @Test fun theIdentifyActionSitsInThePortRowAndRunsTheIdentifyTool() {   // Director ruling R2
+        val ran = mutableListOf<Pair<com.northwalessolutions.netprobe.engine.tools.ToolId, Int>>()
+        showTools(DetailFakes.state(listOf(DetailFakes.port(5000, "http"), DetailFakes.port(22, "ssh", name = "SSH"))),
+            com.northwalessolutions.netprobe.ui.tools.DetailToolsState(), com.northwalessolutions.netprobe.ui.tools.ToolActions(onRunTool = { t, p -> ran += t to p }))
+        rule.onAllNodesWithTag("portIdentify")[1].performClick()
+        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolId.IDENTIFY to 22), ran)
+        assertEquals(0, actions.size)
+    }
+    @Test fun aRunningIdentifyShowsIdentifyingOnItsOwnPortOnly() {
+        showTools(DetailFakes.state(listOf(DetailFakes.port(5000, "http"), DetailFakes.port(22, "ssh", name = "SSH"))),
+            com.northwalessolutions.netprobe.ui.tools.DetailToolsState(runTool = com.northwalessolutions.netprobe.engine.tools.ToolId.IDENTIFY, runPort = 22,
+                busy = com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry.Work.TOOL))
+        rule.onAllNodesWithText("Identifying").assertCountEquals(1)
+        rule.onAllNodesWithText("Identify").assertCountEquals(1)
+    }
+    @Test fun identifyAllServicesIsInTheOverflowAndRunsOverTheWholeDevice() {
+        val ran = mutableListOf<Pair<com.northwalessolutions.netprobe.engine.tools.ToolId, Int>>()
+        showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(),
+            com.northwalessolutions.netprobe.ui.tools.ToolActions(onRunTool = { t, p -> ran += t to p }))
+        rule.onNodeWithTag("detailMenu").performClick()
+        rule.onNodeWithText("Identify all services").performClick()
+        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolId.IDENTIFY_ALL to 0), ran)
+    }
     @Test fun removeDeviceIsDisabledWhileAToolHoldsTheHost() {
         showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(busy = com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry.Work.TOOL, removeAllowed = false))
         rule.onNodeWithTag("detailMenu").performClick()

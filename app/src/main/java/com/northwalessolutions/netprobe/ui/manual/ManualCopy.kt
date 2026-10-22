@@ -10,6 +10,7 @@ object ManualCopy {
     const val USE_HTTPS = "Use HTTPS"
     const val FIXED_SMB = "Uses port 445"
     const val FIXED_SNMP = "Uses UDP 161"
+    const val FIXED_ALL = "Uses the open ports stored for this address"
     fun knownDevice(name: String) = "Known device: $name, results also show on its page"
     const val NO_LAN = "Connect to Wi-Fi or Ethernet to run a tool"
     const val ERR_IP = "Enter an address like 10.0.3.20"
@@ -18,7 +19,8 @@ object ManualCopy {
     const val ERR_PORT_RANGE = "Use a port from 1 to 65535"
     const val HISTORY = "Recent runs on this network"
     const val HISTORY_EMPTY = "No tools run on this network yet"
-    fun historyRow(tool: String, ip: String, portLabel: String) = "$tool on $ip:$portLabel"
+    private fun at(ip: String, portLabel: String) = if (portLabel == com.northwalessolutions.netprobe.ui.tools.ToolCopy.ALL_PORTS_LABEL) ip else "$ip:$portLabel"
+    fun historyRow(tool: String, ip: String, portLabel: String) = "$tool on ${at(ip, portLabel)}"
     fun historyLine(summary: String, relative: String) = "$summary, $relative"
-    fun historyDescription(tool: String, ip: String, portLabel: String) = "Show $tool results for $ip:$portLabel"
+    fun historyDescription(tool: String, ip: String, portLabel: String) = "Show $tool results for ${at(ip, portLabel)}"
 }

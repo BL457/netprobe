@@ -23,6 +23,7 @@ object ToolExport {
             ToolId.SMB_SESSION -> "smb://$ip/"
             ToolId.SNMP_WALK -> "udp://$ip:$SNMP_PORT"
             ToolId.IDENTIFY -> "$ip:$port"
+            ToolId.IDENTIFY_ALL -> ip
         }
     }
     fun subject(toolName: String, ip: String, port: Int): String = ToolCopy.exportSubject(toolName, ip, port)

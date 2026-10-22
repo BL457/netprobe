@@ -123,6 +123,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             dirBrute = if (h == null) null else sheetPort?.let { port -> dirBruteSheet(h, port, ports, lists, busy, activeMap.size) },
             appMessage = appMessage,
             removeAllowed = DetailBusyRules.removeAllowed(busyMap, hostId),
+            runTool = active?.toolId, runPort = active?.port ?: 0,
         )
     }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailToolsState())
 

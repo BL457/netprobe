@@ -10,11 +10,11 @@ import com.northwalessolutions.netprobe.engine.tools.ToolRunner
  * without a view-model.
  */
 object ToolStateKey {
-    data class Key(val runId: Long?, val toolId: ToolId?, val totalKnown: Boolean, val runnerFull: Boolean)
+    data class Key(val runId: Long?, val toolId: ToolId?, val port: Int?, val totalKnown: Boolean, val runnerFull: Boolean)
 
     fun of(active: Map<Long, ToolRunner.Active>, hostId: Long): Key {
         val a = active[hostId]
         // totalKnown picks the determinate line over the indeterminate one; runnerFull feeds the options sheet's busy reason.
-        return Key(a?.runId, a?.toolId, a?.total != null, active.size >= ToolRunner.MAX_ACTIVE_RUNS)
+        return Key(a?.runId, a?.toolId, a?.port, a?.total != null, active.size >= ToolRunner.MAX_ACTIVE_RUNS)
     }
 }

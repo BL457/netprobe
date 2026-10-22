@@ -17,9 +17,10 @@ object ToolCopy {
     const val SMB_SESSION = "SMB session"
     const val SNMP_WALK = "SNMP walk"
     const val IDENTIFY = "Identify service"
+    const val IDENTIFY_ALL = "Identify all services"
     fun toolName(id: ToolId): String = when (id) {
         ToolId.DIR_BRUTEFORCE -> DIR_BRUTEFORCE; ToolId.HTTP_FINGERPRINT -> HTTP_FINGERPRINT; ToolId.TLS_CERTIFICATE -> TLS_CERTIFICATE
-        ToolId.SMB_SESSION -> SMB_SESSION; ToolId.SNMP_WALK -> SNMP_WALK; ToolId.IDENTIFY -> IDENTIFY
+        ToolId.SMB_SESSION -> SMB_SESSION; ToolId.SNMP_WALK -> SNMP_WALK; ToolId.IDENTIFY -> IDENTIFY; ToolId.IDENTIFY_ALL -> IDENTIFY_ALL
     }
 
     // Tools row and blocks (8.1)
@@ -29,7 +30,8 @@ object ToolCopy {
     const val RESULTS = "Results"
     const val RUN_TOOL = "Run tool"
     fun available(n: Int) = "$n available"
-    fun portLabel(port: Int, snmp: Boolean) = if (snmp) "UDP 161" else "$port"
+    const val ALL_PORTS_LABEL = "all open ports"
+    fun portLabel(port: Int, snmp: Boolean) = if (snmp) "UDP 161" else if (port == 0) ALL_PORTS_LABEL else "$port"
     fun rowHistory(relative: String, tool: String, portLabel: String, summary: String) = "Last run $relative: $tool on $portLabel, $summary"
     fun rowDescription(n: Int, expanded: Boolean) = "Tools, $n available, ${if (expanded) "collapse" else "expand"}"
     fun blockHistory(relative: String, portLabel: String, summary: String) = "Last run $relative on $portLabel: $summary"
@@ -125,6 +127,18 @@ object ToolCopy {
     fun identifyNone(n: Int) = "No service recognised, ${probes(n)}"
     fun identifyProgress(n: Int, m: Int) = "probe $n of $m"
 
+    // Identify all services (Director ruling R2)
+    /** The port row action (R2) and its running word. */
+    const val IDENTIFY_PORT = "Identify"
+    const val IDENTIFYING = "Identifying"
+    fun identifyPortDescription(port: Int) = "Identify service on port $port"
+    const val IDENTIFY_ALL_NONE = "No services recognised"
+    /** The port being worked on: [done] ports are finished, so the current one is done + 1, never past [total]. */
+    fun identifyAllProgress(done: Int, total: Int) = "port ${minOf(done + 1, total)} of $total"
+    fun identifyAllSummary(named: Int, total: Int) = "$named of $total ports named"
+    fun identifyAllLine(port: Int, recognised: Boolean, service: String, product: String?, version: String?): String =
+        if (!recognised) "$port: not recognised" else "$port: " + identifySummary(service, product, version, 0).removeSuffix(", 0 probes")
+
     // Options sheet (8.4) and its errors
     const val WORDLIST = "Wordlist"
     const val MANAGE_WORDLISTS = "Manage wordlists"
@@ -161,7 +175,7 @@ object ToolCopy {
     const val COPIED = "Copied"
     const val EMPTY_RUNNING = "Running, findings appear as they are found"
     const val NO_FINDINGS = "No findings"
-    fun resultsTitle(tool: String, ip: String, port: Int) = "$tool  $ip:$port"
+    fun resultsTitle(tool: String, ip: String, port: Int) = if (port == 0) "$tool  $ip" else "$tool  $ip:$port"
     fun resultsStatus(label: String, relative: String, nameSent: String?) = "$label, $relative${nameSent?.let { ", as $it" } ?: ""}"
     fun resultsRunning(progress: String) = "Running, $progress"
     fun runOf(n: Int, m: Int) = "Run $n of $m"
@@ -169,7 +183,7 @@ object ToolCopy {
     fun copyDescription(value: String) = "Copy $value"
 
     // Export (7.5)
-    fun exportSubject(tool: String, ip: String, port: Int) = "NetProbe $tool $ip:$port"
+    fun exportSubject(tool: String, ip: String, port: Int) = if (port == 0) "NetProbe $tool $ip" else "NetProbe $tool $ip:$port"
     fun exportTitle(tool: String) = "NetProbe $tool"
     fun exportTarget(target: String) = "Target: $target"
     fun exportNameSent(name: String) = "Name sent: $name"

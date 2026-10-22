@@ -20,7 +20,9 @@ class ToolCopyTableTest {
     private val ts = "\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"
     private val templates: List<Regex> = listOf(
         // names, Tools row and blocks
-        "Directory brute-force", "HTTP fingerprint", "TLS certificate", "SMB session", "SNMP walk", "Identify service",
+        "Directory brute-force", "HTTP fingerprint", "TLS certificate", "SMB session", "SNMP walk", "Identify service", "Identify all services",
+        // Identify all services and the port row action (R2)
+        "No services recognised", "port \\d+ of \\d+", "\\d+ of \\d+ ports named", "\\d+: not recognised", "\\d+: .+", "Identify", "Identifying", "Identify service on port \\d+", "all open ports",
         // Identify service (3E)
         "[a-z0-9-]+: \\d+ bytes?, .+", "[a-z0-9-]+: .+", ".+, \\d+ probes?", "No service recognised, \\d+ probes?", "probe \\d+ of \\d+",
         "Tools", "\\d+ available", "Last run .+: .+ on (\\d+|UDP 161), .+", "No tools run yet", "Tools, \\d+ available, (expand|collapse)",
@@ -31,7 +33,7 @@ class ToolCopyTableTest {
         "Quick scan finished, \\d+ devices? could not be scanned", "Quick scan finished, \\d+ devices? skipped: a tool is running",
         "Quick scan finished, \\d+ devices? could not be scanned, \\d+ skipped: a tool is running",
         // pinned bar, progress, end message, statuses
-        ".+ on (\\d+|UDP 161)", "\\d+ of \\d+, \\d+ found(, \\d+ errors)?  \\d+ s", "\\d+ done, \\d+ found  \\d+ s", "starting", "Stop tool run",
+        ".+ on (\\d+|UDP 161|all open ports)", "\\d+ of \\d+, \\d+ found(, \\d+ errors)?  \\d+ s", "\\d+ done, \\d+ found  \\d+ s", "starting", "Stop tool run",
         ".+ finished: .+", "Running", "Done", "Stopped", "Failed", "Interrupted",
         // summaries
         "Network changed, run stopped", "Tool skipped: could not bind to Wi-Fi", "Failed: .+", "Interrupted, \\d+ found",
@@ -127,7 +129,11 @@ class ToolCopyTableTest {
         addAll(listOf(ToolCopy.probeLine("redis-info", 312, "Redis 7.2.4"), ToolCopy.probeLine("ssh", 1, null), ToolCopy.probeLine("null", 0, null),
             ToolCopy.stackLine("home-assistant", "Home Assistant", null), ToolCopy.stackLine("jenkins", "Jenkins", "2.4"),
             ToolCopy.identifySummary("Redis", "Redis", "7.2.4", 3), ToolCopy.identifySummary("HTTP", "nginx", null, 1), ToolCopy.identifySummary("SSH", "OpenSSH", "8.2p1", 2),
-            ToolCopy.identifyNone(1), ToolCopy.identifyNone(5), ToolCopy.identifyProgress(2, 6)))
+            ToolCopy.identifyNone(1), ToolCopy.identifyNone(5), ToolCopy.identifyProgress(2, 6),
+            ToolCopy.IDENTIFY_ALL_NONE, ToolCopy.identifyAllProgress(0, 5), ToolCopy.identifyAllProgress(5, 5), ToolCopy.identifyAllSummary(3, 7),
+            ToolCopy.identifyAllLine(22, true, "SSH", "OpenSSH", "9.6p1"), ToolCopy.identifyAllLine(6379, true, "Redis", "Redis", null), ToolCopy.identifyAllLine(9999, false, "Unknown", null, null),
+            ToolCopy.IDENTIFY_PORT, ToolCopy.IDENTIFYING, ToolCopy.identifyPortDescription(443),
+            ToolCopy.pinnedLabel(ToolCopy.IDENTIFY_ALL, ToolCopy.portLabel(0, false))))
         for (n in listOf(1, 6)) { add(ToolCopy.fingerprintSummary("Pi-hole", n)); add(ToolCopy.fingerprintSummary(null, n)) }
         addAll(listOf(ToolCopy.FINGERPRINT_NO_RESPONSE, ToolCopy.tlsSummary("unifi.local", date, false), ToolCopy.tlsSummary("unifi.local", date, true), ToolCopy.TLS_NO_HANDSHAKE))
         for (a in listOf(true, false)) for (b in listOf(true, false)) for (c in listOf(true, false)) add(ToolCopy.smbSummary("SMB 2.1", a, b, c))

@@ -1,6 +1,5 @@
 package com.northwalessolutions.netprobe.ui.settings
 
-import com.northwalessolutions.netprobe.ui.ServiceCopy
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -128,9 +127,6 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             if (s.listenMulticast) ui.listenStatus?.let {
                 Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.padding(bottom = 6.dp).testTag("listenStatus"))
             }
-
-            // 3E spec 3: directly after Listen between scans (and its status line).
-            SwitchRow(ServiceCopy.HELLOS_LABEL, s.serviceHellos, ServiceCopy.HELLOS_SUPPORT) { v -> update { it.copy(serviceHellos = v) } }
 
             // Second, directly under Discovery (3C spec D6, 2.3): discoverable without a Home toggle.
             Section(ExtendedCopy.TITLE)

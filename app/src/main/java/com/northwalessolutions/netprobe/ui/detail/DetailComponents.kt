@@ -86,7 +86,7 @@ fun IdentityText(text: String, name: String, onEdit: () -> Unit) {
 
 /** Overflow on the back row (spec 4.5): "Edit device" and, from Task 14, "Remove device"; both always enabled. */
 @Composable
-fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null, removeEnabled: Boolean = true) {
+fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null, removeEnabled: Boolean = true, onIdentifyAll: (() -> Unit)? = null) {
     Box {
         var open by remember { mutableStateOf(false) }
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("detailMenu")) {
@@ -94,6 +94,7 @@ fun DetailMenu(onEdit: () -> Unit, onRemove: (() -> Unit)? = null, removeEnabled
         }
         DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
             DropdownMenuItem(text = { Text(DetailCopy.EDIT_DEVICE) }, onClick = { open = false; onEdit() })
+            onIdentifyAll?.let { all -> DropdownMenuItem(text = { Text(ToolCopy.IDENTIFY_ALL) }, onClick = { open = false; all() }, modifier = Modifier.testTag("identifyAll")) }
             onRemove?.let { remove -> DropdownMenuItem(text = { Text(DetailCopy.REMOVE_DEVICE) }, enabled = removeEnabled, onClick = { open = false; remove() }) }
         }
     }
@@ -232,7 +233,9 @@ fun ScanBar(profile: ScanProfile, customText: String, customError: String?, scan
 /** Port row: number, service and version, one action word; long-press opens the sheet (spec 5.2). */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLongPress: () -> Unit, modifier: Modifier = Modifier) {
+fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLongPress: () -> Unit, modifier: Modifier = Modifier,
+                /** The Identify action (R2); null hides it. [identifying] shows the running word instead and ignores taps; [identifyMuted] greys it while the host is busy. */
+                onIdentify: (() -> Unit)? = null, identifying: Boolean = false, identifyMuted: Boolean = false) {
     val word = actionWord(schemeOf(p))
     val run = { onAction(primaryAction(ip, p)) }
     val copy = word == "Copy"
@@ -244,6 +247,15 @@ fun PortRowItem(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onLong
             Column(Modifier.weight(1f)) {
                 Text(p.service.name, style = NetProbeText.secondary, color = NetProbeColors.text)
                 portSubLine(p.service)?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+            if (onIdentify != null) {
+                // Pinned in the row beside the open word, never a scroller of its own. A tap while another tool runs reaches the busy message.
+                Box(Modifier.sizeIn(minWidth = Dimens.touch, minHeight = Dimens.touch)
+                    .then(if (identifying) Modifier else Modifier.clickable(role = Role.Button, onClick = onIdentify))
+                    .semantics { contentDescription = ToolCopy.identifyPortDescription(p.port) }.testTag("portIdentify"), contentAlignment = Alignment.CenterEnd) {
+                    Text(if (identifying) ToolCopy.IDENTIFYING else ToolCopy.IDENTIFY_PORT, style = NetProbeText.action.copy(fontWeight = FontWeight.W400),
+                        color = if (identifying || identifyMuted) NetProbeColors.textMuted else NetProbeColors.signal, maxLines = 1)
+                }
             }
             Spacer(Modifier.width(10.dp))
             // The word is its own target (not merged into the row) and long-presses exactly like the row body: a long press never runs the action.
