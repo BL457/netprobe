@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.engine.identify
 
 import com.northwalessolutions.netprobe.engine.serviceid.Confidence
+import com.northwalessolutions.netprobe.ui.ServiceCopy
 
 class DeviceIdentifier(private val rules: List<Rule>) {
     private class Slot(var value: String? = null, var weight: Int = -1)
@@ -9,6 +10,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
     private companion object {
         const val MAX_VALUE_LEN = 80
         const val MAX_REASON_LEN = 80
+        const val STACK_SOFTWARE = "software"
         val CANONICAL_VENDORS = mapOf(
             "hp" to "HP", "hewlett-packard" to "HP", "epson" to "Epson", "canon" to "Canon", "brother" to "Brother",
             "lexmark" to "Lexmark", "kyocera" to "Kyocera", "xerox" to "Xerox",
@@ -17,7 +19,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
             "huawei" to "Huawei", "zte" to "ZTE", "sagemcom" to "Sagemcom", "technicolor" to "Technicolor", "tenda" to "Tenda",
         )
         /** Fields matched against stored port findings (spec 3.2); the three http* fields also read discovery evidence first. */
-        val PORT_FIELDS = setOf("httpTitle", "httpServer", "httpRealm", "sshBanner", "poweredBy", "certName", "certOrg", "portBanner", "service")
+        val PORT_FIELDS = setOf("httpTitle", "httpServer", "httpRealm", "sshBanner", "poweredBy", "certName", "certOrg", "portBanner", "service", "stack")
     }
     private fun canonicalVendor(v: String?): String? = v?.let { CANONICAL_VENDORS[it.lowercase()] ?: it }
     private fun group1Of(m: MatchResult): String? = if (m.groups.size > 1) m.groups[1]?.value else null
@@ -47,6 +49,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
                 "certOrg" -> listOfNotNull(s.certOrg)
                 "portBanner" -> listOf(listOfNotNull(s.product, s.version, s.detail).joinToString(" ")).filter { it.isNotBlank() }
                 "service" -> if (s.confidence == Confidence.CONFIRMED) listOf(s.name) else emptyList()
+                "stack" -> listOfNotNull(s.stack)
                 else -> emptyList()
             }
             values.map { port to it }
@@ -61,7 +64,9 @@ class DeviceIdentifier(private val rules: List<Rule>) {
             set(vendor, canonicalVendor(sub(r.vendor)), r.weight); set(model, sub(r.model), r.weight); set(os, sub(r.os), r.weight); set(type, r.type, r.weight)
             r.software?.let { software += it }
             val where = hit.port?.let { "port $it " }.orEmpty()
-            reasons += "$where${r.field}: ${hit.text.take(MAX_REASON_LEN)}"; confidence = maxOf(confidence, r.weight)
+            // A generated stack rule is explained by its "Port n: stack (rule)" line below, not twice.
+            if (!r.id.startsWith(StackIdentity.ID_PREFIX)) reasons += "$where${r.field}: ${hit.text.take(MAX_REASON_LEN)}"
+            confidence = maxOf(confidence, r.weight)
         }
         val h = e.host
         // Direct extraction, weight 100.
@@ -94,7 +99,15 @@ class DeviceIdentifier(private val rules: List<Rule>) {
             if (r.field == "oui") { if (e.ouiVendor != null) apply(r.copy(vendor = e.ouiVendor), Hit(e.ouiVendor, null, null)) }
             else hit?.let { apply(r, it) }
         }
-        if (reasons.isEmpty()) return DeviceIdentity.UNKNOWN
+        // The software stacks the HTTP rules or a probe named (spec 7): "Runs Plex". They never touch vendor, model or type.
+        val stackPorts = e.services.entries.sortedBy { it.key }.filter { it.value.stack != null }
+        for ((_, s) in stackPorts) if (s.stackRole == STACK_SOFTWARE) software += s.stack!!
+        if (reasons.isEmpty() && software.isEmpty() && stackPorts.isEmpty()) return DeviceIdentity.UNKNOWN
+        // "Why this identity": what ran on each port and which probe or rule said so, stack first, else product (spec 7).
+        for ((port, s) in e.services.entries.sortedBy { it.key }) {
+            val label = s.stack ?: s.product?.takeIf { s.probe != null } ?: continue
+            reasons += ServiceCopy.whyLine(port, label, s.probe)
+        }
         val t = type.value?.let { runCatching { DeviceType.valueOf(it) }.getOrNull() } ?: DeviceType.UNKNOWN
         return DeviceIdentity(vendor.value, model.value, os.value, t, confidence, reasons.distinct(), software.toList())
     }

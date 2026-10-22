@@ -52,7 +52,8 @@ fun sheetLabel(action: DeviceAction): String? = when {
 fun sheetActions(p: PortRow): List<Pair<String, DeviceAction>> =
     p.actions.filter { it != p.primary }.mapNotNull { a -> sheetLabel(a)?.let { it to a } }
 
-fun versionLine(s: ServiceInfo): String? = listOfNotNull(s.product, s.version, s.detail).joinToString(" ").trim().ifEmpty { null }
+/** The stack when one is named, else the product, then the version and the detail (3E spec 7); the wording lives in [DetailCopy.portVersion]. */
+fun versionLine(s: ServiceInfo): String? = DetailCopy.portVersion(s.stack, s.product, s.version, s.detail).ifEmpty { null }
 
 /** Port row sub-line: the page title, two spaces, then the version line; either alone when the other is missing (spec 7). */
 fun portSubLine(s: ServiceInfo): String? = listOfNotNull(s.title, versionLine(s)).joinToString("  ").ifEmpty { null }

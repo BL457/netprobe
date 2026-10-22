@@ -7,6 +7,7 @@ import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.common.HttpClient
 import com.northwalessolutions.netprobe.engine.serviceid.TlsPeek
 import com.northwalessolutions.netprobe.engine.serviceid.HttpStackRules
+import com.northwalessolutions.netprobe.engine.identify.StackIdentity
 import com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTool
 import com.northwalessolutions.netprobe.engine.tools.HttpGet
 import com.northwalessolutions.netprobe.engine.tools.SnmpWalkTool
@@ -263,7 +264,7 @@ class AppContainer(val context: Context) {
     }
     val serviceProbes by lazy { ServiceProbes(ServiceProbeRules.load(RawResources.read(context, R.raw.service_probes)).probes, stackRules = stackRules) }
     val serviceIdentifier by lazy { ServiceIdentifier(portTable, serviceProbes) }
-    val deviceIdentifier by lazy { DeviceIdentifier(identifyRules) }
+    val deviceIdentifier by lazy { DeviceIdentifier(identifyRules + StackIdentity.rules(stackRules)) }
     val actionRunner by lazy { AndroidActionRunner(context) }
     val actions by lazy { ActionProvider(actionRunner) }
     val locks by lazy { Locks(context) }
