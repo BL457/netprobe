@@ -60,6 +60,10 @@ import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.DirBruteOptionsStore
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.wordlists.UrlImportController
+import com.northwalessolutions.netprobe.oui.OuiInfo
+import com.northwalessolutions.netprobe.oui.OuiMeta
+import com.northwalessolutions.netprobe.oui.OuiStore
+import com.northwalessolutions.netprobe.oui.OuiUpdater
 import com.northwalessolutions.netprobe.wordlists.BuiltInList
 import com.northwalessolutions.netprobe.wordlists.UrlWordlistFetcher
 import com.northwalessolutions.netprobe.wordlists.WordlistStore
@@ -267,6 +271,19 @@ class AppContainer(val context: Context) {
         UrlImportController(appScope, { url, progress -> UrlWordlistFetcher().fetch(url, wordlistStore, progress) }, appMessages,
             log = { Log.e(AppScopes.LOG_TAG, "url import", it) }, liveWork = liveWork)
     }
+    /** The offline vendor table (Director ruling 2026-10-22 b): filesDir/oui/oui.bin, read on the first lookup; nothing ships built in. */
+    val ouiStore: OuiStore by lazy {
+        val prefs = context.getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)
+        OuiStore(java.io.File(context.filesDir, "oui/" + OuiStore.FILE_NAME), object : OuiMeta {
+            override fun read(): OuiInfo? = if (prefs.contains(OUI_COUNT_KEY)) OuiInfo(prefs.getLong(OUI_UPDATED_KEY, 0L), prefs.getInt(OUI_COUNT_KEY, 0)) else null
+            override fun write(info: OuiInfo) { prefs.edit().putLong(OUI_UPDATED_KEY, info.updatedAt).putInt(OUI_COUNT_KEY, info.count).apply() }
+        }, log = { Log.e(AppScopes.LOG_TAG, "vendor table", it) })
+    }
+    /** "Update vendor database" on appScope; the same fetcher as the wordlist URL import. Building it touches no file and no network. */
+    val ouiUpdater: OuiUpdater by lazy {
+        OuiUpdater(appScope, ouiStore, appMessages, { url, max, progress -> UrlWordlistFetcher().fetchBytes(url, max, progress) },
+            log = { Log.e(AppScopes.LOG_TAG, "vendor update", it) }, liveWork = liveWork)
+    }
     /** Last-used brute-force options, saved globally (spec 5.1). */
     val dirBruteOptions by lazy {
         val prefs = context.getSharedPreferences("netprobe", Context.MODE_PRIVATE)
@@ -278,7 +295,7 @@ class AppContainer(val context: Context) {
     val actionRunner by lazy { AndroidActionRunner(context) }
     val actions by lazy { ActionProvider(actionRunner) }
     val locks by lazy { Locks(context) }
-    val ouiLookup: (String) -> String? = { null }
+    val ouiLookup: (String) -> String? = { mac -> ouiStore.lookup(mac) }
     val vulnLookup by lazy {
         VulnLookup(UrlHttpGet(), object : VulnCache {
             override suspend fun get(query: String, maxAgeMs: Long) = vulnCache.get(query, maxAgeMs)?.let { it.json to it.fetchedAt }
@@ -287,3 +304,6 @@ class AppContainer(val context: Context) {
         }, { settings.state.value.nvdApiKey }, cpeMap)
     }
 }
+
+private const val OUI_UPDATED_KEY = "ouiUpdatedAt"
+private const val OUI_COUNT_KEY = "ouiCount"

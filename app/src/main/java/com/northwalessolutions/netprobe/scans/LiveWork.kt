@@ -20,7 +20,7 @@ private const val MS_PER_S = 1000L
  * ViewModel is never retained.
  */
 class LiveWork(private val scope: CoroutineScope, private val clock: () -> Long = System::currentTimeMillis) {
-    enum class Kind { RADAR, QUICK_SCAN_ALL, PORT_SCAN, WORDLIST_IMPORT }
+    enum class Kind { RADAR, QUICK_SCAN_ALL, PORT_SCAN, WORDLIST_IMPORT, VENDOR_DB }
     enum class Outcome { DONE, STOPPED, FAILED, INTERRUPTED }
     data class Live(val id: Long, val kind: Kind, val networkId: Long?, val hostId: Long?, val label: String?, val startedAt: Long,
                     val done: Int, val total: Int?, val found: Int)

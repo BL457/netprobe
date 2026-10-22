@@ -47,6 +47,8 @@ sealed interface UrlImportResult {
     data class Stored(val result: ImportResult) : UrlImportResult
     data class Failed(val reason: FetchFailure) : UrlImportResult
     object Cancelled : UrlImportResult
+    /** A body kept in memory by UrlWordlistFetcher.fetchBytes (the vendor database); never produced by the wordlist import. */
+    class Fetched(val bytes: ByteArray) : UrlImportResult
 }
 
 /** Pure rules for the wordlist URL import (3C spec 5.3, D16). Nothing here opens a socket or resolves a name. */

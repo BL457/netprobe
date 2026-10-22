@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.engine.identify
 
 import com.northwalessolutions.netprobe.engine.serviceid.Confidence
+import com.northwalessolutions.netprobe.oui.OuiCopy
 import com.northwalessolutions.netprobe.ui.ServiceCopy
 
 class DeviceIdentifier(private val rules: List<Rule>) {
@@ -11,6 +12,7 @@ class DeviceIdentifier(private val rules: List<Rule>) {
         const val MAX_VALUE_LEN = 80
         const val MAX_REASON_LEN = 80
         const val STACK_SOFTWARE = "software"
+        const val OUI_WEIGHT = 20
         val CANONICAL_VENDORS = mapOf(
             "hp" to "HP", "hewlett-packard" to "HP", "epson" to "Epson", "canon" to "Canon", "brother" to "Brother",
             "lexmark" to "Lexmark", "kyocera" to "Kyocera", "xerox" to "Xerox",
@@ -96,8 +98,14 @@ class DeviceIdentifier(private val rules: List<Rule>) {
                 "gateway" -> if (h.isGateway) Hit("default gateway", null, null) else null
                 else -> null
             }
-            if (r.field == "oui") { if (e.ouiVendor != null) apply(r.copy(vendor = e.ouiVendor), Hit(e.ouiVendor, null, null)) }
-            else hit?.let { apply(r, it) }
+            // The MAC vendor is a last resort below, at weight 20; the old "oui" rule (weight 50) is not a rule input any more.
+            if (r.field != "oui") hit?.let { apply(r, it) }
+        }
+        // The MAC prefix names the maker only when nothing else did (Director ruling 2026-10-22 b). A randomised address is shown, never matched.
+        e.ouiVendor?.takeIf { vendor.value == null }?.let { v ->
+            set(vendor, v, OUI_WEIGHT)
+            reasons += if (v == OuiCopy.PRIVATE_ADDRESS) OuiCopy.PRIVATE_REASON else OuiCopy.macPrefix(v).take(MAX_REASON_LEN)
+            confidence = maxOf(confidence, OUI_WEIGHT)
         }
         // The software stacks the HTTP rules or a probe named (spec 7): "Runs Plex". They never touch vendor, model or type.
         val stackPorts = e.services.entries.sortedBy { it.key }.filter { it.value.stack != null }

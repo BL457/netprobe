@@ -97,6 +97,7 @@ class UrlImportController(private val scope: CoroutineScope, private val fetch: 
         is UrlImportResult.Stored -> LiveWork.Outcome.DONE to WordlistImport.message(r)
         is UrlImportResult.Failed -> LiveWork.Outcome.FAILED to WordlistImport.message(r)
         UrlImportResult.Cancelled -> LiveWork.Outcome.STOPPED to WordlistCopy.CANCELLED
+        is UrlImportResult.Fetched -> LiveWork.Outcome.FAILED to WordlistImport.message(r)
     }
 
     /** Only the current import ends the Fetching state; its message is delivered either way. */

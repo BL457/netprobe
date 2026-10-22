@@ -2,7 +2,7 @@ package com.northwalessolutions.netprobe.ui.scans
 
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 
-enum class ScansSource { RADAR, QUICK_SCAN_ALL, PORT_SCAN, TOOL, WORDLIST_IMPORT }
+enum class ScansSource { RADAR, QUICK_SCAN_ALL, PORT_SCAN, TOOL, WORDLIST_IMPORT, VENDOR_DB }
 
 /** There is no paused state: every pause is a background pause, so it is never on screen (spec 3.1). */
 enum class ScansState { RUNNING, DONE, STOPPED, FAILED, INTERRUPTED }

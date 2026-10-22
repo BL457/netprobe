@@ -27,6 +27,7 @@ object ScansTargets {
                 else -> ScansTap.None
             }
             ScansSource.WORDLIST_IMPORT -> ScansTap.Wordlists
+            ScansSource.VENDOR_DB -> ScansTap.None
         }
     }
 

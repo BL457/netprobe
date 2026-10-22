@@ -103,8 +103,17 @@ class DeviceIdentifierTest {
     @Test fun `upnp manufacturer QNAP is a NAS`() { assertEquals(DeviceType.NAS, id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "QNAP Systems, Inc."))).type) }
     @Test fun `camera by rtsp`() { assertEquals(DeviceType.CAMERA, id.identify(ev(ports = setOf(554, 80))).type) }
     @Test fun `gateway flag`() { assertEquals(DeviceType.ROUTER, id.identify(ev(DiscoveredHost(ip, isGateway = true))).type) }
-    @Test fun `oui vendor alone is a weak vendor`() {
-        val r = id.identify(ev(oui = "Espressif Inc.")); assertEquals("Espressif Inc.", r.vendor); assertEquals(50, r.confidence)
+    @Test fun `oui vendor alone is a weak vendor at weight 20 with its reason`() {
+        val r = id.identify(ev(oui = "Espressif Inc.")); assertEquals("Espressif Inc.", r.vendor); assertEquals(20, r.confidence)
+        assertEquals(listOf("MAC prefix: Espressif Inc."), r.reasons)
+    }
+    @Test fun `an evidence based vendor wins over the mac prefix and the prefix leaves no reason`() {
+        val r = id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "Synology Inc", upnpModel = "DS220+"), oui = "Espressif Inc."))
+        assertEquals("Synology Inc", r.vendor); assertFalse(r.reasons.any { it.startsWith("MAC prefix") })
+    }
+    @Test fun `a private address is shown as the vendor but a real vendor still wins`() {
+        assertEquals("Private address", id.identify(ev(oui = "Private address")).vendor)
+        assertEquals("Synology Inc", id.identify(ev(DiscoveredHost(ip, upnpManufacturer = "Synology Inc"), oui = "Private address")).vendor)
     }
     @Test fun `no evidence is unknown`() { assertEquals(DeviceIdentity.UNKNOWN, id.identify(ev())) }
     @Test fun `every rule in the file contributes for its own synthetic evidence`() {

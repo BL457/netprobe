@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.ui.scans
 
 import com.northwalessolutions.netprobe.data.NetworkRun
+import com.northwalessolutions.netprobe.oui.OuiCopy
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.engine.portscan.PortScanState
@@ -81,6 +82,7 @@ object ScansRules {
         LiveWork.Kind.QUICK_SCAN_ALL -> ScansCopy.QUICK
         LiveWork.Kind.PORT_SCAN -> ScansCopy.portScan(host)
         LiveWork.Kind.WORDLIST_IMPORT -> ScansCopy.wordlistImport(label ?: "")
+        LiveWork.Kind.VENDOR_DB -> OuiCopy.TITLE
     }
 
     private fun sourceOf(kind: LiveWork.Kind): ScansSource = when (kind) {
@@ -88,6 +90,7 @@ object ScansRules {
         LiveWork.Kind.QUICK_SCAN_ALL -> ScansSource.QUICK_SCAN_ALL
         LiveWork.Kind.PORT_SCAN -> ScansSource.PORT_SCAN
         LiveWork.Kind.WORDLIST_IMPORT -> ScansSource.WORDLIST_IMPORT
+        LiveWork.Kind.VENDOR_DB -> ScansSource.VENDOR_DB
     }
 
     private fun runningLive(l: LiveWork.Live, c: Ctx): ScansItem {
@@ -103,6 +106,7 @@ object ScansRules {
                 detailProgress(progress, state?.identify?.pending ?: 0)
             }
             LiveWork.Kind.WORDLIST_IMPORT -> WordlistCopy.fetching(l.done.toLong(), l.total?.toLong())
+            LiveWork.Kind.VENDOR_DB -> OuiCopy.downloading(l.done, l.total ?: l.done)
         }
         return ScansItem("live:${l.id}", sourceOf(l.kind), l.id, l.networkId, l.hostId, host ?: l.label.takeIf { l.kind == LiveWork.Kind.WORDLIST_IMPORT }, null, null,
             ScansState.RUNNING, l.done, l.total, l.found, l.startedAt, (now - l.startedAt).coerceAtLeast(0), null, null, null,

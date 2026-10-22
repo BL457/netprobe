@@ -133,3 +133,11 @@ R2 Service identification is on demand: a per-port action ("Identify" on the Dev
 R3 Device type marker: a Settings choice between the colour stripe and a small icon, with a palette of ten colours that are easy to tell apart.
 
 R4 Long-press copy options for a device's IP, MAC, name and details, and for a port's address.
+
+## 15. Director rulings 2026-10-22 (b)
+
+R5 Vendor database, offline and user-updated. Settings "Vendor database" row (caption "Names the maker of a device from its MAC address. Downloaded from the IEEE registry on request, about 5 MB, kept on the phone.", status "Not downloaded" or "Updated <date>, N vendors") and a button "Update vendor database". The update fetches, with the wordlist URL fetcher (`fetchBytes`, same redirect, cancel and failure rules, 8 MB per file), the IEEE MA-L, MA-M and MA-S CSVs in that order, parses them, and replaces `files/oui/oui.bin` atomically (temp file, rename); a failure or a Stop leaves the old table. Progress "Downloading vendor database, N of 3" with a pinned Stop in the Settings top bar, an item on the Scans tab, result "Vendor database updated: N vendors" or the fetcher's failure text. `OuiStore` holds a sorted binary table (36, 28, 24 bit prefixes plus a vendor string table), loaded once on first lookup; lookup is longest prefix first; a locally administered address gives "Private address" and is never looked up; a multicast address gives null. Identity: `ouiVendor` comes from `OuiStore.lookup`; when the identity engine ends with no vendor it sets one with reason "MAC prefix: <vendor>" at weight 20 (the old weight 50 "oui" rule is no longer a rule input); "Private address" is shown, never matched. Nothing ships built in.
+
+R6 Bug: the scan finished message came back on every Detail visit. A screen that shows an app message consumes it when it takes it (`AppMessageDelivery`), not when its snackbar ends; a message is still delivered to whichever screen is visible when it arrives (3D).
+
+R7 The Device type marker default is Icon.

@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.northwalessolutions.netprobe.ui.rootInsets
+import com.northwalessolutions.netprobe.oui.OuiCopy
+import com.northwalessolutions.netprobe.oui.OuiUpdateState
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.BuildConfig
 import com.northwalessolutions.netprobe.data.SettingsDefaults
@@ -63,11 +65,14 @@ data class SettingsUi(val state: SettingsState, val networkName: String? = null,
                       /** The listener's status line (3C spec 3.1), already worded; null shows nothing. */
                       val listenStatus: String? = null,
                       /** The About row and its dialog (3D spec 5). */
-                      val about: AboutInfo = AboutInfo("", 0, "", ""))
+                      val about: AboutInfo = AboutInfo("", 0, "", ""),
+                      /** The vendor database row and its pinned progress line. */
+                      val vendorDb: VendorDbUi = VendorDbUi())
 
 /** [current] reads the live settings at the Reset tap, so the Undo snapshot is never a stale recomposition value. */
 data class SettingsActions(val update: ((SettingsState) -> SettingsState) -> Unit = {}, val current: () -> SettingsState = { SettingsState() },
-                           val onManualChange: (List<Subnet>) -> Unit = {}, val clearVulnCache: suspend () -> String = { "" }, val onOpenWordlists: () -> Unit = {})
+                           val onManualChange: (List<Subnet>) -> Unit = {}, val clearVulnCache: suspend () -> String = { "" }, val onOpenWordlists: () -> Unit = {},
+                           val onUpdateVendors: () -> Unit = {}, val onStopVendors: () -> Unit = {})
 
 // The bar inset and the IME join the content insets (3D spec 1.4); a separate imePadding would count the navigation bar twice.
 @Composable
@@ -81,15 +86,23 @@ fun SettingsScreen(container: AppContainer, onOpenWordlists: () -> Unit = {}) {
     val wordlists by rememberWordlists(container)
     val wordlistsLoaded = rememberWordlistStore(container).value != null
     val listenStatus by container.listen.status.collectAsStateWithLifecycle()   // 3C spec 3.1
+    val updater = container.ouiUpdater
+    DisposableEffect(updater) { updater.attach(); onDispose { updater.detach() } }
+    val update by updater.state.collectAsStateWithLifecycle()
+    val vendorResult by updater.result.collectAsStateWithLifecycle()
+    val vendorInfo by container.ouiStore.info.collectAsStateWithLifecycle()
+    val vendorDb = VendorDbUi(
+        status = vendorInfo?.let { OuiCopy.status(java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(it.updatedAt)), it.count) } ?: OuiCopy.NOT_DOWNLOADED,
+        running = (update as? OuiUpdateState.Running)?.let { OuiCopy.downloading(it.step, it.total) }, result = vendorResult)
     SettingsContent(
         SettingsUi(s, network?.displayName, network?.id, manual, local, if (wordlistsLoaded) wordlists.count { !it.builtIn } else null,
-            ListenCopy.status(listenStatus), AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME)),
+            ListenCopy.status(listenStatus), AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME), vendorDb),
         SettingsActions(update = { container.settings.update(it) }, current = { container.settings.state.value },
             onManualChange = { list -> network?.id?.let { container.settings.manual.set(it, list) } },
             clearVulnCache = {
                 try { container.vulnCache.clear(); "Vulnerability cache cleared" } catch (ce: CancellationException) { throw ce } catch (e: Exception) { "Could not clear cache: ${e.message}" }
             },
-            onOpenWordlists = onOpenWordlists))
+            onOpenWordlists = onOpenWordlists, onUpdateVendors = { updater.start() }, onStopVendors = { updater.cancel() }))
 }
 
 /** Settings layout (Radar spec 6, 3C spec 1 and 2.3). PINNED: the title row and the overflow menu sit in the topBar, never in the scroll. */
@@ -109,11 +122,14 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
     }
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
+          Column {
             Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).heightIn(min = TITLE_ROW_MIN), verticalAlignment = Alignment.CenterVertically) {
                 Text(SettingsCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text,
                     modifier = Modifier.weight(1f).padding(start = Dimens.gutter).semantics { heading() })
                 SettingsMenu(resetEnabled = SettingsDefaults.differs(s), onReset = onReset)
             }
+            ui.vendorDb.running?.let { VendorRunningBar(it, actions.onStopVendors) }
+          }
         }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter)) {
             Section("Discovery")
@@ -144,6 +160,8 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             PinnedSegmented(listOf(SettingsCopy.MARKER_STRIPE, SettingsCopy.MARKER_ICON), TypeMarker.entries.indexOf(s.typeMarker),
                 { i -> update { it.copy(typeMarker = TypeMarker.entries[i]) } },
                 activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, modifier = Modifier.fillMaxWidth().testTag("typeMarker"))
+
+            VendorSection(ui.vendorDb, actions.onUpdateVendors)
 
             Section("Large networks")
             Text(SettingsCopy.LARGE_NETWORKS_CAPTION, style = NetProbeText.data, color = NetProbeColors.textMuted)   // plan review G6

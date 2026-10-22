@@ -19,7 +19,7 @@ data class SettingsState(
     val extEnabled: Boolean = false, val extMax: Int = AppSettings.EXT_MAX_DEFAULT, val extGatewayProbe: Boolean = false,
     /** "Listen between scans" (3C spec 3.1): off by default; covered by SettingsDefaults.reset, so a reset turns it off (D3). */
     val listenMulticast: Boolean = false,
-    /** "Device type marker" (R3): the stripe by default; covered by reset. */
+    /** "Device type marker" (R3): the icon by default; covered by reset. */
     val typeMarker: TypeMarker = TypeMarker.ICON,
 )
 

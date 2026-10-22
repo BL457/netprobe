@@ -35,18 +35,53 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
                          private val readTimeoutMs: Int = URL_READ_TIMEOUT_MS) {
 
     suspend fun fetch(url: URL, store: WordlistStore, onProgress: (Long, Long?) -> Unit = { _, _ -> }): UrlImportResult =
-        withContext(Dispatchers.IO) { follow(url, store, onProgress) }
+        withContext(Dispatchers.IO) { follow(url, storeSink(store), onProgress) }
+
+    /**
+     * The same fetch (redirect rules, caps, cancel, failure kinds) for a body that is kept in memory: [UrlImportResult.Fetched] holds at
+     * most [maxBytes] bytes, and a larger body is Stored(TooLarge) with no byte read once Content-Length says so. Used by the vendor database.
+     */
+    suspend fun fetchBytes(url: URL, maxBytes: Long, onProgress: (Long, Long?) -> Unit = { _, _ -> }): UrlImportResult =
+        withContext(Dispatchers.IO) { follow(url, bytesSink(maxBytes), onProgress) }
+
+    /** What becomes of a body that passed the checks: [consume] stores it, [discardLate] undoes a store that finished as Cancel landed. */
+    private class Sink(val maxBytes: Long, val consume: suspend (String?, InputStream) -> UrlImportResult, val discardLate: suspend (UrlImportResult) -> Unit)
+
+    private fun storeSink(store: WordlistStore) = Sink(WordlistStore.MAX_IMPORT_BYTES.toLong(),
+        { name, input -> UrlImportResult.Stored(store.import(name, input)) },
+        { r -> ((r as? UrlImportResult.Stored)?.result as? ImportResult.Imported)?.let { store.delete(it.meta.id) } })
+
+    private fun bytesSink(maxBytes: Long) = Sink(maxBytes, { _, input ->
+        try {
+            input.use { src ->
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(SNIFF_BUFFER_BYTES)
+                var total = 0L
+                var tooLarge = false
+                while (true) {
+                    val n = src.read(buf)
+                    if (n < 0) break
+                    total += n
+                    if (total > maxBytes) { tooLarge = true; break }
+                    out.write(buf, 0, n)
+                }
+                if (tooLarge) UrlImportResult.Stored(ImportResult.TooLarge) else UrlImportResult.Fetched(out.toByteArray())
+            }
+        } catch (e: IOException) {
+            UrlImportResult.Stored(ImportResult.Unreadable)
+        }
+    }, { })
 
     private sealed interface Step {
         data class Redirect(val url: URL) : Step
         data class Done(val result: UrlImportResult) : Step
     }
 
-    private suspend fun follow(original: URL, store: WordlistStore, onProgress: (Long, Long?) -> Unit): UrlImportResult {
+    private suspend fun follow(original: URL, sink: Sink, onProgress: (Long, Long?) -> Unit): UrlImportResult {
         var current = original
         var hops = 0
         while (true) {
-            when (val step = step(original, current, hops, store, onProgress)) {
+            when (val step = step(original, current, hops, sink, onProgress)) {
                 is Step.Redirect -> {
                     // A followed hop to a name that resolves into the LAN or onto the phone is refused before it is requested (plan review G4).
                     if (!UrlImportRules.isLocalHost(original.host) && resolvesLocal(step.url.host)) return UrlImportResult.Failed(FetchFailure.LocalTarget)
@@ -67,7 +102,7 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
         return addresses.any(UrlImportRules::isLocalAddress)
     }
 
-    private suspend fun step(original: URL, current: URL, hops: Int, store: WordlistStore, onProgress: (Long, Long?) -> Unit): Step {
+    private suspend fun step(original: URL, current: URL, hops: Int, sink: Sink, onProgress: (Long, Long?) -> Unit): Step {
         val conn = open(current)
         try {
             conn.instanceFollowRedirects = false
@@ -87,8 +122,8 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
             val type = conn.contentType
             if (!UrlImportRules.contentType(type)) return failed(FetchFailure.NotText(UrlImportRules.mediaType(type)))
             val length = conn.contentLengthLong
-            if (length > WordlistStore.MAX_IMPORT_BYTES) return Step.Done(UrlImportResult.Stored(ImportResult.TooLarge))   // no body byte is read
-            return Step.Done(readBody(conn, current, length.takeIf { it >= 0 }, store, onProgress))
+            if (length > sink.maxBytes) return Step.Done(UrlImportResult.Stored(ImportResult.TooLarge))   // no body byte is read
+            return Step.Done(readBody(conn, current, length.takeIf { it >= 0 }, sink, onProgress))
         } finally {
             runCatching { conn.disconnect() }   // cleanup only: a failed disconnect has nothing left to release
         }
@@ -123,20 +158,20 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
      * fails (Unreadable, nothing written), and a list that finished storing in the same instant is deleted before Cancelled is reported.
      * The enclosing coroutineScope then ends the job with CancellationException.
      */
-    private suspend fun readBody(conn: HttpURLConnection, finalUrl: URL, total: Long?, store: WordlistStore, onProgress: (Long, Long?) -> Unit): UrlImportResult {
+    private suspend fun readBody(conn: HttpURLConnection, finalUrl: URL, total: Long?, sink: Sink, onProgress: (Long, Long?) -> Unit): UrlImportResult {
         val outer = currentCoroutineContext()[Job]
         return disconnectOnCancel(conn) {
             withContext(NonCancellable) {
-                val r = importBody(conn, finalUrl, total, store, onProgress)
+                val r = importBody(conn, finalUrl, total, sink, onProgress)
                 if (outer?.isActive == false) {
-                    ((r as? UrlImportResult.Stored)?.result as? ImportResult.Imported)?.let { store.delete(it.meta.id) }
+                    sink.discardLate(r)
                     UrlImportResult.Cancelled
                 } else r
             }
         }
     }
 
-    private suspend fun importBody(conn: HttpURLConnection, finalUrl: URL, total: Long?, store: WordlistStore, onProgress: (Long, Long?) -> Unit): UrlImportResult {
+    private suspend fun importBody(conn: HttpURLConnection, finalUrl: URL, total: Long?, sink: Sink, onProgress: (Long, Long?) -> Unit): UrlImportResult {
         onProgress(0, total)
         val raw = try { conn.inputStream } catch (e: IOException) { return UrlImportResult.Failed(UrlImportRules.failureOf(e)) }
         val recording = ErrorRecordingStream(CountingStream(raw, total, onProgress))
@@ -152,11 +187,11 @@ class UrlWordlistFetcher(private val open: (URL) -> HttpURLConnection = { it.ope
             runCatching { buffered.close() }   // cleanup only
             return UrlImportResult.Failed(FetchFailure.NotText(null))
         }
-        val stored = store.import(UrlImportRules.displayName(finalUrl), buffered)   // the store closes the stream
+        val stored = sink.consume(UrlImportRules.displayName(finalUrl), buffered)   // the sink closes the stream
         // A network fault mid-body is a fetch failure, not a file-format one: the store only sees an IOException as Unreadable.
         val fault = recording.lastError
-        if (stored == ImportResult.Unreadable && fault != null) bodyFailure(fault)?.let { return it }
-        return UrlImportResult.Stored(stored)
+        if (stored == UrlImportResult.Stored(ImportResult.Unreadable) && fault != null) bodyFailure(fault)?.let { return it }
+        return stored
     }
 
     /** The fetch failure for a body-phase IOException, or null when the job was cancelled (the disconnect is then the cancellation, not a fault). */

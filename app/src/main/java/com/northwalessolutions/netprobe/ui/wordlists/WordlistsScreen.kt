@@ -64,6 +64,7 @@ object WordlistImport {
         is UrlImportResult.Stored -> message(result.result)          // the store's own messages, reused as they are
         is UrlImportResult.Failed -> failure(result.reason)
         UrlImportResult.Cancelled -> WordlistCopy.CANCELLED
+        is UrlImportResult.Fetched -> WordlistCopy.UNREADABLE          // not produced by a wordlist import
     }
     fun failure(f: FetchFailure): String = when (f) {
         FetchFailure.UnknownHost -> WordlistCopy.FETCH_HOST
