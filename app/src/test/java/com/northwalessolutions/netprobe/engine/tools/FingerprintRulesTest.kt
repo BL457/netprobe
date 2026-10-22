@@ -1,27 +1,38 @@
 package com.northwalessolutions.netprobe.engine.tools
 
+import com.northwalessolutions.netprobe.engine.serviceid.HttpStackRule
 import org.junit.Assert.*
 import org.junit.Test
 
-/** spec 6.1: every seed rule fires on its sample and not on its negativeSample; $1 substitutes and trims. */
+/** spec 6.1 over http_stacks.json: every converted rule fires on its sample and not on its negativeSample; the version capture appends and trims. */
 class FingerprintRulesTest {
-    private val rules = FingerprintRules.load(javaClass.classLoader!!.getResource("http_fingerprints.json")!!.readText())
-    private fun sources(rule: FingerprintRule, text: String) = when {
-        rule.source == "title" -> FpSources(emptyList(), emptyList(), text, null, "", "")
-        rule.source == "generator" -> FpSources(emptyList(), emptyList(), null, text, "", "")
-        rule.source == "body" -> FpSources(emptyList(), emptyList(), null, null, text, "")
-        rule.source == "errorBody" -> FpSources(emptyList(), emptyList(), null, null, "", text)
-        rule.source == "cookie" -> FpSources(emptyList(), listOf(text), null, null, "", "")
-        else -> FpSources(listOf(rule.source.removePrefix("header:") to text), emptyList(), null, null, "", "")
+    private val rules = FingerprintRules.load(javaClass.classLoader!!.getResource("http_stacks.json")!!.readText())
+    /** The 31 converted rules are one-condition rules; the text is offered to that condition's source. */
+    private fun sources(rule: HttpStackRule, text: String): FpSources {
+        val source = rule.all.single().where
+        return when {
+            source == "title" -> FpSources(emptyList(), emptyList(), text, null, "", "")
+            source == "generator" -> FpSources(emptyList(), emptyList(), null, text, "", "")
+            source == "body" -> FpSources(emptyList(), emptyList(), null, null, text, "")
+            source == "errorBody" -> FpSources(emptyList(), emptyList(), null, null, "", text)
+            source == "cookie" -> FpSources(emptyList(), listOf(text), null, null, "", "")
+            source == "server" -> FpSources(listOf("Server" to text), emptyList(), null, null, "", "")
+            source == "poweredBy" -> FpSources(listOf("X-Powered-By" to text), emptyList(), null, null, "", "")
+            else -> FpSources(listOf(source.removePrefix("header:") to text), emptyList(), null, null, "", "")
+        }
     }
+    private val converted = rules.take(31)
 
-    @Test fun `the file loads all 31 rules with unique ids`() {
-        assertEquals(31, rules.size); assertEquals(31, rules.map { it.id }.toSet().size)
+    @Test fun `the file keeps the 31 converted rules first, with unique ids over the whole file`() {
+        assertTrue(rules.size > 31); assertEquals(rules.size, rules.map { it.id }.toSet().size)
+        assertEquals(listOf("synology-title", "synology-body", "synology-dsm7-body", "synology-csp", "synology-location"), converted.take(5).map { it.id })
+        assertEquals("lighttpd", converted.last().id)
+        assertTrue(converted.all { it.all.size == 1 })
     }
-    @Test fun `every rule matches its sample and not its negative sample`() {
-        for (r in rules) {
-            assertNotNull("${r.id} did not match its sample", FingerprintRules.match(r, sources(r, r.sample)))
-            r.negativeSample?.let { assertNull("${r.id} matched its negative sample", FingerprintRules.match(r, sources(r, it))) }
+    @Test fun `every converted rule matches its sample and not its negative sample`() {
+        for (r in converted) {
+            assertNotNull("${r.id} did not match its sample", FingerprintRules.match(r, sources(r, r.sample.single!!)))
+            r.negativeSample?.let { assertNull("${r.id} matched its negative sample", FingerprintRules.match(r, sources(r, it.single!!))) }
         }
     }
     @Test fun `a version group substitutes and an empty group trims`() {
@@ -51,7 +62,7 @@ class FingerprintRulesTest {
         assertEquals(listOf("UniFi Security Gateway", "PHP"), names(usg))
     }
     @Test fun `the file has no em-dashes`() {
-        val text = javaClass.classLoader!!.getResource("http_fingerprints.json")!!.readText()
+        val text = javaClass.classLoader!!.getResource("http_stacks.json")!!.readText()
         assertFalse(text.contains('\u2014'))
     }
 }

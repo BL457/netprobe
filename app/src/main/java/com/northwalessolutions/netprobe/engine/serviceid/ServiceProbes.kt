@@ -1,12 +1,14 @@
 package com.northwalessolutions.netprobe.engine.serviceid
 
+import com.northwalessolutions.netprobe.engine.common.HttpClient
+import com.northwalessolutions.netprobe.engine.common.HttpResult
 import com.northwalessolutions.netprobe.engine.discovery.HttpPeek
 import com.northwalessolutions.netprobe.engine.discovery.HttpTitleFetcher
 import java.net.Inet4Address
 import java.net.InetAddress
 
 /** What one port's ladder produced: the best finding (null when nothing beyond the port table), the soft and hard hits, and the probe ids sent. */
-class LadderResult(val info: ServiceInfo?, val hits: List<ProbeHit>, val probesSent: List<String>)
+class LadderResult(val info: ServiceInfo?, val hits: List<ProbeHit>, val probesSent: List<String>, val stackHits: List<StackHit> = emptyList())
 
 /**
  * The nmap-style service ladder (Phase 3E spec 3 and 6). Data drives it: [probes] come from `service_probes.json`. The port table
@@ -22,6 +24,10 @@ class ServiceProbes(
     private val http: HttpTitleFetcher = HttpTitleFetcher(timeoutMs = HTTP_FETCH_TIMEOUT_MS),
     private val clock: () -> Long = { System.nanoTime() / NANOS_PER_MS },
     private val rand: () -> String = ::randomToken,
+    /** The HTTP stack rules of `http_stacks.json`; empty turns the stack pass off. */
+    private val stackRules: List<HttpStackRule> = emptyList(),
+    /** The extra idempotent GETs a stack rule may spend (paths, favicon) on one port; tests script it. */
+    private val stackGetFor: (Inet4Address, Int, Boolean) -> StackGet = ::httpClientStackGet,
 ) {
     companion object {
         const val NULL_WAIT_MS = 1000
@@ -48,6 +54,15 @@ class ServiceProbes(
         val HINT_ONLY: Set<Int> = setOf(631)
 
         fun randomToken(): String = (1..TOKEN_LENGTH).map { TOKEN_CHARS.random() }.joinToString("")
+
+        /** The real stack GET: HttpClient (no redirects, body cut at [maxBytes]), the TLS context made only when a GET is actually made. */
+        fun httpClientStackGet(ip: Inet4Address, port: Int, tls: Boolean): StackGet {
+            val ctx by lazy { HttpClient.trustAllContext() }
+            return StackGet { path, maxBytes ->
+                val r = HttpClient(HTTP_FETCH_TIMEOUT_MS, maxBytes).request(ip, port, tls, "GET", path, null, if (tls) ctx else null)
+                (r as? HttpResult.Ok)?.response?.let { StackReply(it.status, it.body) }
+            }
+        }
     }
 
     private val tlsProbe: ServiceProbe? = probes.firstOrNull { it.builtin == ServiceProbeRules.BUILTIN_TLS }
@@ -73,6 +88,7 @@ class ServiceProbes(
         private val sent = mutableListOf<String>()
         private val sentIds = HashSet<String>()
         private val hits = mutableListOf<ProbeHit>()
+        private var stackHits: List<StackHit> = emptyList()
 
         private val industrial = port in INDUSTRIAL
         private val fragile = port in FRAGILE
@@ -100,7 +116,7 @@ class ServiceProbes(
 
         suspend fun run(): LadderResult {
             if (budget == null) passive() else active()
-            return LadderResult(best, hits, sent)
+            return LadderResult(best, hits, sent, stackHits)
         }
 
         // ---- Quick: the null probe, or the one 3A step the port is hinted for ----
@@ -196,7 +212,7 @@ class ServiceProbes(
                         val c = t.peerCert() ?: CertInfo(null, null, emptyList())
                         val name = if (port in p.ports) "HTTPS" else "TLS"
                         val tlsInfo = ServiceInfo(name, detail = c.names.takeIf { it.isNotEmpty() }?.joinToString(", ")?.let { "cert $it" },
-                            confidence = Confidence.CONFIRMED, certCn = c.cn, certOrg = c.org)
+                            confidence = Confidence.CONFIRMED, certCn = c.cn, certOrg = c.org, probe = p.id)
                         best = tlsInfo
                         sent += p.id
                     }
@@ -227,7 +243,8 @@ class ServiceProbes(
         /** A hard hit ends the ladder; a soft hit keeps the best finding and narrows the rest to its `narrow` ids. */
         private fun accept(hit: ProbeHit, replyText: String) {
             hits += hit
-            val base = ServiceInfo(hit.service, hit.product, hit.version, hit.detail, Confidence.CONFIRMED)
+            val base = ServiceInfo(hit.service, hit.product, hit.version, hit.detail, Confidence.CONFIRMED, stack = hit.stack,
+                stackRole = hit.stack?.let { hit.role.name.lowercase() }, cpe = hit.cpeProduct, probe = hit.probeId)
             val info = enrich(base, replyText)
             if (hit.soft) {
                 if (best == null || best?.confidence != Confidence.CONFIRMED) best = info
@@ -259,6 +276,27 @@ class ServiceProbes(
             val base = current ?: return
             val named = if (tlsOn && peek != null && base.name == "TLS") base.copy(name = "HTTPS") else base
             best = withPeek(named, peek)
+            if (peek != null) best = stackPass(best ?: return, peek, v4)
+        }
+
+        /** The stack pass over the GET already made (never refetched); the first hard hit names the stack, every hit is kept (spec 5). */
+        private suspend fun stackPass(info: ServiceInfo, peek: HttpPeek, v4: Inet4Address): ServiceInfo {
+            if (stackRules.isEmpty()) return info
+            val base = StackSources(peek.headers, peek.cookies, peek.title, HttpStacks.generator(peek.body), peek.body, "", peek.status)
+            val raw = stackGetFor(v4, real, tlsOn)
+            val get = StackGet { path, maxBytes -> counted { raw.get(path, maxBytes) } }
+            val canSpend = { remainingMs() >= MIN_STEP_MS && (budget == null || (budget.allowsStep() && budget.hostAllows(hostId))) }
+            val result = HttpStacks.run(stackRules, base, true, get, canSpend)
+            stackHits = result.hits
+            val hard = result.hard ?: return info
+            val rule = hard.rule
+            // A version belongs to the product that sent it: the stack's own capture replaces the Server header's pair, and a CPE is kept
+            // only when the version it will be built with is the stack's or the header's product is that very product.
+            val own = hard.version != null
+            val keepCpe = rule.cpeProduct != null && (own || info.product.equals(rule.cpeProduct, ignoreCase = true))
+            return info.copy(
+                product = if (own) rule.product ?: hard.stack else info.product, version = if (own) hard.version else info.version,
+                stack = hard.stack, stackRole = rule.role.name.lowercase(), cpe = if (keepCpe) rule.cpeProduct else null, probe = rule.id)
         }
 
         private fun withPeek(info: ServiceInfo, p: HttpPeek?): ServiceInfo {

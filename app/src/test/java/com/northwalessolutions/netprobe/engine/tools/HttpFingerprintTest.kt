@@ -13,7 +13,7 @@ import org.junit.Test
 
 /** spec 6.1 and 12.1: requests, the hop, every finding kind, hints with versions stripped, cookie values never stored. */
 class HttpFingerprintTest {
-    private val rules = FingerprintRules.load(javaClass.classLoader!!.getResource("http_fingerprints.json")!!.readText())
+    private val rules = FingerprintRules.load(javaClass.classLoader!!.getResource("http_stacks.json")!!.readText())
     private fun target(tls: Boolean = false, port: Int = 5000) = ToolTarget(7, ip("10.0.3.9"), port, tls, "chnas.local")
     private fun ok(status: Int, body: String = "", headers: List<Pair<String, String>> = emptyList(), reason: String = "OK") =
         HttpResult.Ok(HttpResponse(status, reason, headers, body.toByteArray(), false, body.length.toLong()))

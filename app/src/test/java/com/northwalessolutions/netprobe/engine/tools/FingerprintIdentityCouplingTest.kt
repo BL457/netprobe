@@ -16,7 +16,7 @@ import org.junit.Test
 
 /** Hint-to-rule coupling: the hints the real tool emits for the seven named products set the vendor, model, os and type of the real identify rules. */
 class FingerprintIdentityCouplingTest {
-    private val fpRules = FingerprintRules.load(javaClass.classLoader!!.getResource("http_fingerprints.json")!!.readText())
+    private val fpRules = FingerprintRules.load(javaClass.classLoader!!.getResource("http_stacks.json")!!.readText())
     private val identifier = DeviceIdentifier(IdentifyRules.load(javaClass.classLoader!!.getResource("identify_rules.json")!!.readText()))
     private val host = ip("10.0.3.9")
 

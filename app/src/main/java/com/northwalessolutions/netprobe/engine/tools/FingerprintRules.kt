@@ -1,36 +1,24 @@
 package com.northwalessolutions.netprobe.engine.tools
 
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-
-@Serializable data class FingerprintRule(val id: String, val source: String, val pattern: String, val name: String, val sample: String, val negativeSample: String? = null)
+import com.northwalessolutions.netprobe.engine.serviceid.HttpStackRule
+import com.northwalessolutions.netprobe.engine.serviceid.HttpStackRules
+import com.northwalessolutions.netprobe.engine.serviceid.HttpStacks
+import com.northwalessolutions.netprobe.engine.serviceid.StackSources
 
 /** What a rule reads (spec 6.1): response headers in order, cookie names, the page title and generator, the page body and the error page body. */
-data class FpSources(val headers: List<Pair<String, String>>, val cookies: List<String>, val title: String?, val generator: String?, val body: String, val errorBody: String)
+data class FpSources(val headers: List<Pair<String, String>>, val cookies: List<String>, val title: String?, val generator: String?, val body: String, val errorBody: String,
+                     val status: Int? = null)
 data class FpMatch(val name: String, val excerpt: String)
 
+/** The Fingerprint tool's reader of `http_stacks.json` (Phase 3E spec 5): the same rules the service ladder uses, tested over the tool's sources. */
 object FingerprintRules {
-    private const val EXCERPT_CHARS = 40
-    private val json = Json { ignoreUnknownKeys = true }
-    fun load(text: String): List<FingerprintRule> = runCatching { json.decodeFromString<List<FingerprintRule>>(text) }.getOrElse { emptyList() }
+    fun load(text: String, cpeProducts: Set<String>? = null): List<HttpStackRule> = HttpStackRules.load(text, cpeProducts).rules
 
-    /** The resolved product name and the matched text when the rule matches, else null; $1 is the first group, trimmed. */
-    fun match(rule: FingerprintRule, sources: FpSources): FpMatch? {
-        val re = runCatching { Regex(rule.pattern, RegexOption.IGNORE_CASE) }.getOrNull() ?: return null
-        val candidates: List<String> = when {
-            rule.source == "title" -> listOfNotNull(sources.title)
-            rule.source == "generator" -> listOfNotNull(sources.generator)
-            rule.source == "body" -> listOf(sources.body)
-            rule.source == "errorBody" -> listOf(sources.errorBody)
-            rule.source == "cookie" -> sources.cookies
-            rule.source.startsWith("header:") -> { val h = rule.source.removePrefix("header:"); sources.headers.filter { it.first.equals(h, ignoreCase = true) }.map { it.second } }
-            else -> emptyList()
-        }
-        for (c in candidates) {
-            val m = re.find(c) ?: continue
-            val group = if (m.groups.size > 1) m.groups[1]?.value.orEmpty() else ""
-            return FpMatch(rule.name.replace("\$1", group).trim(), c.take(EXCERPT_CHARS))   // the excerpt is the text the rule read
-        }
-        return null
+    /** The resolved stack name (with its version when the rule captured one) and the matched text when every condition holds, else null. */
+    fun match(rule: HttpStackRule, sources: FpSources): FpMatch? {
+        val s = StackSources(sources.headers, sources.cookies, sources.title, sources.generator, sources.body, sources.errorBody, sources.status)
+        val m = HttpStacks.test(rule, s) ?: return null
+        val name = listOfNotNull(HttpStacks.expand(rule.stack, m.capture), HttpStacks.expand(rule.version, m.capture)).joinToString(" ")
+        return FpMatch(name.ifEmpty { rule.stack }, m.excerpt)
     }
 }

@@ -17,12 +17,12 @@ enum class MatchRole { DEVICE, SOFTWARE }
 /** One line of a probe's match list: a regex over the reply text and the fields it sets (Phase 3E spec 4). */
 class ProbeMatch(
     val regex: Regex, val service: String, val product: String?, val version: String?, val detail: String?, val stack: String?,
-    val role: MatchRole, val soft: Boolean, val narrow: List<String>,
+    val role: MatchRole, val soft: Boolean, val narrow: List<String>, val cpeProduct: String? = null,
 )
 
 /** What a match produced, with the `$1..$9` and `$$` substitutions already made. */
 data class ProbeHit(val probeId: String, val service: String, val product: String?, val version: String?, val detail: String?,
-                    val stack: String?, val role: MatchRole, val soft: Boolean, val narrow: List<String>)
+                    val stack: String?, val role: MatchRole, val soft: Boolean, val narrow: List<String>, val cpeProduct: String? = null)
 
 /**
  * One hello. [sendTemplate] is the decoded bytes as ISO-8859-1 text with `{ip}`, `{port}` and `{rand}` still in it; they are
@@ -51,7 +51,7 @@ class ServiceProbe(
         val text = replyText(reply) ?: return null
         for (m in matches) {
             val r = m.regex.find(text) ?: continue
-            return ProbeHit(id, m.service, expand(m.product, r), expand(m.version, r), expand(m.detail, r), expand(m.stack, r), m.role, m.soft, m.narrow)
+            return ProbeHit(id, m.service, expand(m.product, r), expand(m.version, r), expand(m.detail, r), expand(m.stack, r), m.role, m.soft, m.narrow, m.cpeProduct)
         }
         return null
     }
@@ -92,14 +92,15 @@ object ServiceProbeRules {
     val BUILTINS = setOf(BUILTIN_TLS, BUILTIN_HTTP_GET)
     private val json = Json
 
-    fun load(text: String, knownParsers: Set<String> = ProbeParsers.NAMES): LoadedProbes {
+    fun load(text: String, knownParsers: Set<String> = ProbeParsers.NAMES, cpeProducts: Set<String>? = null): LoadedProbes {
+        val cpeLower = cpeProducts?.map { it.lowercase() }?.toSet()
         val root = try { json.parseToJsonElement(text) } catch (e: Exception) { return LoadedProbes(emptyList(), listOf(SkippedProbe("(file)", "not valid JSON: ${e.message?.take(80)}"))) }
         val array = root as? JsonArray ?: return LoadedProbes(emptyList(), listOf(SkippedProbe("(file)", "top level is not a list")))
         val ok = mutableListOf<ServiceProbe>(); val skipped = mutableListOf<SkippedProbe>(); val seen = HashSet<String>()
         array.forEachIndexed { index, el ->
             val id = ((el as? JsonObject)?.get("id") as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: "(entry $index)"
             try {
-                val probe = parse(el, knownParsers)
+                val probe = parse(el, knownParsers, cpeLower)
                 if (!seen.add(probe.id)) skipped += SkippedProbe(probe.id, "duplicate id") else ok += probe
             } catch (e: InvalidProbe) { skipped += SkippedProbe(id, e.message.orEmpty()) }
             catch (e: Exception) { skipped += SkippedProbe(id, "unreadable: ${e.message?.take(80)}") }
@@ -117,7 +118,7 @@ object ServiceProbeRules {
     private fun str(o: JsonObject, key: String): String? = (o[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull
     private fun strList(o: JsonObject, key: String): List<String> = (o[key] as? JsonArray)?.map { (it as? JsonPrimitive)?.contentOrNull ?: bad("$key holds a non-string") }.orEmpty()
 
-    private fun parse(el: JsonElement, knownParsers: Set<String>): ServiceProbe {
+    private fun parse(el: JsonElement, knownParsers: Set<String>, cpeProducts: Set<String>?): ServiceProbe {
         val o = el as? JsonObject ?: bad("not an object")
         val id = str(o, "id")?.takeIf { it.isNotBlank() } ?: bad("missing id")
         val service = str(o, "service")?.takeIf { it.isNotBlank() } ?: bad("missing service")
@@ -144,20 +145,23 @@ object ServiceProbeRules {
         val quick = (o["quick"] as? JsonPrimitive)?.booleanOrNull ?: false
         val matchEls = o["matches"] as? JsonArray ?: bad("missing matches")
         if (matchEls.isEmpty()) bad("matches is empty")
-        val matches = matchEls.map { parseMatch(it) }
+        val matches = matchEls.map { parseMatch(it, cpeProducts) }
         return ServiceProbe(id, service, protocols, template, ports, rarity, safety, tls, waitMs, maxBytes, parser, quick, builtin, matches,
             strList(o, "samples"), strList(o, "negativeSamples"))
     }
 
-    private fun parseMatch(el: JsonElement): ProbeMatch {
+    private fun parseMatch(el: JsonElement, cpeProducts: Set<String>?): ProbeMatch {
         val m = el as? JsonObject ?: bad("a match is not an object")
+        if ("cpe" in m) bad("a free CPE is refused: name a cpeProduct from cpe_map.json")
+        val cpeProduct = str(m, "cpeProduct")
+        if (cpeProduct != null && cpeProducts != null && cpeProduct.lowercase() !in cpeProducts) bad("cpeProduct $cpeProduct is not in cpe_map.json")
         val pattern = str(m, "regex")?.takeIf { it.isNotEmpty() } ?: bad("a match has no regex")
         RegexLint.refusal(pattern)?.let { bad("regex /$pattern/ refused: $it") }
         val regex = try { Regex(pattern) } catch (e: Exception) { bad("regex /$pattern/ does not compile") }   // MULTILINE stays off
         val service = str(m, "service")?.takeIf { it.isNotBlank() } ?: bad("a match has no service")
         val role = when (str(m, "role") ?: "software") { "software" -> MatchRole.SOFTWARE; "device" -> MatchRole.DEVICE; else -> bad("role must be device or software") }
         return ProbeMatch(regex, service, str(m, "product"), str(m, "version"), str(m, "detail"), str(m, "stack"), role,
-            (m["soft"] as? JsonPrimitive)?.booleanOrNull ?: false, strList(m, "narrow"))
+            (m["soft"] as? JsonPrimitive)?.booleanOrNull ?: false, strList(m, "narrow"), cpeProduct)
     }
 
     /** nmap's escapes: `\r \n \t \0 \xNN \\`. Anything else after a backslash is an error. Output is ISO-8859-1 text (one char per byte). */

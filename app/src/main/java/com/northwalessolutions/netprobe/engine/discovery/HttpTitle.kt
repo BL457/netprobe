@@ -15,7 +15,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.*
 
-data class HttpPeek(val title: String?, val server: String?, val authRealm: String?, val status: Int, val poweredBy: String? = null)
+/**
+ * One GET of "/" read for identification. [headers] (in order, names as sent), [cookies] (names only) and [body] (the first 64 KB,
+ * as text) feed the Phase 3E stack rules; they default empty so every older call site compiles.
+ */
+data class HttpPeek(val title: String?, val server: String?, val authRealm: String?, val status: Int, val poweredBy: String? = null,
+                    val headers: List<Pair<String, String>> = emptyList(), val cookies: List<String> = emptyList(), val body: String = "")
 
 object HttpTitleParser {
     private const val MAX_TITLE_CHARS = 120
@@ -44,6 +49,7 @@ open class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBy
         const val HTTP_REDIRECT_MAX = 399
         const val HTTP_ERROR_MIN = 400
         const val MAX_HEADER_CHARS = 120
+        const val MAX_HEADER_VALUE_CHARS = 512
     }
 
     // Trust-all is used ONLY to read the page for identification; nothing sensitive is sent.
@@ -103,8 +109,10 @@ open class HttpTitleFetcher(private val timeoutMs: Int = 2000, private val maxBy
                     // keep whatever bytes arrived
                 }
                 val html = String(bytes.toByteArray(), Charsets.UTF_8)
+                val headers = c.headerFields.orEmpty().entries.filter { it.key != null }.flatMap { (k, vs) -> vs.map { k to it.take(MAX_HEADER_VALUE_CHARS) } }
+                val cookies = headers.filter { it.first.equals("Set-Cookie", ignoreCase = true) }.mapNotNull { it.second.substringBefore(';').substringBefore('=').trim().ifEmpty { null } }
                 return HttpPeek(HttpTitleParser.title(html), c.getHeaderField("Server"), HttpTitleParser.realm(c.getHeaderField("WWW-Authenticate")), status,
-                    c.getHeaderField("X-Powered-By")?.trim()?.take(MAX_HEADER_CHARS)?.ifEmpty { null })
+                    c.getHeaderField("X-Powered-By")?.trim()?.take(MAX_HEADER_CHARS)?.ifEmpty { null }, headers, cookies, html)
             } finally {
                 c.disconnect()
             }

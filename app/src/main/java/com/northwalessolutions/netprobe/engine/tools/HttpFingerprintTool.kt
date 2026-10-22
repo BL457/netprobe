@@ -5,6 +5,8 @@ import com.northwalessolutions.netprobe.engine.common.HttpFailure
 import com.northwalessolutions.netprobe.engine.common.HttpResponse
 import com.northwalessolutions.netprobe.engine.common.HttpResult
 import com.northwalessolutions.netprobe.engine.discovery.HttpTitleParser
+import com.northwalessolutions.netprobe.engine.serviceid.HttpStackRule
+import com.northwalessolutions.netprobe.engine.serviceid.HttpStacks
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.randomToken
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
@@ -26,7 +28,7 @@ suspend fun namedThenIp(tls: Boolean, serverName: String?, exchange: suspend (na
 /** HTTP fingerprint (spec 6.1): GET /, one redirect hop on the same IP, then robots.txt, sitemap.xml, security.txt and a random error page. */
 class HttpFingerprintTool(
     private val getFor: (ToolTarget) -> HttpGet,
-    private val rules: List<FingerprintRule>,
+    private val rules: List<HttpStackRule>,
     private val random: () -> String = ::randomToken,
 ) : Tool {
     override val id = ToolId.HTTP_FINGERPRINT
@@ -69,9 +71,8 @@ class HttpFingerprintTool(
         val pageBody = String(page.body, Charsets.UTF_8)
         val title = HttpTitleParser.title(pageBody)
         title?.let { emit(Finding(FindingKind.TITLE, it, ToolCopy.PAGE_TITLE)); hint("http.title=$it") }
-        // A bounded scan per meta tag (at most META_TAG_MAX chars each), so a hostile page cannot make the match backtrack over the body.
-        val generator = META_TAG.findAll(pageBody).map { it.value }.firstOrNull { GENERATOR_NAME.containsMatchIn(it) }
-            ?.let { GENERATOR_CONTENT.find(it)?.groupValues?.get(1)?.trim()?.ifEmpty { null } }
+        // HttpStacks.generator scans a bounded span per meta tag, so a hostile page cannot make the match backtrack over the body.
+        val generator = HttpStacks.generator(pageBody)
         generator?.let { emit(Finding(FindingKind.GENERATOR, it, ToolCopy.GENERATOR_META)); hint("http.generator=$it") }
 
         textAt(fetch(pageTls, pagePort, "/robots.txt"))?.let { body ->
@@ -92,7 +93,7 @@ class HttpFingerprintTool(
         val errorBody = (fetch(pageTls, pagePort, "/" + random()) as? HttpResult.Ok)?.response?.let { String(it.body, Charsets.UTF_8) }.orEmpty()
         ERROR_SIGNATURE.find(errorBody)?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.trim()?.let { emit(Finding(FindingKind.ERROR_PAGE, it, ToolCopy.ERROR_SIGNATURE)) }
 
-        val sources = FpSources(headers, cookies.map { it.name }, title, generator, pageBody, errorBody)
+        val sources = FpSources(headers, cookies.map { it.name }, title, generator, pageBody, errorBody, page.status)
         val names = LinkedHashSet<String>()
         for (rule in rules) {
             val m = FingerprintRules.match(rule, sources) ?: continue
@@ -143,13 +144,10 @@ class HttpFingerprintTool(
     companion object {
         const val FINGERPRINT_TIMEOUT_MS = 3000; const val MAX_ROBOTS_PATHS = 50; const val STEPS = 5
         val HEADER_NAMES = listOf("Server", "X-Powered-By", "X-AspNet-Version", "X-AspNetMvc-Version", "X-Generator", "Via", "WWW-Authenticate")
-        private const val MIN_PORT = 1; private const val MAX_PORT = 65535; private const val META_TAG_MAX = 500
+        private const val MIN_PORT = 1; private const val MAX_PORT = 65535;
         private const val HTTP_OK = 200; private const val HTTP_PORT = 80; private const val HTTPS_PORT = 443
         private val REDIRECT_STATUSES = 300..399
         private const val FIRST_VISIBLE_ASCII = 0x21; private const val LAST_VISIBLE_ASCII = 0x7E
-        private val META_TAG = Regex("<meta\\b[^>]{0,$META_TAG_MAX}>", RegexOption.IGNORE_CASE)
-        private val GENERATOR_NAME = Regex("name\\s*=\\s*[\"']generator[\"']", RegexOption.IGNORE_CASE)
-        private val GENERATOR_CONTENT = Regex("content\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE)
         private val ROBOTS_RULE = Regex("(?im)^\\s*(Disallow|Allow)\\s*:\\s*(\\S+)")
         private val LOC = Regex("<loc>", RegexOption.IGNORE_CASE)
         private val ERROR_SIGNATURE = Regex("<address>([^<]+)</address>|<center>(nginx[^<]*)</center>|(Apache Tomcat/[\\d.]+)", RegexOption.IGNORE_CASE)

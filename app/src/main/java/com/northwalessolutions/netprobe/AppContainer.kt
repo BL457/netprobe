@@ -6,7 +6,7 @@ import com.northwalessolutions.netprobe.actions.AndroidActionRunner
 import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.common.HttpClient
 import com.northwalessolutions.netprobe.engine.serviceid.TlsPeek
-import com.northwalessolutions.netprobe.engine.tools.FingerprintRules
+import com.northwalessolutions.netprobe.engine.serviceid.HttpStackRules
 import com.northwalessolutions.netprobe.engine.tools.HttpFingerprintTool
 import com.northwalessolutions.netprobe.engine.tools.HttpGet
 import com.northwalessolutions.netprobe.engine.tools.SnmpWalkTool
@@ -183,7 +183,7 @@ class AppContainer(val context: Context) {
                     namedThenIp(tls, t.serverName) { name -> client.request(t.ip, port, tls, "GET", path, name, if (tls) ctx else null) }
                 }
             },
-            rules = FingerprintRules.load(RawResources.read(context, R.raw.http_fingerprints))))
+            rules = stackRules))
         put(ToolId.TLS_CERTIFICATE, TlsCertificateTool(peek = { t, name -> TlsPeek().details(t.ip, t.port, name) }))
         put(ToolId.SNMP_WALK, SnmpWalkTool(exchangeFor = { t -> UdpSnmpExchange(t.ip) }))
         // tcpConnect goes through Probe.connect, so off-subnet hosts are reached over Wi-Fi exactly as port scans are.
@@ -225,6 +225,8 @@ class AppContainer(val context: Context) {
     val mdnsTypes by lazy { RawResources.lines(RawResources.read(context, R.raw.mdns_types)) }
     val identifyRules by lazy { IdentifyRules.load(RawResources.read(context, R.raw.identify_rules)) }
     val cpeMap by lazy { Cpe.load(RawResources.read(context, R.raw.cpe_map)) }
+    /** The HTTP stack rules (Phase 3E spec 5), loaded once: the service ladder, the Fingerprint tool and the identity rules all read this list. */
+    val stackRules by lazy { HttpStackRules.load(RawResources.read(context, R.raw.http_stacks), cpeMap.keys).rules }
     val discoveryEngine by lazy { DiscoveryEngine.production(context, mdnsTypes) }
     val portScanEngine by lazy { PortScanEngine() }
     /** The Clear history cut-off (3D spec 3.8), a data key in the netprobe preferences. */
@@ -259,7 +261,7 @@ class AppContainer(val context: Context) {
         val prefs = context.getSharedPreferences("netprobe", Context.MODE_PRIVATE)
         DirBruteOptionsStore({ prefs.getString(DirBruteOptionsStore.KEY, null) }, { prefs.edit().putString(DirBruteOptionsStore.KEY, it).apply() })
     }
-    val serviceProbes by lazy { ServiceProbes(ServiceProbeRules.load(RawResources.read(context, R.raw.service_probes)).probes) }
+    val serviceProbes by lazy { ServiceProbes(ServiceProbeRules.load(RawResources.read(context, R.raw.service_probes)).probes, stackRules = stackRules) }
     val serviceIdentifier by lazy { ServiceIdentifier(portTable, serviceProbes) }
     val deviceIdentifier by lazy { DeviceIdentifier(identifyRules) }
     val actionRunner by lazy { AndroidActionRunner(context) }
