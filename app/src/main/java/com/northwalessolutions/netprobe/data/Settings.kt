@@ -16,6 +16,8 @@ data class SettingsState(
     val extEnabled: Boolean = false, val extMax: Int = AppSettings.EXT_MAX_DEFAULT, val extGatewayProbe: Boolean = false,
     /** "Listen between scans" (3C spec 3.1): off by default; covered by SettingsDefaults.reset, so a reset turns it off (D3). */
     val listenMulticast: Boolean = false,
+    /** "Service hellos" (3E spec 3): on by default; off makes Full and Custom scans run only the 3A steps. Covered by reset. */
+    val serviceHellos: Boolean = true,
 )
 
 /** The single source of defaults (3C spec 1.1). AppSettings.load reads every default from [DEFAULTS], so the two can never drift. */
@@ -62,7 +64,8 @@ class AppSettings(private val prefs: SharedPreferences) {
             extEnabled = prefs.getBoolean("extEnabled", d.extEnabled),
             extMax = prefs.getInt("extMax", d.extMax).coerceIn(EXT_MAX_MIN, EXT_MAX_MAX),
             extGatewayProbe = prefs.getBoolean("extGatewayProbe", d.extGatewayProbe),
-            listenMulticast = prefs.getBoolean("listenMulticast", d.listenMulticast))
+            listenMulticast = prefs.getBoolean("listenMulticast", d.listenMulticast),
+            serviceHellos = prefs.getBoolean("serviceHellos", d.serviceHellos))
     }
     /** Port-scan options for the detail screen and "Quick scan all". */
     fun scanOptions() = ScanOptions(concurrency = state.value.scanConcurrency, connectTimeoutMs = state.value.scanTimeoutMs)
@@ -71,7 +74,7 @@ class AppSettings(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean("mdns", s.mdns).putBoolean("ssdp", s.ssdp).putBoolean("netbios", s.netbios).putBoolean("rdns", s.reverseDns).putBoolean("snmp", s.snmp).putBoolean("http", s.httpTitle)
             .putInt("sweepConc", s.sweepConcurrency).putInt("connTimeout", s.connectTimeoutMs).putInt("maxPrefix", s.maxPrefix).putInt("scanConc", s.scanConcurrency).putInt("scanTimeout", s.scanTimeoutMs)
             .putString("nvdKey", s.nvdApiKey)
-            .putBoolean("extEnabled", s.extEnabled).putInt("extMax", s.extMax.coerceIn(EXT_MAX_MIN, EXT_MAX_MAX)).putBoolean("extGatewayProbe", s.extGatewayProbe).putBoolean("listenMulticast", s.listenMulticast).apply()
+            .putBoolean("extEnabled", s.extEnabled).putInt("extMax", s.extMax.coerceIn(EXT_MAX_MIN, EXT_MAX_MAX)).putBoolean("extGatewayProbe", s.extGatewayProbe).putBoolean("listenMulticast", s.listenMulticast).putBoolean("serviceHellos", s.serviceHellos).apply()
         _state.value = load()
     }
 

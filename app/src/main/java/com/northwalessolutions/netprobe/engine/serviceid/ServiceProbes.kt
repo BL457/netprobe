@@ -38,6 +38,8 @@ class ServiceProbes(
         const val MAX_PROBES_PER_PORT = 6
         const val PORT_WALL_MS = 6_000L
         const val DEFAULT_MAX_RARITY = 3
+        /** null, tls, http-head, http-get, rtsp-options, rdp-x224: the Phase 3A steps, the first probes of the file. */
+        const val THREE_A_PROBES = 6
         private const val MIN_STEP_MS = 50L
         private const val MAX_HEADER = 120
         private const val NANOS_PER_MS = 1_000_000L
@@ -72,10 +74,10 @@ class ServiceProbes(
 
     /** Runs the ladder for [port] ([real] is the port actually connected to, equal in production). */
     suspend fun run(ip: InetAddress, port: Int, real: Int, baseName: String, mode: ProbeMode, hostId: Long = 0L): LadderResult =
-        Ladder(ip, port, real, baseName, (mode as? ProbeMode.Active)?.budget, hostId).run()
+        Ladder(ip, port, real, baseName, (mode as? ProbeMode.Active)?.budget, hostId, (mode as? ProbeMode.Active)?.hellos ?: true).run()
 
     private inner class Ladder(private val ip: InetAddress, private val port: Int, private val real: Int, private val baseName: String,
-                               private val budget: ActiveProbeBudget?, private val hostId: Long) {
+                               private val budget: ActiveProbeBudget?, private val hostId: Long, private val hellos: Boolean = true) {
         private val start = clock()
         private var connects = 0
         private var ended = false
@@ -143,12 +145,19 @@ class ServiceProbes(
 
         private fun plan(): List<ServiceProbe> {
             if (fragile) return emptyList()
+            if (!hellos) return threeAPlan()
             val hinted = probes.filter { port in it.ports }
             val rest: List<ServiceProbe> =
                 if (industrial || hintOnly) emptyList()
                 else probes.filter { it !in hinted && it.safety == ProbeSafety.SAFE && it.rarity <= DEFAULT_MAX_RARITY }.sortedBy { it.rarity }
             val all = (hinted + rest).filter { it.builtin == ServiceProbeRules.BUILTIN_TLS || it.sendsBytes }
             return if (industrial) all.filter { it.safety == ProbeSafety.CAREFUL } else all
+        }
+
+        /** The Settings switch off: only the first six probes of the file, each on its hinted ports as in 3A, and the TLS check on any port. */
+        private fun threeAPlan(): List<ServiceProbe> {
+            if (industrial) return emptyList()
+            return probes.take(THREE_A_PROBES).filter { (port in it.ports || it.builtin == ServiceProbeRules.BUILTIN_TLS) && (it.builtin == ServiceProbeRules.BUILTIN_TLS || it.sendsBytes) }
         }
 
         private fun admissible(p: ServiceProbe): Boolean {
@@ -284,7 +293,7 @@ class ServiceProbes(
             if (stackRules.isEmpty()) return info
             val base = StackSources(peek.headers, peek.cookies, peek.title, HttpStacks.generator(peek.body), peek.body, "", peek.status)
             val raw = stackGetFor(v4, real, tlsOn)
-            val get = StackGet { path, maxBytes -> counted { raw.get(path, maxBytes) } }
+            val get = StackGet { path, maxBytes -> if (hellos) counted { raw.get(path, maxBytes) } else null }
             val canSpend = { remainingMs() >= MIN_STEP_MS && (budget == null || (budget.allowsStep() && budget.hostAllows(hostId))) }
             val result = HttpStacks.run(stackRules, base, true, get, canSpend)
             stackHits = result.hits

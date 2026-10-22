@@ -13,7 +13,8 @@ sealed interface ProbeMode {
     /** Detail Quick and every host of Quick scan all: exactly what was sent before Phase 3A. */
     data object Passive : ProbeMode
     /** Detail Full and Custom: today's steps, then the active ladder under one budget per scan. */
-    class Active(val budget: ActiveProbeBudget) : ProbeMode
+    /** [hellos] false (the Settings switch off) keeps only the 3A-equivalent steps: the first six probes of the file, no stack paths, no favicon. */
+    class Active(val budget: ActiveProbeBudget, val hellos: Boolean = true) : ProbeMode
 }
 
 /**
@@ -59,9 +60,9 @@ class ActiveProbeBudget(val maxPorts: Int = MAX_ACTIVE_PORTS, val maxMs: Long = 
 
 object ProbeModes {
     /** Quick is passive, and so is every host of Quick scan all; Full and Custom get a fresh budget per scan (spec 2.2.1). */
-    fun forProfile(profile: ScanProfile, newBudget: () -> ActiveProbeBudget = { ActiveProbeBudget() }): ProbeMode = when (profile) {
+    fun forProfile(profile: ScanProfile, hellos: Boolean = true, newBudget: () -> ActiveProbeBudget = { ActiveProbeBudget() }): ProbeMode = when (profile) {
         // Exhaustive on purpose: a new profile must choose its mode here rather than fail open into the active ladder.
         ScanProfile.Quick -> ProbeMode.Passive
-        ScanProfile.Full, is ScanProfile.Custom -> ProbeMode.Active(newBudget())
+        ScanProfile.Full, is ScanProfile.Custom -> ProbeMode.Active(newBudget(), hellos)
     }
 }

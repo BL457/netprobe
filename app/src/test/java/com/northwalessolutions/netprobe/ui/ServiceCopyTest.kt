@@ -39,4 +39,10 @@ class ServiceCopyTest {
         assertEquals("nginx 1.25.3 200 OK", versionLine(s.copy(stack = null)))
         assertNull(versionLine(ServiceInfo("HTTP", confidence = Confidence.CONFIRMED)))
     }
+
+    @Test fun `the settings switch label and caption`() {
+        assertEquals("Service hellos", ServiceCopy.HELLOS_LABEL)
+        inTable(ServiceCopy.HELLOS_SUPPORT, listOf(Regex("Sends short protocol greetings to open ports during Full and Custom scans .*anonymous connection\\.")))
+        assertFalse(ServiceCopy.HELLOS_SUPPORT.contains(Char(0x2014)))
+    }
 }

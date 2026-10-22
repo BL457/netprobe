@@ -23,7 +23,7 @@ class HostScanBody(private val c: AppContainer) {
 
     private suspend fun scanOn(h: HostEntity, profile: ScanProfile, ip: Inet4Address, sink: ScanSink): Int {
         val types = c.hosts.mdnsTypesFor(h.id)                  // once per scan, not per port
-        val mode = ProbeModes.forProfile(profile)   // one budget per Full or Custom scan, shared by its identifies
+        val mode = ProbeModes.forProfile(profile, c.settings.state.value.serviceHellos)   // one budget per Full or Custom scan, shared by its identifies
         sink.identify { IdentifyCount() }
         val pipeline = ScanPipeline(c.portScanEngine, gate = c.foregroundGate::await, options = c.settings.scanOptions(),
             identify = { port -> c.serviceIdentifier.identify(ip, port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), mode, h.id) },

@@ -9,7 +9,7 @@ class SettingsDefaultsTest {
     private val d = SettingsDefaults.DEFAULTS
     private val tuned = SettingsState(mdns = false, ssdp = false, netbios = false, reverseDns = false, snmp = false, httpTitle = false,
         sweepConcurrency = 256, connectTimeoutMs = 900, maxPrefix = 20, scanConcurrency = 64, scanTimeoutMs = 1200, nvdApiKey = "key-1",
-        extEnabled = true, extMax = 9, extGatewayProbe = true, listenMulticast = true)
+        extEnabled = true, extMax = 9, extGatewayProbe = true, listenMulticast = true, serviceHellos = false)
 
     /** Each stored key and what the state looks like when only that key is missing from the tuned prefs. */
     private val oneDefault: Map<String, (SettingsState) -> SettingsState> = mapOf(
@@ -20,7 +20,8 @@ class SettingsDefaultsTest {
         "scanTimeout" to { s -> s.copy(scanTimeoutMs = d.scanTimeoutMs) }, "nvdKey" to { s -> s.copy(nvdApiKey = d.nvdApiKey) },
         "extEnabled" to { s -> s.copy(extEnabled = d.extEnabled) }, "extMax" to { s -> s.copy(extMax = d.extMax) },
         "extGatewayProbe" to { s -> s.copy(extGatewayProbe = d.extGatewayProbe) },
-        "listenMulticast" to { s -> s.copy(listenMulticast = d.listenMulticast) })
+        "listenMulticast" to { s -> s.copy(listenMulticast = d.listenMulticast) },
+        "serviceHellos" to { s -> s.copy(serviceHellos = d.serviceHellos) })
 
     @Test fun `reset returns SettingsState() with the current NVD key`() {
         assertEquals(SettingsState(), d)
@@ -31,8 +32,8 @@ class SettingsDefaultsTest {
         assertFalse("the NVD key is not a covered value", SettingsDefaults.differs(SettingsState(nvdApiKey = "k")))
         val oneEach = listOf(d.copy(mdns = false), d.copy(ssdp = false), d.copy(netbios = false), d.copy(reverseDns = false), d.copy(snmp = false),
             d.copy(httpTitle = false), d.copy(sweepConcurrency = 160), d.copy(connectTimeoutMs = 700), d.copy(maxPrefix = 24), d.copy(scanConcurrency = 96),
-            d.copy(scanTimeoutMs = 500), d.copy(extEnabled = true), d.copy(extMax = 5), d.copy(extGatewayProbe = true), d.copy(listenMulticast = true))
-        assertEquals(15, oneEach.size)   // the 15 covered values once plan 3C-2 adds listenMulticast (spec D3)
+            d.copy(scanTimeoutMs = 500), d.copy(extEnabled = true), d.copy(extMax = 5), d.copy(extGatewayProbe = true), d.copy(listenMulticast = true), d.copy(serviceHellos = false))
+        assertEquals(16, oneEach.size)   // the 16 covered values once 3E adds serviceHellos
         oneEach.forEach { assertTrue("$it", SettingsDefaults.differs(it)) }
     }
     @Test fun `fresh prefs load exactly SettingsState()`() {
@@ -90,5 +91,13 @@ class SettingsDefaultsTest {
         val prefs = FakePrefs(); AppSettings(prefs).update { it.copy(listenMulticast = true) }
         assertEquals(true, prefs.stored["listenMulticast"])
         assertTrue(AppSettings(prefs).state.value.listenMulticast)
+    }
+
+    @Test fun `service hellos are on by default and a reset turns them back on`() {
+        assertTrue(SettingsState().serviceHellos)
+        assertTrue(SettingsDefaults.reset(SettingsState(serviceHellos = false)).serviceHellos)
+        val prefs = FakePrefs(); AppSettings(prefs).update { it.copy(serviceHellos = false) }
+        assertEquals(false, prefs.stored["serviceHellos"])
+        assertFalse(AppSettings(prefs).state.value.serviceHellos)
     }
 }

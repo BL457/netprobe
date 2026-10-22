@@ -242,6 +242,39 @@ class ServiceProbesTest {
         assertTrue(net.events.none { it.startsWith("get:") })
     }
 
+    // ---- Settings switch "Service hellos" ----
+    @Test fun `with hellos off only the first six probes run, hinted, and the unhinted hellos and later hinted probes do not`() {
+        silent()
+        val l = ladder(ssh, tls, head, helloA, helloB, helloC, redis)
+        run(l, 7000, ProbeMode.Active(budget(), hellos = false))
+        assertTrue("sent ${sends()}", sends().isEmpty())
+        net.events.clear(); run(l, 6379, ProbeMode.Active(budget(), hellos = false))
+        assertTrue("redis is past the first six: ${sends()}", sends().isEmpty())
+        net.events.clear(); run(l, 80, ProbeMode.Active(budget(), hellos = false))
+        assertEquals(listOf("http-head"), sends())
+    }
+    @Test fun `with hellos off the tls check still runs on a silent port and the same ports get the full ladder with hellos on`() {
+        silent(); net.cert = { cert }
+        val l = ladder(ssh, tls, head, helloA, helloB, helloC, redis)
+        run(l, 9999, ProbeMode.Active(budget(), hellos = false)); assertEquals(listOf("connect:9999", "tls:9999"), net.connectLog())
+        net.events.clear(); net.cert = { null }
+        run(l, 7000, ProbeMode.Active(budget(), hellos = true)); assertEquals(listOf("hello-a", "hello-b"), sends().filter { it.startsWith("hello") })
+    }
+    @Test fun `with hellos off the http stack pass spends no extra GETs`() {
+        net.respond = { _, _, sent -> if (sent?.startsWith("SEND-http-head") == true) Reply.text("HTTP/1.1 200 OK\r\n\r\n") else Reply.SILENT }
+        httpAnswer = { _, _ -> HttpPeek("Home Assistant", null, null, 200) }
+        var extra = 0
+        val rules = HttpStackRules.load("""[{"id":"home-assistant","all":[{"where":"title","pattern":"Home Assistant"}],"stack":"Home Assistant","hard":true,
+            "paths":[{"path":"/api/","status":401,"body":"Unauthorized"}],"sample":"Home Assistant"}]""")
+        assertTrue(rules.skipped.toString(), rules.skipped.isEmpty())
+        val l = ServiceProbes(load(ssh, tls, head), net::transport, fakeHttp, { net.clock.now }, { "RAND" }, rules.rules,
+            { _, _, _ -> StackGet { _, _ -> extra++; StackReply(401, "Unauthorized".toByteArray()) } })
+        val on = run(l, 80, ProbeMode.Active(budget(), hellos = true)); assertEquals(1, extra); assertEquals("Home Assistant", on.info!!.stack)
+        extra = 0; net.events.clear()
+        val r = run(l, 80, ProbeMode.Active(budget(), hellos = false))
+        assertEquals(0, extra); assertEquals("Home Assistant", r.info!!.stack)
+    }
+
     // ---- 7. Stop ----
     @Test fun `stop during a tls handshake closes the socket`() = runBlocking {
         net.hangHandshake = true
