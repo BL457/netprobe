@@ -8,7 +8,12 @@ import java.net.Inet4Address
 import java.net.InetAddress
 
 /** What one port's ladder produced: the best finding (null when nothing beyond the port table), the soft and hard hits, and the probe ids sent. */
-class LadderResult(val info: ServiceInfo?, val hits: List<ProbeHit>, val probesSent: List<String>, val stackHits: List<StackHit> = emptyList())
+class LadderResult(val info: ServiceInfo?, val hits: List<ProbeHit>, val probesSent: List<String>, val stackHits: List<StackHit> = emptyList(),
+                   /** One entry per probe the ladder ran (null read, TLS check, hellos, the HTTP GET), for the Identify service tool. */
+                   val trace: List<ProbeTrace> = emptyList())
+
+/** What one probe got: the bytes read (0 for none) and the name it matched, if any. */
+class ProbeTrace(val id: String, val bytes: Int, val match: String?)
 
 /**
  * The nmap-style service ladder (Phase 3E spec 3 and 6). Data drives it: [probes] come from `service_probes.json`. The port table
@@ -73,11 +78,15 @@ class ServiceProbes(
     private fun text(b: ByteArray) = String(b, Charsets.ISO_8859_1)
 
     /** Runs the ladder for [port] ([real] is the port actually connected to, equal in production). */
-    suspend fun run(ip: InetAddress, port: Int, real: Int, baseName: String, mode: ProbeMode, hostId: Long = 0L): LadderResult =
-        Ladder(ip, port, real, baseName, (mode as? ProbeMode.Active)?.budget, hostId, (mode as? ProbeMode.Active)?.hellos ?: true).run()
+    suspend fun run(ip: InetAddress, port: Int, real: Int, baseName: String, mode: ProbeMode, hostId: Long = 0L, onProbe: (Int) -> Unit = {}): LadderResult =
+        Ladder(ip, port, real, baseName, (mode as? ProbeMode.Active)?.budget, hostId, (mode as? ProbeMode.Active)?.hellos ?: true, onProbe).run()
 
     private inner class Ladder(private val ip: InetAddress, private val port: Int, private val real: Int, private val baseName: String,
-                               private val budget: ActiveProbeBudget?, private val hostId: Long, private val hellos: Boolean = true) {
+                               private val budget: ActiveProbeBudget?, private val hostId: Long, private val hellos: Boolean = true,
+                               private val onProbe: (Int) -> Unit = {}) {
+        private val trace = mutableListOf<ProbeTrace>()
+        private fun traced(id: String, bytes: Int, hit: ProbeHit?): Unit = traced(id, bytes, hit?.let { listOfNotNull(it.service, it.product, it.version).fold(listOf<String>()) { acc, p -> if (acc.lastOrNull().equals(p, ignoreCase = true)) acc else acc + p }.joinToString(" ") })
+        private fun traced(id: String, bytes: Int, match: String?) { trace += ProbeTrace(id, bytes, match); onProbe(trace.size) }
         private val start = clock()
         private var connects = 0
         private var ended = false
@@ -118,7 +127,7 @@ class ServiceProbes(
 
         suspend fun run(): LadderResult {
             if (budget == null) passive() else active()
-            return LadderResult(best, hits, sent, stackHits)
+            return LadderResult(best, hits, sent, stackHits, trace.toList())
         }
 
         // ---- Quick: the null probe, or the one 3A step the port is hinted for ----
@@ -193,11 +202,13 @@ class ServiceProbes(
                 if (o != ConnectOutcome.CONNECTED) return
                 val bytes = t.read(ServiceProbeRules.MAX_REPLY, clip(NULL_WAIT_MS), stopAtNewline = true)
                 if (bytes == null) {
+                    traced("null", 0, null as String?)
                     if (t.peerClosed) { best = ServiceInfo(if (baseName == "Unknown") "TCP" else baseName, detail = "tcpwrapped", confidence = Confidence.PORT_TABLE); ended = true }
                     return
                 }
                 nullReplied = true
                 val hit = nullMatchers.firstNotNullOfOrNull { p -> p.match(bytes) }
+                traced("null", bytes.size, hit)
                 if (hit != null) { accept(hit, text(bytes)); return }
                 best = legacyBanner(bytes)
                 if (fragile || industrial || budget == null) ended = true
@@ -224,6 +235,7 @@ class ServiceProbes(
                             confidence = Confidence.CONFIRMED, certCn = c.cn, certOrg = c.org, probe = p.id)
                         best = tlsInfo
                         sent += p.id
+                        traced(p.id, 0, "TLS")
                     }
                     ConnectOutcome.REFUSED, ConnectOutcome.UNREACHABLE -> { ended = true; refused = true }
                     else -> sent += p.id
@@ -243,8 +255,10 @@ class ServiceProbes(
                 t.write(p.sendBytes(ip.hostAddress ?: "", port, rand()))
                 val hinted = port in p.ports
                 val wait = clip(if (hinted) p.waitMs else minOf(p.waitMs, UNHINTED_WAIT_MS))
-                val bytes = t.read(p.maxBytes, wait) ?: return
-                val hit = p.match(bytes) ?: return
+                val bytes = t.read(p.maxBytes, wait)
+                val hit = bytes?.let { p.match(it) }
+                traced(p.id, bytes?.size ?: 0, hit)
+                if (bytes == null || hit == null) return
                 accept(hit, text(bytes))
             } finally { t.close() }
         }
@@ -281,7 +295,7 @@ class ServiceProbes(
             val v4 = ip4 ?: return
             getDone = true
             val peek = counted { http.fetch(v4, real, tlsOn) }?.takeIf { it.status > 0 }
-            if (peek != null) sent += ServiceProbeRules.BUILTIN_HTTP_GET
+            if (peek != null) { sent += ServiceProbeRules.BUILTIN_HTTP_GET; traced(ServiceProbeRules.BUILTIN_HTTP_GET, peek.body.length, "HTTP ${peek.status}") }
             val base = current ?: return
             val named = if (tlsOn && peek != null && base.name == "TLS") base.copy(name = "HTTPS") else base
             best = withPeek(named, peek)

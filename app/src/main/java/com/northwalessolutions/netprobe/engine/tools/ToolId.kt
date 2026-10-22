@@ -11,7 +11,7 @@ const val TOOL_THREADS = 16
 
 enum class ToolId(val key: String) {
     DIR_BRUTEFORCE("dir-bruteforce"), HTTP_FINGERPRINT("http-fingerprint"),
-    TLS_CERTIFICATE("tls-certificate"), SMB_SESSION("smb-session"), SNMP_WALK("snmp-walk");
+    TLS_CERTIFICATE("tls-certificate"), SMB_SESSION("smb-session"), SNMP_WALK("snmp-walk"), IDENTIFY("identify-service");
     companion object { fun byKey(key: String): ToolId? = entries.firstOrNull { it.key == key } }
 }
 
@@ -19,7 +19,7 @@ enum class ToolId(val key: String) {
 enum class FindingKind {
     PATH, STATUS, HEADER, COOKIE, TITLE, GENERATOR, ROBOTS, SITEMAP, SECURITY_TXT, ERROR_PAGE, FRAMEWORK,
     CERT_SUBJECT, CERT_ISSUER, CERT_SAN, CERT_VALIDITY, CERT_KEY, CERT_SIGNATURE, CERT_FINGERPRINT, CERT_CHAIN, TLS_SESSION, FLAG,
-    SMB_DIALECT, SMB_SIGNING, SMB_SESSION, SMB_HOST, SNMP_SYSTEM, SNMP_INTERFACE, SNMP_ADDRESS, HINT, OTHER;
+    SMB_DIALECT, SMB_SIGNING, SMB_SESSION, SMB_HOST, SNMP_SYSTEM, SNMP_INTERFACE, SNMP_ADDRESS, PROBE, STACK, HINT, OTHER;
     companion object { fun parse(s: String): FindingKind = entries.firstOrNull { it.name == s } ?: OTHER }
 }
 

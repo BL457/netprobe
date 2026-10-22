@@ -53,7 +53,7 @@ object ManualPresenter {
         val fixedLine = when (form.tool) {
             ToolId.SMB_SESSION -> ManualCopy.FIXED_SMB
             ToolId.SNMP_WALK -> ManualCopy.FIXED_SNMP
-            ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT, ToolId.TLS_CERTIFICATE -> null
+            ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT, ToolId.TLS_CERTIFICATE, ToolId.IDENTIFY -> null
         }
         val info = if (!lan) ManualCopy.NO_LAN else known?.let { ManualCopy.knownDevice(DisplayName.of(it.host)) }
         val rows = history.mapNotNull { nr -> ToolId.byKey(nr.run.toolId)?.let { id -> historyRow(nr, id, now, formatDate) } }

@@ -30,17 +30,24 @@ class ServiceIdentifier(
      * hinted for it, the one Phase 3A step); Active runs the whole ladder under the scan's budget. [hostId] keys that budget by host.
      */
     suspend fun identify(ip: InetAddress, port: Int, evidence: Evidence = Evidence(), mode: ProbeMode = ProbeMode.Passive, hostId: Long = 0L): ServiceInfo =
+        identifyTraced(ip, port, evidence, mode, hostId).first
+
+    /** As [identify], also returning what the ladder ran, for the Identify service tool; [onProbe] is told the count after each probe. */
+    suspend fun identifyTraced(ip: InetAddress, port: Int, evidence: Evidence = Evidence(), mode: ProbeMode = ProbeMode.Passive, hostId: Long = 0L,
+                               onProbe: (Int) -> Unit = {}): Pair<ServiceInfo, LadderResult> =
         withContext(Dispatchers.IO) {
             val baseName = table.nameFor(port)
             val base = ServiceInfo(baseName, confidence = Confidence.PORT_TABLE)
-            val fromProbe: ServiceInfo? = probes.run(ip, port, portOverride[port] ?: port, baseName, mode, hostId).info
+            val ladder = probes.run(ip, port, portOverride[port] ?: port, baseName, mode, hostId, onProbe)
+            val fromProbe: ServiceInfo? = ladder.info
             val mdns = mdnsConfirms.entries.firstOrNull { (t, r) -> t in evidence.mdnsTypes && port in r.first }
-            when {
+            val info = when {
                 fromProbe != null && fromProbe.confidence == Confidence.CONFIRMED -> fromProbe
                 mdns != null -> ServiceInfo(mdns.value.second, detail = "mDNS ${mdns.key}", confidence = Confidence.CONFIRMED)
                 fromProbe != null -> fromProbe
                 evidence.upnpServer != null && port in HTTP -> base.copy(detail = evidence.upnpServer, confidence = Confidence.CONFIRMED)
                 else -> base
             }
+            info to ladder
         }
 }

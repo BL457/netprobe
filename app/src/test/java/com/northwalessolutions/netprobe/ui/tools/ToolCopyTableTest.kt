@@ -20,7 +20,9 @@ class ToolCopyTableTest {
     private val ts = "\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"
     private val templates: List<Regex> = listOf(
         // names, Tools row and blocks
-        "Directory brute-force", "HTTP fingerprint", "TLS certificate", "SMB session", "SNMP walk",
+        "Directory brute-force", "HTTP fingerprint", "TLS certificate", "SMB session", "SNMP walk", "Identify service",
+        // Identify service (3E)
+        "[a-z0-9-]+: \\d+ bytes?, .+", "[a-z0-9-]+: .+", ".+, \\d+ probes?", "No service recognised, \\d+ probes?", "probe \\d+ of \\d+",
         "Tools", "\\d+ available", "Last run .+: .+ on (\\d+|UDP 161), .+", "No tools run yet", "Tools, \\d+ available, (expand|collapse)",
         "Last run .+ on (\\d+|UDP 161): .+", "Not run yet", "Results", "Show .+ results", "\\d+", "UDP 161", "Run .+ on port (\\d+|UDP 161)", "Run tool",
         // busy, Home, Quick scan all
@@ -122,6 +124,10 @@ class ToolCopyTableTest {
         for (e in listOf(0, 1, 3)) for (p in listOf(1, 4614)) add(ToolCopy.bruteDone(7, p, e))
         addAll(listOf(ToolCopy.BRUTE_CAP, ToolCopy.BRUTE_RUNAWAY, ToolCopy.BRUTE_NO_ANSWER, ToolCopy.bruteStoppedAnswering(1), ToolCopy.bruteStoppedAnswering(51),
             ToolCopy.BRUTE_NO_WORDLIST, ToolCopy.failed(ToolCopy.BRUTE_NO_WORDLIST), ToolCopy.bruteFallback(ToolCopy.bruteDone(7, 312, 0))))
+        addAll(listOf(ToolCopy.probeLine("redis-info", 312, "Redis 7.2.4"), ToolCopy.probeLine("ssh", 1, null), ToolCopy.probeLine("null", 0, null),
+            ToolCopy.stackLine("home-assistant", "Home Assistant", null), ToolCopy.stackLine("jenkins", "Jenkins", "2.4"),
+            ToolCopy.identifySummary("Redis", "Redis", "7.2.4", 3), ToolCopy.identifySummary("HTTP", "nginx", null, 1), ToolCopy.identifySummary("SSH", "OpenSSH", "8.2p1", 2),
+            ToolCopy.identifyNone(1), ToolCopy.identifyNone(5), ToolCopy.identifyProgress(2, 6)))
         for (n in listOf(1, 6)) { add(ToolCopy.fingerprintSummary("Pi-hole", n)); add(ToolCopy.fingerprintSummary(null, n)) }
         addAll(listOf(ToolCopy.FINGERPRINT_NO_RESPONSE, ToolCopy.tlsSummary("unifi.local", date, false), ToolCopy.tlsSummary("unifi.local", date, true), ToolCopy.TLS_NO_HANDSHAKE))
         for (a in listOf(true, false)) for (b in listOf(true, false)) for (c in listOf(true, false)) add(ToolCopy.smbSummary("SMB 2.1", a, b, c))

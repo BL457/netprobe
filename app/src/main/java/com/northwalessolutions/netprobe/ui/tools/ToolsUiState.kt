@@ -36,7 +36,7 @@ object ToolsUiModel {
     private const val MS_PER_S = 1000L
     /** The Tools block (spec 8.1), or null when no tool applies to the host. [runs] are newest first (the DAO order). */
     fun of(host: HostEntity, ports: List<Pair<Int, ServiceInfo>>, runs: List<ToolRunEntity>, now: Long, formatDate: (Long) -> String = RelativeTime::defaultDate): ToolsUiState? {
-        val blocks = ToolId.entries.mapNotNull { id ->
+        val blocks = (ToolId.entries - ToolId.IDENTIFY).mapNotNull { id ->   // Identify service is a manual tool for now (3E spec O1)
             val snmp = id == ToolId.SNMP_WALK
             val targets = if (snmp) listOfNotNull(ToolApplicability.SNMP_PORT.takeIf { ToolApplicability.snmp(host) })
                           else ports.filter { (p, s) -> ToolApplicability.appliesTo(id, p, s) }.map { it.first }.sorted()
@@ -60,7 +60,9 @@ object ToolsUiModel {
         val snmp = a.toolId == ToolId.SNMP_WALK
         val label = ToolCopy.pinnedLabel(ToolCopy.toolName(a.toolId), ToolCopy.portLabel(a.port, snmp))
         val started = a.total != null || a.done > 0 || a.found > 0
-        val progress = if (started) ToolCopy.progress(a.done, a.total, a.found, a.errors, a.activeMs / MS_PER_S) else ToolCopy.STARTING
+        val progress = if (!started) ToolCopy.STARTING
+                       else if (a.toolId == ToolId.IDENTIFY && a.total != null) ToolCopy.identifyProgress(a.done, a.total)
+                       else ToolCopy.progress(a.done, a.total, a.found, a.errors, a.activeMs / MS_PER_S)
         val fraction = a.total?.let { t -> if (t <= 0) 0f else (a.done.toFloat() / t).coerceIn(0f, 1f) }
         return ToolRunBar(label, progress, fraction)
     }

@@ -33,7 +33,7 @@ object ManualTarget {
     fun fixedPort(tool: ToolId): Int? = when (tool) {
         ToolId.SNMP_WALK -> ToolApplicability.SNMP_PORT
         ToolId.SMB_SESSION -> ToolApplicability.SMB_PORT
-        ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT, ToolId.TLS_CERTIFICATE -> null
+        ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT, ToolId.TLS_CERTIFICATE, ToolId.IDENTIFY -> null
     }
 
     fun check(ipText: String, portText: String, tool: ToolId, home: Subnet?, attempted: Boolean): ManualCheck {
@@ -59,7 +59,7 @@ object ManualTarget {
     /** TLS certificate always speaks TLS; SMB and SNMP never do; the web tools follow the "Use HTTPS" switch (spec 4.1 item 5). */
     fun tls(tool: ToolId, https: Boolean): Boolean = when (tool) {
         ToolId.TLS_CERTIFICATE -> true
-        ToolId.SMB_SESSION, ToolId.SNMP_WALK -> false
+        ToolId.SMB_SESSION, ToolId.SNMP_WALK, ToolId.IDENTIFY -> false
         ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT -> https
     }
 

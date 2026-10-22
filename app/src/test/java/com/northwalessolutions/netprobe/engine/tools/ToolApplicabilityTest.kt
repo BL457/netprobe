@@ -45,6 +45,7 @@ class ToolApplicabilityTest {
         assertEquals(listOf(ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT), ToolApplicability.toolsFor(5000, svc("HTTP")))
         assertEquals(listOf(ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT, ToolId.TLS_CERTIFICATE), ToolApplicability.toolsFor(5001, svc("HTTPS")))
         assertEquals(listOf(ToolId.SMB_SESSION), ToolApplicability.toolsFor(445, svc("SMB")))
+        assertTrue(ToolApplicability.appliesTo(ToolId.IDENTIFY, 9999, unknown)); assertTrue(ToolApplicability.toolsFor(9999, unknown).isEmpty())   // any port, but not a Device screen chip
         assertTrue(ToolApplicability.targetTls(ToolId.DIR_BRUTEFORCE, 5001, svc("HTTPS"))); assertFalse(ToolApplicability.targetTls(ToolId.DIR_BRUTEFORCE, 5000, svc("HTTP")))
         assertTrue(ToolApplicability.targetTls(ToolId.TLS_CERTIFICATE, 993, unknown)); assertFalse(ToolApplicability.targetTls(ToolId.SMB_SESSION, 445, svc("SMB")))
     }

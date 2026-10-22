@@ -55,13 +55,26 @@ class ManualToolsContentTest {
         rule.onNodeWithText(ManualCopy.FIXED_SMB).assertExists()
         rule.onNodeWithText(ManualCopy.USE_HTTPS).assertDoesNotExist()
     }
-    @Test fun theToolRowListsTheFiveToolsInOrder() {
+    @Test fun theToolRowListsEveryToolInOrder() {
         show(ManualUiState())
         rule.onNodeWithTag("manualTool").assert(hasText(ManualCopy.toolRow(ToolCopy.HTTP_FINGERPRINT))).performClick()
         val ys = ToolId.entries.map { rule.onNodeWithTag("manualTool:${it.key}").fetchSemanticsNode().positionInRoot.y }
         assertEquals(ys.sorted(), ys)
         rule.onNodeWithTag("manualTool:${ToolId.SNMP_WALK.key}").performClick()
         assertEquals(listOf("tool snmp-walk"), events)
+    }
+    @Test fun identifyServiceIsInThePickerAndStartsWithoutASheet() {   // 3E spec 8
+        show(ManualUiState())
+        rule.onNodeWithTag("manualTool").performClick()
+        rule.onNodeWithTag("manualTool:${ToolId.IDENTIFY.key}").assert(hasText(ToolCopy.IDENTIFY)).performClick()
+        assertEquals(listOf("tool identify-service"), events)
+        s = ManualUiState(form = ManualForm(tool = ToolId.IDENTIFY, ipText = "10.0.3.9", portText = "6379"))
+        rule.waitForIdle()
+        rule.onNodeWithTag("manualPort").assertIsEnabled()
+        rule.onNodeWithText(ManualCopy.USE_HTTPS).assertDoesNotExist()
+        rule.onNodeWithTag("manualRun").performClick()
+        assertEquals("run", events.last())
+        rule.onNodeWithText(ToolCopy.WORDLIST).assertDoesNotExist()
     }
     @Test fun aRunningRunShowsStopAndItsProgressAndLocksTheFields() {
         live = "12 of 300, 2 found  3 s"

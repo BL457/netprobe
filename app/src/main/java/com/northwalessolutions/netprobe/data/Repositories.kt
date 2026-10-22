@@ -252,6 +252,8 @@ class PortRepository(private val db: NetProbeDb) {
         upsertOpen(hostId, port, info)
         true
     }
+    /** The Identify service tool's result (3E spec 8): merged exactly as a scan consumer does, for a manual-only hidden host too. */
+    suspend fun applyIdentify(hostId: Long, port: Int, info: ServiceInfo): Boolean = upsertOpenIfHostExists(hostId, port, info)
     /** Stored open ports of a host as identification input, all eleven fields, so a rediscovery never forgets earlier findings. */
     suspend fun servicesFor(hostId: Long): Map<Int, ServiceInfo> = db.ports().forHostOnce(hostId).associate { it.port to it.toServiceInfo() }
     suspend fun markScanned(hostId: Long) = db.hosts().markScanned(hostId, System.currentTimeMillis())

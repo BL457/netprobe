@@ -16,9 +16,10 @@ object ToolCopy {
     const val TLS_CERTIFICATE = "TLS certificate"
     const val SMB_SESSION = "SMB session"
     const val SNMP_WALK = "SNMP walk"
+    const val IDENTIFY = "Identify service"
     fun toolName(id: ToolId): String = when (id) {
         ToolId.DIR_BRUTEFORCE -> DIR_BRUTEFORCE; ToolId.HTTP_FINGERPRINT -> HTTP_FINGERPRINT; ToolId.TLS_CERTIFICATE -> TLS_CERTIFICATE
-        ToolId.SMB_SESSION -> SMB_SESSION; ToolId.SNMP_WALK -> SNMP_WALK
+        ToolId.SMB_SESSION -> SMB_SESSION; ToolId.SNMP_WALK -> SNMP_WALK; ToolId.IDENTIFY -> IDENTIFY
     }
 
     // Tools row and blocks (8.1)
@@ -109,6 +110,20 @@ object ToolCopy {
         "$dialect, signing ${if (signingRequired) "required" else "not required"}, anonymous ${if (anonymousAllowed) "allowed" else "refused"}, guest ${if (guestAllowed) "allowed" else "refused"}"
     const val SNMP_NO_ANSWER = "No SNMP answer to public"
     fun snmpSummary(name: String, interfaces: Int) = "$name, ${if (interfaces == 1) "1 interface" else "$interfaces interfaces"}"
+
+    // Identify service (3E spec 8, 9)
+    private fun bytes(n: Int) = if (n == 1) "1 byte" else "$n bytes"
+    private fun probes(n: Int) = if (n == 1) "1 probe" else "$n probes"
+    fun probeLine(id: String, bytes: Int, match: String?) = "$id: ${bytes(bytes)}, ${match ?: "no match"}"
+    fun stackLine(rule: String, stack: String, version: String?) = "$rule: $stack${version?.let { " $it" } ?: ""}"
+    /** "<service> <product> <version>, N probes": parts that repeat the one before (Redis Redis) are left out. */
+    fun identifySummary(service: String, product: String?, version: String?, n: Int): String {
+        val parts = mutableListOf(service)
+        listOfNotNull(product, version).forEach { p -> if (!parts.last().equals(p, ignoreCase = true)) parts += p }
+        return "${parts.joinToString(" ")}, ${probes(n)}"
+    }
+    fun identifyNone(n: Int) = "No service recognised, ${probes(n)}"
+    fun identifyProgress(n: Int, m: Int) = "probe $n of $m"
 
     // Options sheet (8.4) and its errors
     const val WORDLIST = "Wordlist"
