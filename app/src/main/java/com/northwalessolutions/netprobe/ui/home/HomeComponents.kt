@@ -4,7 +4,9 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -34,6 +36,9 @@ import androidx.compose.ui.unit.dp
 import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.discovery.RangeProgress
 import com.northwalessolutions.netprobe.engine.identify.DeviceType
+import com.northwalessolutions.netprobe.ui.CopyKind
+import com.northwalessolutions.netprobe.ui.CopyMenu
+import com.northwalessolutions.netprobe.ui.DeviceCopy
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.netenv.Transport
@@ -208,17 +213,22 @@ fun MarkChip(text: String, modifier: Modifier = Modifier) {
 }
 
 /** Row anatomy (spec 4.3): edge, name with mark chip, data line, open-port count. The whole row is the click target. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit, modifier: Modifier = Modifier,
+                /** Long-press copy menu (Director ruling R4); null leaves the row tap-only. */
+                onCopy: ((CopyKind) -> Unit)? = null) {
+    var menu by remember { mutableStateOf(false) }
     val reduced = LocalReducedMotion.current
     val edgeTarget = if (own) EdgeColors.phone else r.type.edgeColor(r.isGateway)
     val edge by animateColorAsState(edgeTarget, motionSpec(reduced, Motion.EDGE_COLOUR_MS), label = "edge")
     val description = RowText.description(r, if (own && r.identityLine == RowRules.OWN_LINE) ownModel else null)
     val nameAlpha = if (r.stale) STALE_NAME_ALPHA else 1f
-    Row(modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(onClick = onClick).drawnAlpha(1f)   // the row itself is never dimmed: only edge and name are (spec 4.3)
+    Row(modifier.fillMaxWidth().heightIn(min = Dimens.touch).combinedClickable(onClick = onClick, onLongClick = onCopy?.let { { menu = true } }, onLongClickLabel = onCopy?.let { "Copy options" }).drawnAlpha(1f)   // the row itself is never dimmed: only edge and name are (spec 4.3)
         .semantics(mergeDescendants = true) { contentDescription = description; edgeColor = edgeTarget }.testTag("hostRow")
         .padding(start = Dimens.rowStart, end = Dimens.gutter, top = Dimens.rowVertical, bottom = Dimens.rowVertical),
         verticalAlignment = Alignment.CenterVertically) {
+        if (onCopy != null) CopyMenu(menu, DeviceCopy.items(r.mac), onCopy, onDismiss = { menu = false })
         TypeMarkerView(if (own) DeviceType.PHONE else r.type, edge, r.stale)
         Spacer(Modifier.width(Dimens.rowGap))
         Column(Modifier.weight(1f)) {

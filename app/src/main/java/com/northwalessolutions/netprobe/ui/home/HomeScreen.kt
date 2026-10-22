@@ -13,6 +13,7 @@ import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.ui.theme.Motion
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
@@ -39,12 +40,22 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit) {
     val now by produceState(System.currentTimeMillis(), s.scanning) {
         while (true) { value = System.currentTimeMillis(); delay(if (s.scanning) TICK_SCANNING_MS else TICK_IDLE_MS) }
     }
+    val clipboard = com.northwalessolutions.netprobe.ui.rememberClipboard()
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     HomeContent(
-        state = s,
+        state = s, snackbar = snackbar,
         actions = HomeActions(onScan = vm::startScan, onStop = vm::stopScan, onOpenHost = onOpenHost, onDismissMessage = vm::dismissMessage,
             onFilter = vm::setFilter, onQuery = vm::setQuery, onQuickScanAll = vm::quickScanAll, onStopQuickScan = vm::stopQuickScan,
             onRequestLocation = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
-            onForget = vm::forgetNetwork, onUndo = vm::undo, onDismissUndo = vm::dismissUndo, onDismissApp = vm::dismissAppMessage),
+            onForget = vm::forgetNetwork, onUndo = vm::undo, onDismissUndo = vm::dismissUndo, onDismissApp = vm::dismissAppMessage,
+            onCopy = { row, kind ->
+                scope.launch {
+                    val text = if (kind == com.northwalessolutions.netprobe.ui.CopyKind.DETAILS) vm.detailsText(row) else com.northwalessolutions.netprobe.ui.DeviceCopy.text(kind, row.displayName, row.ip, row.mac) { "" }
+                    clipboard.copy(text)
+                    snackbar.showSnackbar(com.northwalessolutions.netprobe.ui.CopyMenuCopy.COPIED)
+                }
+            }),
         progress = latched, now = now,
     )
 }

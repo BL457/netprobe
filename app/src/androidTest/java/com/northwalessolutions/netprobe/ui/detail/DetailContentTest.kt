@@ -283,6 +283,16 @@ class DetailContentTest {
         rule.onNodeWithText("Identify all services").performClick()
         assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolId.IDENTIFY_ALL to 0), ran)
     }
+    @Test fun longPressOnTheHeaderOffersTheDeviceCopyMenu() {   // Director ruling R4
+        show(DetailFakes.state())
+        rule.onNodeWithTag("detailName").performTouchInput { longClick() }
+        listOf("IP", "MAC", "NAME", "DETAILS").forEach { rule.onNodeWithTag("copy:$it").assertIsDisplayed() }
+    }
+    @Test fun theLongPressSheetOfAPortStartsWithCopyAddress() {
+        show(DetailFakes.state(listOf(DetailFakes.port(22, "ssh", name = "SSH"))))
+        rule.onNodeWithText("22").performTouchInput { longClick() }
+        rule.onNodeWithTag("copyAddress").assertIsDisplayed()
+    }
     @Test fun removeDeviceIsDisabledWhileAToolHoldsTheHost() {
         showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(busy = com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry.Work.TOOL, removeAllowed = false))
         rule.onNodeWithTag("detailMenu").performClick()

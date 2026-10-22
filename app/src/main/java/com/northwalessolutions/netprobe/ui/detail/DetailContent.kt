@@ -22,7 +22,14 @@ import com.northwalessolutions.netprobe.data.*
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
 import com.northwalessolutions.netprobe.engine.tools.ToolId
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import kotlinx.coroutines.launch
 import com.northwalessolutions.netprobe.ui.BackBar
+import com.northwalessolutions.netprobe.ui.CopyMenu
+import com.northwalessolutions.netprobe.ui.CopyMenuCopy
+import com.northwalessolutions.netprobe.ui.DeviceCopy
+import com.northwalessolutions.netprobe.ui.rememberClipboard
 import com.northwalessolutions.netprobe.ui.NavCopy
 import com.northwalessolutions.netprobe.ui.Tab
 import com.northwalessolutions.netprobe.ui.EmptyState
@@ -46,6 +53,7 @@ data class DetailActions(
 )
 
 /** All Detail layout (Radar spec section 5). PINNED: the topBar column; only `portList` scrolls. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpanded: Boolean = false,
                   toolState: DetailToolsState = DetailToolsState(), toolActions: ToolActions = ToolActions(),
@@ -63,6 +71,10 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     var why by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var sheetPort by rememberSaveable { mutableStateOf<Int?>(null) }
+    var headerMenu by remember { mutableStateOf(false) }
+    val clipboard = rememberClipboard()
+    val scope = rememberCoroutineScope()
+    val copied: (String) -> Unit = { text -> clipboard.copy(text); scope.launch { snackbar.showSnackbar(CopyMenuCopy.COPIED) } }
     val ip = state.host?.ip.orEmpty()
     val focusManager = LocalFocusManager.current
     // Detail port rows arrive as found (spec 1.10): the set listed when the scan starts never fades or rises.
@@ -77,13 +89,19 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
                 onIdentifyAll = if (state.ports.isNotEmpty()) ({ toolActions.onRunTool(ToolId.IDENTIFY_ALL, 0) }) else null) }
             state.host?.let { h ->
                 Column(Modifier.padding(horizontal = Dimens.gutter)) {
-                    DetailName(state.displayName) { editing = true }
+                    DetailName(state.displayName, onEdit = { editing = true }, onLongPress = { headerMenu = true })
                     identityWithType(IdentityLine.of(h), Effective.type(h))?.let { line ->
                         Crossfade(line, animationSpec = motionSpec(reduced, Motion.IDENTITY_FADE_MS), label = "identity") {
                             IdentityText(it, state.displayName) { editing = true }
                         }
                     }
-                    Text(listOfNotNull(h.ip, h.mac).joinToString("  "), style = NetProbeText.data, color = NetProbeColors.textMuted)
+                    Text(listOfNotNull(h.ip, h.mac).joinToString("  "), style = NetProbeText.data, color = NetProbeColors.textMuted,
+                        modifier = Modifier.combinedClickable(onClick = {}, onLongClick = { headerMenu = true }).testTag("detailAddress"))
+                    CopyMenu(headerMenu, DeviceCopy.items(h.mac), onPick = { kind ->
+                        copied(DeviceCopy.text(kind, state.displayName, h.ip, h.mac) {
+                            DeviceCopy.details(state.displayName, h.ip, h.mac, Effective.vendor(h), Effective.model(h), Effective.type(h), state.ports.map { it.port })
+                        })
+                    }, onDismiss = { headerMenu = false })
                     SoftwareChips(softwareLabels(h))
                     DetailLinks(onWhy = { why = true }, onVulns = actions.onDeviceVulns)
                 }
@@ -132,7 +150,8 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
     sheetPort?.let { port ->
         state.ports.firstOrNull { it.port == port }?.let { p ->
             PortSheet(ip, p, onAction = actions.onAction, onVulns = { actions.onPortVulns(p.port) }, onClose = { sheetPort = null },
-                tools = ToolApplicability.toolsFor(p.port, p.service), toolsBusy = toolState.busy != null, onTool = { toolActions.onRunTool(it, p.port) })
+                tools = ToolApplicability.toolsFor(p.port, p.service), toolsBusy = toolState.busy != null, onTool = { toolActions.onRunTool(it, p.port) },
+                onCopyAddress = { copied(DeviceCopy.address(ip, p.port)) })
         }
     }
     state.vuln?.let { VulnSheet(it, onClose = actions.onCloseVulns, onRerun = actions.onRerunVulns, onOpen = actions.onOpenLink) }

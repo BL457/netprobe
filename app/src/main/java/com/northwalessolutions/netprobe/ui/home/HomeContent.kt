@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import com.northwalessolutions.netprobe.ui.CopyKind
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -28,6 +31,8 @@ data class HomeActions(
     val onFilter: (StatusFilter) -> Unit = {}, val onQuery: (String) -> Unit = {}, val onQuickScanAll: () -> Unit = {},
     val onStopQuickScan: () -> Unit = {}, val onRequestLocation: () -> Unit = {},
     val onForget: () -> Unit = {}, val onUndo: () -> Unit = {}, val onDismissUndo: () -> Unit = {}, val onDismissApp: () -> Unit = {},
+    /** A long-press copy pick on a row (R4); the screen reads the text, copies it and shows "Copied". */
+    val onCopy: (HostRow, CopyKind) -> Unit = { _, _ -> },
 )
 
 private const val MS_PER_S = 1000L
@@ -45,7 +50,8 @@ private fun emptyText(s: HomeUiState): String = when {
  */
 @Composable
 fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoveryStatus? = state.status,
-                now: Long = System.currentTimeMillis(), ownModel: String = Build.MODEL) {
+                now: Long = System.currentTimeMillis(), ownModel: String = Build.MODEL,
+                snackbar: SnackbarHostState = remember { SnackbarHostState() }) {
     // True from the start of a scan until the radar's settle ends: Quick scan all and Forget wait for it (spec 1.7).
     var radarBusy by remember { mutableStateOf(false) }
     // lastScanAt is null when a finished scan stored no host; the in-memory finish time keeps that case SETTLED (spec 3.1), not HERO.
@@ -55,7 +61,7 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
     val elapsedS = state.scanStartedAt?.let { ((now - it) / MS_PER_S).coerceAtLeast(0) } ?: 0L
     val summary = RadarSummaries.settled(state.totalHosts, state.otherSubnetHosts, state.lastScanAt, state.scanStartedAt, state.scanFinishedAt, now, completed = state.scanCompleted)
     // The bar inset and the IME join the content insets (3D spec 1.4): the last rows clear the bar and never sit behind the keyboard while searching.
-    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), topBar = {
+    Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), snackbarHost = { SnackbarHost(snackbar) }, topBar = {
         Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)
             .padding(top = Dimens.gutter, bottom = 10.dp)) {
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
@@ -117,7 +123,7 @@ private fun DeviceList(groups: List<HostGroup>, state: HomeUiState, actions: Hom
                 LaunchedEffect(r.id) { if (rise.value > 0f) { delay((wait ?: 0).toLong()); rise.animateTo(0f, tween(Motion.ROW_ARRIVAL_MS, easing = Motion.rowEasing)) } }
                 val itemModifier = if (wait != null) Modifier.animateItem(fadeInSpec = tween(Motion.ROW_ARRIVAL_MS, delayMillis = wait, easing = Motion.rowEasing),
                     placementSpec = null, fadeOutSpec = null) else Modifier
-                HostRowItem(r, own = RowRules.isOwn(r.ip, state.env), ownModel = ownModel, onClick = { actions.onOpenHost(r.id) },
+                HostRowItem(r, own = RowRules.isOwn(r.ip, state.env), ownModel = ownModel, onClick = { actions.onOpenHost(r.id) }, onCopy = { kind -> actions.onCopy(r, kind) },
                     modifier = itemModifier.graphicsLayer { translationY = rise.value * risePx }.semantics { arrivalDelay = wait ?: -1 })
             }
         }

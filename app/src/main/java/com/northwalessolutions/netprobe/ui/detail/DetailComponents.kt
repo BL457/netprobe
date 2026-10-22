@@ -48,6 +48,7 @@ import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
 import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolRunBar
+import com.northwalessolutions.netprobe.ui.CopyMenuCopy
 import com.northwalessolutions.netprobe.ui.LiveLine
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.ScanPill
@@ -70,8 +71,9 @@ private val PROFILES = listOf<ScanProfile>(ScanProfile.Quick, ScanProfile.Full, 
 
 /** Title; a tap opens Edit device (spec 4.3, replaces the rename dialog). */
 @Composable
-fun DetailName(name: String, onEdit: () -> Unit) {
-    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button, onClick = onEdit)
+@OptIn(ExperimentalFoundationApi::class)
+fun DetailName(name: String, onEdit: () -> Unit, onLongPress: (() -> Unit)? = null) {
+    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).combinedClickable(role = Role.Button, onClick = onEdit, onLongClick = onLongPress)
         .semantics { contentDescription = DetailCopy.editDescription(name) }.testTag("detailName"), contentAlignment = Alignment.CenterStart) {
         Text(name, style = NetProbeText.title, color = NetProbeColors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -294,10 +296,13 @@ private fun TryAsRow(ip: String, port: Int, pairs: List<Pair<String, String>>, o
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortSheet(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onVulns: () -> Unit, onClose: () -> Unit,
-              tools: List<ToolId> = emptyList(), toolsBusy: Boolean = false, onTool: (ToolId) -> Unit = {}) {
+              tools: List<ToolId> = emptyList(), toolsBusy: Boolean = false, onTool: (ToolId) -> Unit = {}, onCopyAddress: (() -> Unit)? = null) {
     ModalBottomSheet(onDismissRequest = onClose, containerColor = NetProbeColors.surface, shape = SHEET_SHAPE) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).padding(bottom = 16.dp)) {
             Text("$ip:${p.port} ${p.service.name}", style = NetProbeText.rowName, color = NetProbeColors.text, modifier = Modifier.padding(bottom = 8.dp))
+            // R4: the port's long-press copies "ip:port" from the first row, whatever the port's other actions are.
+            onCopyAddress?.let { copy -> Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button) { copy(); onClose() }.testTag("copyAddress"),
+                contentAlignment = Alignment.CenterStart) { Text(CopyMenuCopy.COPY_ADDRESS, style = NetProbeText.secondary, color = NetProbeColors.text) } }
             val (head, tail) = sheetSplit(p)
             head.forEach { (label, a) -> SheetRow(label, if (a is DeviceAction.OpenWith) NetProbeColors.signal else NetProbeColors.text) { onAction(a); onClose() } }
             if (p.tryAs.isNotEmpty()) TryAsRow(ip, p.port, p.tryAs) { uri -> onAction(DeviceAction.OpenWith(uri)); onClose() }

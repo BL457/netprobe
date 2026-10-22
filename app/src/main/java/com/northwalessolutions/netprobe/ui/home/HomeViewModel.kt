@@ -199,6 +199,12 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
     }
     fun setFilter(f: StatusFilter) { filter.value = f }
     fun setQuery(q: String) { query.value = q }
+    /** The "Copy details" text for a Devices row (R4): the stored host and its open ports are read at the pick. */
+    suspend fun detailsText(r: HostRow): String {
+        val h = c.hosts.byIdOnce(r.id)
+        val ports = c.ports.servicesFor(r.id).keys.toList()
+        return com.northwalessolutions.netprobe.ui.DeviceCopy.details(r.displayName, r.ip, r.mac, h?.let(Effective::vendor), h?.let(Effective::model), r.type, ports)
+    }
     fun dismissMessage() { controller.dismissMessage(); quick.dismissMessage(); extraMessage.value = null }
 
     /** A pending Undo is final before the scan's first lookup (spec 5.3, Review Focus 4). */
