@@ -14,6 +14,8 @@ object SettingsCopy {
     const val MARKER_STRIPE = "Stripe"
     const val MARKER_ICON = "Icon"
     const val ABOUT_ROW = "About"
+    /** The last line of the About dialog (Director ruling 2026-10-22 b). */
+    const val SIGNATURE = "BL457"
     /** The Large networks caption (plan review G6, proposed wording for the Director): the old one was false with Aggressive scan on. */
     const val LARGE_NETWORKS_CAPTION = "Largest block of a big network to sweep. With Aggressive scan off, a network wider than this gets your /24 only. A /22 takes about 1 minute, a /20 about 4."
     /** [unit] is written as the value shows it: "" or " ms". */

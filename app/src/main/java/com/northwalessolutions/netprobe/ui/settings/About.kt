@@ -27,7 +27,8 @@ fun AboutDialog(about: AboutInfo, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss, containerColor = NetProbeColors.surface, modifier = Modifier.testTag("aboutDialog"),
         title = { Text(HomeCopy.APP_NAME, style = NetProbeText.rowName, color = NetProbeColors.text) },
-        text = { Column { about.lines.forEach { Text(it, style = NetProbeText.secondary, color = NetProbeColors.textSecondary) } } },
+        text = { Column { about.lines.forEach { Text(it, style = NetProbeText.secondary, color = NetProbeColors.textSecondary) }
+            Text(SettingsCopy.SIGNATURE, style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.testTag("aboutSignature")) } },
         confirmButton = { TextButton(onDismiss, Modifier.testTag("aboutClose")) { Text(HomeCopy.CLOSE, color = NetProbeColors.signal) } },
         dismissButton = {
             TextButton({ clipboard.setText(AnnotatedString(about.lines.joinToString("\n"))) }, Modifier.testTag("aboutCopy")) {
