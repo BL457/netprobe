@@ -1,0 +1,217 @@
+[
+ {
+  "id": "null",
+  "service": "Daytime",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 800,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\w{3} \\w{3} +\\d+ \\d\\d:\\d\\d:\\d\\d \\d{4}",
+    "service": "Daytime",
+    "detail": "time of day service"
+   }
+  ],
+  "samples": [
+   "Thu Oct 22 09:14:03 2026\r\n"
+  ],
+  "negativeSamples": [
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n"
+  ]
+ },
+ {
+  "id": "tls",
+  "service": "TLS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "",
+  "ports": [
+   443,
+   8443,
+   7443,
+   8006,
+   5001
+  ],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "also",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "quick": true,
+  "builtin": "tls",
+  "matches": [
+   {
+    "regex": "^\\x16\\x03[\\x00-\\x04]",
+    "service": "TLS",
+    "detail": "TLS record"
+   }
+  ],
+  "samples": [
+   "\u0016\u0003\u0001\u00000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 400 Bad Request\r\n\r\n"
+  ]
+ },
+ {
+  "id": "http-head",
+  "service": "HTTP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "HEAD / HTTP/1.0\\r\\nHost: {ip}\\r\\n\\r\\n",
+  "ports": [
+   80,
+   81,
+   3000,
+   5000,
+   8000,
+   8008,
+   8080,
+   8081,
+   8888,
+   9000,
+   9090,
+   8123,
+   8096,
+   32400
+  ],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "also",
+  "waitMs": 800,
+  "maxBytes": 2048,
+  "parser": null,
+  "quick": true,
+  "matches": [
+   {
+    "regex": "^HTTP/1\\.[01] \\d{3}",
+    "service": "HTTP"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nServer: nginx/1.25.3\r\n\r\n"
+  ],
+  "negativeSamples": [
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n"
+  ]
+ },
+ {
+  "id": "http-get",
+  "service": "HTTP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "",
+  "ports": [
+   80,
+   81,
+   3000,
+   5000,
+   8000,
+   8008,
+   8080,
+   8081,
+   8888,
+   9000,
+   9090,
+   8123,
+   8096,
+   32400,
+   443,
+   8443,
+   7443,
+   8006,
+   5001
+  ],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "also",
+  "waitMs": 800,
+  "maxBytes": 2048,
+  "parser": null,
+  "builtin": "http-get",
+  "matches": [
+   {
+    "regex": "^HTTP/1\\.[01] \\d{3}",
+    "service": "HTTP"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nServer: nginx/1.25.3\r\n\r\n"
+  ],
+  "negativeSamples": [
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n"
+  ]
+ },
+ {
+  "id": "rtsp-options",
+  "service": "RTSP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "OPTIONS rtsp://{ip}:{port}/ RTSP/1.0\\r\\nCSeq: 1\\r\\n\\r\\n",
+  "ports": [
+   554,
+   8554
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 800,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^RTSP/1\\.0 \\d{3}",
+    "service": "RTSP"
+   }
+  ],
+  "samples": [
+   "RTSP/1.0 200 OK\r\nCSeq: 1\r\nServer: Hikvision/1.0\r\n\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 400 Bad Request\r\n\r\n"
+  ]
+ },
+ {
+  "id": "rdp-x224",
+  "service": "RDP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x03\\0\\0.)\\xe0\\0\\0\\0\\0\\0Cookie: mstshash=netprobe\\r\\n\\x01\\0\\x08\\0\\x03\\0\\0\\0",
+  "ports": [
+   3389
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 256,
+  "parser": "rdp-x224",
+  "matches": [
+   {
+    "regex": "^rdp confirm",
+    "service": "RDP"
+   }
+  ],
+  "samples": [
+   "\u0003\u0000\u0000\u0013\u0002\u00d0\u0000\u0000\u00124\u0000\u0002\u0001\b\u0000\u0002\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 400 Bad Request\r\n\r\n",
+   "\u0003\u0000\u0000\u0013\u000e\u00e0\u0000\u0000\u0000\u0000\u0000\u0001\u0000\b\u0000\u0003\u0000\u0000\u0000"
+  ]
+ }
+]

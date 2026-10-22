@@ -26,7 +26,7 @@ class HostScanBody(private val c: AppContainer) {
         val mode = ProbeModes.forProfile(profile)   // one budget per Full or Custom scan, shared by its identifies
         sink.identify { IdentifyCount() }
         val pipeline = ScanPipeline(c.portScanEngine, gate = c.foregroundGate::await, options = c.settings.scanOptions(),
-            identify = { port -> c.serviceIdentifier.identify(ip, port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), mode) },
+            identify = { port -> c.serviceIdentifier.identify(ip, port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), mode, h.id) },
             store = { port, info -> c.ports.upsertOpenIfHostExists(h.id, port, info) })
         val result = pipeline.run(ip, profile, sink)
         val found = result.found

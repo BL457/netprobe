@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 const val MAX_ACTIVE_PORTS = 64
 const val MAX_ACTIVE_MS = 60_000L
+const val HOST_WALL_MS = 20_000L
 
 /** What an identify may send (spec 2.2.1). */
 sealed interface ProbeMode {
@@ -22,23 +23,32 @@ sealed interface ProbeMode {
  * timeout, a read timeout and a 2 s body deadline, twice with its one redirect (about 12 s), so the real worst case is about
  * 60 s + 8 x 12 s of summed probe time, not the spec's "about 76 s" (plan review G12; recorded in the Task 19 handover).
  */
-class ActiveProbeBudget(val maxPorts: Int = MAX_ACTIVE_PORTS, val maxMs: Long = MAX_ACTIVE_MS, private val clock: () -> Long = SystemClock::elapsedRealtime) {
+class ActiveProbeBudget(val maxPorts: Int = MAX_ACTIVE_PORTS, val maxMs: Long = MAX_ACTIVE_MS, val hostWallMs: Long = HOST_WALL_MS,
+                        private val clock: () -> Long = SystemClock::elapsedRealtime) {
     private val spent = AtomicLong(0)
-    private val entered = HashSet<Int>()
+    /** Keyed by host and port (3E spec 3): a second host is not refused for sharing port numbers with the first. */
+    private val entered = HashSet<Pair<Long, Int>>()
+    private val hostSpent = java.util.concurrent.ConcurrentHashMap<Long, AtomicLong>()
     val spentMs: Long get() = spent.get()
     val enteredPorts: Int get() = synchronized(entered) { entered.size }
 
     fun allowsStep(): Boolean = spent.get() < maxMs
 
-    fun tryEnter(port: Int): Boolean {
+    fun tryEnter(hostId: Long, port: Int): Boolean {
         if (!allowsStep()) return false
         synchronized(entered) {
-            if (port in entered) return true
+            val key = hostId to port
+            if (key in entered) return true
             if (entered.size >= maxPorts) return false
-            entered += port
+            entered += key
             return true
         }
     }
+
+    /** Ladder time (every connection of every port, null probe included) a host has used; the ladder stops starting connections at [hostWallMs]. */
+    fun hostSpentMs(hostId: Long): Long = hostSpent[hostId]?.get() ?: 0L
+    fun hostAllows(hostId: Long): Boolean = hostSpentMs(hostId) < hostWallMs
+    fun addHostTime(hostId: Long, ms: Long) { hostSpent.computeIfAbsent(hostId) { AtomicLong(0) }.addAndGet(ms) }
 
     suspend fun <T> step(block: suspend () -> T): T? {
         if (!allowsStep()) return null

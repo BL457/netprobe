@@ -31,10 +31,10 @@ data class ProbeHit(val probeId: String, val service: String, val product: Strin
  */
 class ServiceProbe(
     val id: String, val service: String, val protocols: Set<String>, val sendTemplate: String, val ports: List<Int>, val rarity: Int,
-    val safety: ProbeSafety, val tls: TlsMode, val waitMs: Int, val maxBytes: Int, val parser: String?, val quick: Boolean,
+    val safety: ProbeSafety, val tls: TlsMode, val waitMs: Int, val maxBytes: Int, val parser: String?, val quick: Boolean, val builtin: String?,
     val matches: List<ProbeMatch>, val samples: List<String>, val negativeSamples: List<String>,
 ) {
-    val sendsBytes: Boolean get() = "tcp" in protocols && sendTemplate.isNotEmpty()
+    val sendsBytes: Boolean get() = builtin == null && "tcp" in protocols && sendTemplate.isNotEmpty()
     val matchesNullReply: Boolean get() = "null" in protocols
 
     fun sendBytes(ip: String, port: Int, rand: String): ByteArray =
@@ -86,6 +86,10 @@ object ServiceProbeRules {
     private const val MAX_WAIT_MS = 5000
     private const val DEFAULT_WAIT_MS = 800
     private val PROTOCOLS = setOf("tcp", "null")
+    /** Probes the ladder runs with code instead of a raw send: the TLS peek and the HTTP GET (title, headers, redirect). */
+    const val BUILTIN_TLS = "tls"
+    const val BUILTIN_HTTP_GET = "http-get"
+    val BUILTINS = setOf(BUILTIN_TLS, BUILTIN_HTTP_GET)
     private val json = Json
 
     fun load(text: String, knownParsers: Set<String> = ProbeParsers.NAMES): LoadedProbes {
@@ -122,7 +126,9 @@ object ServiceProbeRules {
         val sendRaw = str(o, "send") ?: bad("missing send")
         val template = try { decodeEscapes(sendRaw) } catch (e: IllegalArgumentException) { bad("send: ${e.message}") }
         if (template.length > MAX_SEND) bad("send is ${template.length} bytes, over $MAX_SEND")
-        if (template.isEmpty() && "null" !in protocols) bad("empty send needs the null protocol")
+        val builtin = str(o, "builtin")
+        if (builtin != null && builtin !in BUILTINS) bad("unknown builtin $builtin")
+        if (template.isEmpty() && "null" !in protocols && builtin == null) bad("empty send needs the null protocol")
         if (protocols == setOf("null") && template.isNotEmpty()) bad("a null-only probe sends nothing")
         val ports = (o["ports"] as? JsonArray)?.map { (it as? JsonPrimitive)?.intOrNull?.takeIf { p -> p in 1..65535 } ?: bad("bad port") }.orEmpty()
         val rarity = (o["rarity"] as? JsonPrimitive)?.intOrNull ?: bad("missing rarity")
@@ -139,7 +145,7 @@ object ServiceProbeRules {
         val matchEls = o["matches"] as? JsonArray ?: bad("missing matches")
         if (matchEls.isEmpty()) bad("matches is empty")
         val matches = matchEls.map { parseMatch(it) }
-        return ServiceProbe(id, service, protocols, template, ports, rarity, safety, tls, waitMs, maxBytes, parser, quick, matches,
+        return ServiceProbe(id, service, protocols, template, ports, rarity, safety, tls, waitMs, maxBytes, parser, quick, builtin, matches,
             strList(o, "samples"), strList(o, "negativeSamples"))
     }
 

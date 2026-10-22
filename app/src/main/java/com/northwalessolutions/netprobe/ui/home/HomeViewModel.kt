@@ -363,7 +363,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
             val sem = Semaphore(ServiceIdentifier.MAX_PARALLEL_IDENTIFIES)
             c.portScanEngine.scan(ip, QuickScanAllPolicy.profile, c.settings.scanOptions()).filter { it.state == PortState.OPEN }.collect { r ->
                 launch { sem.withPermit {
-                    val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), QuickScanAllPolicy.mode())
+                    val info = c.serviceIdentifier.identify(ip, r.port, Evidence(mdnsTypes = types, upnpServer = h.upnpServer), QuickScanAllPolicy.mode(), h.id)
                     synchronized(found) { found[r.port] = info }
                     c.ports.upsertOpenIfHostExists(h.id, r.port, info)
                 } }

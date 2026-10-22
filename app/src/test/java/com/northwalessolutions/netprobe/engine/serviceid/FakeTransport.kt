@@ -95,9 +95,8 @@ class FakeTransport(private val net: FakeNetwork) : ProbeTransport {
         }
         net.clock.advance(r.delayMs)
         if (r.closeAfter) peerClosed = true
-        var out = b.copyOf(minOf(b.size, maxBytes))
-        if (stopAtNewline) { val i = out.indexOf('\n'.code.toByte()); if (i >= 0) out = out.copyOf(i + 1) }
-        return out
+        // A real socket hands over the whole segment that carried the newline, so stopAtNewline does not cut the scripted bytes.
+        return b.copyOf(minOf(b.size, maxBytes))
     }
 
     override fun close() {

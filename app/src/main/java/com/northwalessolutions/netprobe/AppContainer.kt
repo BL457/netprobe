@@ -33,6 +33,8 @@ import com.northwalessolutions.netprobe.engine.identify.IdentifyRules
 import com.northwalessolutions.netprobe.engine.portscan.PortScanEngine
 import com.northwalessolutions.netprobe.engine.portscan.PortTable
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
+import com.northwalessolutions.netprobe.engine.serviceid.ServiceProbeRules
+import com.northwalessolutions.netprobe.engine.serviceid.ServiceProbes
 import com.northwalessolutions.netprobe.engine.vulns.*
 import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
 import android.util.Log
@@ -257,7 +259,8 @@ class AppContainer(val context: Context) {
         val prefs = context.getSharedPreferences("netprobe", Context.MODE_PRIVATE)
         DirBruteOptionsStore({ prefs.getString(DirBruteOptionsStore.KEY, null) }, { prefs.edit().putString(DirBruteOptionsStore.KEY, it).apply() })
     }
-    val serviceIdentifier by lazy { ServiceIdentifier(portTable) }
+    val serviceProbes by lazy { ServiceProbes(ServiceProbeRules.load(RawResources.read(context, R.raw.service_probes)).probes) }
+    val serviceIdentifier by lazy { ServiceIdentifier(portTable, serviceProbes) }
     val deviceIdentifier by lazy { DeviceIdentifier(identifyRules) }
     val actionRunner by lazy { AndroidActionRunner(context) }
     val actions by lazy { ActionProvider(actionRunner) }

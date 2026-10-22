@@ -50,16 +50,6 @@ object BannerParsers {
             server = server, realm = realm, poweredBy = headers["x-powered-by"]?.take(MAX_HEADER)?.ifEmpty { null })
     }
 
-    /** RTSP OPTIONS probe (spec 2.2.3). */
-    fun rtspOptions(ip: String, port: Int): ByteArray = "OPTIONS rtsp://$ip:$port/ RTSP/1.0\r\nCSeq: 1\r\n\r\n".toByteArray(Charsets.ISO_8859_1)
-    /** The 19-byte X.224 Connection Request (spec 2.2.3). */
-    val RDP_CONNECTION_REQUEST: ByteArray =
-        byteArrayOf(0x03, 0x00, 0x00, 0x13, 0x0E, 0xE0.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00, 0x03, 0x00, 0x00, 0x00)
-    private const val TPKT_VERSION = 0x03
-    private const val X224_CODE_INDEX = 5
-    private const val X224_CONNECTION_CONFIRM = 0xD0
-    private const val BYTE_MASK = 0xFF
-
     /** "RTSP/1.0 ..." confirms RTSP; its Server header fills product and version and is kept whole in server. */
     fun rtspReply(text: String): ServiceInfo? {
         val lines = text.split("\r\n", "\n")
@@ -70,14 +60,6 @@ object BannerParsers {
         val (product, version) = server?.let { serverHeader(it) } ?: (null to null)
         return ServiceInfo("RTSP", product, version, null, Confidence.CONFIRMED, server = server)
     }
-    /** TPKT header 03 00 and X.224 code D0 (Connection Confirm) at byte 5 confirm RDP. */
-    fun rdpConfirm(bytes: ByteArray): ServiceInfo? {
-        if (bytes.size <= X224_CODE_INDEX) return null
-        if ((bytes[0].toInt() and BYTE_MASK) != TPKT_VERSION || bytes[1].toInt() != 0) return null
-        if ((bytes[X224_CODE_INDEX].toInt() and BYTE_MASK) != X224_CONNECTION_CONFIRM) return null
-        return ServiceInfo("RDP", confidence = Confidence.CONFIRMED)
-    }
-
     fun classifyUnknown(bytes: ByteArray, portName: String): ServiceInfo {
         val text = runCatching { String(bytes, Charsets.ISO_8859_1) }.getOrDefault("")
         if (text.startsWith("SSH-")) return ssh(text.lineSequence().first()) ?: ServiceInfo("SSH", confidence = Confidence.CONFIRMED)
