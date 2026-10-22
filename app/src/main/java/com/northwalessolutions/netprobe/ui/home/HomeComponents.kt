@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.discovery.RangeProgress
+import com.northwalessolutions.netprobe.engine.identify.DeviceType
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.netenv.Transport
@@ -218,7 +219,7 @@ fun HostRowItem(r: HostRow, own: Boolean, ownModel: String, onClick: () -> Unit,
         .semantics(mergeDescendants = true) { contentDescription = description; edgeColor = edgeTarget }.testTag("hostRow")
         .padding(start = Dimens.rowStart, end = Dimens.gutter, top = Dimens.rowVertical, bottom = Dimens.rowVertical),
         verticalAlignment = Alignment.CenterVertically) {
-        TypeEdge(edge, r.stale)
+        TypeMarkerView(if (own) DeviceType.PHONE else r.type, edge, r.stale)
         Spacer(Modifier.width(Dimens.rowGap))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -8,6 +8,11 @@ object SettingsCopy {
     /** The Settings root's title row and its last section (3D spec 5); About moved here from Home's overflow. */
     const val TITLE = "Settings"
     const val ABOUT_SECTION = "About"
+    /** The Display section and its one row (Director ruling R3). */
+    const val DISPLAY_SECTION = "Display"
+    const val TYPE_MARKER_LABEL = "Device type marker"
+    const val MARKER_STRIPE = "Stripe"
+    const val MARKER_ICON = "Icon"
     const val ABOUT_ROW = "About"
     /** The Large networks caption (plan review G6, proposed wording for the Director): the old one was false with Aggressive scan on. */
     const val LARGE_NETWORKS_CAPTION = "Largest block of a big network to sweep. With Aggressive scan off, a network wider than this gets your /24 only. A /22 takes about 1 minute, a /20 about 4."

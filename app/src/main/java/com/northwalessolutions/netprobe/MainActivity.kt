@@ -7,10 +7,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.northwalessolutions.netprobe.ui.NetProbeNav
+import com.northwalessolutions.netprobe.ui.theme.LocalTypeMarker
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
 
 private const val BAR_COLOUR = 0xFF16202B.toInt()
@@ -27,6 +33,9 @@ class MainActivity : ComponentActivity() {
             override fun onStop(owner: LifecycleOwner) { container.foreground.value = false }
         })
         container.onActivityCreated()   // the orphan sweep (3C spec 4.3); idempotent across activity recreation
-        setContent { NetProbeTheme { Surface(Modifier.fillMaxSize()) { NetProbeNav(container) } } }
+        setContent {
+            val marker by container.settings.state.map { it.typeMarker }.distinctUntilChanged().collectAsStateWithLifecycle(container.settings.state.value.typeMarker)
+            NetProbeTheme { CompositionLocalProvider(LocalTypeMarker provides marker) { Surface(Modifier.fillMaxSize()) { NetProbeNav(container) } } }
+        }
     }
 }

@@ -23,18 +23,18 @@ object NetProbeColors {
     val severityHigh = Color(0xFFFFB86B)
 }
 
-/** Type edge colours (spec 2.1). Four are chosen values reviewed on device (open item 11.4). */
+/** Type marker colours: ten hues that are easy to tell apart on the dark background (Director ruling R3, 2026-10-22; replaces spec 2.1). */
 object EdgeColors {
-    val router = Color(0xFF35D4C8)
-    val nas = Color(0xFF7FA7FF)
-    val media = Color(0xFFC98BFF)
-    val iot = Color(0xFFFFB86B)
-    val phone = Color(0xFF8FA3B5)
-    val computer = Color(0xFF9BE07A)
-    val server = Color(0xFFF2A0D6)
-    val camera = Color(0xFFFF8A8A)
-    val printer = Color(0xFFD6C7A1)
-    val unknown = Color(0xFF3B5368)
+    val router = Color(0xFF2DD4BF)
+    val nas = Color(0xFF60A5FA)
+    val media = Color(0xFFC084FC)
+    val iot = Color(0xFFFBBF24)
+    val phone = Color(0xFF7DD3FC)
+    val computer = Color(0xFFA3E635)
+    val server = Color(0xFFFB7185)
+    val camera = Color(0xFFEF4444)
+    val printer = Color(0xFFD6D3D1)
+    val unknown = Color(0xFF475569)
 }
 
 /** Gateway always teal (D15: any ROUTER is teal too). For a gateway-only teal, return #5FB8B0 for non-gateway routers here. */
@@ -45,8 +45,8 @@ fun DeviceType.edgeColor(isGateway: Boolean = false): Color = if (isGateway) Edg
     DeviceType.UNKNOWN -> EdgeColors.unknown
 }
 
-/** Stale edge alpha: 0.6, not the spec's 0.5, so every stale edge keeps 3:1 (ContrastTest). */
-const val STALE_EDGE_ALPHA = 0.6f
+/** Stale edge alpha: 0.8, not the spec's 0.5, so every stale marker keeps 3:1 against the background; the ruled camera red needs 0.77 (ContrastTest). */
+const val STALE_EDGE_ALPHA = 0.8f
 /** Stale name alpha (spec 2.1); ContrastTest keeps it at or above 4.5:1. */
 const val STALE_NAME_ALPHA = 0.6f
 /** Disabled controls and the extended-discovery rows while the master switch is off. */

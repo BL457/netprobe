@@ -35,6 +35,7 @@ import com.northwalessolutions.netprobe.BuildConfig
 import com.northwalessolutions.netprobe.data.SettingsDefaults
 import com.northwalessolutions.netprobe.data.SettingsReset
 import com.northwalessolutions.netprobe.data.SettingsState
+import com.northwalessolutions.netprobe.data.TypeMarker
 import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.HomeRange
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
@@ -137,6 +138,12 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             StepSlider("Sweep connect timeout", s.connectTimeoutMs, TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_STEP, MS_UNIT, default = d.connectTimeoutMs) { v -> update { it.copy(connectTimeoutMs = v) } }
             StepSlider("Port scan concurrency", s.scanConcurrency, CONC_MIN, CONC_MAX, CONC_STEP, NO_UNIT, default = d.scanConcurrency) { v -> update { it.copy(scanConcurrency = v) } }
             StepSlider("Port scan timeout", s.scanTimeoutMs, TIMEOUT_MIN, TIMEOUT_MAX, TIMEOUT_STEP, MS_UNIT, default = d.scanTimeoutMs) { v -> update { it.copy(scanTimeoutMs = v) } }
+
+            Section(SettingsCopy.DISPLAY_SECTION)
+            Text(SettingsCopy.TYPE_MARKER_LABEL, style = NetProbeText.secondary, color = NetProbeColors.text, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp))
+            PinnedSegmented(listOf(SettingsCopy.MARKER_STRIPE, SettingsCopy.MARKER_ICON), TypeMarker.entries.indexOf(s.typeMarker),
+                { i -> update { it.copy(typeMarker = TypeMarker.entries[i]) } },
+                activeFill = NetProbeColors.surface, activeText = NetProbeColors.text, modifier = Modifier.fillMaxWidth().testTag("typeMarker"))
 
             Section("Large networks")
             Text(SettingsCopy.LARGE_NETWORKS_CAPTION, style = NetProbeText.data, color = NetProbeColors.textMuted)   // plan review G6
