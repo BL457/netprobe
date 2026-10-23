@@ -37,6 +37,7 @@ class IdentifyServiceToolTest {
         unsafeHellos = { unsafe },
         apply = { h, p, i -> applied += Triple(h, p, i) },
         newBudget = { ActiveProbeBudget(maxPorts = 1, maxMs = IdentifyServiceTool.NO_WALL_MS, hostWallMs = IdentifyServiceTool.NO_WALL_MS) { net.clock.now } })
+    private val UNHINTED = 40404
     private fun target(port: Int) = ToolTarget(9, ip("10.0.3.59"), port, tls = false, serverName = null)
 
     @Test fun `redis is named, one probe finding per probe run, the summary names it and the port row is applied`() = runTest {
@@ -73,29 +74,33 @@ class IdentifyServiceToolTest {
         assertEquals(1, budgetSeen!!.maxPorts); assertEquals(Long.MAX_VALUE, budgetSeen!!.hostWallMs); assertEquals(Long.MAX_VALUE, budgetSeen!!.maxMs)
         assertEquals(1, budgetSeen!!.enteredPorts.coerceAtMost(1))
     }
+    private val safeSending = probes.count { it.safety == com.northwalessolutions.netprobe.engine.serviceid.ProbeSafety.SAFE && it.sendsBytes }
+    private val carefulSending = probes.count { it.safety == com.northwalessolutions.netprobe.engine.serviceid.ProbeSafety.CAREFUL && it.sendsBytes }
+
     @Test fun `a silent unhinted port gets every safe hello, no cap, and the summary counts them`() = runTest {
         val p = CollectingProgress()
-        val r = tool.run(target(9999), ToolInputs.NONE, control(), p)
+        val r = tool.run(target(UNHINTED), ToolInputs.NONE, control(), p)
         val ran = p.of(FindingKind.PROBE).map { it.value.substringBefore(":") }
-        val planned = identifier.plannedProbes(9999, LadderLimits.thorough(false))
-        assertEquals("null, the TLS check, 7 safe hellos", 9, planned)
+        val planned = identifier.plannedProbes(UNHINTED, LadderLimits.thorough(false))
+        assertEquals("null, the TLS check, every safe hello that sends bytes", 2 + safeSending, planned)
+        assertTrue("well past the old six", safeSending > 50)
         assertEquals("every planned connection was made", planned, net.connects.get())
         assertEquals("the scripted network refuses TLS, which leaves no trace line", planned - 1, ran.size)
         assertTrue("rtsp-options is rarity 4", "rtsp-options" in ran)
         assertTrue("sip-options is rarity 3 and past the scan cap of six", "sip-options" in ran)
         assertTrue("no careful probe with the switch off", ran.none { it == "mongodb-ismaster" || it == "smb2-negotiate" || it == "rdp-x224" })
-        assertEquals("No service recognised, 8 probes", r.summary)
-        assertEquals(8, p.lastDone)
+        assertEquals("No service recognised, ${planned - 1} probes", r.summary)
+        assertEquals(planned - 1, p.lastDone)
     }
     @Test fun `with unsafe hellos on the careful probes follow the safe ones and the total grows`() = runTest {
         unsafe = true
         val p = CollectingProgress()
-        val r = tool.run(target(9999), ToolInputs.NONE, control(), p)
+        val r = tool.run(target(UNHINTED), ToolInputs.NONE, control(), p)
         val ran = p.of(FindingKind.PROBE).map { it.value.substringBefore(":") }
-        assertEquals(17, net.connects.get())
+        assertEquals(2 + safeSending + carefulSending, net.connects.get())
         assertTrue("mongodb-ismaster" in ran && "smb2-negotiate" in ran)
         assertTrue("safe before careful", ran.indexOf("rtsp-options") < ran.indexOf("rdp-x224"))
-        assertEquals("No service recognised, 16 probes", r.summary)
+        assertEquals("No service recognised, ${1 + safeSending + carefulSending} probes", r.summary)
     }
     @Test fun `identify service applies to any port and is a tool of its own`() {
         assertEquals(ToolKeys.IDENTIFY, tool.descriptor.key); assertEquals("Identify service", tool.descriptor.name)
