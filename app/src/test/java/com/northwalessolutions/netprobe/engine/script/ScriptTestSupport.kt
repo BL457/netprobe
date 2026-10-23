@@ -2,6 +2,7 @@ package com.northwalessolutions.netprobe.engine.script
 
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.tools.Finding
+import com.northwalessolutions.netprobe.engine.tools.NetworkScope
 import com.northwalessolutions.netprobe.engine.tools.RunControl
 import com.northwalessolutions.netprobe.engine.tools.ToolProgress
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
@@ -95,9 +96,11 @@ class Harness(
     val progress: RecordingProgress = RecordingProgress(),
     val memory: MemoryProbe = MemoryProbe { 0.1 },
     val wordlist: suspend (WordlistRef, Int, Int) -> List<String> = { _, _, _ -> emptyList() },
+    val network: NetworkScope = NetworkScope.TARGET,
+    val devices: suspend () -> List<ScriptDevice> = { emptyList() },
 ) {
     val engine = RhinoScriptEngine(limits, memory)
-    fun host() = ScriptHost(transport, gate, control, progress, wordlist)
+    fun host() = ScriptHost(transport, gate, control, progress, wordlist, network, devices)
     fun run(source: String, inputs: Map<String, Any?> = emptyMap()): ScriptRunResult = runBlocking { engine.run(ScriptRunRequest(source, inputs, host())) }
     /** Wraps a body in a tool object, runs it and returns the result. */
     fun body(js: String, inputs: Map<String, Any?> = emptyMap()): ScriptRunResult =

@@ -43,6 +43,7 @@ object ScriptCopy {
     fun notABytes(what: String, key: String) = "$what $key must be a string or an array of numbers from 0 to 255"
     fun tooManyBytes(what: String, key: String) = "$what $key is larger than 1 MB"
     const val BAD_HEX = "Not a valid hex string"
+    const val BAD_BASE64 = "Not a valid base64 string"
     fun outOfRangeNumber(max: Long) = "The number must be a whole number from 0 to $max"
     const val READ_PAST_END = "Read past the end of the bytes"
     const val VALUE_TOO_LARGE = "The value is too large"
@@ -117,6 +118,9 @@ object ScriptCopy {
     const val BROADCAST_LIMIT = "At most 50 broadcast packets can be sent in one run"
     const val BROADCAST_TOO_BIG = "A broadcast packet can be at most 1 KB"
     const val BROADCAST_UDP_ONLY = "The broadcast address can only be used with ctx.udp.send and ctx.udp.exchange"
+
+    // ctx.devices (spec section 12)
+    const val DEVICES_NEED_LAN = "ctx.devices needs a tool with the network set to lan or any"
 
     // dns
     const val DNS_TIMEOUT = "The DNS lookup timed out"

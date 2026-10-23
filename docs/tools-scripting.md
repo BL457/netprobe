@@ -107,7 +107,7 @@ Input types, their extra options, and what `run` receives:
 | `tls` | none | Switch | `true` or `false`. Use it for extra switches; the name `tls` itself is reserved. |
 | `choice` | `options` (1 to 12) | Pick one | The chosen option's `value`, as a string. |
 | `multichoice` | `options` (1 to 12) | Pick several | An array of the chosen values, in option order. `default` is an array of values. |
-| `list` | `placeholder`, `maxItems` | Comma separated text | An array of the trimmed, non-blank items. The form refuses more than `maxItems`. |
+| `list` | `placeholder`, `maxItems` | Comma separated text | An array of the trimmed, non-blank items. The form refuses more than `maxItems`. A `default` is a comma separated string such as `"80,443"`, not an array. |
 | `wordlist` | none | Pick a saved wordlist | An object `{id, name, entries}`. Pass the input's name to `ctx.wordlist` to read lines. |
 | `ip` | none | IPv4 address box | A string such as `"192.168.1.10"`. A `default` must be a valid IPv4 address. |
 | `port` | none | Port box | A number from 1 to 65535. A `default` must be in that range. |
@@ -343,6 +343,25 @@ var addresses = ctx.dns.lookup("router.lan");
 addresses.forEach(function (a) { ctx.finding("address", a, "router.lan"); });
 ```
 
+### devices
+
+```javascript
+ctx.devices()  // an array of devices, newest scan first
+```
+
+Returns the devices NetProbe has discovered on the network the phone is on, as plain objects `{ip, mac, name, vendor, ports}`. `mac` is lower-case with colons, or an empty string when unknown. `name` is the name the app shows for the device (its IP address when it has none). `vendor` is an empty string when unknown. `ports` is an array of `{port, service, tls}` for the open ports found by a port scan: `service` is the service name the app recognised, `tls` is `true` when the app saw TLS on that port. The list holds at most 1,024 devices, ordered by when each was last seen, newest first. Devices that were only added by hand as a tool target are left out.
+
+Only tools with `network: "lan"` or `network: "any"` may call it. Under `network: "target"` it throws "ctx.devices needs a tool with the network set to lan or any". A call counts as one host call. It reads what the app already knows; it sends nothing on the network. A device still has to be inside the tool's scope before the script contacts it, so a `"lan"` tool is the natural fit.
+
+```javascript
+// target: "none", network: "lan"
+ctx.devices().forEach(function (d) {
+  d.ports.forEach(function (p) {
+    if (p.port === 80) { ctx.finding("address", d.name, d.ip + ":80"); }
+  });
+});
+```
+
 ### bytes
 
 ```javascript
@@ -356,9 +375,19 @@ ctx.bytes.u32be(n)               // number to 4 bytes, big-endian
 ctx.bytes.u16le(n)               // number to 2 bytes, little-endian
 ctx.bytes.u32le(n)               // number to 4 bytes, little-endian
 ctx.bytes.readU16be(bytes, offset)   // bytes to number; also readU32be, readU16le, readU32le
+ctx.bytes.base64(bytes)          // standard base64 text with padding
+ctx.bytes.fromBase64(text)       // bytes; white space, missing padding and the URL-safe alphabet are accepted
+ctx.bytes.md5(bytes)             // lower-case hex digest; also sha1 and sha256
 ```
 
-`offset` defaults to 0. Errors: "Not a valid hex string" (odd length or a non-hex character), "The number must be a whole number from 0 to N" (a value that does not fit), "Read past the end of the bytes".
+`offset` defaults to 0. `base64`, `md5`, `sha1` and `sha256` take bytes or a string (used as UTF-8). Errors: "Not a valid hex string" (odd length or a non-hex character), "Not a valid base64 string", "The number must be a whole number from 0 to N" (a value that does not fit), "Read past the end of the bytes".
+
+HTTP Basic authentication is a base64 header, and Digest authentication is built from `md5`:
+
+```javascript
+var basic = "Basic " + ctx.bytes.base64(user + ":" + pass);
+var ha1 = ctx.bytes.md5(user + ":" + realm + ":" + pass);
+```
 
 ```javascript
 var packet = ctx.bytes.concat(ctx.bytes.u16be(1), ctx.bytes.fromHex("0100"), ctx.bytes.fromUtf8("hi"));
@@ -750,7 +779,8 @@ These are thrown as a normal `Error`, so `try` and `catch` work.
 | A function cannot be passed to the host | A function was passed to `ctx`. |
 | The regular expression is not valid / The regular expression took too many steps | See "regex". |
 | No wordlist input named x | See "wordlist". |
-| Not a valid hex string | See "bytes". |
+| Not a valid hex string / Not a valid base64 string | See "bytes". |
+| ctx.devices needs a tool with the network set to lan or any | See "devices". |
 | A finding link must start with http:// or https:// | See "finding". |
 
 ### Tips

@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.engine.script
 
+import com.northwalessolutions.netprobe.engine.tools.NetworkScope
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
 import com.northwalessolutions.netprobe.ui.tools.ScriptCopy
 import org.mozilla.javascript.Context
@@ -74,6 +75,11 @@ internal object HostApi {
         fn(bytes, "toHex", 1) { a -> Bytes.toHex(bytesArg(a, 0, "ctx.bytes.toHex")) }
         fn(bytes, "fromUtf8", 1) { a -> text(a, 0, "ctx.bytes.fromUtf8").toByteArray(Charsets.UTF_8) }
         fn(bytes, "toUtf8", 1) { a -> Bytes.toUtf8(bytesArg(a, 0, "ctx.bytes.toUtf8")) }
+        fn(bytes, "base64", 1) { a -> Bytes.toBase64(bytesArg(a, 0, "ctx.bytes.base64")) }
+        fn(bytes, "fromBase64", 1) { a -> Bytes.fromBase64(text(a, 0, "ctx.bytes.fromBase64")) }
+        fn(bytes, "md5", 1) { a -> Bytes.digestHex("MD5", bytesArg(a, 0, "ctx.bytes.md5")) }
+        fn(bytes, "sha1", 1) { a -> Bytes.digestHex("SHA-1", bytesArg(a, 0, "ctx.bytes.sha1")) }
+        fn(bytes, "sha256", 1) { a -> Bytes.digestHex("SHA-256", bytesArg(a, 0, "ctx.bytes.sha256")) }
         fn(bytes, "concat", 2) { a ->
             val out = java.io.ByteArrayOutputStream()
             for (i in a.indices) { out.write(bytesArg(a, i, "ctx.bytes.concat")); if (out.size() > ScriptCaps.MAX_ARRAY_LENGTH) throw ScriptHostError(ScriptCopy.VALUE_TOO_LARGE) }
@@ -111,6 +117,14 @@ internal object HostApi {
             val offset = ((a.getOrNull(1) as? Number)?.toInt() ?: 0).coerceAtLeast(0)
             val limit = ((a.getOrNull(2) as? Number)?.toInt() ?: ScriptCaps.MAX_ARRAY_LENGTH).coerceIn(1, ScriptCaps.MAX_ARRAY_LENGTH)
             s.blocking { s.host.wordlist(ref, offset, limit) }.take(limit)
+        }
+        fn(ctx, "devices", 0) { _ ->
+            if (s.host.network == NetworkScope.TARGET) throw ScriptHostError(ScriptCopy.DEVICES_NEED_LAN)
+            s.chargeCalls(1); s.gateWait()
+            s.blocking { s.host.devices() }.take(ScriptDevices.MAX_DEVICES).map { d ->
+                mapOf("ip" to d.ip, "mac" to d.mac, "name" to d.name, "vendor" to d.vendor,
+                    "ports" to d.ports.map { p -> mapOf("port" to p.port.toDouble(), "service" to p.service, "tls" to p.tls) })
+            }
         }
         fn(ctx, "progress", 3) { a ->
             fun count(v: Any?): Int = (v as? Number)?.toDouble()?.takeIf { !it.isNaN() }?.coerceIn(0.0, Int.MAX_VALUE.toDouble())?.toInt() ?: 0

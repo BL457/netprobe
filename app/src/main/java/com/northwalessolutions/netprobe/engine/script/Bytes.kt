@@ -41,6 +41,21 @@ internal object Bytes {
         return sb.toString()
     }
 
+    /** Standard base64 with padding, the form HTTP Basic authentication uses. */
+    fun toBase64(b: ByteArray): String = java.util.Base64.getEncoder().encodeToString(b)
+
+    /** Standard base64, or the URL-safe alphabet; white space and missing padding are accepted, anything else is [ScriptCopy.BAD_BASE64]. */
+    fun fromBase64(text: String): ByteArray {
+        val clean = text.filter { !it.isWhitespace() }.trimEnd('=').replace('-', '+').replace('_', '/')
+        if (clean.length % BASE64_GROUP == 1 || clean.any { it !in BASE64_ALPHABET }) throw ScriptHostError(ScriptCopy.BAD_BASE64)
+        val out = try { java.util.Base64.getDecoder().decode(clean) } catch (_: IllegalArgumentException) { throw ScriptHostError(ScriptCopy.BAD_BASE64) }
+        if (out.size > ScriptCaps.MAX_ARRAY_LENGTH) throw ScriptHostError(ScriptCopy.VALUE_TOO_LARGE)
+        return out
+    }
+
+    /** Lower-case hex of the MD5, SHA-1 or SHA-256 digest of [b] ([algorithm] is the JCA name). */
+    fun digestHex(algorithm: String, b: ByteArray): String = toHex(java.security.MessageDigest.getInstance(algorithm).digest(b))
+
     /** Lossy UTF-8 decode: bad sequences become U+FFFD, so a binary banner never throws. */
     fun toUtf8(b: ByteArray): String = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPLACE).onUnmappableCharacter(CodingErrorAction.REPLACE)
         .decode(ByteBuffer.wrap(b)).toString()
@@ -68,4 +83,6 @@ internal object Bytes {
     }
 
     private val HEX = "0123456789abcdef".toCharArray()
+    private const val BASE64_GROUP = 4
+    private val BASE64_ALPHABET = (('A'..'Z') + ('a'..'z') + ('0'..'9') + listOf('+', '/')).toSet()
 }

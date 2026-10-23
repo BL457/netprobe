@@ -44,6 +44,8 @@ class ScriptToolModule(
     private val lanBinder: (NetworkEnv) -> SocketBinder?,
     private val wordlistLines: suspend (WordlistRef, Int, Int) -> List<String> = { _, _, _ -> emptyList() },
     private val transportFor: (SocketBinder?, (InetAddress) -> Boolean) -> ScriptTransport = { binder, lan -> SocketScriptTransport(binder, lan) },
+    /** The discovered devices of the current network for `ctx.devices()` (spec section 12). */
+    private val devices: suspend () -> List<ScriptDevice> = { emptyList() },
 ) : ToolModule {
     /** A tool with a device or a port is offered on the device page like a built-in (ruling a of the B3 hand-over); a tool with no target is not. */
     override fun applies(port: Int, service: ServiceInfo): Boolean = descriptor.target != TargetKind.NONE
@@ -106,7 +108,7 @@ class ScriptToolModule(
         }
         // A broadcast tool is told the address to send to: the script cannot work out the prefix length itself.
         if (descriptor.broadcast) scriptInputs[ToolInputs.BROADCAST] = lan?.directedBroadcast()?.hostAddress.orEmpty()
-        val result = engine.run(ScriptRunRequest(source, scriptInputs, ScriptHost(transport, guard, control, progress, wordlistLines)))
+        val result = engine.run(ScriptRunRequest(source, scriptInputs, ScriptHost(transport, guard, control, progress, wordlistLines, descriptor.network, devices)))
         return when (result.status) {
             ToolRunStatus.DONE -> ToolResult(ToolRunStatus.DONE, result.summary)
             else -> {

@@ -102,13 +102,13 @@ class HostileScriptTest {
 
     @Test fun `ctx exposes exactly the documented members`() {
         fun names(path: String) = h.value("Object.getOwnPropertyNames($path).sort().join(',')")
-        assertEquals("bytes,cancelled,dns,finding,http,log,progress,regex,sleep,tcp,tls,udp,wordlist", names("ctx"))
+        assertEquals("bytes,cancelled,devices,dns,finding,http,log,progress,regex,sleep,tcp,tls,udp,wordlist", names("ctx"))
         assertEquals("many,request", names("ctx.http"))
         assertEquals("connect,exchange", names("ctx.tcp"))
         assertEquals("exchange,send", names("ctx.udp"))
         assertEquals("certificate", names("ctx.tls"))
         assertEquals("lookup,reverse", names("ctx.dns"))
-        assertEquals("concat,fromHex,fromUtf8,readU16be,readU16le,readU32be,readU32le,toHex,toUtf8,u16be,u16le,u32be,u32le", names("ctx.bytes"))
+        assertEquals("base64,concat,fromBase64,fromHex,fromUtf8,md5,readU16be,readU16le,readU32be,readU32le,sha1,sha256,toHex,toUtf8,u16be,u16le,u32be,u32le", names("ctx.bytes"))
         assertEquals("exec,matchAll,replace,split,test", names("ctx.regex"))
     }
 

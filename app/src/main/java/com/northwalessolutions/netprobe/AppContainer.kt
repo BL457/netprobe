@@ -26,6 +26,7 @@ import com.northwalessolutions.netprobe.scans.LiveWork
 import com.northwalessolutions.netprobe.ui.scans.ScansHistoryStore
 import com.northwalessolutions.netprobe.ui.scans.ScansRules
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
 import com.northwalessolutions.netprobe.engine.discovery.HeardWriter
 import com.northwalessolutions.netprobe.engine.discovery.ListenController
@@ -46,6 +47,8 @@ import com.northwalessolutions.netprobe.engine.script.RhinoScriptEngine
 import com.northwalessolutions.netprobe.engine.script.ScriptEngine
 import com.northwalessolutions.netprobe.engine.script.CatalogUpdater
 import com.northwalessolutions.netprobe.engine.script.ScriptImporter
+import com.northwalessolutions.netprobe.engine.script.ScriptDevice
+import com.northwalessolutions.netprobe.engine.script.ScriptDevices
 import com.northwalessolutions.netprobe.engine.script.ScriptToolModule
 import com.northwalessolutions.netprobe.engine.script.ScriptToolStore
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
@@ -207,7 +210,8 @@ class AppContainer(val context: Context) {
             assets = { name -> runCatching { context.assets.open("tools/$name").bufferedReader().use { it.readText() } }.getOrNull() },
             engine = scriptEngine,
             moduleFor = { d, source ->
-                ScriptToolModule(d, source, scriptEngine, env = networkEnvMonitor::current, lanBinder = networkEnvMonitor::binderFor, wordlistLines = ::scriptWordlistLines)
+                ScriptToolModule(d, source, scriptEngine, env = networkEnvMonitor::current, lanBinder = networkEnvMonitor::binderFor, wordlistLines = ::scriptWordlistLines,
+                    devices = ::scriptDevices)
             },
             log = { Log.w(AppScopes.LOG_TAG, it) },
             dir = java.io.File(context.filesDir, "tools"),
@@ -239,6 +243,16 @@ class AppContainer(val context: Context) {
     val catalog: CatalogController by lazy {
         val fetcher = HttpsUpdateFetcher()
         CatalogController(appScope, CatalogUpdater(ScriptImporter(scriptEngine, scriptToolStore, fetcher), scriptToolStore, fetcher), log = { Log.e(AppScopes.LOG_TAG, "tool catalog", it) })
+    }
+    /**
+     * The devices of the network the phone is on, for ctx.devices (spec section 12): the row Home resolved, else the row the current
+     * connection matches; empty when there is none. Newest scan first, at most 1,024.
+     */
+    private suspend fun scriptDevices(): List<ScriptDevice> {
+        val env = networkEnvMonitor.current()
+        val row = currentNetwork.value ?: env?.let { networks.find(it, GatewayMac.peek(it.gateway)) } ?: return emptyList()
+        if (row.forgotten != null) return emptyList()
+        return ScriptDevices.load(hosts.allHostsForNetwork(row.id).first()) { id -> db.ports().forHostOnce(id) }
     }
     /** Lines [offset] until [offset] + [limit] of a wordlist, for ctx.wordlist; empty when the list is gone. */
     private suspend fun scriptWordlistLines(ref: WordlistRef, offset: Int, limit: Int): List<String> {

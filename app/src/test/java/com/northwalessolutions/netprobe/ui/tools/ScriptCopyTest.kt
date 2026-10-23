@@ -18,7 +18,7 @@ class ScriptCopyTest {
         // errors a script can catch
         "The call failed", "Network error: \\w+(, .{1,60})?", "This function cannot be used with new", "ctx\\.[a-z.]+ needs the option \\w+", "ctx\\.[a-z.]+ option \\w+ must be a \\w+",
         "ctx\\.[a-z.]+ option \\w+ must be a whole number from -?\\d+ to \\d+", "ctx\\.[a-z.]+ expects an options object", "ctx\\.[a-z.]+ argument \\d must be a \\w+",
-        "[a-z.]+ [a-z ]+ must be a string or an array of numbers from 0 to 255", "[a-z.]+ [a-z ]+ is larger than 1 MB", "Not a valid hex string", "The number must be a whole number from 0 to \\d+",
+        "[a-z.]+ [a-z ]+ must be a string or an array of numbers from 0 to 255", "[a-z.]+ [a-z ]+ is larger than 1 MB", "Not a valid hex string", "Not a valid base64 string", "The number must be a whole number from 0 to \\d+",
         "Read past the end of the bytes", "The value is too large", "The value is nested too deeply", "The value must be text, a number, true or false, an array or an object",
         "A function cannot be passed to the host", "Invalid string length: the limit is 1,000,000 characters", "Invalid array length: the limit is 100,000 elements",
         "eval and Function are not available in tools", "Java objects are not available in tools", "RegExp is not available in tools, use ctx\\.regex", "The connection is closed",
@@ -27,6 +27,7 @@ class ScriptCopyTest {
         "The HTTP method must be letters only", "At most 64 headers can be sent", "The header .{1,60} is not allowed", "Too many redirects", "Not a valid URL: .{0,60}",
         "The URL must start with http:// or https://", "The URL host must not contain a user name, a backslash, spaces or control characters", "The URL port must be a number from 1 to 65535",
         "The URL path must not contain spaces, backslashes or control characters",
+        "ctx\\.devices needs a tool with the network set to lan or any",
         // dns, findings, regex
         "The DNS lookup timed out", "The DNS lookup failed", "A finding link must start with http:// or https://",
         "The pattern is longer than 1,000 characters", "Unknown regex flag \\S, use i, m or s", "The regular expression is not valid", "The regular expression took too many steps",
@@ -59,7 +60,7 @@ class ScriptCopyTest {
             ScriptCopy.HOST_FAILED, ScriptCopy.ioFailed("SocketTimeoutException", null), ScriptCopy.ioFailed("ConnectException", "refused"), ScriptCopy.NOT_A_CONSTRUCTOR,
             ScriptCopy.missingOption("ctx.http.request", "url"), ScriptCopy.wrongType("ctx.tcp.exchange", "port", "number"), ScriptCopy.outOfRange("ctx.tcp.exchange", "port", 1, 65535),
             ScriptCopy.optionsExpected("ctx.udp.exchange"), ScriptCopy.wrongArgument("ctx.dns.lookup", 1, "string"), ScriptCopy.notABytes("ctx.tcp.exchange", "send"),
-            ScriptCopy.tooManyBytes("ctx.tcp.exchange", "send"), ScriptCopy.BAD_HEX, ScriptCopy.outOfRangeNumber(65535), ScriptCopy.READ_PAST_END, ScriptCopy.VALUE_TOO_LARGE, ScriptCopy.VALUE_TOO_DEEP,
+            ScriptCopy.tooManyBytes("ctx.tcp.exchange", "send"), ScriptCopy.BAD_HEX, ScriptCopy.BAD_BASE64, ScriptCopy.DEVICES_NEED_LAN, ScriptCopy.outOfRangeNumber(65535), ScriptCopy.READ_PAST_END, ScriptCopy.VALUE_TOO_LARGE, ScriptCopy.VALUE_TOO_DEEP,
             ScriptCopy.VALUE_NOT_PLAIN, ScriptCopy.FUNCTION_NOT_ALLOWED, ScriptCopy.STRING_TOO_LONG, ScriptCopy.ARRAY_TOO_LONG, ScriptCopy.DYNAMIC_CODE_REFUSED, ScriptCopy.JAVA_ACCESS_REFUSED,
             ScriptCopy.REGEXP_REFUSED, ScriptCopy.HANDLE_CLOSED, ScriptCopy.TOO_MANY_HANDLES, ScriptCopy.noWordlistInput("words"),
             ScriptCopy.BAD_METHOD, ScriptCopy.TOO_MANY_HEADERS, ScriptCopy.badHeader("X-A"), ScriptCopy.TOO_MANY_REDIRECTS, ScriptCopy.badUrl("nope"), ScriptCopy.URL_NOT_HTTP,
