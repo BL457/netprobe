@@ -131,6 +131,7 @@ class ToolRunner(
 
     private suspend fun execute(target: ToolTarget?, tool: ToolModule, inputs: ToolInputs, run: Run) {
         val progress = object : ToolProgress {
+            override val runId: Long get() = run.runId
             override fun update(done: Int, total: Int?, found: Int, errors: Int) { run.done = done; run.total = total; run.found = found; run.errors = errors }
             override fun depth(level: Int, maxDepth: Int) { run.depth = level; run.maxDepth = maxDepth }
             override suspend fun finding(f: Finding) {

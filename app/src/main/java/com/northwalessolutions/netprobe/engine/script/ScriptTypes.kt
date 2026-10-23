@@ -93,6 +93,12 @@ class ScriptHost(
     val network: NetworkScope = NetworkScope.TARGET,
     /** The discovered devices of the current network, newest scan first; the host API cuts the list at [ScriptDevices.MAX_DEVICES]. */
     val devices: suspend () -> List<ScriptDevice> = { emptyList() },
+    /** Draws pages for `ctx.web.snapshot` (spec section 12). */
+    val renderer: PageRenderer = NoPageRenderer,
+    /** Where the pictures go; null means snapshots are not available. */
+    val snapshots: SnapshotStore? = null,
+    /** The run's id, which names the folder of its pictures. */
+    val runId: Long = 0L,
 )
 
 class ScriptRunRequest(val source: String, val inputs: Map<String, Any?>, val host: ScriptHost)

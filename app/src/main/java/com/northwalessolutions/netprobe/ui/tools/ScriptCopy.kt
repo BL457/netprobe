@@ -122,6 +122,17 @@ object ScriptCopy {
     // ctx.devices (spec section 12)
     const val DEVICES_NEED_LAN = "ctx.devices needs a tool with the network set to lan or any"
 
+    // ctx.web.snapshot and image findings (spec section 12)
+    const val SNAPSHOT_UNAVAILABLE = "Page snapshots are not available"
+    const val SNAPSHOT_LIMIT = "At most 200 page snapshots can be taken in one run"
+    const val SNAPSHOT_SIZE_LIMIT = "Page snapshots can use at most 20 MB in one run"
+    const val SNAPSHOT_SAVE_FAILED = "The snapshot could not be saved"
+    const val SNAPSHOT_TIMEOUT = "The page took too long to load"
+    const val SNAPSHOT_ENGINE_FAILED = "The page could not be shown"
+    const val SNAPSHOT_STOPPED = "The snapshot was stopped"
+    fun snapshotLoadFailed(reason: String) = "The page could not be loaded: ${reason.take(IO_ECHO)}"
+    const val IMAGE_UNKNOWN = "The image was not made by ctx.web.snapshot in this run"
+
     // dns
     const val DNS_TIMEOUT = "The DNS lookup timed out"
     const val DNS_FAILED = "The DNS lookup failed"

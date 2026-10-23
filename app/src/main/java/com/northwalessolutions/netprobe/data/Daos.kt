@@ -90,6 +90,7 @@ data class NetworkRun(@Embedded val run: ToolRunEntity, val ip: String?)
         "(SELECT id FROM tool_runs WHERE hostId IS :hostId AND toolId = :toolId AND port = :port ORDER BY id DESC LIMIT :keep)")
     suspend fun prune(hostId: Long?, toolId: String, port: Int, keep: Int)
     @Query("SELECT * FROM tool_runs WHERE status = 'RUNNING'") suspend fun runningOnce(): List<ToolRunEntity>
+    @Query("SELECT id FROM tool_runs") suspend fun allRunIds(): List<Long>
     @Insert suspend fun insertFinding(f: ToolFindingEntity): Long
     @Query("SELECT * FROM tool_runs WHERE hostId = :hostId ORDER BY startedAt DESC, id DESC") fun runsForHost(hostId: Long): Flow<List<ToolRunEntity>>
     @Query("SELECT * FROM tool_runs WHERE id = :id") fun run(id: Long): Flow<ToolRunEntity?>

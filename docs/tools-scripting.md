@@ -362,6 +362,37 @@ ctx.devices().forEach(function (d) {
 });
 ```
 
+### web
+
+```javascript
+ctx.web.snapshot({ url, timeoutMs, width })  // returns {status, title, finalUrl, image}
+```
+
+Opens the page in a hidden web view inside NetProbe, waits for it to load, and takes a picture of it. `url` is required and must be `http://` or `https://`. `timeoutMs` defaults to 15,000 and is clamped to 1,000 to 60,000. `width` is the width of the page in pixels as the page sees it; it defaults to 1,024 and is clamped to 320 to 2,048. The picture is scaled down to at most 640 pixels wide and saved as a JPEG.
+
+The reply:
+
+| Field | Meaning |
+| --- | --- |
+| `status` | The HTTP status of the page itself. A page that answers 401 or 404 is still drawn. |
+| `title` | The page title, up to 200 characters. |
+| `finalUrl` | The address the page ended on after redirects. |
+| `image` | An image id. It is not a file name: pass it to `ctx.finding` as `extra.image` (see "finding"). |
+
+The page runs JavaScript. Cookies, local storage, pop-up windows, downloads, file and content addresses are all off. The page is fetched with the app's normal user agent, and certificate errors are accepted, as they are for `ctx.http`.
+
+The same network scope applies as for `ctx.http`. The address is checked before the page is fetched, every redirect hop is checked again, and so is every image, script and other resource the page asks for. A page that redirects outside the scope throws, and the same error messages are used. A resource outside the scope is simply left out of the picture.
+
+Limits: one picture is drawn at a time, a run may keep at most 200 pictures and 20 MB of them, and each picture counts against the run's transfer budget. A snapshot counts as one host call. Errors a script can catch include "The page took too long to load", "The page could not be loaded: ...", "Page snapshots can use at most 20 MB in one run" and "At most 200 page snapshots can be taken in one run".
+
+The pictures are kept with the run in Scans and are deleted when the run is deleted. Removing a tool does not delete its earlier runs, so it keeps their pictures.
+
+```javascript
+// target: "none", network: "lan"
+var shot = ctx.web.snapshot({ url: "http://192.168.1.20:8080/", timeoutMs: 10000 });
+ctx.finding("page", shot.title, "HTTP " + shot.status, shot.finalUrl, { image: shot.image });
+```
+
 ### bytes
 
 ```javascript
@@ -452,10 +483,12 @@ ctx.progress(i, words.length, hits);
 ### finding
 
 ```javascript
-ctx.finding(kind, value, detail, url)
+ctx.finding(kind, value, detail, url, extra)
 ```
 
-Records one result. `kind` is a string. `value` is the main text; a value that is not text is turned into text. `detail` and `url` are optional. A `url` must start with `http://` or `https://`, or the call throws "A finding link must start with http:// or https://". See "Findings" for the kinds and how they look.
+Records one result. `kind` is a string. `value` is the main text; a value that is not text is turned into text. `detail`, `url` and `extra` are optional. A `url` must start with `http://` or `https://`, or the call throws "A finding link must start with http:// or https://". See "Findings" for the kinds and how they look.
+
+`extra` is an object. Only `extra.image` is used: the image id returned by `ctx.web.snapshot` in this run. The finding then shows the picture. An id the run was not given throws "The image was not made by ctx.web.snapshot in this run".
 
 ```javascript
 ctx.finding("PATH", "/admin", "401", "http://" + inputs.ip + "/admin");
@@ -521,6 +554,7 @@ Fixed limits of the language and the API:
 | HTTP body returned | 1 MB (`bodyBytes`: first 100,000 bytes) |
 | Data passed from your script to `ctx` | Nested up to 8 levels, up to 2,000 keys per object, up to 200,000 values in all |
 | Open `tcp.connect` handles | 8 |
+| Page snapshots in one run | 200 pictures and 20 MB, each at most 640 pixels wide |
 | Datagrams to the broadcast address in one run | 50, each at most 1 KB |
 | HTTP redirects followed | 5 |
 | `http.many` concurrency | 16 |
@@ -780,6 +814,11 @@ These are thrown as a normal `Error`, so `try` and `catch` work.
 | The regular expression is not valid / The regular expression took too many steps | See "regex". |
 | No wordlist input named x | See "wordlist". |
 | Not a valid hex string / Not a valid base64 string | See "bytes". |
+| The page took too long to load / The page could not be loaded: x / The page could not be shown | A page snapshot failed. See "web". |
+| Page snapshots are not available | The app has no web view to draw with. |
+| At most 200 page snapshots can be taken in one run / Page snapshots can use at most 20 MB in one run | The snapshot limits. |
+| The snapshot could not be saved | The phone could not write the picture. |
+| The image was not made by ctx.web.snapshot in this run | `extra.image` is not an id returned by `ctx.web.snapshot` in this run. |
 | ctx.devices needs a tool with the network set to lan or any | See "devices". |
 | A finding link must start with http:// or https:// | See "finding". |
 

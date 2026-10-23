@@ -37,7 +37,12 @@ object HeardRun {
     fun runId(existing: HostEntity?, runIdForNew: Long): Long = if (existing == null || existing.manualOnly) runIdForNew else existing.lastDiscoveryRun
 }
 
-class NetworkRepository(private val db: NetProbeDb, private val onPurged: (Long) -> Unit = {}) {
+class NetworkRepository(
+    private val db: NetProbeDb,
+    /** Called after a Forget removed a network (tool runs of its hosts go with them), so their page pictures can be swept. */
+    private val afterDelete: () -> Unit = {},
+    private val onPurged: (Long) -> Unit = {},
+) {
     private val purge = PurgeOnce()
 
     /**
@@ -106,8 +111,11 @@ class NetworkRepository(private val db: NetProbeDb, private val onPurged: (Long)
     suspend fun markRun(networkId: Long, runId: Long) = db.networks().markRun(networkId, runId)
     suspend fun setForgotten(networkId: Long, at: Long?) = db.networks().setForgotten(networkId, at)
     /** Ports of the network's hosts, then the hosts, then the network, in one transaction; nothing from another network. */
-    suspend fun deleteNetworkCascade(networkId: Long) = db.withTransaction {
-        db.networks().deletePortsOfNetwork(networkId); db.networks().deleteHostsOfNetwork(networkId); db.networks().deleteNetwork(networkId)
+    suspend fun deleteNetworkCascade(networkId: Long) {
+        db.withTransaction {
+            db.networks().deletePortsOfNetwork(networkId); db.networks().deleteHostsOfNetwork(networkId); db.networks().deleteNetwork(networkId)
+        }
+        afterDelete()
     }
     /** A Forget left pending by a killed process is final (spec 5.3); ensure() runs this once. [onDeleted] clears that network's manual ranges. */
     suspend fun purgeForgotten(onDeleted: (Long) -> Unit) {
@@ -274,7 +282,11 @@ object ToolHintsRule {
     }
 }
 
-class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netprobe.engine.tools.ToolStore {
+class ToolRepository(
+    private val db: NetProbeDb,
+    /** Called after a new run's insert has pruned older runs of its tool, so their page pictures can be swept (tools platform spec section 12). */
+    private val afterPrune: () -> Unit = {},
+) : com.northwalessolutions.netprobe.engine.tools.ToolStore {
     private val dao get() = db.tools()
     private val _ready = CompletableDeferred<Unit>()
     /** Completed by [markInterrupted]; ToolRunner.start awaits it so a run started at launch is never marked INTERRUPTED. */
@@ -290,6 +302,15 @@ class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netpr
             finishedAt = null, status = ToolRunStatus.RUNNING, optionsJson = optionsJson, summary = "", route = route, toolName = toolName))
         dao.prune(hostId, toolId, port, KEEP_RUNS_PER_TOOL)   // per (host, tool, port), ruling R5: port 80's runs never prune port 5000's
         id
+    }.also { afterPrune() }
+
+    /**
+     * The highest run id ever issued (AUTOINCREMENT) and the ids of the runs that still exist, read in this order so a run that starts in
+     * between is newer than the first number: the snapshot sweep deletes only folders of runs that are older and gone.
+     */
+    suspend fun runIdBounds(): Pair<Long, Set<Long>> {
+        val highest = db.query("SELECT seq FROM sqlite_sequence WHERE name = ?", arrayOf<Any>("tool_runs")).use { c -> if (c.moveToFirst()) c.getLong(0) else 0L }
+        return highest to dao.allRunIds().toSet()
     }
     override suspend fun finish(runId: Long, finishedAt: Long?, status: ToolRunStatus, summary: String) = dao.finish(runId, finishedAt, status, summary)
     override suspend fun addFinding(runId: Long, kind: String, value: String, detail: String?, extra: String?): Long =

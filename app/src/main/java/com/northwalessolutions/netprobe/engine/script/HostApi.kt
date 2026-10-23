@@ -69,6 +69,10 @@ internal object HostApi {
         fn(dns, "lookup", 1) { a -> net.lookup(text(a, 0, "ctx.dns.lookup")) }
         fn(dns, "reverse", 1) { a -> net.reverse(text(a, 0, "ctx.dns.reverse")) }
 
+        // web
+        val web = HostWeb(s, s.host.gate, s.host.renderer, s.host.snapshots, s.host.runId)
+        fn(group("web"), "snapshot", 1) { a -> web.snapshot(Opts.of(a.getOrNull(0), "ctx.web.snapshot")) }
+
         // bytes
         val bytes = group("bytes")
         fn(bytes, "fromHex", 1) { a -> Bytes.fromHex(text(a, 0, "ctx.bytes.fromHex")) }
@@ -132,11 +136,13 @@ internal object HostApi {
             s.host.progress.update(count(a.getOrNull(0)), total, count(a.getOrNull(2)))
             Unit
         }
-        fn(ctx, "finding", 4) { a ->
+        fn(ctx, "finding", 5) { a ->
             val kind = text(a, 0, "ctx.finding").take(MAX_FINDING_KIND)
             val value = a.getOrNull(1).let { if (it is CharSequence) JsBridge.string(it) else ScriptRuntime.toString(it) }
             fun opt(i: Int): String? = a.getOrNull(i)?.takeIf { it !== Undefined.instance }?.let { if (it is CharSequence) JsBridge.string(it) else ScriptRuntime.toString(it) }
-            s.finding(kind, value, opt(2), opt(3))
+            // extra is optional; only extra.image (an id from ctx.web.snapshot) is read, other keys are ignored
+            val extra = a.getOrNull(4)?.takeIf { it !== Undefined.instance }?.let { Opts.of(it, "ctx.finding") }
+            s.finding(kind, value, opt(2), opt(3), extra?.optString("image"))
             Unit
         }
         fn(ctx, "log", 1) { a -> s.log(a.getOrNull(0).let { if (it is CharSequence) it.toString().take(ScriptCaps.MAX_LOG_LINE_CHARS * 2) else ScriptRuntime.toString(it) }); Unit }
@@ -150,7 +156,7 @@ internal object HostApi {
             try { s.ensureAlive(); false } catch (_: ScriptAbort) { true }
         }, LOCKED)
 
-        for (name in listOf("http", "tcp", "udp", "tls", "dns", "bytes", "regex")) (ScriptableObject.getProperty(ctx, name) as ScriptableObject).sealObject()
+        for (name in listOf("http", "tcp", "udp", "tls", "dns", "web", "bytes", "regex")) (ScriptableObject.getProperty(ctx, name) as ScriptableObject).sealObject()
         (ctx as ScriptableObject).sealObject()
         return ctx
     }
