@@ -280,12 +280,14 @@ class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netpr
     /** Completed by [markInterrupted]; ToolRunner.start awaits it so a run started at launch is never marked INTERRUPTED. */
     override val ready: Deferred<Unit> = _ready
 
-    override suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String): Long =
-        startRun(hostId, toolId, port, startedAt, optionsJson, null)
+    override suspend fun startRun(hostId: Long?, toolId: String, port: Int, startedAt: Long, optionsJson: String): Long =
+        startRun(hostId, toolId, port, startedAt, optionsJson, null, "")
+    suspend fun startRun(hostId: Long?, toolId: String, port: Int, startedAt: Long, optionsJson: String, route: String?): Long =
+        startRun(hostId, toolId, port, startedAt, optionsJson, route, "")
     /** 3C spec 4.5: [route] is a ToolRoute name for a manual run, null for a Device-screen run; written in the same insert. */
-    override suspend fun startRun(hostId: Long, toolId: String, port: Int, startedAt: Long, optionsJson: String, route: String?): Long = db.withTransaction {
+    override suspend fun startRun(hostId: Long?, toolId: String, port: Int, startedAt: Long, optionsJson: String, route: String?, toolName: String): Long = db.withTransaction {
         val id = dao.insertRun(ToolRunEntity(hostId = hostId, toolId = toolId, port = port, startedAt = startedAt,
-            finishedAt = null, status = ToolRunStatus.RUNNING, optionsJson = optionsJson, summary = "", route = route))
+            finishedAt = null, status = ToolRunStatus.RUNNING, optionsJson = optionsJson, summary = "", route = route, toolName = toolName))
         dao.prune(hostId, toolId, port, KEEP_RUNS_PER_TOOL)   // per (host, tool, port), ruling R5: port 80's runs never prune port 5000's
         id
     }
@@ -304,6 +306,11 @@ class ToolRepository(private val db: NetProbeDb) : com.northwalessolutions.netpr
     /** The manual tools history (3C spec 4.1): newest first, every host of the network. */
     fun recentForNetwork(networkId: Long, limit: Int): Flow<List<NetworkRun>> = dao.recentForNetwork(networkId, limit)
     fun run(id: Long): Flow<ToolRunEntity?> = dao.run(id)
+    /** The runs of [r]'s tool on [r]'s device (or, for a run with no device, of that tool with none), newest first: what the results switcher steps through. */
+    fun runsOfSameTool(r: ToolRunEntity): Flow<List<ToolRunEntity>> {
+        val host = r.hostId ?: return dao.runsWithoutHost(r.toolId)
+        return dao.runsForHost(host).map { list -> list.filter { it.toolId == r.toolId } }
+    }
     fun findings(runId: Long): Flow<List<ToolFindingEntity>> = dao.findings(runId)
     suspend fun findingsOnce(runId: Long): List<ToolFindingEntity> = dao.findingsOnce(runId)
     override suspend fun findingCount(runId: Long): Int = dao.findingCount(runId)

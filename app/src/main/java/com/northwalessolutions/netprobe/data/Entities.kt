@@ -57,15 +57,17 @@ data class VulnCacheEntity(@PrimaryKey val query: String, val json: String, val 
 /** A tool run's lifecycle (spec 7.1); Room stores it as TEXT by its name, as HostStatus does. */
 enum class ToolRunStatus { RUNNING, DONE, STOPPED, FAILED, INTERRUPTED }
 
-/** One follow-up tool run on one port of one host (spec 7.1). [port] is the target port, 161 for the SNMP walk. */
+/** One tool run (spec 7.1). [hostId] is null for a tool that needs no device (schema 6). [port] is the target port, 161 for the SNMP walk. */
 @Entity(tableName = "tool_runs",
     foreignKeys = [ForeignKey(entity = HostEntity::class, parentColumns = ["id"], childColumns = ["hostId"], onDelete = ForeignKey.CASCADE)],
     indices = [Index("hostId", "toolId", "port", "startedAt")])
 data class ToolRunEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0, val hostId: Long, val toolId: String, val port: Int,
+    @PrimaryKey(autoGenerate = true) val id: Long = 0, val hostId: Long?, val toolId: String, val port: Int,
     val startedAt: Long, val finishedAt: Long?, val status: ToolRunStatus, val optionsJson: String, val summary: String,
     /** 3C spec 4.5: how a manual run left the phone, a ToolRoute name ("WIFI", "ETHERNET", "OTHER"); null for Device-screen and pre-4 runs. */
     val route: String? = null,
+    /** Tools platform spec section 7: the tool's display name when the run started, so a removed tool still names its history; empty on pre-6 rows. */
+    @ColumnInfo(defaultValue = "''") val toolName: String = "",
 )
 
 /** One finding of a run (spec 7.1). [kind] is TEXT, parsed leniently; [extra] is a JSON object or null. */

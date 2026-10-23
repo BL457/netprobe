@@ -56,13 +56,13 @@ import kotlinx.coroutines.flow.Flow
     @Query("UPDATE hosts SET lastPortScan = :now WHERE id = :id") suspend fun markScanned(id: Long, now: Long)
     @Query("DELETE FROM hosts WHERE id = :id") suspend fun deleteHost(id: Long)
     /** Start-up sweep (3C spec 4.3, G8): manual targets a killed process left with no run. A promoted row or one with a run is kept. */
-    @Query("DELETE FROM hosts WHERE manualOnly = 1 AND id NOT IN (SELECT hostId FROM tool_runs)") suspend fun deleteOrphanManual(): Int
+    @Query("DELETE FROM hosts WHERE manualOnly = 1 AND id NOT IN (SELECT hostId FROM tool_runs WHERE hostId IS NOT NULL)") suspend fun deleteOrphanManual(): Int
     /** A refused manual start (spec 4.3 step 4): only while the row is still manualOnly and has no run, so a promotion or a started run keeps it. */
-    @Query("DELETE FROM hosts WHERE id = :id AND manualOnly = 1 AND id NOT IN (SELECT hostId FROM tool_runs)") suspend fun deleteManualIfUnused(id: Long): Int
+    @Query("DELETE FROM hosts WHERE id = :id AND manualOnly = 1 AND id NOT IN (SELECT hostId FROM tool_runs WHERE hostId IS NOT NULL)") suspend fun deleteManualIfUnused(id: Long): Int
 }
 data class PortCount(val hostId: Long, val n: Int)
 /** One run with its host's IP, for the manual tools history (3C spec 4.1, 7.1). */
-data class NetworkRun(@Embedded val run: ToolRunEntity, val ip: String)
+data class NetworkRun(@Embedded val run: ToolRunEntity, val ip: String?)
 
 @Dao interface PortDao {
     @Query("SELECT * FROM ports WHERE hostId = :hostId ORDER BY port") fun forHost(hostId: Long): Flow<List<PortEntity>>
@@ -86,13 +86,15 @@ data class NetworkRun(@Embedded val run: ToolRunEntity, val ip: String)
     @Query("UPDATE tool_runs SET finishedAt = :at, status = :status, summary = :summary WHERE id = :id")
     suspend fun finish(id: Long, at: Long?, status: ToolRunStatus, summary: String)
     /** Keeps the newest [keep] runs of one (host, tool, port), newest by id: AUTOINCREMENT ids only grow, so a clock that goes back never prunes the new run (ruling R5). */
-    @Query("DELETE FROM tool_runs WHERE hostId = :hostId AND toolId = :toolId AND port = :port AND id NOT IN " +
-        "(SELECT id FROM tool_runs WHERE hostId = :hostId AND toolId = :toolId AND port = :port ORDER BY id DESC LIMIT :keep)")
-    suspend fun prune(hostId: Long, toolId: String, port: Int, keep: Int)
+    @Query("DELETE FROM tool_runs WHERE hostId IS :hostId AND toolId = :toolId AND port = :port AND id NOT IN " +
+        "(SELECT id FROM tool_runs WHERE hostId IS :hostId AND toolId = :toolId AND port = :port ORDER BY id DESC LIMIT :keep)")
+    suspend fun prune(hostId: Long?, toolId: String, port: Int, keep: Int)
     @Query("SELECT * FROM tool_runs WHERE status = 'RUNNING'") suspend fun runningOnce(): List<ToolRunEntity>
     @Insert suspend fun insertFinding(f: ToolFindingEntity): Long
     @Query("SELECT * FROM tool_runs WHERE hostId = :hostId ORDER BY startedAt DESC, id DESC") fun runsForHost(hostId: Long): Flow<List<ToolRunEntity>>
     @Query("SELECT * FROM tool_runs WHERE id = :id") fun run(id: Long): Flow<ToolRunEntity?>
+    /** The runs of one tool that had no device (schema 6), newest first: the history group a null host forms. */
+    @Query("SELECT * FROM tool_runs WHERE hostId IS NULL AND toolId = :toolId ORDER BY startedAt DESC, id DESC") fun runsWithoutHost(toolId: String): Flow<List<ToolRunEntity>>
     @Query("SELECT * FROM tool_findings WHERE runId = :runId AND kind != 'HINT' ORDER BY id") fun findings(runId: Long): Flow<List<ToolFindingEntity>>
     @Query("SELECT * FROM tool_findings WHERE runId = :runId AND kind != 'HINT' ORDER BY id") suspend fun findingsOnce(runId: Long): List<ToolFindingEntity>
     @Query("SELECT COUNT(*) FROM tool_findings WHERE runId = :runId AND kind != 'HINT'") suspend fun findingCount(runId: Long): Int
@@ -100,9 +102,10 @@ data class NetworkRun(@Embedded val run: ToolRunEntity, val ip: String)
     suspend fun finishedRunsOnce(hostId: Long): List<ToolRunEntity>
     @Query("SELECT value FROM tool_findings WHERE kind = 'HINT' AND runId IN (:runIds)") suspend fun hintsOf(runIds: List<Long>): List<String>
     @Query("UPDATE tool_runs SET optionsJson = :json WHERE id = :id") suspend fun setOptions(id: Long, json: String)
-    @Query("SELECT DISTINCT hostId FROM tool_runs") suspend fun hostsWithRuns(): List<Long>
-    /** Newest first, every host of the network, manual targets included (3C spec 7.1). */
-    @Query("SELECT tool_runs.*, hosts.ip AS ip FROM tool_runs JOIN hosts ON hosts.id = tool_runs.hostId WHERE hosts.networkId = :networkId " +
+    @Query("SELECT DISTINCT hostId FROM tool_runs WHERE hostId IS NOT NULL") suspend fun hostsWithRuns(): List<Long>
+    /** Newest first, every host of the network, manual targets included (3C spec 7.1), plus runs that had no device (ip is null). */
+    @Query("SELECT tool_runs.*, hosts.ip AS ip FROM tool_runs LEFT JOIN hosts ON hosts.id = tool_runs.hostId " +
+        "WHERE hosts.networkId = :networkId OR tool_runs.hostId IS NULL " +
         "ORDER BY tool_runs.startedAt DESC, tool_runs.id DESC LIMIT :limit")
     fun recentForNetwork(networkId: Long, limit: Int): Flow<List<NetworkRun>>
 }

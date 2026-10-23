@@ -66,3 +66,37 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         db.execSQL("ALTER TABLE ports ADD COLUMN probe TEXT")
     }
 }
+
+/**
+ * Schema 5 to 6 (tools platform spec section 7): tool_runs.hostId becomes nullable and tool_runs gains toolName, a display-name snapshot
+ * so a removed tool still names its history. SQLite cannot drop NOT NULL, so both tables are rebuilt. Room keeps foreign keys ON during a
+ * migration, so dropping tool_runs while tool_findings exists would cascade-delete every finding: the child table is rebuilt and dropped
+ * first, then the parent. Rows keep their ids, and the AUTOINCREMENT counters are carried over so a pruned id is never reused.
+ */
+val MIGRATION_5_6_SQL: List<String> = listOf(
+    "CREATE TABLE IF NOT EXISTS `tool_runs_new` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `hostId` INTEGER, `toolId` TEXT NOT NULL, " +
+        "`port` INTEGER NOT NULL, `startedAt` INTEGER NOT NULL, `finishedAt` INTEGER, `status` TEXT NOT NULL, `optionsJson` TEXT NOT NULL, " +
+        "`summary` TEXT NOT NULL, `route` TEXT, `toolName` TEXT NOT NULL DEFAULT '', " +
+        "FOREIGN KEY(`hostId`) REFERENCES `hosts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+    "INSERT INTO tool_runs_new (id, hostId, toolId, port, startedAt, finishedAt, status, optionsJson, summary, route) " +
+        "SELECT id, hostId, toolId, port, startedAt, finishedAt, status, optionsJson, summary, route FROM tool_runs",
+    "CREATE TABLE IF NOT EXISTS `tool_findings_new` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `runId` INTEGER NOT NULL, " +
+        "`kind` TEXT NOT NULL, `value` TEXT NOT NULL, `detail` TEXT, `extra` TEXT, " +
+        "FOREIGN KEY(`runId`) REFERENCES `tool_runs_new`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+    "INSERT INTO tool_findings_new (id, runId, kind, value, detail, extra) SELECT id, runId, kind, value, detail, extra FROM tool_findings",
+    "DELETE FROM sqlite_sequence WHERE name IN ('tool_runs_new', 'tool_findings_new')",
+    "INSERT INTO sqlite_sequence (name, seq) SELECT 'tool_runs_new', seq FROM sqlite_sequence WHERE name = 'tool_runs'",
+    "INSERT INTO sqlite_sequence (name, seq) SELECT 'tool_findings_new', seq FROM sqlite_sequence WHERE name = 'tool_findings'",
+    "DROP TABLE tool_findings",
+    "DROP TABLE tool_runs",
+    "ALTER TABLE tool_runs_new RENAME TO tool_runs",
+    "ALTER TABLE tool_findings_new RENAME TO tool_findings",
+    "CREATE INDEX IF NOT EXISTS `index_tool_runs_hostId_toolId_port_startedAt` ON `tool_runs` (`hostId`, `toolId`, `port`, `startedAt`)",
+    "CREATE INDEX IF NOT EXISTS `index_tool_findings_runId` ON `tool_findings` (`runId`)",
+)
+
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        for (sql in MIGRATION_5_6_SQL) db.execSQL(sql)
+    }
+}
