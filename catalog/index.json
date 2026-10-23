@@ -2,6 +2,16 @@
     "format":  1,
     "tools":  [
                   {
+                      "id":  "default-creds",
+                      "file":  "default-creds.js",
+                      "name":  "Default credentials",
+                      "version":  "1.0",
+                      "sha256":  "124516dcaea0e7f40d78d6c0358da56f924f3bfcae2cad4f78b3ee47e3c10782",
+                      "network":  "target",
+                      "description":  "Tries well-known factory default logins against a device\u0027s web admin page.",
+                      "broadcast":  false
+                  },
+                  {
                       "id":  "wake-on-lan",
                       "file":  "wake-on-lan.js",
                       "name":  "Wake on LAN",
