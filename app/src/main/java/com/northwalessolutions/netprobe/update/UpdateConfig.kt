@@ -20,6 +20,7 @@ object UpdateConfig {
     /** Download progress reaches the banner at most once per this many bytes. */
     const val PROGRESS_STEP_BYTES = 65_536L
     const val PREF_LAST_CHECK = "lastCheckEpochMs"
+    const val PREF_LAST_CHECK_VERSION = "lastCheckVersionCode"
     const val PREF_SKIPPED = "skippedVersionCode"
     const val PREF_AUTO = "updateAuto"
 }

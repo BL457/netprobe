@@ -36,7 +36,21 @@ object UpdateCopy {
     const val REJECTED = "Update rejected: it was not signed with NetProbe's key"
     const val NO_INSTALLER = "No installer is available on this phone"
 
+    private const val MS_PER_MINUTE = 60_000L
+    private const val MINUTES_PER_HOUR = 60L
+    private const val MINUTES_PER_DAY = 1_440L
+
     fun available(versionName: String) = "NetProbe $versionName is available"
+    fun lastChecked(ageMs: Long): String {
+        val minutes = ageMs / MS_PER_MINUTE
+        return when {
+            minutes < 1 -> "Last checked just now"
+            minutes < MINUTES_PER_HOUR -> "Last checked ${plural(minutes, "minute")} ago"
+            minutes < MINUTES_PER_DAY -> "Last checked ${plural(minutes / MINUTES_PER_HOUR, "hour")} ago"
+            else -> "Last checked ${plural(minutes / MINUTES_PER_DAY, "day")} ago"
+        }
+    }
+    private fun plural(n: Long, unit: String): String { return if (n == 1L) "1 $unit" else "$n ${unit}s" }
     fun percent(value: Int) = "$value%"
     fun firstLine(notes: String) = notes.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
 

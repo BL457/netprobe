@@ -9,6 +9,8 @@ interface UpdatePrefs {
     var lastCheckEpochMs: Long
     /** The versionCode the user chose "Later" for; 0 for none. */
     var skippedVersionCode: Int
+    /** The versionCode that performed the last check; 0 for none. */
+    var lastCheckVersionCode: Int
 }
 
 class SharedUpdatePrefs(private val prefs: SharedPreferences) : UpdatePrefs {
@@ -18,6 +20,9 @@ class SharedUpdatePrefs(private val prefs: SharedPreferences) : UpdatePrefs {
     override var skippedVersionCode: Int
         get() = prefs.getInt(UpdateConfig.PREF_SKIPPED, 0)
         set(v) { prefs.edit().putInt(UpdateConfig.PREF_SKIPPED, v).apply() }
+    override var lastCheckVersionCode: Int
+        get() = prefs.getInt(UpdateConfig.PREF_LAST_CHECK_VERSION, 0)
+        set(v) { prefs.edit().putInt(UpdateConfig.PREF_LAST_CHECK_VERSION, v).apply() }
 }
 
 sealed interface CheckResult {
@@ -38,11 +43,16 @@ class UpdateChecker(private val fetcher: UpdateFetcher, private val clock: () ->
                     private val installedVersionCode: Int, private val sdkInt: Int, private val manifestUrl: String = UpdateConfig.MANIFEST_URL,
                     private val log: (String) -> Unit = {}) {
 
-    /** [manual] ignores the 24 h stamp and the skipped version, and clears the skip. */
+    /** When the last check ran (epoch ms), 0 for never. */
+    fun lastCheckEpochMs(): Long = prefs.lastCheckEpochMs
+
+    /** [manual] ignores the 24 h stamp and the skipped version, and clears the skip. An update of the app also makes an automatic check due. */
     suspend fun check(manual: Boolean): CheckResult {
         val now = clock()
         val since = now - prefs.lastCheckEpochMs
-        if (!manual && since in 0 until UpdateConfig.CHECK_INTERVAL_MS) return CheckResult.NotDue
+        val updatedSinceCheck = prefs.lastCheckVersionCode != installedVersionCode
+        if (!manual && !updatedSinceCheck && since in 0 until UpdateConfig.CHECK_INTERVAL_MS) return CheckResult.NotDue
+        prefs.lastCheckVersionCode = installedVersionCode
         prefs.lastCheckEpochMs = now   // stamped before the fetch, so a failed check is not retried in a loop
         val body = ByteArrayOutputStream()
         when (val r = fetcher.fetch(URL(manifestUrl), UpdateConfig.MANIFEST_MAX_BYTES, body)) {

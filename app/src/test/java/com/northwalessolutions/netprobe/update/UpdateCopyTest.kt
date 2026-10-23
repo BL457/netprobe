@@ -13,7 +13,7 @@ class UpdateCopyTest {
         "Look for a newer version now", "Checking for updates", "NetProbe is up to date", "Could not read the update information", "Could not check for updates",
         "Could not download the update", "The update is larger than 64 MB", "The download was not the expected size", "The download did not match its checksum",
         "Could not save the update", "Update rejected: it was not signed with NetProbe's key", "No installer is available on this phone",
-        "NetProbe .+ is available", "[0-9]{1,3}%",
+        "NetProbe .+ is available", "Last checked (just now|[0-9]+ (minute|hour|day)s? ago)", "[0-9]{1,3}%",
     ).map { Regex(it) }
 
     @Test fun `every update string matches a template and has no em-dash`() {
@@ -22,8 +22,19 @@ class UpdateCopyTest {
             UpdateCopy.PERMISSION_CANCEL, UpdateCopy.SETTINGS_SECTION, UpdateCopy.AUTO_LABEL, UpdateCopy.AUTO_SUPPORT, UpdateCopy.CHECK_ROW, UpdateCopy.CHECK_SUBTITLE,
             UpdateCopy.CHECKING, UpdateCopy.UP_TO_DATE, UpdateCopy.BAD_MANIFEST, UpdateCopy.CHECK_FAILED, UpdateCopy.FAIL_DOWNLOAD, UpdateCopy.FAIL_TOO_LARGE,
             UpdateCopy.FAIL_SIZE, UpdateCopy.FAIL_HASH, UpdateCopy.FAIL_SAVE, UpdateCopy.REJECTED, UpdateCopy.NO_INSTALLER,
-            UpdateCopy.available("0.4.0"), UpdateCopy.percent(42)) + InstallFailure.entries.map { UpdateCopy.failure(it) }
+            UpdateCopy.available("0.4.0"), UpdateCopy.percent(42),
+            UpdateCopy.lastChecked(0), UpdateCopy.lastChecked(5 * 60_000L), UpdateCopy.lastChecked(3 * 3_600_000L), UpdateCopy.lastChecked(2 * 86_400_000L)) + InstallFailure.entries.map { UpdateCopy.failure(it) }
         for (s in all) { assertTrue("not in the table: '$s'", templates.any { it.matches(s) }); assertFalse(s.contains(Char(0x2014))) }
+    }
+
+    @Test fun `last checked bands`() {
+        assertEquals("Last checked just now", UpdateCopy.lastChecked(59_999L))
+        assertEquals("Last checked 1 minute ago", UpdateCopy.lastChecked(60_000L))
+        assertEquals("Last checked 59 minutes ago", UpdateCopy.lastChecked(59 * 60_000L + 59_000L))
+        assertEquals("Last checked 1 hour ago", UpdateCopy.lastChecked(3_600_000L))
+        assertEquals("Last checked 23 hours ago", UpdateCopy.lastChecked(23 * 3_600_000L + 59 * 60_000L))
+        assertEquals("Last checked 1 day ago", UpdateCopy.lastChecked(86_400_000L))
+        assertEquals("Last checked 3 days ago", UpdateCopy.lastChecked(3 * 86_400_000L))
     }
 
     @Test fun `first line skips blanks and trims`() {

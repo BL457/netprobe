@@ -73,7 +73,7 @@ data class SettingsUi(val state: SettingsState, val networkName: String? = null,
                       /** The manual update check: running, and its last result line. */
                       val updateCheck: UpdateCheckUi = UpdateCheckUi())
 
-data class UpdateCheckUi(val checking: Boolean = false, val result: String? = null)
+data class UpdateCheckUi(val checking: Boolean = false, val result: String? = null, val idleSubtitle: String = UpdateCopy.CHECK_SUBTITLE)
 
 /** [current] reads the live settings at the Reset tap, so the Undo snapshot is never a stale recomposition value. */
 data class SettingsActions(val update: ((SettingsState) -> SettingsState) -> Unit = {}, val current: () -> SettingsState = { SettingsState() },
@@ -104,9 +104,11 @@ fun SettingsScreen(container: AppContainer, onOpenWordlists: () -> Unit = {}) {
     DisposableEffect(updates) { updates.attach(); onDispose { updates.detach() } }
     val checking by updates.checking.collectAsStateWithLifecycle()
     val checkResult by updates.result.collectAsStateWithLifecycle()
+    val lastCheck by updates.lastCheck.collectAsStateWithLifecycle()
+    val idleSubtitle = if (lastCheck > 0L) UpdateCopy.lastChecked(System.currentTimeMillis() - lastCheck) else UpdateCopy.CHECK_SUBTITLE
     SettingsContent(
         SettingsUi(s, network?.displayName, network?.id, manual, local, if (wordlistsLoaded) wordlists.count { !it.builtIn } else null,
-            ListenCopy.status(listenStatus), AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME), vendorDb, UpdateCheckUi(checking, checkResult)),
+            ListenCopy.status(listenStatus), AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME), vendorDb, UpdateCheckUi(checking, checkResult, idleSubtitle)),
         SettingsActions(update = { container.settings.update(it) }, current = { container.settings.state.value },
             onManualChange = { list -> network?.id?.let { container.settings.manual.set(it, list) } },
             clearVulnCache = {
@@ -209,7 +211,7 @@ private fun CheckUpdatesRow(ui: UpdateCheckUi, onCheck: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
             Text(UpdateCopy.CHECK_ROW, style = NetProbeText.secondary, color = NetProbeColors.text)
-            Text(if (ui.checking) UpdateCopy.CHECKING else ui.result ?: UpdateCopy.CHECK_SUBTITLE, style = NetProbeText.data, color = NetProbeColors.textMuted,
+            Text(if (ui.checking) UpdateCopy.CHECKING else ui.result ?: ui.idleSubtitle, style = NetProbeText.data, color = NetProbeColors.textMuted,
                 modifier = Modifier.testTag("checkUpdatesStatus"))
         }
     }

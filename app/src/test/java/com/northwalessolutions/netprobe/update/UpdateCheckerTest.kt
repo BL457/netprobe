@@ -12,7 +12,7 @@ class UpdateCheckerTest {
 
     private val day = UpdateConfig.CHECK_INTERVAL_MS
     private var now = 10 * day
-    private val prefs = FakePrefs()
+    private val prefs = FakePrefs(lastCheckVersionCode = 3)
     private fun checker(fetcher: UpdateFetcher, installed: Int = 3, sdk: Int = 34) = UpdateChecker(fetcher, { now }, prefs, installed, sdk)
     private fun check(f: FakeUpdateFetcher, manual: Boolean = false, installed: Int = 3, sdk: Int = 34) = runBlocking { checker(f, installed, sdk).check(manual) }
 
@@ -31,6 +31,17 @@ class UpdateCheckerTest {
         val f = FakeUpdateFetcher(manifest(4))
         assertEquals(CheckResult.NotDue, check(f))
         assertTrue(f.requested.isEmpty())
+    }
+
+    @Test fun `an update of the app makes an automatic check due despite a fresh stamp`() {
+        prefs.lastCheckEpochMs = now - 1; prefs.lastCheckVersionCode = 4
+        assertTrue(check(FakeUpdateFetcher(manifest(6)), installed = 5) is CheckResult.Available)
+        assertEquals(5, prefs.lastCheckVersionCode)
+    }
+
+    @Test fun `the same version with a fresh stamp is not due`() {
+        prefs.lastCheckEpochMs = now - 1; prefs.lastCheckVersionCode = 5
+        assertEquals(CheckResult.NotDue, check(FakeUpdateFetcher(manifest(6)), installed = 5))
     }
 
     @Test fun `an automatic check after 24 hours fetches and stamps`() {

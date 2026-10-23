@@ -18,4 +18,4 @@ class FakeUpdateFetcher(var body: ByteArray = ByteArray(0), var failure: FetchEr
     }
 }
 
-class FakePrefs(override var lastCheckEpochMs: Long = 0L, override var skippedVersionCode: Int = 0) : UpdatePrefs
+class FakePrefs(override var lastCheckEpochMs: Long = 0L, override var skippedVersionCode: Int = 0, override var lastCheckVersionCode: Int = 0) : UpdatePrefs

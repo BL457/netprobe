@@ -37,6 +37,9 @@ class UpdateController(private val scope: CoroutineScope, private val checker: U
     private val _result = MutableStateFlow<String?>(null)
     /** The last manual check's text for the attached Settings screen. */
     val result: StateFlow<String?> = _result
+    private val _lastCheck = MutableStateFlow(checker.lastCheckEpochMs())
+    /** When the last check ran (epoch ms, 0 for never); moves when any check finishes. */
+    val lastCheck: StateFlow<Long> = _lastCheck
     private val installChannel = Channel<File>(Channel.CONFLATED)
     /** A verified APK ready for the system installer; collected by MainActivity. */
     val installRequests = installChannel.receiveAsFlow()
@@ -68,6 +71,7 @@ class UpdateController(private val scope: CoroutineScope, private val checker: U
                 log(e)
                 if (manual) report(UpdateCopy.CHECK_FAILED)
             } finally {
+                _lastCheck.value = checker.lastCheckEpochMs()
                 if (manual) _checking.value = false
             }
         }
