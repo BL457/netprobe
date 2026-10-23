@@ -3,7 +3,7 @@
   Writes latest.json next to a release APK (in-app updater spec 5).
 .EXAMPLE
   .\tools\make-latest-json.ps1 -Apk app\build\outputs\apk\release\app-release.apk `
-      -ApkUrl https://github.com/blastdav/netprobe/releases/download/v0.3.1/app-release.apk -Notes notes.txt
+      -ApkUrl https://github.com/BL457/netprobe/releases/download/v0.3.1/app-release.apk -Notes notes.txt
 .NOTES
   versionCode and versionName come from `aapt2 dump badging` when aapt2 is found under the Android SDK;
   otherwise pass -VersionCode and -VersionName.

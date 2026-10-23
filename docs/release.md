@@ -35,12 +35,12 @@ Note: the first release-signed APK cannot update a debug-signed install either. 
 
    ```
    .\tools\make-latest-json.ps1 -Apk app\build\outputs\apk\release\app-release.apk `
-       -ApkUrl https://github.com/blastdav/netprobe/releases/download/v<versionName>/app-release.apk -Notes notes.txt
+       -ApkUrl https://github.com/BL457/netprobe/releases/download/v<versionName>/app-release.apk -Notes notes.txt
    ```
 
    `notes.txt` is optional release notes (first line shows on the banner, the rest under "What's new", 2000 characters at most).
    If `aapt2` is not found under the Android SDK, add `-VersionCode <n> -VersionName <x.y.z>`.
 4. Create the GitHub release `v<versionName>` and attach both `app-release.apk` and `latest.json` as assets. The app reads
-   `https://github.com/blastdav/netprobe/releases/latest/download/latest.json`, so the newest published (non-draft, non-prerelease)
+   `https://github.com/BL457/netprobe/releases/latest/download/latest.json`, so the newest published (non-draft, non-prerelease)
    release is what users see. To change that URL edit `UpdateConfig.MANIFEST_URL`.
 5. Check: open the installed older build, Settings, Updates, "Check for updates".

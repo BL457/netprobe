@@ -3,7 +3,7 @@
 Director ruling 2026-10-23: Google Play is out (targetSdk 30 stays, MACs matter more). Distribution is sideload. The app must tell the user when a newer release exists and install it with one tap (option 1). Lean workflow: this spec is the plan.
 
 ## 1. Manifest
-- `UpdateConfig.MANIFEST_URL` (one constant, easy to change). Default assumption: `https://github.com/blastdav/netprobe/releases/latest/download/latest.json`. GitHub answers that path with a redirect to another host, so the fetcher follows https-to-https redirects (max 5) and refuses any http hop.
+- `UpdateConfig.MANIFEST_URL` (one constant, easy to change). Default assumption: `https://github.com/BL457/netprobe/releases/latest/download/latest.json`. GitHub answers that path with a redirect to another host, so the fetcher follows https-to-https redirects (max 5) and refuses any http hop.
 - `latest.json` fields: `versionCode` Int (required), `versionName` String (required), `apkUrl` String https (required), `sha256` 64 hex chars (required), `sizeBytes` Long (optional), `notes` String (optional, truncated to 2000 chars), `minSdk` Int (optional).
 - Parse with kotlinx.serialization, `ignoreUnknownKeys = true`. Any missing required field, non-https URL or malformed sha256 makes the manifest invalid: log, no banner, "Could not read the update information" only on a manual check.
 - Manifest body cap 64 KB, timeout 10 s.

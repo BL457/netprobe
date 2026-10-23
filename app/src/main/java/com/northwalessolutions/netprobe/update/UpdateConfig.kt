@@ -2,7 +2,7 @@ package com.northwalessolutions.netprobe.update
 
 /** Every constant of the in-app updater (spec 1, 2, 4). The manifest URL is the one place to change where releases are published. */
 object UpdateConfig {
-    const val MANIFEST_URL = "https://github.com/blastdav/netprobe/releases/latest/download/latest.json"
+    const val MANIFEST_URL = "https://github.com/BL457/netprobe/releases/latest/download/latest.json"
     const val MANIFEST_MAX_BYTES = 64L * 1024
     const val APK_MAX_BYTES = 64L * 1024 * 1024
     const val CONNECT_TIMEOUT_MS = 10_000
