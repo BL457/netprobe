@@ -21,9 +21,12 @@ data class CatalogEntry(
     val key: String get() = "user:$id"
 }
 
+/** A line of the index that was left out: [label] is its id (cut), or its position when it has none; [reason] is a Copy string. */
+data class CatalogRejected(val label: String, val reason: String)
+
 /** What reading an index gives: the usable entries, and one reason for each line that was left out. */
 sealed interface CatalogIndexResult {
-    data class Parsed(val entries: List<CatalogEntry>, val rejected: List<String>) : CatalogIndexResult
+    data class Parsed(val entries: List<CatalogEntry>, val rejected: List<CatalogRejected>) : CatalogIndexResult
     data object Unreadable : CatalogIndexResult
 }
 
@@ -54,14 +57,14 @@ object CatalogIndex {
         if ((root["format"] as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull != FORMAT) return CatalogIndexResult.Unreadable
         val tools = root["tools"] as? JsonArray ?: return CatalogIndexResult.Unreadable
         val entries = ArrayList<CatalogEntry>()
-        val rejected = ArrayList<String>()
+        val rejected = ArrayList<CatalogRejected>()
         tools.take(MAX_ENTRIES).forEachIndexed { position, element ->
             when (val checked = check(element)) {
-                is Checked.Ok -> if (entries.any { it.id == checked.entry.id }) rejected += CatalogCopy.indexDuplicate(checked.entry.id) else entries += checked.entry
-                is Checked.Bad -> rejected += CatalogCopy.indexLineBad(checked.label ?: "#${position + 1}", checked.reason)
+                is Checked.Ok -> if (entries.any { it.id == checked.entry.id }) rejected += CatalogRejected(checked.entry.id.take(MAX_NAME), CatalogCopy.INDEX_DUPLICATE) else entries += checked.entry
+                is Checked.Bad -> rejected += CatalogRejected(checked.label ?: CatalogCopy.linePosition(position + 1), checked.reason)
             }
         }
-        if (tools.size > MAX_ENTRIES) rejected += CatalogCopy.INDEX_TOO_LONG
+        if (tools.size > MAX_ENTRIES) rejected += CatalogRejected(CatalogCopy.CATALOG_LABEL, CatalogCopy.INDEX_TOO_LONG)
         return CatalogIndexResult.Parsed(entries, rejected)
     }
 

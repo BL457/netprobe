@@ -50,31 +50,31 @@ class CatalogIndexTest {
             val p = parsed(index(text, line("good-one")))
             assertEquals(text, listOf("good-one"), p.entries.map { it.id })
             assertEquals(text, 1, p.rejected.size)
-            assertTrue("${p.rejected} should end with $reason", p.rejected.single().endsWith(reason))
+            assertEquals(text, reason, p.rejected.single().reason)
         }
     }
 
     @Test fun `a line that is not an object is rejected`() {
         val p = parsed("""{"format":1,"tools":[5,"x",null,${line()}]}""")
         assertEquals(1, p.entries.size); assertEquals(3, p.rejected.size)
-        assertTrue(p.rejected.first().startsWith("#1: "))
+        assertEquals(listOf("Line 1", "Line 2", "Line 3"), p.rejected.map { it.label })
     }
 
     @Test fun `a duplicate id keeps the first line`() {
         val p = parsed(index(line(), line().replace("My tool", "Second")))
         assertEquals("My tool", p.entries.single().name)
-        assertEquals(listOf("my-tool is listed twice, the second line was ignored"), p.rejected)
+        assertEquals(listOf(CatalogRejected("my-tool", "Listed twice, the second line was ignored")), p.rejected)
     }
 
     @Test fun `no more than 200 lines are read`() {
         val lines = (1..205).map { line("tool-%03d".format(it)) }
         val p = parsed(index(*lines.toTypedArray()))
         assertEquals(200, p.entries.size)
-        assertEquals(listOf("The catalog lists more than 200 tools, the rest were ignored"), p.rejected)
+        assertEquals(listOf(CatalogRejected("Catalog", "The catalog lists more than 200 tools, the rest were ignored")), p.rejected)
     }
 
     @Test fun `a long id is cut in the message`() {
         val p = parsed(index("""{"id":"${"x".repeat(300)}","file":"y"}"""))
-        assertTrue(p.rejected.single().length < 150)
+        assertEquals(40, p.rejected.single().label.length)
     }
 }

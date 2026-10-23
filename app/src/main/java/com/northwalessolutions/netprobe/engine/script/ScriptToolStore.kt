@@ -30,6 +30,8 @@ fun interface ScriptAssets {
 data class ToolIndexEntry(
     val key: String, val name: String, val version: String, val sha256: String, val scope: String, val importedAt: Long,
     val sourceUrl: String? = null, val fileName: String? = null,
+    /** True when the tool was installed by "Update tools from GitHub": [sourceUrl] and [fileName] then name the catalog script. */
+    val catalog: Boolean = false,
 )
 
 @Serializable
@@ -38,7 +40,7 @@ private data class ToolIndex(val format: Int = 1, val tools: List<ToolIndexEntry
 /** An imported tool as My tools lists it. [error] is set for a broken entry: it is shown and removable, and is never offered as a tool. */
 data class InstalledTool(
     val key: String, val name: String, val version: String, val scope: NetworkScope?, val importedAt: Long, val sha256: String,
-    val sourceUrl: String?, val fileName: String?, val error: String?,
+    val sourceUrl: String?, val fileName: String?, val error: String?, val catalog: Boolean = false,
 ) {
     val broken: Boolean get() = error != null
 }
@@ -122,16 +124,16 @@ class ScriptToolStore(
      * Writes the script and its index line, replacing a tool with the same key. The script goes to a temporary file first and the old one
      * is put back if the index cannot be written, so a failure leaves the previous tool as it was.
      */
-    suspend fun save(descriptor: ToolDescriptor, source: String, sourceUrl: String?, fileName: String?): SaveResult {
-        return mutex.withLock { saveLocked(descriptor, source, sourceUrl, fileName) }
+    suspend fun save(descriptor: ToolDescriptor, source: String, sourceUrl: String?, fileName: String?, catalog: Boolean = false): SaveResult {
+        return mutex.withLock { saveLocked(descriptor, source, sourceUrl, fileName, catalog) }
     }
 
-    private suspend fun saveLocked(descriptor: ToolDescriptor, source: String, sourceUrl: String?, fileName: String?): SaveResult {
+    private suspend fun saveLocked(descriptor: ToolDescriptor, source: String, sourceUrl: String?, fileName: String?, catalog: Boolean): SaveResult {
         val root = dir ?: return SaveResult.Failed(ImportCopy.SAVE_FAILED)
         val slug = slugOf(descriptor.key) ?: return SaveResult.Failed(ImportCopy.SAVE_FAILED)
         val sha = ScriptBytes.sha256(source)
         val file = File(root, "$slug.js")
-        val entry = ToolIndexEntry(descriptor.key, descriptor.name, descriptor.version, sha, scopeId(descriptor.network), clock(), sourceUrl, fileName)
+        val entry = ToolIndexEntry(descriptor.key, descriptor.name, descriptor.version, sha, scopeId(descriptor.network), clock(), sourceUrl, fileName, catalog)
         val replaced = entries.any { it.key == descriptor.key }
         val ok = withContext(Dispatchers.IO) {
             try {
@@ -152,7 +154,7 @@ class ScriptToolStore(
         }
         if (!ok) return SaveResult.Failed(ImportCopy.SAVE_FAILED)
         entries = entries.filter { it.key != entry.key } + entry
-        val module = moduleFor(descriptor.copy(source = ToolSource.Script(file, sha)), source)
+        val module = moduleFor(descriptor.copy(source = sourceOf(catalog, file, sha)), source)
         installedModules = installedModules + (descriptor.key to module)
         brokenKeys = brokenKeys - descriptor.key
         broken = broken - descriptor.key
@@ -230,7 +232,7 @@ class ScriptToolStore(
         val source = ScriptBytes.decode(raw) ?: return One(null, ImportCopy.FILE_NOT_TEXT)
         val evaluated = engine.evaluate(source)
         if (evaluated !is ScriptEvaluation.Loaded) return One(null, ImportCopy.cannotLoad((evaluated as ScriptEvaluation.Failed).message))
-        val parsed = ScriptDescriptorParser.parse(evaluated.tool, evaluated.hasRun, ToolKeys.USER_PREFIX, null, ToolSource.Script(file, entry.sha256))
+        val parsed = ScriptDescriptorParser.parse(evaluated.tool, evaluated.hasRun, ToolKeys.USER_PREFIX, null, sourceOf(entry.catalog, file, entry.sha256))
         return when (parsed) {
             is ParsedTool.Invalid -> One(null, ImportCopy.cannotLoad(parsed.errors.joinToString("; ")))
             is ParsedTool.Valid ->
@@ -245,7 +247,7 @@ class ScriptToolStore(
         val rows = ArrayList<InstalledTool>()
         for (e in entries) {
             val d = working[e.key]
-            rows += InstalledTool(e.key, d?.name ?: e.name, d?.version ?: e.version, d?.network ?: scopeOf(e.scope), e.importedAt, e.sha256, e.sourceUrl, e.fileName, broken[e.key])
+            rows += InstalledTool(e.key, d?.name ?: e.name, d?.version ?: e.version, d?.network ?: scopeOf(e.scope), e.importedAt, e.sha256, e.sourceUrl, e.fileName, broken[e.key], e.catalog)
         }
         for (key in brokenKeys) rows += InstalledTool(key, key.removePrefix(ToolKeys.USER_PREFIX), "", null, 0L, "", null, null, broken[key])
         _installed.value = rows.sortedWith(compareBy<InstalledTool> { it.name.lowercase() }.thenBy { it.key })
@@ -287,6 +289,8 @@ class ScriptToolStore(
 
         /** The file stem of an imported tool's key, or null when the key is not "user:" plus a valid slug. */
         fun slugOf(key: String): String? = key.removePrefix(ToolKeys.USER_PREFIX).takeIf { key.startsWith(ToolKeys.USER_PREFIX) && SLUG.matches(it) }
+
+        fun sourceOf(catalog: Boolean, file: File, sha: String): ToolSource = if (catalog) ToolSource.Catalog(file, sha) else ToolSource.Script(file, sha)
 
         fun scopeId(s: NetworkScope): String = when (s) { NetworkScope.TARGET -> "target"; NetworkScope.LAN -> "lan"; NetworkScope.ANY -> "any" }
         fun scopeOf(id: String): NetworkScope? = when (id) { "target" -> NetworkScope.TARGET; "lan" -> NetworkScope.LAN; "any" -> NetworkScope.ANY; else -> null }

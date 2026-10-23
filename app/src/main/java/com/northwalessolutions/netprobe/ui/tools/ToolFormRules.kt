@@ -12,7 +12,7 @@ import com.northwalessolutions.netprobe.engine.tools.ToolDescriptor
 import com.northwalessolutions.netprobe.engine.tools.ToolInputs
 import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolModule
-import com.northwalessolutions.netprobe.engine.tools.ToolSource
+import com.northwalessolutions.netprobe.engine.tools.isScript
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
 import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.ui.manual.ManualCopy
@@ -106,7 +106,7 @@ object ToolFormRules {
         d.target != TargetKind.PORT -> TlsMode.NEVER
         d.key == ToolKeys.TLS_CERTIFICATE -> TlsMode.ALWAYS
         d.key == ToolKeys.DIR_BRUTEFORCE || d.key == ToolKeys.HTTP_FINGERPRINT -> TlsMode.SWITCH
-        d.source is ToolSource.Script -> TlsMode.SWITCH
+        d.source.isScript -> TlsMode.SWITCH
         else -> TlsMode.NEVER
     }
 

@@ -44,6 +44,7 @@ import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
 import android.util.Log
 import com.northwalessolutions.netprobe.engine.script.RhinoScriptEngine
 import com.northwalessolutions.netprobe.engine.script.ScriptEngine
+import com.northwalessolutions.netprobe.engine.script.CatalogUpdater
 import com.northwalessolutions.netprobe.engine.script.ScriptImporter
 import com.northwalessolutions.netprobe.engine.script.ScriptToolModule
 import com.northwalessolutions.netprobe.engine.script.ScriptToolStore
@@ -65,6 +66,7 @@ import com.northwalessolutions.netprobe.engine.tools.smb.SmbSessionTool
 import com.northwalessolutions.netprobe.ui.home.RunSettings
 import com.northwalessolutions.netprobe.ui.home.ContainerHeardSink
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
+import com.northwalessolutions.netprobe.ui.tools.CatalogController
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolImportController
 import com.northwalessolutions.netprobe.ui.tools.ToolRemoval
@@ -232,6 +234,11 @@ class AppContainer(val context: Context) {
     /** The import flow shared by the Tools tab and Settings (tools platform D10): reading, fetching and saving run on appScope. */
     val toolImport: ToolImportController by lazy {
         ToolImportController(appScope, ScriptImporter(scriptEngine, scriptToolStore, HttpsUpdateFetcher()), log = { Log.e(AppScopes.LOG_TAG, "tool import", it) })
+    }
+    /** "Update tools from GitHub" (spec section 11), shared by the Tools tab and Settings: fetches only when the user taps the action. */
+    val catalog: CatalogController by lazy {
+        val fetcher = HttpsUpdateFetcher()
+        CatalogController(appScope, CatalogUpdater(ScriptImporter(scriptEngine, scriptToolStore, fetcher), scriptToolStore, fetcher), log = { Log.e(AppScopes.LOG_TAG, "tool catalog", it) })
     }
     /** Lines [offset] until [offset] + [limit] of a wordlist, for ctx.wordlist; empty when the list is gone. */
     private suspend fun scriptWordlistLines(ref: WordlistRef, offset: Int, limit: Int): List<String> {

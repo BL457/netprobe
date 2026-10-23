@@ -5,9 +5,43 @@ package com.northwalessolutions.netprobe.ui.tools
  * Templates live in CatalogCopyTest. Sentence case, no disclaimers.
  */
 object CatalogCopy {
+    // The action (Tools overflow and Settings > Tools)
+    const val ACTION = "Update tools from GitHub"
+    const val ACTION_SUPPORT = "Get new and updated tools from the NetProbe catalog"
+
+    // Working and failed
+    const val TITLE = "Tools from GitHub"
+    const val READING_INDEX = "Reading the catalog"
+    fun checking(done: Int, total: Int) = "Checking tool $done of $total"
+    const val INSTALLING = "Installing"
+    const val FAILED_TITLE = "Could not update tools"
+    const val TRY_AGAIN = "Try again"
+    const val INDEX_UNREADABLE = "The catalog could not be read"
+    const val SCRIPT_MISMATCH = "The script does not match the catalog, try again later"
+    const val ID_MISMATCH = "The script's id is not the one the catalog lists"
+
+    // Review sheet
+    fun newHeader(count: Int) = "New ($count)"
+    fun updatedHeader(count: Int) = "Updated ($count)"
+    fun failedHeader(count: Int) = "Failed ($count)"
+    fun nameVersion(name: String, version: String) = "${name.take(NAME_ECHO)} ${version.take(VERSION_ECHO)}"
+    fun updatedLine(name: String, from: String, to: String) = "${name.take(NAME_ECHO)} ${from.take(VERSION_ECHO)} to ${to.take(VERSION_ECHO)}"
+    const val REPLACES_COPY = "Replaces your copy"
+    const val BROADCAST_NEW = "Newly able to send broadcast packets on your network"
+    const val ACK = "I allow the changes marked above"
+    fun failureLine(name: String, reason: String) = "${name.take(NAME_ECHO)}: ${reason.take(REASON_ECHO)}"
+    fun upToDate(count: Int) = if (count == 1) "1 tool is up to date" else "$count tools are up to date"
+    const val NOTHING_NEW = "Nothing new to install"
+    const val INSTALL = "Install"
+
+    // After Install
+    fun installed(count: Int) = if (count == 1) "Installed 1 tool" else "Installed $count tools"
+    fun installedSome(ok: Int, failed: Int) = "Installed $ok of ${ok + failed} tools, $failed failed"
+
     // Why a line of the index was left out (shown in the Failed list)
-    fun indexLineBad(label: String, reason: String) = "${label.take(LABEL_ECHO)}: $reason"
-    fun indexDuplicate(id: String) = "${id.take(LABEL_ECHO)} is listed twice, the second line was ignored"
+    fun linePosition(position: Int) = "Line $position"
+    const val CATALOG_LABEL = "Catalog"
+    const val INDEX_DUPLICATE = "Listed twice, the second line was ignored"
     const val INDEX_TOO_LONG = "The catalog lists more than 200 tools, the rest were ignored"
     const val INDEX_FIELDS = "The catalog line is missing a field or has the wrong kind of value"
     const val INDEX_ID = "The id is not valid"
@@ -19,5 +53,7 @@ object CatalogCopy {
     const val INDEX_DESCRIPTION = "The description is longer than 200 characters"
     const val INDEX_BROADCAST = "Only a tool with the network set to lan can declare broadcast"
 
-    private const val LABEL_ECHO = 40
+    private const val NAME_ECHO = 40
+    private const val VERSION_ECHO = 20
+    private const val REASON_ECHO = 200
 }

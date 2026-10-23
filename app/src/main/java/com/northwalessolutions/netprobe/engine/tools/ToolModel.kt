@@ -28,7 +28,12 @@ enum class NetworkScope { TARGET, LAN, ANY }
 sealed interface ToolSource {
     object BuiltIn : ToolSource
     data class Script(val file: File, val sha256: String) : ToolSource
+    /** A script installed by "Update tools from GitHub" (spec section 11): [file] is the local copy, [sha256] the installed script's fingerprint. */
+    data class Catalog(val file: File, val sha256: String) : ToolSource
 }
+
+/** True for a tool written in JavaScript, whether imported by hand or installed from the catalog. */
+val ToolSource.isScript: Boolean get() = this is ToolSource.Script || this is ToolSource.Catalog
 
 /** The fixed icon set (spec section 6); the UI maps each to a Material icon, so this file has no Compose. Unknown names fall back to TERMINAL. */
 enum class ToolIcon(val id: String) {

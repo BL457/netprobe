@@ -41,7 +41,7 @@ import kotlinx.coroutines.launch
 /** Every action the Tools grid fires; the Compose tests record them. */
 data class ToolsGridActions(
     val onOpenTool: (String) -> Unit = {}, val onWordlists: () -> Unit = {}, val onAbout: (String) -> Unit = {}, val onCopySource: (String) -> Unit = {},
-    val onRemove: (String) -> Unit = {}, val onImport: () -> Unit = {},
+    val onRemove: (String) -> Unit = {}, val onImport: () -> Unit = {}, val onCatalog: () -> Unit = {},
 )
 
 private val TILE_SHAPE = RoundedCornerShape(8.dp)
@@ -71,8 +71,9 @@ fun ToolsScreen(container: AppContainer, onOpenTool: (String) -> Unit, onOpenWor
     ToolsGridContent(groups, ToolsGridActions(
         onOpenTool = onOpenTool, onWordlists = onOpenWordlists,
         onAbout = { key -> about = modules.firstOrNull { it.descriptor.key == key }?.let { ToolGrid.about(it.descriptor) } },
-        onCopySource = ::copySource, onRemove = { key -> removing = key }, onImport = container.toolImport::open), snackbar = snackbar)
+        onCopySource = ::copySource, onRemove = { key -> removing = key }, onImport = container.toolImport::open, onCatalog = container.catalog::open), snackbar = snackbar)
     ToolImportHost(container.toolImport, onNotice = { msg -> scope.launch { snackbar.showSnackbar(msg) } })
+    CatalogHost(container.catalog, onNotice = { msg -> scope.launch { snackbar.showSnackbar(msg) } })
     removing?.let { key ->
         val name = modules.firstOrNull { it.descriptor.key == key }?.descriptor?.name
         if (name == null) removing = null
@@ -89,7 +90,7 @@ fun ToolsScreen(container: AppContainer, onOpenTool: (String) -> Unit, onOpenWor
 fun ToolsGridContent(groups: List<TileGroup>, actions: ToolsGridActions, snackbar: SnackbarHostState = remember { SnackbarHostState() }) {
     val columns = ToolGrid.columns(LocalConfiguration.current.screenWidthDp)
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)) { ToolsTitleRow(actions.onImport, actions.onWordlists) } }) { pad ->
+        topBar = { Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)) { ToolsTitleRow(actions.onImport, actions.onCatalog, actions.onWordlists) } }) { pad ->
         LazyVerticalGrid(GridCells.Fixed(columns), Modifier.padding(pad).fillMaxSize().testTag("toolsGrid"),
             contentPadding = PaddingValues(horizontal = Dimens.gutter, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(GRID_GAP), verticalArrangement = Arrangement.spacedBy(GRID_GAP)) {
@@ -105,7 +106,7 @@ fun ToolsGridContent(groups: List<TileGroup>, actions: ToolsGridActions, snackba
 }
 
 @Composable
-private fun ToolsTitleRow(onImport: () -> Unit, onWordlists: () -> Unit) {
+private fun ToolsTitleRow(onImport: () -> Unit, onCatalog: () -> Unit, onWordlists: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().heightIn(min = TITLE_ROW_MIN), verticalAlignment = Alignment.CenterVertically) {
         Text(ToolsCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.weight(1f).padding(start = Dimens.gutter).semantics { heading() })
@@ -115,6 +116,7 @@ private fun ToolsTitleRow(onImport: () -> Unit, onWordlists: () -> Unit) {
             }
             DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
                 DropdownMenuItem(text = { Text(ToolsUiCopy.IMPORT_TOOL) }, onClick = { open = false; onImport() }, modifier = Modifier.testTag("toolsImport"))
+                DropdownMenuItem(text = { Text(CatalogCopy.ACTION) }, onClick = { open = false; onCatalog() }, modifier = Modifier.testTag("toolsCatalog"))
                 DropdownMenuItem(text = { Text(ToolsCopy.WORDLISTS) }, onClick = { open = false; onWordlists() }, modifier = Modifier.testTag("toolsWordlists"))
             }
         }

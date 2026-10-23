@@ -26,6 +26,10 @@ object UpdateConfig {
     const val PREF_LAST_SEEN_VERSION = "lastSeenVersionCode"
     const val PREF_PENDING_VERSION = "pendingVersionCode"
     const val PREF_PENDING_NOTES = "pendingNotes"
+    /** The tool catalog (spec section 11): the index and the scripts it lists are fetched from this folder, and only when the user asks. */
+    const val CATALOG_BASE_URL = "https://raw.githubusercontent.com/BL457/netprobe/master/catalog/"
+    const val CATALOG_INDEX_URL = CATALOG_BASE_URL + "index.json"
+    const val CATALOG_INDEX_MAX_BYTES = 1024L * 1024
     /** All published versions, opened from Settings > About. */
     const val RELEASES_URL = "https://github.com/BL457/netprobe/releases"
 }

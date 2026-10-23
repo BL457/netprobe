@@ -50,6 +50,7 @@ import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.theme.*
 import com.northwalessolutions.netprobe.ui.tools.MyToolRow
 import com.northwalessolutions.netprobe.ui.tools.MyTools
+import com.northwalessolutions.netprobe.ui.tools.CatalogHost
 import com.northwalessolutions.netprobe.ui.tools.ToolImportHost
 import com.northwalessolutions.netprobe.ui.wordlists.rememberWordlistStore
 import com.northwalessolutions.netprobe.ui.wordlists.rememberWordlists
@@ -86,7 +87,7 @@ data class UpdateCheckUi(val checking: Boolean = false, val result: String? = nu
 data class SettingsActions(val update: ((SettingsState) -> SettingsState) -> Unit = {}, val current: () -> SettingsState = { SettingsState() },
                            val onManualChange: (List<Subnet>) -> Unit = {}, val clearVulnCache: suspend () -> String = { "" }, val onOpenWordlists: () -> Unit = {},
                            val onUpdateVendors: () -> Unit = {}, val onStopVendors: () -> Unit = {}, val onCheckUpdates: () -> Unit = {},
-                           val onImportTool: () -> Unit = {}, val onRemoveTool: (String, (String) -> Unit) -> Unit = { _, _ -> })
+                           val onImportTool: () -> Unit = {}, val onUpdateFromGitHub: () -> Unit = {}, val onRemoveTool: (String, (String) -> Unit) -> Unit = { _, _ -> })
 
 // The bar inset and the IME join the content insets (3D spec 1.4); a separate imePadding would count the navigation bar twice.
 @Composable
@@ -124,9 +125,9 @@ fun SettingsScreen(container: AppContainer, onOpenWordlists: () -> Unit = {}) {
             clearVulnCache = {
                 try { container.vulnCache.clear(); "Vulnerability cache cleared" } catch (ce: CancellationException) { throw ce } catch (e: Exception) { "Could not clear cache: ${e.message}" }
             },
-            onOpenWordlists = onOpenWordlists, onUpdateVendors = { updater.start() }, onStopVendors = { updater.cancel() }, onCheckUpdates = updates::checkNow, onImportTool = container.toolImport::open,
+            onOpenWordlists = onOpenWordlists, onUpdateVendors = { updater.start() }, onStopVendors = { updater.cancel() }, onCheckUpdates = updates::checkNow, onImportTool = container.toolImport::open, onUpdateFromGitHub = container.catalog::open,
             onRemoveTool = { key, done -> container.removeTool(key, done) }),
-        banner = { UpdateBannerHost(updates) }, toolImport = { notice -> ToolImportHost(container.toolImport, notice) })
+        banner = { UpdateBannerHost(updates) }, toolImport = { notice -> ToolImportHost(container.toolImport, notice); CatalogHost(container.catalog, notice) })
 }
 
 /** Settings layout (Radar spec 6, 3C spec 1 and 2.3). PINNED: the title row and the overflow menu sit in the topBar, never in the scroll. */
@@ -203,7 +204,7 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions, banner: @Composabl
             TextButton(onClick = { scope.launch { snackbar.showSnackbar(actions.clearVulnCache()) } }, modifier = Modifier.heightIn(min = Dimens.touch)) {
                 Text("Clear vulnerability cache", style = NetProbeText.action, color = NetProbeColors.signal)
             }
-            ToolsSection(imported = ui.importedWordlists, onOpenWordlists = actions.onOpenWordlists, onImportTool = actions.onImportTool, myTools = ui.myTools,
+            ToolsSection(imported = ui.importedWordlists, onOpenWordlists = actions.onOpenWordlists, onImportTool = actions.onImportTool, onUpdateFromGitHub = actions.onUpdateFromGitHub, myTools = ui.myTools,
                          onRemoveTool = { key -> actions.onRemoveTool(key) { msg -> scope.launch { snackbar.showSnackbar(msg) } } })
 
             Section(UpdateCopy.SETTINGS_SECTION)
