@@ -14,6 +14,7 @@ junit = "4.13.2"
 androidxJunit = "1.2.1"
 espresso = "3.7.0"
 turbine = "1.2.0"
+rhino = "1.9.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +37,7 @@ room-testing = { group = "androidx.room", name = "room-testing", version.ref = "
 coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+rhino = { group = "org.mozilla", name = "rhino", version.ref = "rhino" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
 androidx-test-core = { group = "androidx.test", name = "core-ktx", version = "1.6.1" }

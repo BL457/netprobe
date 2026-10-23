@@ -53,7 +53,9 @@ android {
     }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Off for the published build; `-PminifyRelease` turns R8 on to prove the keep rules (tools platform G13).
+            isMinifyEnabled = project.hasProperty("minifyRelease")
+            proguardFiles("proguard-rules.pro")
             if (keystoreProps != null) {
                 signingConfig = signingConfigs.getByName("release")
             } else {
@@ -106,6 +108,7 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
+    implementation(libs.rhino)   // the one script-engine dependency (tools platform D1); see docs/tools-scripting.md
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 
