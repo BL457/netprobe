@@ -29,6 +29,9 @@ class ServiceProbeLibraryTest {
     private fun str(o: JsonObject, k: String): String = (o[k] as JsonPrimitive).contentOrNull ?: error("$k is null")
     private fun hex(s: String): ByteArray = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
     private fun bytes(s: String) = s.toByteArray(Charsets.ISO_8859_1)
+    /** Careful hellos with a side effect on the target: no hint, so only the unsafe-hellos switch ever sends them; their usual ports are a commonPorts note. */
+    private val behindTheSwitch = setOf("source-rcon-auth", "cvs-pserver", "irc-register", "mysql-quit-early", "bgp-open")
+    private val net = FakeNetwork()
     private val newProbes get() = probes.filter { it.id !in originalIds }
 
     @Test fun `every entry is well formed`() {
@@ -44,7 +47,7 @@ class ServiceProbeLibraryTest {
             assertTrue("${p.id}: send is bytes (one char per byte) and within the cap", p.sendTemplate.all { it.code in 0..255 } && p.sendTemplate.length <= ServiceProbeRules.MAX_SEND)
             val sent = String(p.sendBytes("10.0.3.5", 1234, "ABCDEFGH"), Charsets.ISO_8859_1)
             assertFalse("${p.id}: a placeholder survived", "{ip}" in sent || "{port}" in sent || "{rand}" in sent)
-            if (p.sendsBytes) assertTrue("${p.id}: a hello that sends bytes names the ports it is for", p.ports.isNotEmpty())
+            if (p.sendsBytes && p.id !in behindTheSwitch) assertTrue("${p.id}: a hello that sends bytes names the ports it is for", p.ports.isNotEmpty())
             if (!p.sendsBytes && p.builtin == null) assertTrue("${p.id}: a banner matcher takes the null read", p.matchesNullReply)
             assertTrue("${p.id}: has a sample and a negative sample", p.samples.isNotEmpty() && p.negativeSamples.isNotEmpty())
         }
@@ -118,5 +121,22 @@ class ServiceProbeLibraryTest {
             assertTrue("port $port has a careful hello", hinted.isNotEmpty())
             assertTrue("port $port: every hello hinted for it is careful", hinted.all { it.safety == ProbeSafety.CAREFUL })
         }
+    }
+    @Test fun `the side-effect hellos carry no hint, only a commonPorts note, and need the unsafe switch`() {
+        val raw = (Json.parseToJsonElement(probeText) as JsonArray).map { it as JsonObject }.associateBy { str(it, "id") }
+        for (id in behindTheSwitch) {
+            val p = probes.first { it.id == id }
+            assertTrue("$id has no hint", p.ports.isEmpty()); assertEquals(ProbeSafety.CAREFUL, p.safety)
+            assertTrue("$id keeps its usual ports as a note", (raw.getValue(id)["commonPorts"] as JsonArray).isNotEmpty())
+        }
+        val ladder = ServiceProbes(probes, net::transport, clock = { net.clock.now })
+        fun ran(port: Int, limits: LadderLimits): List<String> = kotlinx.coroutines.runBlocking {
+            net.respond = { _, _, _ -> Reply.SILENT }
+            val b = ActiveProbeBudget(MAX_ACTIVE_PORTS, Long.MAX_VALUE, Long.MAX_VALUE) { net.clock.now }
+            ladder.run(java.net.InetAddress.getByName("10.0.3.59"), port, port, "Unknown", ProbeMode.Active(b, hellos = true, limits = limits), 1L).trace.map { it.id }
+        }
+        for (limits in listOf(LadderLimits.SCAN, LadderLimits.THOROUGH)) assertTrue(ran(6667, limits).none { it in behindTheSwitch })
+        val on = ran(6667, LadderLimits.thorough(true))
+        assertTrue(behindTheSwitch.all { it in on })
     }
 }

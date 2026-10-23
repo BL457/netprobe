@@ -1601,7 +1601,8 @@
    "tcp"
   ],
   "send": "BEGIN AUTH REQUEST\\n/cvsroot\\nanonymous\\nA\\nEND AUTH REQUEST\\n",
-  "ports": [
+  "ports": [],
+  "commonPorts": [
    2401
   ],
   "rarity": 5,
@@ -1639,7 +1640,8 @@
    "tcp"
   ],
   "send": "NICK netprobe\\r\\nUSER netprobe 0 * :netprobe\\r\\n",
-  "ports": [
+  "ports": [],
+  "commonPorts": [
    6667,
    6660,
    6668
@@ -3883,7 +3885,8 @@
    "tcp"
   ],
   "send": "\\x01\\0\\0\\x01\\x01",
-  "ports": [
+  "ports": [],
+  "commonPorts": [
    3306,
    3307
   ],
@@ -5137,7 +5140,8 @@
    "tcp"
   ],
   "send": "\\n\\0\\0\\0\\x137\\0\\0\\x03\\0\\0\\0\\0\\0",
-  "ports": [
+  "ports": [],
+  "commonPorts": [
    27015,
    25575
   ],
@@ -5448,7 +5452,8 @@
    "tcp"
   ],
   "send": "\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\0\\x1d\\x01\\x04\\xfd\\xe9\\0Z\\n\\xff\\xff\\x01\\0",
-  "ports": [
+  "ports": [],
+  "commonPorts": [
    179
   ],
   "rarity": 6,
