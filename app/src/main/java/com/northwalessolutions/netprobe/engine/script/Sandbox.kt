@@ -63,7 +63,7 @@ internal object Sandbox {
     }
 
     /** A top-level scope with the safe standard objects only, hardened. One per run. */
-    fun newScope(cx: Context, limits: ScriptLimits): ScriptableObject {
+    fun newScope(cx: Context): ScriptableObject {
         val scope = cx.initSafeStandardObjects(null, false)
         for (name in GLOBALS_TO_REMOVE) forceDelete(scope, name)
         // Dynamic code: eval and every route to the Function constructor throw. The prototype is read first: Function.prototype is found

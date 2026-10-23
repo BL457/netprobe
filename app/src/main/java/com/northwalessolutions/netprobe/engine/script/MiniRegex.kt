@@ -135,7 +135,7 @@ internal class MiniRegex private constructor(private val root: Node, val groupCo
                 var count = 0
                 val limit = if (n.max == INF) Int.MAX_VALUE else n.max
                 if (n.greedy) {
-                    while (count < limit && i + count < text.length && single(n.body, text[i + count])) { count++; if (count and 0xfff == 0) steps.step() }
+                    while (count < limit && i + count < text.length && single(n.body, text[i + count])) { count++; if (count and COUNT_STEP_MASK == 0) steps.step() }
                     var c = count
                     while (c >= n.min) { steps.step(); if (k(i + c)) return true; c-- }
                     return false
@@ -302,6 +302,8 @@ internal class MiniRegex private constructor(private val root: Node, val groupCo
     }
 
     companion object {
+        /** A long single-character run is charged to the step budget once per this many characters, so it cannot be free. */
+        private const val COUNT_STEP_MASK = 0xfff
         const val I = 1
         const val M = 2
         const val S = 4

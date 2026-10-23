@@ -128,7 +128,7 @@ class HostileScriptTest {
         // The WrapFactory is the last line: a direct request to wrap a Java object throws.
         val cx = Sandbox.Factory().enterContext()
         try {
-            val scope = Sandbox.newScope(cx, ScriptLimits.DEFAULT)
+            val scope = Sandbox.newScope(cx)
             val e = runCatching { Sandbox.DenyWrapFactory.wrapAsJavaObject(cx, scope, java.util.ArrayList<Any>(), null as Class<*>?) }.exceptionOrNull()
             assertTrue(e is org.mozilla.javascript.RhinoException)
             assertEquals(false, Sandbox.DenyWrapFactory.isJavaPrimitiveWrap)

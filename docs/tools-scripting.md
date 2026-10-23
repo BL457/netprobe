@@ -43,7 +43,7 @@ tool = {
 - `network` is how far the script may reach:
   - `target` (default): only the device the user picked. DNS lookups work for that device's own name only.
   - `lan`: any address inside the current network's subnet, except this phone, the network address, the broadcast address and multicast.
-  - `any`: any unicast address, except loopback, multicast and broadcast. The user is asked to confirm on every run.
+  - `any`: any unicast address, except loopback, multicast, broadcast, reserved ranges and this phone. The user is asked to confirm on every run.
   A call outside the scope throws an `Error`. IP addresses must be written in the canonical form (`192.168.1.10`); decimal, octal, hex and
   IPv4-mapped IPv6 spellings are refused, and every redirect hop is checked again.
 - `inputs`: each has `name`, `type`, `label`, optional `help` (up to 200 characters), `required` (default true) and `default`. Types: `text`
@@ -70,18 +70,20 @@ All calls are synchronous. Network calls wait for the run's pause and rate limit
 - `ctx.tls.certificate(host, port, sni)` returns `{protocol, cipherSuite, leaf, chain}`; each certificate has `subject`, `issuer`, `sans`, `notBefore`,
   `notAfter`, `keyAlgorithm`, `keyBits`, `signatureAlgorithm`, `serial`, `sha256`, `sha1`, `selfSigned`.
 - `ctx.dns.lookup(name)` returns an array of address strings; `ctx.dns.reverse(ip)` returns a name or null. With `network: "target"` only the target's own
-  name resolves.
+  name resolves; with `lan` only names that look local (one label, or ending in .local, .lan, .home, .internal, .localdomain, .home.arpa). A name is looked up
+  once per call and the connection goes to the one address that passed the scope check.
 - `ctx.bytes`: `fromHex`, `toHex`, `fromUtf8`, `toUtf8`, `concat(a, b, ...)`, `u16be(n)`, `u32be(n)`, `u16le(n)`, `u32le(n)` (each returns bytes) and
   `readU16be(bytes, offset)`, `readU32be`, `readU16le`, `readU32le`. Bytes are arrays of numbers 0 to 255.
 - `ctx.regex`: `test(pattern, text, flags)`, `exec(pattern, text, flags)` (null or `{match, index, groups}`), `matchAll(pattern, text, flags, limit)`,
-  `replace(pattern, text, replacement, flags)` (replaces every match) and `split(pattern, text, limit)`. Java regular expression syntax; `flags` is any of
-  `i`, `m`, `s`. A pattern that takes more than 5,000,000 steps throws.
+  `replace(pattern, text, replacement, flags)` (replaces every match; `$1` to `$9`, `$&` and `$$` work in the replacement) and `split(pattern, text, limit)`.
+  `flags` is any of `i`, `m`, `s`. The engine understands the usual JavaScript syntax: classes, `\d \w \s \b`, groups, `(?:...)`, `(?=...)`, `(?!...)`, back
+  references, greedy and lazy quantifiers; not named groups or look-behind. A pattern that takes more than 5,000,000 steps throws an `Error`.
 - `ctx.wordlist(name, offset, limit)` returns lines of the wordlist chosen in input `name` (at most 100,000 per call); `inputs[name]` is
   `{id, name, entries}`.
 - `ctx.progress(done, total, found)` (`total` may be null), `ctx.finding(kind, value, detail, url)`, `ctx.log(text)`, `ctx.sleep(ms)` (up to 60,000) and
   `ctx.cancelled()`.
 - Findings: `kind` is one of the app's kinds (`PATH`, `STATUS`, `HEADER`, `COOKIE`, `TITLE`, `PROBE`, `CERT_SUBJECT` and the rest of the list in the
-  results sheet) or any string you like, which is shown as Other with your text. `value` and `detail` are cut at 2,048 characters; `url` must be
+  results sheet, except `HINT`, which the app keeps for itself) or any string you like, which is shown as Other with your text. `value` and `detail` are cut at 2,048 characters; `url` must be
   `http` or `https`. All findings of one run together may hold 2 MB.
 - `ctx.log` lines are kept only when the run fails.
 

@@ -49,12 +49,12 @@ internal class RunSession(
     private val findingBytes = AtomicLong(0)
     private val open = ConcurrentHashMap.newKeySet<Closeable>()
     private val handles = AtomicInteger(0)
-    private val log = ArrayDeque<String>()
+    private val logQueue = ArrayDeque<String>()
     private val findingBucket = RateBucket(limits.findingsPerSecond, limits.findingsBurst)
 
     val findings: Int get() = findingCount.get()
     val reason: AbortReason? get() = abortReason.get()
-    fun logLines(): List<String> = synchronized(log) { log.toList() }
+    fun logLines(): List<String> = synchronized(logQueue) { logQueue.toList() }
 
     // Aborting
 
@@ -162,9 +162,9 @@ internal class RunSession(
     }
 
     fun log(text: String) {
-        synchronized(log) {
-            if (log.size >= ScriptCaps.MAX_LOG_LINES) log.removeFirst()
-            log.addLast(text.take(ScriptCaps.MAX_LOG_LINE_CHARS))
+        synchronized(logQueue) {
+            if (logQueue.size >= ScriptCaps.MAX_LOG_LINES) logQueue.removeFirst()
+            logQueue.addLast(text.take(ScriptCaps.MAX_LOG_LINE_CHARS))
         }
     }
 

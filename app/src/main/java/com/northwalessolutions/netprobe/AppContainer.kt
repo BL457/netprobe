@@ -42,6 +42,11 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceProbes
 import com.northwalessolutions.netprobe.engine.vulns.*
 import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
 import android.util.Log
+import com.northwalessolutions.netprobe.engine.script.RhinoScriptEngine
+import com.northwalessolutions.netprobe.engine.script.ScriptEngine
+import com.northwalessolutions.netprobe.engine.script.ScriptToolModule
+import com.northwalessolutions.netprobe.engine.script.ScriptToolStore
+import com.northwalessolutions.netprobe.engine.tools.WordlistRef
 import com.northwalessolutions.netprobe.engine.tools.AppMessages
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.engine.tools.ManualRoute
@@ -180,7 +185,37 @@ class AppContainer(val context: Context) {
     val vulnCache by lazy { VulnCacheRepository(db) }
     val toolRepo by lazy { ToolRepository(db) }
     /** Every tool the app can run: the built-ins now, script tools later (tools platform spec section 3). */
-    val toolRegistry: ToolRegistry by lazy { ToolRegistry(builtInTools()) }
+    val toolRegistry: ToolRegistry by lazy {
+        ToolRegistry(builtInTools()).also { registry ->
+            // Script tools join the registry once their descriptions are read (the bundled examples now, installed tools in a later batch).
+            appScope.launch(Dispatchers.IO) { registry.setScriptTools(scriptToolStore.load()) }
+        }
+    }
+    /** The JavaScript engine for script tools (tools platform D1); one instance, each run gets its own thread and sandbox. */
+    val scriptEngine: ScriptEngine by lazy { RhinoScriptEngine() }
+    val scriptToolStore: ScriptToolStore by lazy {
+        ScriptToolStore(
+            assets = { name -> runCatching { context.assets.open("tools/$name").bufferedReader().use { it.readText() } }.getOrNull() },
+            engine = scriptEngine,
+            moduleFor = { d, source ->
+                ScriptToolModule(d, source, scriptEngine, env = networkEnvMonitor::current, lanBinder = networkEnvMonitor::binderFor, wordlistLines = ::scriptWordlistLines)
+            },
+            log = { Log.w(AppScopes.LOG_TAG, it) },
+        )
+    }
+    /** Lines [offset] until [offset] + [limit] of a wordlist, for ctx.wordlist; empty when the list is gone. */
+    private suspend fun scriptWordlistLines(ref: WordlistRef, offset: Int, limit: Int): List<String> {
+        val out = ArrayList<String>()
+        var index = 0
+        wordlistStore.withEntries(ref.id) { entries ->
+            for (line in entries) {
+                if (index >= offset + limit) break
+                if (index >= offset) out += line
+                index++
+            }
+        }
+        return out
+    }
     private fun builtInTools(): List<ToolModule> = buildList {
         add(DirBruteforceTool(
             exchangeFor = { t, timeoutMs ->

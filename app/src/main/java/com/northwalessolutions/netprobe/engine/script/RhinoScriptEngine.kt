@@ -60,7 +60,7 @@ class RhinoScriptEngine(
         val cx = factory.enterContext()
         try {
             cx.putThreadLocal(Sandbox.SESSION_KEY, session)
-            val scope = Sandbox.newScope(cx, session.limits)
+            val scope = Sandbox.newScope(cx)
             cx.evaluateString(scope, source, SCRIPT_NAME, 1, null)
             val tool = ScriptableObject.getProperty(scope, "tool")
             if (tool !is Scriptable || tool === Undefined.instance || tool is Function) return ScriptEvaluation.Failed(ScriptCopy.NO_TOOL_OBJECT)
@@ -103,7 +103,7 @@ class RhinoScriptEngine(
         val cx = factory.enterContext()
         try {
             cx.putThreadLocal(Sandbox.SESSION_KEY, session)
-            val scope = Sandbox.newScope(cx, session.limits)
+            val scope = Sandbox.newScope(cx)
             cx.evaluateString(scope, source, SCRIPT_NAME, 1, null)
             val tool = ScriptableObject.getProperty(scope, "tool")
             if (tool !is Scriptable || tool === Undefined.instance || tool is Function) return result(session, ToolRunStatus.FAILED, ScriptCopy.NO_TOOL_OBJECT)

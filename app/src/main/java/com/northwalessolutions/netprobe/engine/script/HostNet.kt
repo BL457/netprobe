@@ -62,7 +62,7 @@ internal class HostNet(private val s: RunSession, private val transport: ScriptT
             if (spec.follow && reply.status in REDIRECTS && location != null) {
                 if (++hops > ScriptCaps.MAX_REDIRECTS) throw ScriptHostError(ScriptCopy.TOO_MANY_REDIRECTS)
                 url = url.resolve(location)
-                if (reply.status == 303 || ((reply.status == 301 || reply.status == 302) && method == "POST")) { method = "GET"; body = ByteArray(0) }
+                if (reply.status == SEE_OTHER || ((reply.status == MOVED_PERMANENTLY || reply.status == FOUND) && method == "POST")) { method = "GET"; body = ByteArray(0) }
                 s.chargeCalls(1)
                 s.gateWait()
                 continue
@@ -237,7 +237,10 @@ internal class HostNet(private val s: RunSession, private val transport: ScriptT
         private const val ECHO = 40
         private const val AWAIT_SLICE_MS = 50L
         private const val TLS_TIMEOUT_MS = 5_000
-        private val REDIRECTS = setOf(301, 302, 303, 307, 308)
+        private const val MOVED_PERMANENTLY = 301
+        private const val FOUND = 302
+        private const val SEE_OTHER = 303
+        private val REDIRECTS = setOf(MOVED_PERMANENTLY, FOUND, SEE_OTHER, 307, 308)
         private val FORBIDDEN_HEADERS = setOf("content-length", "transfer-encoding", "connection")
         private const val TOKEN_PUNCTUATION = "!#$%&'*+-.^_`|~"
         private fun isToken(s: String) = s.isNotEmpty() && s.length <= ECHO && s.all { it.isLetterOrDigit() && it.code < DEL || it in TOKEN_PUNCTUATION }

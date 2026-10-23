@@ -69,6 +69,32 @@ object ScriptCopy {
     const val URL_PORT_BAD = "The URL port must be a number from 1 to 65535"
     const val URL_PATH_BAD = "The URL path must not contain spaces, backslashes or control characters"
 
+    // Starting a script tool
+    const val CONFIRM_REQUIRED = "This tool can contact any address and needs your confirmation for each run"
+    fun inputsInvalid(first: String) = "The inputs are not valid: $first"
+
+    // Reading a tool's description (every problem is listed, none is skipped)
+    fun fieldMissing(field: String) = "The tool object has no $field"
+    fun fieldNotText(field: String) = "The $field must be text"
+    fun fieldTooLong(field: String, max: Int) = "The $field can be at most $max characters"
+    const val BAD_ID = "The id must be 3 to 40 characters from a to z, 0 to 9 and -"
+    const val BAD_VERSION = "The version must be 1 to 20 letters, digits, dots, dashes or underscores"
+    const val BAD_TARGET = "The target must be port, host or none"
+    const val BAD_NETWORK = "The network must be target, lan or any"
+    const val BAD_CATEGORY = "The category must be web, network, identity or other"
+    const val NO_RUN = "The tool needs a run function"
+    const val INPUTS_NOT_LIST = "The inputs must be a list"
+    const val TOO_MANY_INPUTS = "A tool can have at most 24 inputs"
+    fun inputNotObject(position: Int) = "Input $position must be an object"
+    fun inputNameBad(position: Int) = "Input $position needs a name that starts with a letter and uses letters, digits and _"
+    fun inputTypeBad(name: String) = "Input $name has an unknown type"
+    fun inputLabelMissing(name: String) = "Input $name needs a label"
+    fun inputTextTooLong(name: String, field: String, max: Int) = "Input $name: the $field can be at most $max characters"
+    fun inputDefaultBad(name: String) = "The default of input $name does not fit its type"
+    fun inputOptionsBad(name: String) = "Input $name needs 1 to 12 different options, as text or as value and label"
+    fun inputRangeBad(name: String) = "Input $name has a minimum above its maximum"
+    fun inputFieldBad(name: String, field: String) = "Input $name: the $field has the wrong kind of value"
+
     // network scope (D4, G2, G3)
     const val NO_SCOPE = "This tool has no network access"
     const val PORT_INVALID = "The port must be a number from 1 to 65535"

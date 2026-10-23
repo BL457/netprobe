@@ -31,6 +31,15 @@ class ScriptCopyTest {
         "The DNS lookup timed out", "The DNS lookup failed", "A finding link must start with http:// or https://",
         "The pattern is longer than 1,000 characters", "Unknown regex flag \\S, use i, m or s", "The regular expression is not valid", "The regular expression took too many steps",
         "The replacement text is not valid",
+        // starting a script tool and reading its description
+        "This tool can contact any address and needs your confirmation for each run", "The inputs are not valid: .{1,120}", "The tool object has no \\w+", "The \\w+ must be text",
+        "The \\w+ can be at most \\d+ characters", "The id must be 3 to 40 characters from a to z, 0 to 9 and -",
+        "The version must be 1 to 20 letters, digits, dots, dashes or underscores", "The target must be port, host or none", "The network must be target, lan or any",
+        "The category must be web, network, identity or other", "The tool needs a run function", "The inputs must be a list", "A tool can have at most 24 inputs",
+        "Input \\d+ must be an object", "Input \\d+ needs a name that starts with a letter and uses letters, digits and _", "Input \\w{1,40} has an unknown type",
+        "Input \\w{1,40} needs a label", "Input \\w{1,40}: the \\w+ can be at most \\d+ characters", "The default of input \\w{1,40} does not fit its type",
+        "Input \\w{1,40} needs 1 to 12 different options, as text or as value and label", "Input \\w{1,40} has a minimum above its maximum",
+        "Input \\w{1,40}: the \\w+ has the wrong kind of value",
         // network scope
         "This tool has no network access", "The port must be a number from 1 to 65535", "This tool can only contact the device it is run against, and none was chosen",
         "This tool can only contact the device it was run against", "This tool needs a connected network", "This tool can only contact addresses on the current network",
@@ -53,6 +62,10 @@ class ScriptCopyTest {
             ScriptCopy.BAD_METHOD, ScriptCopy.TOO_MANY_HEADERS, ScriptCopy.badHeader("X-A"), ScriptCopy.TOO_MANY_REDIRECTS, ScriptCopy.badUrl("nope"), ScriptCopy.URL_NOT_HTTP,
             ScriptCopy.URL_AUTHORITY_REFUSED, ScriptCopy.URL_PORT_BAD, ScriptCopy.URL_PATH_BAD, ScriptCopy.DNS_TIMEOUT, ScriptCopy.DNS_FAILED, ScriptCopy.FINDING_URL_NOT_WEB,
             ScriptCopy.REGEX_PATTERN_TOO_LONG, ScriptCopy.regexFlag('q'), ScriptCopy.regexFlag('\n'), ScriptCopy.REGEX_INVALID, ScriptCopy.REGEX_TOO_SLOW, ScriptCopy.REGEX_REPLACEMENT_INVALID,
+            ScriptCopy.CONFIRM_REQUIRED, ScriptCopy.inputsInvalid("port Required"), ScriptCopy.fieldMissing("target"), ScriptCopy.fieldMissing("id"), ScriptCopy.fieldNotText("name"),
+            ScriptCopy.fieldTooLong("name", 40), ScriptCopy.BAD_ID, ScriptCopy.BAD_VERSION, ScriptCopy.BAD_TARGET, ScriptCopy.BAD_NETWORK, ScriptCopy.BAD_CATEGORY, ScriptCopy.NO_RUN,
+            ScriptCopy.INPUTS_NOT_LIST, ScriptCopy.TOO_MANY_INPUTS, ScriptCopy.inputNotObject(2), ScriptCopy.inputNameBad(3), ScriptCopy.inputTypeBad("path"), ScriptCopy.inputLabelMissing("path"),
+            ScriptCopy.inputTextTooLong("path", "label", 40), ScriptCopy.inputDefaultBad("path"), ScriptCopy.inputOptionsBad("mode"), ScriptCopy.inputRangeBad("n"), ScriptCopy.inputFieldBad("path", "help"),
             ScriptCopy.NO_SCOPE, ScriptCopy.PORT_INVALID, ScriptCopy.NO_DEVICE_IN_SCOPE, ScriptCopy.TARGET_ONLY, ScriptCopy.NO_LAN, ScriptCopy.LAN_ONLY, ScriptCopy.ADDRESS_NOT_ALLOWED,
             ScriptCopy.NAME_OUTSIDE_SCOPE, ScriptCopy.DNS_TARGET_ONLY, ScriptCopy.DNS_LOCAL_ONLY, ScriptCopy.NOT_AN_ADDRESS, ScriptCopy.HOST_INVALID, ScriptCopy.NOT_CANONICAL,
         ))
