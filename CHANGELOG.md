@@ -2,6 +2,9 @@
 
 Release notes for every NetProbe version, newest first. The section for a version is what the in-app updater shows under "What's new".
 
+## 0.4.2
+- Service identification knows many more hellos: 126 protocols, up from 15.
+
 ## 0.4.1
 - Update tools from GitHub: the Tools menu and Settings, Tools can pull every tool from the shared catalog in the NetProbe repository, including updates to tools you already have. One review sheet shows what is new, what changed and what failed before anything is installed.
 - First catalog tool: Wake on LAN. Pick a sleeping device and its MAC address is filled in for you.
