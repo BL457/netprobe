@@ -104,6 +104,8 @@ class ScriptToolModule(
             val typed = (valid.values[ToolInputs.MAC] as? String)?.takeIf { it.isNotBlank() }
             scriptInputs[ToolInputs.MAC] = typed ?: target?.mac.orEmpty()
         }
+        // A broadcast tool is told the address to send to: the script cannot work out the prefix length itself.
+        if (descriptor.broadcast) scriptInputs[ToolInputs.BROADCAST] = lan?.directedBroadcast()?.hostAddress.orEmpty()
         val result = engine.run(ScriptRunRequest(source, scriptInputs, ScriptHost(transport, guard, control, progress, wordlistLines)))
         return when (result.status) {
             ToolRunStatus.DONE -> ToolResult(ToolRunStatus.DONE, result.summary)

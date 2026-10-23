@@ -1,0 +1,15 @@
+{
+    "format":  1,
+    "tools":  [
+                  {
+                      "id":  "wake-on-lan",
+                      "file":  "wake-on-lan.js",
+                      "name":  "Wake on LAN",
+                      "version":  "1.0",
+                      "sha256":  "f4c3218ba67d3a8f070908b5627cd9ae01088e313875189a5f7bdb442026a65f",
+                      "network":  "lan",
+                      "description":  "Sends a magic packet to wake a sleeping device on your network.",
+                      "broadcast":  true
+                  }
+              ]
+}

@@ -63,6 +63,12 @@ class ScriptBroadcastMacTest {
         assertTrue(DescriptorRules.errors(descriptor(TargetKind.HOST, InputSpec.Text("macs", "MACs"))).isEmpty())
     }
 
+    @Test fun `broadcast is reserved as an input name for a tool that declared broadcast`() {
+        val spec = InputSpec.Text("broadcast", "Address")
+        assertEquals(listOf("The input name broadcast is reserved"), DescriptorRules.errors(descriptor(TargetKind.HOST, spec).copy(broadcast = true)))
+        assertTrue(DescriptorRules.errors(descriptor(TargetKind.HOST, spec)).isEmpty())
+    }
+
     @Test fun `the parser reports a reserved mac`() {
         val tool = base + mapOf("target" to "port", "inputs" to listOf(mapOf("name" to "mac", "type" to "text", "label" to "MAC")))
         assertEquals(listOf("The input name mac is reserved"), (parse(tool) as ParsedTool.Invalid).errors)
@@ -104,6 +110,12 @@ class ScriptBroadcastMacTest {
     @Test fun `port tools get no mac`() {
         val portTarget = ToolTarget(7L, Ipv4.parse("192.168.1.20")!!, 80, false, null, mac = "aa:bb:cc:00:11:22")
         assertEquals("undefined", run(module("return { summary: typeof inputs.mac };", TargetKind.PORT), portTarget).summary)
+    }
+
+    @Test fun `a broadcast tool is told the directed broadcast address`() {
+        val m = module("return { summary: '[' + inputs.broadcast + ']' };", broadcast = true)
+        assertEquals("[192.168.1.255]", run(m, target("")).summary)
+        assertEquals("undefined", run(module("return { summary: typeof inputs.broadcast };"), target("")).summary)
     }
 
     @Test fun `a declared broadcast reaches the guard and an undeclared one does not`() {

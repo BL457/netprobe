@@ -88,7 +88,7 @@ Each entry in `inputs` is an object. These fields work for every type.
 
 | Field | Required | Limits | Notes |
 | --- | --- | --- | --- |
-| `name` | Yes | Starts with a letter, then letters, digits or `_`; up to 32 characters | You read the value as `inputs.name`. Names must be unique. `ip`, `port`, `tls` and `confirmAny` are reserved. |
+| `name` | Yes | Starts with a letter, then letters, digits or `_`; up to 32 characters | You read the value as `inputs.name`. Names must be unique. `ip`, `port`, `tls` and `confirmAny` are reserved, so a port input needs another name such as `udpPort`. `mac` and `broadcast` are reserved in some tools, see "The target" and "Broadcast". |
 | `type` | Yes | See the table below | An unknown type is an error. |
 | `label` | Yes | Text, up to 40 characters | Shown above the field. |
 | `help` | No | Text, up to 200 characters | Shown under the field. |
@@ -337,7 +337,7 @@ ctx.regex.split(pattern, text, limit)                 // array of strings
 
 `pattern` and `text` are strings. The pattern is at most 1,000 characters. `flags` is an optional string of `i` (ignore case), `m` (multiline) and `s` (dot matches newline); `split` takes none. `groups` is an array of the captured groups, with `null` for a group that did not take part. In `replace`, `$1` to `$9`, `$&` and `$$` work in the replacement.
 
-Supported syntax: literals, `.`, classes such as `[a-z]`, `\d \w \s \b` and their negations, `^ $`, groups `( )`, non-capturing `(?: )`, lookahead `(?= )` and `(?! )`, alternation `|`, quantifiers `* + ? {n} {n,} {n,m}` with a lazy `?` form, and back references `\1` to `\9`. Named groups and look-behind are not supported.
+Supported syntax: literals, `.`, classes such as `[a-z]` (put a `-` first or last to mean a hyphen, as in `[-:. ]`), `\d \w \s \b` and their negations, `^ $`, groups `( )`, non-capturing `(?: )`, lookahead `(?= )` and `(?! )`, alternation `|`, quantifiers `* + ? {n} {n,} {n,m}` with a lazy `?` form, and back references `\1` to `\9`. Named groups and look-behind are not supported.
 
 A pattern that backtracks past 5,000,000 steps throws "The regular expression took too many steps". An invalid pattern throws "The regular expression is not valid". A bad flag throws "Unknown regex flag x, use i, m or s".
 
@@ -603,7 +603,7 @@ All problems are listed together. Input messages name the input by its name or p
 | Input x needs 1 to 12 different options, as text or as value and label | Fix `options`. |
 | Input x has a minimum above its maximum | Swap `min` and `max`. |
 | Input x: the field has the wrong kind of value | Use the right kind, such as a whole number or `true`/`false`. |
-| The input name x is reserved | Rename it. `ip`, `port`, `tls` and `confirmAny` are reserved. |
+| The input name x is reserved | Rename it. `ip`, `port`, `tls` and `confirmAny` are always reserved. `mac` is reserved except as a text input of a host tool, and `broadcast` is reserved in a tool that declares broadcast. |
 | The input name x is used twice | Give each input its own name. |
 
 ### Run messages

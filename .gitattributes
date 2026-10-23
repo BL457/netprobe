@@ -1,1 +1,2 @@
 app/src/main/res/raw/*.txt text eol=lf
+catalog/** text eol=lf

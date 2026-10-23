@@ -97,7 +97,9 @@ object DescriptorRules {
         for (spec in d.inputs) {
             // "mac" is the device's MAC address for a host tool; only a host tool may declare a text input of that name, which overrides it.
             val macAllowed = spec.name == ToolInputs.MAC && d.target == TargetKind.HOST && spec is InputSpec.Text
-            if (spec.name in RESERVED || (spec.name == ToolInputs.MAC && !macAllowed)) out += ToolModelCopy.reservedName(spec.name)
+            // "broadcast" carries the subnet's directed broadcast address to a tool that declared broadcast.
+            val broadcastTaken = spec.name == ToolInputs.BROADCAST && d.broadcast
+            if (spec.name in RESERVED || (spec.name == ToolInputs.MAC && !macAllowed) || broadcastTaken) out += ToolModelCopy.reservedName(spec.name)
             else if (!seen.add(spec.name)) out += ToolModelCopy.duplicateName(spec.name)
             if (spec is InputSpec.Choice && spec.options.isEmpty()) out += ToolModelCopy.noOptions(spec.name)
             if (spec is InputSpec.MultiChoice && spec.options.isEmpty()) out += ToolModelCopy.noOptions(spec.name)
@@ -139,6 +141,8 @@ data class ToolInputs(val values: Map<String, Any?> = emptyMap()) {
         const val TLS = "tls"
         /** Host tools receive the chosen device's MAC address here: lower-case, colon separated, or an empty string when it is not known. */
         const val MAC = "mac"
+        /** A tool that declared broadcast receives the current subnet's directed broadcast address here, or an empty string when there is none. */
+        const val BROADCAST = "broadcast"
         const val MIN_PORT = 1
         const val MAX_PORT = 65_535
         val NONE = ToolInputs(emptyMap())

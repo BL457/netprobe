@@ -12,7 +12,15 @@ import java.net.UnknownHostException
 class ScopeTarget(val ip: Inet4Address, val name: String?)
 
 /** The network the phone is on: its own address and prefix length. */
-class ScopeLan(val phoneIp: Inet4Address, val prefixLength: Int)
+class ScopeLan(val phoneIp: Inet4Address, val prefixLength: Int) {
+    /** The subnet's directed broadcast address, or null for a /31 or /32 (there is none) or a /0 (it would be the limited broadcast 255.255.255.255). */
+    fun directedBroadcast(): Inet4Address? {
+        if (prefixLength >= NO_BROADCAST_PREFIX || prefixLength <= 0) return null
+        val v = SubnetMath.of(phoneIp, prefixLength).network or (-1 ushr prefixLength)
+        return InetAddress.getByAddress(byteArrayOf((v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte())) as Inet4Address
+    }
+    private companion object { const val NO_BROADCAST_PREFIX = 31 }
+}
 
 /**
  * The network scope of a script (spec D4, rulings G2 and G3), consulted by every transport call through [ScopeGate].
@@ -56,13 +64,7 @@ class NetworkScopeGuard(
         return clearConnect(host, port)
     }
 
-    /** The current subnet's directed broadcast address, or null with no network or a /31 or /32 (no such address) or a /0 (it would be 255.255.255.255). */
-    private fun directedBroadcast(): Inet4Address? {
-        val l = lan ?: return null
-        if (l.prefixLength >= POINT_TO_POINT_PREFIX || l.prefixLength <= 0) return null
-        val v = SubnetMath.of(l.phoneIp, l.prefixLength).network or (-1 ushr l.prefixLength)
-        return InetAddress.getByAddress(byteArrayOf((v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte())) as Inet4Address
-    }
+    private fun directedBroadcast(): Inet4Address? = lan?.directedBroadcast()
 
     private fun clearNamedHost(name: String, written: String): Cleared {
         if (scope == NetworkScope.TARGET) {
