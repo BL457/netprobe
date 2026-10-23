@@ -8,7 +8,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-data class ExportFinding(val value: String, val detail: String?, val url: String?)
+/** [image] is the picture's path inside the app's files folder (`snapshots/<runId>/<n>.jpg`), or null for a finding without one. */
+data class ExportFinding(val value: String, val detail: String?, val url: String?, val image: String? = null)
 data class ExportRun(val toolName: String, val target: String, val nameSent: String?, val startedAt: Long, val finishedAt: Long?, val statusLabel: String,
                      val summary: String, val optionsLine: String?, val findings: List<ExportFinding>, val zone: TimeZone)
 
@@ -16,6 +17,8 @@ data class ExportRun(val toolName: String, val target: String, val nameSent: Str
 object ToolExport {
     private const val TIME_PATTERN = "yyyy-MM-dd HH:mm:ss"
     private const val SNMP_PORT = 161
+    /** The folder of page pictures inside the app's files folder. */
+    const val IMAGE_FOLDER = "snapshots"
     /** The target line; [ip] is null for a run with no device. An unknown key (a removed script tool) is shown as the bare address. */
     fun target(toolKey: String, ip: String?, port: Int, tls: Boolean): String {
         if (ip == null) return ToolCopy.NO_DEVICE
@@ -33,7 +36,10 @@ object ToolExport {
     fun of(run: ToolRunEntity, ip: String?, findings: List<ToolFindingEntity>, zone: TimeZone = TimeZone.getDefault(), toolName: String? = null): ExportRun {
         val o = ToolRunOptions.parse(run.optionsJson)
         return ExportRun(toolName ?: run.toolName.ifEmpty { ToolCopy.toolName(run.toolId) }, target(run.toolId, ip, run.port, o.tls), o.serverName, run.startedAt,
-            run.finishedAt, ToolCopy.statusLabel(run.status), run.summary, o.optionsLine(), findings.map { ExportFinding(it.value, it.detail, FindingExtra.decode(it.extra)["url"]) }, zone)
+            run.finishedAt, ToolCopy.statusLabel(run.status), run.summary, o.optionsLine(), findings.map { f ->
+                val extra = FindingExtra.decode(f.extra)
+                ExportFinding(f.value, f.detail, extra["url"], FindingImage.of(extra)?.let { "$IMAGE_FOLDER/$it" })
+            }, zone)
     }
     fun text(e: ExportRun): String {
         val fmt = SimpleDateFormat(TIME_PATTERN, Locale.ROOT).apply { timeZone = e.zone }
@@ -47,7 +53,7 @@ object ToolExport {
             add(ToolCopy.exportSummary(e.summary))
             e.optionsLine?.let { add(ToolCopy.exportOptions(it)) }
             add("")
-            e.findings.forEach { add(listOf(it.value, it.detail.orEmpty(), it.url.orEmpty()).joinToString("\t")) }
+            e.findings.forEach { add(listOfNotNull(it.value, it.detail.orEmpty(), it.url.orEmpty(), it.image).joinToString("\t")) }
         }
         return lines.joinToString("\n")
     }

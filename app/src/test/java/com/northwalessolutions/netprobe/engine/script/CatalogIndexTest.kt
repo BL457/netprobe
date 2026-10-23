@@ -23,6 +23,20 @@ class CatalogIndexTest {
         assertEquals("1", e.version); assertEquals(NetworkScope.TARGET, e.network); assertEquals("", e.description); assertEquals(false, e.broadcast)
     }
 
+    @Test fun `the minimum app version is optional and kept when given`() {
+        assertEquals(null, parsed(index(line())).entries.single().minVersionCode)
+        val e = parsed(index(line(extra = ""","minVersionCode":12,"minVersionName":"0.4.3""""))).entries.single()
+        assertEquals(12, e.minVersionCode); assertEquals("0.4.3", e.minVersionName)
+        assertEquals(12, parsed(index(line(extra = ""","minVersionCode":12"""))).entries.single().minVersionCode)
+    }
+
+    @Test fun `a bad minimum app version rejects only its line`() {
+        for (extra in listOf(""","minVersionCode":0""", ""","minVersionCode":-3""", ""","minVersionName":"not a version!"""")) {
+            val p = parsed(index(line(extra = extra), line("other-tool")))
+            assertEquals(extra, listOf("other-tool"), p.entries.map { it.id }); assertEquals(extra, 1, p.rejected.size)
+        }
+    }
+
     @Test fun `the sha is lower-cased`() {
         assertEquals("a".repeat(64), parsed(index(line().replace(sha, "A".repeat(64)))).entries.single().sha256)
     }

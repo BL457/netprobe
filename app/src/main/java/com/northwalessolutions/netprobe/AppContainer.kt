@@ -26,6 +26,7 @@ import com.northwalessolutions.netprobe.scans.LiveWork
 import com.northwalessolutions.netprobe.ui.scans.ScansHistoryStore
 import com.northwalessolutions.netprobe.ui.scans.ScansRules
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import com.northwalessolutions.netprobe.engine.discovery.DiscoveryEngine
 import com.northwalessolutions.netprobe.engine.discovery.HeardWriter
 import com.northwalessolutions.netprobe.engine.discovery.ListenController
@@ -46,6 +47,11 @@ import com.northwalessolutions.netprobe.engine.script.RhinoScriptEngine
 import com.northwalessolutions.netprobe.engine.script.ScriptEngine
 import com.northwalessolutions.netprobe.engine.script.CatalogUpdater
 import com.northwalessolutions.netprobe.engine.script.ScriptImporter
+import com.northwalessolutions.netprobe.engine.script.AndroidPageRenderer
+import com.northwalessolutions.netprobe.engine.script.PageRenderer
+import com.northwalessolutions.netprobe.engine.script.SnapshotStore
+import com.northwalessolutions.netprobe.engine.script.ScriptDevice
+import com.northwalessolutions.netprobe.engine.script.ScriptDevices
 import com.northwalessolutions.netprobe.engine.script.ScriptToolModule
 import com.northwalessolutions.netprobe.engine.script.ScriptToolStore
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
@@ -143,6 +149,7 @@ class AppContainer(val context: Context) {
         if (!activityStarted.compareAndSet(false, true)) return
         appScope.launch { hostWriteLock.withLock { hosts.deleteOrphanManual() } }
         listen.start()
+        sweepSnapshots()   // pictures of runs a killed process or an Undo window left behind
         appScope.launch(Dispatchers.IO) { updates.cleanUp() }   // in-app updater spec 4: stale APKs and .part files
         appScope.launch(Dispatchers.IO) { lastUsedInputs }   // moves the old brute-force options key once (tools platform spec section 7)
         portScans       // built at launch, so port scans a dead process left open show as Interrupted before anything new ends (3D spec 3.3)
@@ -184,11 +191,25 @@ class AppContainer(val context: Context) {
     val toolDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(TOOL_THREADS)
     val settings by lazy { AppSettings(context) }
     val db by lazy { NetProbeDb.open(context) }
-    val networks by lazy { NetworkRepository(db) { settings.manual.set(it, emptyList()) } }
+    val networks by lazy { NetworkRepository(db, afterDelete = ::sweepSnapshots) { settings.manual.set(it, emptyList()) } }
     val hosts by lazy { HostRepository(db) }
     val ports by lazy { PortRepository(db) }
     val vulnCache by lazy { VulnCacheRepository(db) }
-    val toolRepo by lazy { ToolRepository(db) }
+    val toolRepo by lazy { ToolRepository(db, afterPrune = ::sweepSnapshots) }
+    /** The page pictures of script runs, `files/snapshots/<runId>/<n>.jpg` (tools platform spec section 12). */
+    val snapshotStore by lazy { SnapshotStore(java.io.File(context.filesDir, "snapshots")) }
+    /** Draws pages for ctx.web.snapshot in an off-screen WebView, one at a time. Creating it touches no WebView and no network. */
+    val pageRenderer: PageRenderer by lazy { AndroidPageRenderer(context, log = { Log.w(AppScopes.LOG_TAG, "page renderer", it) }) }
+    /**
+     * Deletes the picture folders of runs that are no longer in the history: after a run's insert pruned older runs, after a Remove device
+     * or a Forget is final, and at launch. It follows the database, so it is safe to call at any time and from any of those places.
+     */
+    fun sweepSnapshots() {
+        appScope.launch(Dispatchers.IO) {
+            val (highest, live) = toolRepo.runIdBounds()
+            snapshotStore.sweep(live, highest)
+        }
+    }
     /** Every tool the app can run: the built-ins now, script tools later (tools platform spec section 3). */
     val toolRegistry: ToolRegistry by lazy {
         ToolRegistry(builtInTools()).also { registry ->
@@ -207,7 +228,8 @@ class AppContainer(val context: Context) {
             assets = { name -> runCatching { context.assets.open("tools/$name").bufferedReader().use { it.readText() } }.getOrNull() },
             engine = scriptEngine,
             moduleFor = { d, source ->
-                ScriptToolModule(d, source, scriptEngine, env = networkEnvMonitor::current, lanBinder = networkEnvMonitor::binderFor, wordlistLines = ::scriptWordlistLines)
+                ScriptToolModule(d, source, scriptEngine, env = networkEnvMonitor::current, lanBinder = networkEnvMonitor::binderFor, wordlistLines = ::scriptWordlistLines,
+                    devices = ::scriptDevices, renderer = pageRenderer, snapshots = snapshotStore)
             },
             log = { Log.w(AppScopes.LOG_TAG, it) },
             dir = java.io.File(context.filesDir, "tools"),
@@ -238,7 +260,17 @@ class AppContainer(val context: Context) {
     /** "Update tools from GitHub" (spec section 11), shared by the Tools tab and Settings: fetches only when the user taps the action. */
     val catalog: CatalogController by lazy {
         val fetcher = HttpsUpdateFetcher()
-        CatalogController(appScope, CatalogUpdater(ScriptImporter(scriptEngine, scriptToolStore, fetcher), scriptToolStore, fetcher), log = { Log.e(AppScopes.LOG_TAG, "tool catalog", it) })
+        CatalogController(appScope, CatalogUpdater(ScriptImporter(scriptEngine, scriptToolStore, fetcher), scriptToolStore, fetcher, appVersionCode = BuildConfig.VERSION_CODE), log = { Log.e(AppScopes.LOG_TAG, "tool catalog", it) })
+    }
+    /**
+     * The devices of the network the phone is on, for ctx.devices (spec section 12): the row Home resolved, else the row the current
+     * connection matches; empty when there is none. Newest scan first, at most 1,024.
+     */
+    private suspend fun scriptDevices(): List<ScriptDevice> {
+        val env = networkEnvMonitor.current()
+        val row = currentNetwork.value ?: env?.let { networks.find(it, GatewayMac.peek(it.gateway)) } ?: return emptyList()
+        if (row.forgotten != null) return emptyList()
+        return ScriptDevices.load(hosts.allHostsForNetwork(row.id).first()) { id -> db.ports().forHostOnce(id) }
     }
     /** Lines [offset] until [offset] + [limit] of a wordlist, for ctx.wordlist; empty when the list is gone. */
     private suspend fun scriptWordlistLines(ref: WordlistRef, offset: Int, limit: Int): List<String> {

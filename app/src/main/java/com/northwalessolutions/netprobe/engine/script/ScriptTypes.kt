@@ -1,6 +1,7 @@
 package com.northwalessolutions.netprobe.engine.script
 
 import com.northwalessolutions.netprobe.data.ToolRunStatus
+import com.northwalessolutions.netprobe.engine.tools.NetworkScope
 import com.northwalessolutions.netprobe.engine.tools.RunControl
 import com.northwalessolutions.netprobe.engine.tools.ToolProgress
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
@@ -88,6 +89,16 @@ class ScriptHost(
     val progress: ToolProgress,
     /** Lines of a wordlist from [offset], at most [limit]; empty when the list is unknown. */
     val wordlist: suspend (ref: WordlistRef, offset: Int, limit: Int) -> List<String> = { _, _, _ -> emptyList() },
+    /** The tool's declared network scope; `ctx.devices` refuses [NetworkScope.TARGET] (spec section 12). */
+    val network: NetworkScope = NetworkScope.TARGET,
+    /** The discovered devices of the current network, newest scan first; the host API cuts the list at [ScriptDevices.MAX_DEVICES]. */
+    val devices: suspend () -> List<ScriptDevice> = { emptyList() },
+    /** Draws pages for `ctx.web.snapshot` (spec section 12). */
+    val renderer: PageRenderer = NoPageRenderer,
+    /** Where the pictures go; null means snapshots are not available. */
+    val snapshots: SnapshotStore? = null,
+    /** The run's id, which names the folder of its pictures. */
+    val runId: Long = 0L,
 )
 
 class ScriptRunRequest(val source: String, val inputs: Map<String, Any?>, val host: ScriptHost)

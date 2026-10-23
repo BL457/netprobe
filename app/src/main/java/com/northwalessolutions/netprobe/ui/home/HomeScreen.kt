@@ -48,7 +48,7 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit) {
         actions = HomeActions(onScan = vm::startScan, onStop = vm::stopScan, onOpenHost = onOpenHost, onDismissMessage = vm::dismissMessage,
             onFilter = vm::setFilter, onQuery = vm::setQuery, onQuickScanAll = vm::quickScanAll, onStopQuickScan = vm::stopQuickScan,
             onRequestLocation = { locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
-            onForget = vm::forgetNetwork, onUndo = vm::undo, onDismissUndo = vm::dismissUndo, onDismissApp = vm::dismissAppMessage,
+            onForget = vm::forgetNetwork, onHidePortless = vm::setHidePortless, onUndo = vm::undo, onDismissUndo = vm::dismissUndo, onDismissApp = vm::dismissAppMessage,
             onCopy = { row, kind ->
                 scope.launch {
                     val text = if (kind == com.northwalessolutions.netprobe.ui.CopyKind.DETAILS) vm.detailsText(row) else com.northwalessolutions.netprobe.ui.DeviceCopy.text(kind, row.displayName, row.ip, row.mac) { "" }

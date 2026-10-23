@@ -44,6 +44,8 @@ interface RunControl {
 }
 
 interface ToolProgress {
+    /** The id of the run being recorded; 0 when the progress sink is not tied to a stored run. Snapshot pictures are filed under it. */
+    val runId: Long get() = 0L
     fun update(done: Int, total: Int?, found: Int, errors: Int = 0)   // total null when unknown (SNMP walk)
     suspend fun finding(f: Finding)                                   // persisted immediately (spec 4.6)
     /** Records a value learned mid-run into the run's optionsJson, for example methodUsed after calibration (spec 7.1). */
@@ -66,5 +68,10 @@ suspend fun <T> RunControl.excusedOnce(failed: (T) -> Boolean, block: suspend ()
     return block()
 }
 
-data class Finding(val kind: FindingKind, val value: String, val detail: String? = null, val url: String? = null, val extra: Map<String, String> = emptyMap())
+data class Finding(val kind: FindingKind, val value: String, val detail: String? = null, val url: String? = null, val extra: Map<String, String> = emptyMap()) {
+    companion object {
+        /** The extra key that holds a finding's picture: the relative path of a stored page snapshot (tools platform spec section 12). */
+        const val IMAGE_KEY = "image"
+    }
+}
 data class ToolResult(val status: ToolRunStatus, val summary: String)   // DONE or FAILED; STOPPED is set by the runner

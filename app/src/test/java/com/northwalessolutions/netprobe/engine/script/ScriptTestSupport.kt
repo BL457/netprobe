@@ -2,6 +2,7 @@ package com.northwalessolutions.netprobe.engine.script
 
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.tools.Finding
+import com.northwalessolutions.netprobe.engine.tools.NetworkScope
 import com.northwalessolutions.netprobe.engine.tools.RunControl
 import com.northwalessolutions.netprobe.engine.tools.ToolProgress
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
@@ -72,6 +73,17 @@ object AllowAllGate : ScopeGate {
     override fun clearReverse(ip: String) = Cleared(address(ip), ip)
 }
 
+/**
+ * A scripted page renderer: records every request and answers from [handler], which may call `request.allow` for hops and resources as the
+ * real WebView would. It never starts a WebView or touches the network. The default answer is a 200 page called "Fake" with a tiny JPEG.
+ */
+class FakePageRenderer : PageRenderer {
+    val requests = CopyOnWriteArrayList<RenderRequest>()
+    val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1, 2, 3, 0xFF.toByte(), 0xD9.toByte())
+    @Volatile var handler: (RenderRequest, IoScope) -> RenderedPage = { r, _ -> RenderedPage(200, "Fake", r.url, jpeg) }
+    override fun render(request: RenderRequest, io: IoScope): RenderedPage { requests += request; io.ensureAlive(); return handler(request, io) }
+}
+
 class FakeControl : RunControl {
     val gates = AtomicInteger(0)
     @Volatile var onGate: suspend () -> Unit = {}
@@ -95,9 +107,14 @@ class Harness(
     val progress: RecordingProgress = RecordingProgress(),
     val memory: MemoryProbe = MemoryProbe { 0.1 },
     val wordlist: suspend (WordlistRef, Int, Int) -> List<String> = { _, _, _ -> emptyList() },
+    val network: NetworkScope = NetworkScope.TARGET,
+    val devices: suspend () -> List<ScriptDevice> = { emptyList() },
+    val renderer: PageRenderer = NoPageRenderer,
+    val snapshots: SnapshotStore? = null,
+    val runId: Long = 7L,
 ) {
     val engine = RhinoScriptEngine(limits, memory)
-    fun host() = ScriptHost(transport, gate, control, progress, wordlist)
+    fun host() = ScriptHost(transport, gate, control, progress, wordlist, network, devices, renderer, snapshots, runId)
     fun run(source: String, inputs: Map<String, Any?> = emptyMap()): ScriptRunResult = runBlocking { engine.run(ScriptRunRequest(source, inputs, host())) }
     /** Wraps a body in a tool object, runs it and returns the result. */
     fun body(js: String, inputs: Map<String, Any?> = emptyMap()): ScriptRunResult =

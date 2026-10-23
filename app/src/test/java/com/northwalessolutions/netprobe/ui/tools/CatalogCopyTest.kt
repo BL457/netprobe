@@ -13,14 +13,14 @@ class CatalogCopyTest {
         "Could not update tools", "Try again", "The catalog could not be read", "The script does not match the catalog, try again later", "The script's id is not the one the catalog lists",
         // the review sheet
         "(New|Updated|Failed) \\(\\d+\\)", ".{1,40} .{1,20}", ".{1,40} .{1,20} to .{1,20}", "Replaces your copy", "Newly able to send broadcast packets on your network",
-        "I allow the changes marked above", ".{1,40}: .{1,200}", "(1 tool is|\\d+ tools are) up to date", "Nothing new to install", "Install",
+        "I allow the changes marked above", ".{1,40}: .{1,200}", "(1 tool is|\\d+ tools are) up to date", "Nothing new to install", "Install", "Needs a newer app \\(\\d+\\)", ".{1,40} .{1,20}: needs NetProbe (version code \\d+|.{1,20}) or newer",
         // after Install
         "Installed (1 tool|\\d+ tools)", "Installed \\d+ of \\d+ tools, \\d+ failed",
         // lines of the index left out
         "Line \\d+", "Catalog", "Listed twice, the second line was ignored", "The catalog lists more than 200 tools, the rest were ignored",
         "The catalog line is missing a field or has the wrong kind of value", "The id is not valid", "The file name is not the id plus [.]js",
         "The name is missing or longer than 40 characters", "The version is not valid", "The SHA-256 is not 64 hex digits", "The network is not target, lan or any",
-        "The description is longer than 200 characters", "Only a tool with the network set to lan can declare broadcast",
+        "The description is longer than 200 characters", "Only a tool with the network set to lan can declare broadcast", "The minimum app version is not valid",
     ).map { Regex(it) }
 
     private fun all(): List<String> = listOf(
@@ -32,6 +32,8 @@ class CatalogCopyTest {
         CatalogCopy.NOTHING_NEW, CatalogCopy.INSTALL, CatalogCopy.installed(1), CatalogCopy.installed(3), CatalogCopy.installedSome(2, 1),
         CatalogCopy.linePosition(3), CatalogCopy.CATALOG_LABEL, CatalogCopy.INDEX_DUPLICATE, CatalogCopy.INDEX_TOO_LONG, CatalogCopy.INDEX_FIELDS, CatalogCopy.INDEX_ID, CatalogCopy.INDEX_FILE,
         CatalogCopy.INDEX_NAME, CatalogCopy.INDEX_VERSION, CatalogCopy.INDEX_SHA, CatalogCopy.INDEX_NETWORK, CatalogCopy.INDEX_DESCRIPTION, CatalogCopy.INDEX_BROADCAST,
+        CatalogCopy.needsNewerHeader(2), CatalogCopy.needsNewerLine("Web gallery", "1.0", "0.4.3", 12), CatalogCopy.needsNewerLine("Web gallery", "1.0", null, 12),
+        CatalogCopy.needsNewerLine("n".repeat(100), "v".repeat(50), "w".repeat(50), 12), CatalogCopy.INDEX_MIN_VERSION,
     )
 
     @Test fun `every string is in the table and has no em-dash or disclaimer`() {

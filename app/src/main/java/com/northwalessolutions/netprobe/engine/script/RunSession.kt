@@ -52,6 +52,8 @@ internal class RunSession(
     private val logQueue = ArrayDeque<String>()
     private val findingBucket = RateBucket(limits.findingsPerSecond, limits.findingsBurst)
 
+    /** Image ids this run's ctx.web.snapshot has issued, to the relative path of the stored picture. A finding accepts only these. */
+    val images = ConcurrentHashMap<String, String>()
     val findings: Int get() = findingCount.get()
     val reason: AbortReason? get() = abortReason.get()
     fun logLines(): List<String> = synchronized(logQueue) { logQueue.toList() }
@@ -143,13 +145,14 @@ internal class RunSession(
 
     // Findings (G11) and log
 
-    fun finding(kind: String, value: String, detail: String?, url: String?) {
+    fun finding(kind: String, value: String, detail: String?, url: String?, imageId: String? = null) {
         ensureAlive()
+        val imagePath = imageId?.let { images[it] ?: throw ScriptHostError(ScriptCopy.IMAGE_UNKNOWN) }
         if (url != null && !isWebUrl(url)) throw ScriptHostError(ScriptCopy.FINDING_URL_NOT_WEB)
         // HINT findings are hidden from the lists and feed device identification (ToolDao.hintsOf), so a script may not write one.
         val known = FindingKind.entries.firstOrNull { it.name == kind && it != FindingKind.HINT }
         val v = cut(value); val d = detail?.let(::cut); val u = url?.let(::cut)
-        val size = (kind.length + v.length + (d?.length ?: 0) + (u?.length ?: 0)).toLong() * UTF8_WORST_CASE
+        val size = (kind.length + v.length + (d?.length ?: 0) + (u?.length ?: 0) + (imagePath?.length ?: 0)).toLong() * UTF8_WORST_CASE
         if (findingCount.incrementAndGet() > limits.maxFindings) abortWith(AbortReason.FINDINGS)
         if (findingBytes.addAndGet(size) > limits.maxFindingBytes) abortWith(AbortReason.FINDING_BYTES)
         while (true) {
@@ -157,7 +160,10 @@ internal class RunSession(
             if (wait == 0L) break
             sleep(wait)
         }
-        val extra = if (known == null) mapOf("kind" to cut(kind)) else emptyMap()
+        val extra = buildMap<String, String> {
+            if (known == null) put("kind", cut(kind))
+            if (imagePath != null) put(Finding.IMAGE_KEY, imagePath)
+        }
         blocking { host.progress.finding(Finding(known ?: FindingKind.OTHER, v, d, u, extra)) }
     }
 

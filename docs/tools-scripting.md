@@ -79,6 +79,7 @@ The file also runs once at import, only to read the `tool` object. At that point
 | `category` | No | `"web"`, `"network"`, `"identity"` or `"other"` | Defaults to `"other"`, which lists the tool under My tools. Any other value is an error. |
 | `network` | No | `"target"`, `"lan"` or `"any"` | Defaults to `"target"`. See "Targets and network scope". |
 | `broadcast` | No | `true` or `false` | Defaults to `false`. Only a tool with `network: "lan"` may set it to `true`. It lets the tool send packets to your network's broadcast address. See "Broadcast". |
+| `minVersionCode`, `minVersionName` | No | A whole number of 1 or more, and a version such as `"0.4.3"` | The oldest NetProbe the tool needs. For a catalog tool, `tools/make-catalog-index.ps1` copies them into `index.json`, and an older app lists the tool under "Needs a newer app" instead of installing it. Older apps ignore them, so start `run` with a check such as `if (!ctx.web) { return { status: "failed", summary: "Needs NetProbe 0.4.3 or newer" }; }`. |
 | `inputs` | No | Array of up to 24 input objects | See "Inputs". |
 
 A text field must be text and must not be blank. NetProbe lists every problem it finds in one go, so you can fix them together.
@@ -107,7 +108,7 @@ Input types, their extra options, and what `run` receives:
 | `tls` | none | Switch | `true` or `false`. Use it for extra switches; the name `tls` itself is reserved. |
 | `choice` | `options` (1 to 12) | Pick one | The chosen option's `value`, as a string. |
 | `multichoice` | `options` (1 to 12) | Pick several | An array of the chosen values, in option order. `default` is an array of values. |
-| `list` | `placeholder`, `maxItems` | Comma separated text | An array of the trimmed, non-blank items. The form refuses more than `maxItems`. |
+| `list` | `placeholder`, `maxItems` | Comma separated text | An array of the trimmed, non-blank items. The form refuses more than `maxItems`. A `default` is a comma separated string such as `"80,443"`, not an array. |
 | `wordlist` | none | Pick a saved wordlist | An object `{id, name, entries}`. Pass the input's name to `ctx.wordlist` to read lines. |
 | `ip` | none | IPv4 address box | A string such as `"192.168.1.10"`. A `default` must be a valid IPv4 address. |
 | `port` | none | Port box | A number from 1 to 65535. A `default` must be in that range. |
@@ -343,6 +344,59 @@ var addresses = ctx.dns.lookup("router.lan");
 addresses.forEach(function (a) { ctx.finding("address", a, "router.lan"); });
 ```
 
+### devices
+
+```javascript
+ctx.devices()  // an array of devices, newest scan first
+```
+
+Returns the devices NetProbe has discovered on the network the phone is on, as plain objects `{ip, mac, name, vendor, ports}`. `mac` is lower-case with colons, or an empty string when unknown. `name` is the name the app shows for the device (its IP address when it has none). `vendor` is an empty string when unknown. `ports` is an array of `{port, service, tls}` for the open ports found by a port scan: `service` is the service name the app recognised, `tls` is `true` when the app saw TLS on that port. The list holds at most 1,024 devices, ordered by when each was last seen, newest first. Devices that were only added by hand as a tool target are left out.
+
+Only tools with `network: "lan"` or `network: "any"` may call it. Under `network: "target"` it throws "ctx.devices needs a tool with the network set to lan or any". A call counts as one host call. It reads what the app already knows; it sends nothing on the network. A device still has to be inside the tool's scope before the script contacts it, so a `"lan"` tool is the natural fit.
+
+```javascript
+// target: "none", network: "lan"
+ctx.devices().forEach(function (d) {
+  d.ports.forEach(function (p) {
+    if (p.port === 80) { ctx.finding("address", d.name, d.ip + ":80"); }
+  });
+});
+```
+
+### web
+
+```javascript
+ctx.web.snapshot({ url, timeoutMs, width, settleMs })  // returns {status, httpStatus, title, finalUrl, image, error}
+```
+
+Opens the page in a hidden web view inside NetProbe, waits for it to load, and takes a picture of it. `url` is required and must be `http://` or `https://`. `timeoutMs` defaults to 15,000 and is clamped to 1,000 to 60,000. `width` is the width of the page in pixels as the page sees it; it defaults to 1,024 and is clamped to 320 to 2,048. The picture is scaled down to at most 640 pixels wide and saved as a JPEG.
+
+`settleMs` is how long to wait after the page has loaded before the picture is taken, so scripts on the page can finish drawing. It defaults to 2,500 and is clamped to 0 to 10,000; it is cut short if the overall timeout would run out. The web view is as tall as 1,600 pixels. A picture that is one flat colour gets one more settle period, and if it is still flat the page counts as having drawn nothing.
+
+The reply:
+
+| Field | Meaning |
+| --- | --- |
+| `status`, `httpStatus` | The HTTP status of the page itself, 0 when it never answered. |
+| `error` | Why there is no picture: "The page answered with HTTP 503", "The page could not be loaded: ..." or "The page drew nothing". Otherwise `null`. |
+| `title` | The page title, up to 200 characters. |
+| `finalUrl` | The address the page ended on after redirects. |
+| `image` | An image id, or `null` when the page failed (an HTTP status of 400 or more, or a network error) or drew nothing. It is not a file name: pass it to `ctx.finding` as `extra.image` (see "finding"). A page with no picture writes nothing and counts against no limit. |
+
+The page runs JavaScript and has local storage, which is wiped after every page. Cookies, pop-up windows, downloads, file and content addresses are all off. The page is fetched with the app's normal user agent, and certificate errors are accepted, as they are for `ctx.http`.
+
+The same network scope applies as for `ctx.http`. The address is checked before the page is fetched, every redirect hop is checked again, and so is every image, script and other resource the page asks for. A page that redirects outside the scope throws, and the same error messages are used. A resource outside the scope is simply left out of the picture.
+
+Limits: one picture is drawn at a time, a run may keep at most 200 pictures and 20 MB of them, and each picture counts against the run's transfer budget. A snapshot counts as one host call. Errors a script can catch include "The page took too long to load", "The page could not be loaded: ...", "Page snapshots can use at most 20 MB in one run" and "At most 200 page snapshots can be taken in one run".
+
+The pictures are kept with the run in Scans and are deleted when the run is deleted. Removing a tool does not delete its earlier runs, so it keeps their pictures.
+
+```javascript
+// target: "none", network: "lan"
+var shot = ctx.web.snapshot({ url: "http://192.168.1.20:8080/", timeoutMs: 10000 });
+ctx.finding("page", shot.title, "HTTP " + shot.status, shot.finalUrl, { image: shot.image });
+```
+
 ### bytes
 
 ```javascript
@@ -356,9 +410,19 @@ ctx.bytes.u32be(n)               // number to 4 bytes, big-endian
 ctx.bytes.u16le(n)               // number to 2 bytes, little-endian
 ctx.bytes.u32le(n)               // number to 4 bytes, little-endian
 ctx.bytes.readU16be(bytes, offset)   // bytes to number; also readU32be, readU16le, readU32le
+ctx.bytes.base64(bytes)          // standard base64 text with padding
+ctx.bytes.fromBase64(text)       // bytes; white space, missing padding and the URL-safe alphabet are accepted
+ctx.bytes.md5(bytes)             // lower-case hex digest; also sha1 and sha256
 ```
 
-`offset` defaults to 0. Errors: "Not a valid hex string" (odd length or a non-hex character), "The number must be a whole number from 0 to N" (a value that does not fit), "Read past the end of the bytes".
+`offset` defaults to 0. `base64`, `md5`, `sha1` and `sha256` take bytes or a string (used as UTF-8). Errors: "Not a valid hex string" (odd length or a non-hex character), "Not a valid base64 string", "The number must be a whole number from 0 to N" (a value that does not fit), "Read past the end of the bytes".
+
+HTTP Basic authentication is a base64 header, and Digest authentication is built from `md5`:
+
+```javascript
+var basic = "Basic " + ctx.bytes.base64(user + ":" + pass);
+var ha1 = ctx.bytes.md5(user + ":" + realm + ":" + pass);
+```
 
 ```javascript
 var packet = ctx.bytes.concat(ctx.bytes.u16be(1), ctx.bytes.fromHex("0100"), ctx.bytes.fromUtf8("hi"));
@@ -423,10 +487,12 @@ ctx.progress(i, words.length, hits);
 ### finding
 
 ```javascript
-ctx.finding(kind, value, detail, url)
+ctx.finding(kind, value, detail, url, extra)
 ```
 
-Records one result. `kind` is a string. `value` is the main text; a value that is not text is turned into text. `detail` and `url` are optional. A `url` must start with `http://` or `https://`, or the call throws "A finding link must start with http:// or https://". See "Findings" for the kinds and how they look.
+Records one result. `kind` is a string. `value` is the main text; a value that is not text is turned into text. `detail`, `url` and `extra` are optional. A `url` must start with `http://` or `https://`, or the call throws "A finding link must start with http:// or https://". See "Findings" for the kinds and how they look.
+
+`extra` is an object. Only `extra.image` is used: the image id returned by `ctx.web.snapshot` in this run. The finding then shows the picture. An id the run was not given throws "The image was not made by ctx.web.snapshot in this run".
 
 ```javascript
 ctx.finding("PATH", "/admin", "401", "http://" + inputs.ip + "/admin");
@@ -470,6 +536,7 @@ A finding is one line in the results. It has a kind, a value, an optional detail
 | `value` | Cut at 2,048 characters | The main line. Tap to expand, long press to copy. |
 | `detail` | Cut at 2,048 characters | A muted line under the value. |
 | `url` | Cut at 2,048 characters; must be http or https | An Open button that opens the link. |
+| `extra.image` | An image id from `ctx.web.snapshot` in this run | The finding is shown as a thumbnail row: the picture on the left, the value as its caption, the detail under it. Tap it to see the picture full size, with Copy URL and Open in browser for the `url`. Share writes the picture's path after the url. The picture stays with the run in Scans. |
 
 Built-in kinds (exact capitals, no label shown): `PATH`, `STATUS`, `HEADER`, `COOKIE`, `TITLE`, `GENERATOR`, `ROBOTS`, `SITEMAP`, `SECURITY_TXT`, `ERROR_PAGE`, `FRAMEWORK`, `CERT_SUBJECT`, `CERT_ISSUER`, `CERT_SAN`, `CERT_VALIDITY`, `CERT_KEY`, `CERT_SIGNATURE`, `CERT_FINGERPRINT`, `CERT_CHAIN`, `TLS_SESSION`, `FLAG`, `SMB_DIALECT`, `SMB_SIGNING`, `SMB_SESSION`, `SMB_HOST`, `SNMP_SYSTEM`, `SNMP_INTERFACE`, `SNMP_ADDRESS`, `PROBE`, `STACK` and `OTHER`.
 
@@ -492,6 +559,7 @@ Fixed limits of the language and the API:
 | HTTP body returned | 1 MB (`bodyBytes`: first 100,000 bytes) |
 | Data passed from your script to `ctx` | Nested up to 8 levels, up to 2,000 keys per object, up to 200,000 values in all |
 | Open `tcp.connect` handles | 8 |
+| Page snapshots in one run | 200 pictures and 20 MB, each at most 640 pixels wide |
 | Datagrams to the broadcast address in one run | 50, each at most 1 KB |
 | HTTP redirects followed | 5 |
 | `http.many` concurrency | 16 |
@@ -750,7 +818,13 @@ These are thrown as a normal `Error`, so `try` and `catch` work.
 | A function cannot be passed to the host | A function was passed to `ctx`. |
 | The regular expression is not valid / The regular expression took too many steps | See "regex". |
 | No wordlist input named x | See "wordlist". |
-| Not a valid hex string | See "bytes". |
+| Not a valid hex string / Not a valid base64 string | See "bytes". |
+| The page took too long to load / The page could not be loaded: x / The page could not be shown | A page snapshot failed. See "web". |
+| Page snapshots are not available | The app has no web view to draw with. |
+| At most 200 page snapshots can be taken in one run / Page snapshots can use at most 20 MB in one run | The snapshot limits. |
+| The snapshot could not be saved | The phone could not write the picture. |
+| The image was not made by ctx.web.snapshot in this run | `extra.image` is not an id returned by `ctx.web.snapshot` in this run. |
+| ctx.devices needs a tool with the network set to lan or any | See "devices". |
 | A finding link must start with http:// or https:// | See "finding". |
 
 ### Tips

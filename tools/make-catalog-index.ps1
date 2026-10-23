@@ -5,7 +5,7 @@
   .\tools\make-catalog-index.ps1
 .NOTES
   Nothing is evaluated: each field is read from the `tool = { ... }` literal with a small text parser. The listed fields (id, name, version,
-  description, network, broadcast) must be written as plain string, `true` or `false` literals in the part of the object before `inputs:` or
+  description, network, broadcast, and the optional minVersionCode and minVersionName) must be written as plain string, `true` or `false` literals in the part of the object before `inputs:` or
   `run:`, and a string must not contain a backslash or a double quote. A script that breaks these rules stops the run with its file name.
   The sha256 is taken over the file with CRLF turned into LF, which is what GitHub serves. Run the unit tests afterwards: CatalogTest
   evaluates every script in the sandbox and checks it against the index.
@@ -53,12 +53,19 @@ foreach ($file in (Get-ChildItem -LiteralPath $Catalog -Filter '*.js' | Sort-Obj
     $network = Get-StringField $head 'network' $file.Name $false
     if (-not $network) { $network = 'target' }
     $broadcast = $head -match '\bbroadcast\s*:\s*true\b'
+    $minCode = $null
+    $mc = [regex]::Match($head, '\bminVersionCode\s*:\s*([0-9]{1,9})\b')
+    if ($mc.Success) { $minCode = [int]$mc.Groups[1].Value }
+    $minName = Get-StringField $head 'minVersionName' $file.Name $false
     $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($text)
     $sha = [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
-    $entries.Add([ordered]@{
+    $entry = [ordered]@{
         id = $id; file = $file.Name; name = $name; version = $version; sha256 = $sha
         network = $network; description = $description; broadcast = [bool]$broadcast
-    })
+    }
+    if ($null -ne $minCode) { $entry['minVersionCode'] = $minCode }
+    if ($minName) { $entry['minVersionName'] = $minName }
+    $entries.Add($entry)
 }
 
 $index = [ordered]@{ format = 1; tools = $entries.ToArray() }

@@ -20,6 +20,18 @@
                       "network":  "lan",
                       "description":  "Sends a magic packet to wake a sleeping device on your network.",
                       "broadcast":  true
+                  },
+                  {
+                      "id":  "web-gallery",
+                      "file":  "web-gallery.js",
+                      "name":  "Web gallery",
+                      "version":  "1.1",
+                      "sha256":  "f6a2793b86565cf03a1df37bc1fbc6a5addfc223f383b1c6316558505951c76a",
+                      "network":  "lan",
+                      "description":  "Takes a picture of the web page of every device on your network.",
+                      "broadcast":  false,
+                      "minVersionCode":  12,
+                      "minVersionName":  "0.4.3"
                   }
               ]
 }

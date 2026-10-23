@@ -51,6 +51,8 @@ class CatalogTest {
             assertEquals("$name version", e.version, d.version)
             assertEquals("$name network", e.network, d.network)
             assertEquals("$name broadcast", e.broadcast, d.broadcast)
+            assertEquals("$name minVersionCode", e.minVersionCode, d.minVersionCode)
+            assertEquals("$name minVersionName", e.minVersionName, d.minVersionName)
             assertEquals("$name description", e.description, d.description)
             assertEquals("$name sha256 (run tools/make-catalog-index.ps1)", e.sha256, ScriptBytes.sha256(source))
         }

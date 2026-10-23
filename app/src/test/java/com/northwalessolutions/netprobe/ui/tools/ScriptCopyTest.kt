@@ -18,7 +18,7 @@ class ScriptCopyTest {
         // errors a script can catch
         "The call failed", "Network error: \\w+(, .{1,60})?", "This function cannot be used with new", "ctx\\.[a-z.]+ needs the option \\w+", "ctx\\.[a-z.]+ option \\w+ must be a \\w+",
         "ctx\\.[a-z.]+ option \\w+ must be a whole number from -?\\d+ to \\d+", "ctx\\.[a-z.]+ expects an options object", "ctx\\.[a-z.]+ argument \\d must be a \\w+",
-        "[a-z.]+ [a-z ]+ must be a string or an array of numbers from 0 to 255", "[a-z.]+ [a-z ]+ is larger than 1 MB", "Not a valid hex string", "The number must be a whole number from 0 to \\d+",
+        "[a-z.]+ [a-z ]+ must be a string or an array of numbers from 0 to 255", "[a-z.]+ [a-z ]+ is larger than 1 MB", "Not a valid hex string", "Not a valid base64 string", "The number must be a whole number from 0 to \\d+",
         "Read past the end of the bytes", "The value is too large", "The value is nested too deeply", "The value must be text, a number, true or false, an array or an object",
         "A function cannot be passed to the host", "Invalid string length: the limit is 1,000,000 characters", "Invalid array length: the limit is 100,000 elements",
         "eval and Function are not available in tools", "Java objects are not available in tools", "RegExp is not available in tools, use ctx\\.regex", "The connection is closed",
@@ -27,6 +27,10 @@ class ScriptCopyTest {
         "The HTTP method must be letters only", "At most 64 headers can be sent", "The header .{1,60} is not allowed", "Too many redirects", "Not a valid URL: .{0,60}",
         "The URL must start with http:// or https://", "The URL host must not contain a user name, a backslash, spaces or control characters", "The URL port must be a number from 1 to 65535",
         "The URL path must not contain spaces, backslashes or control characters",
+        "ctx\\.devices needs a tool with the network set to lan or any",
+        "Page snapshots are not available", "At most 200 page snapshots can be taken in one run", "Page snapshots can use at most 20 MB in one run", "The snapshot could not be saved",
+        "The page took too long to load", "The page could not be shown", "The snapshot was stopped", "The page drew nothing", "The page answered with HTTP \\d{3}", "The page could not be loaded: .{0,60}",
+        "The image was not made by ctx\\.web\\.snapshot in this run",
         // dns, findings, regex
         "The DNS lookup timed out", "The DNS lookup failed", "A finding link must start with http:// or https://",
         "The pattern is longer than 1,000 characters", "Unknown regex flag \\S, use i, m or s", "The regular expression is not valid", "The regular expression took too many steps",
@@ -40,7 +44,7 @@ class ScriptCopyTest {
         "Input \\w{1,40} needs a label", "Input \\w{1,40}: the \\w+ can be at most \\d+ characters", "The default of input \\w{1,40} does not fit its type",
         "Input \\w{1,40} needs 1 to 12 different options, as text or as value and label", "Input \\w{1,40} has a minimum above its maximum",
         "Input \\w{1,40}: the \\w+ has the wrong kind of value",
-        "The broadcast field must be true or false", "A tool can declare broadcast only with the network set to lan",
+        "The minVersionCode must be a whole number of 1 or more", "The minVersionName must be a version such as 0\\.4\\.3", "The broadcast field must be true or false", "A tool can declare broadcast only with the network set to lan",
         "This tool did not declare broadcast, so it cannot send to the broadcast address", "At most 50 broadcast packets can be sent in one run", "A broadcast packet can be at most 1 KB",
         "The broadcast address can only be used with ctx\\.udp\\.send and ctx\\.udp\\.exchange",
         // network scope
@@ -59,7 +63,9 @@ class ScriptCopyTest {
             ScriptCopy.HOST_FAILED, ScriptCopy.ioFailed("SocketTimeoutException", null), ScriptCopy.ioFailed("ConnectException", "refused"), ScriptCopy.NOT_A_CONSTRUCTOR,
             ScriptCopy.missingOption("ctx.http.request", "url"), ScriptCopy.wrongType("ctx.tcp.exchange", "port", "number"), ScriptCopy.outOfRange("ctx.tcp.exchange", "port", 1, 65535),
             ScriptCopy.optionsExpected("ctx.udp.exchange"), ScriptCopy.wrongArgument("ctx.dns.lookup", 1, "string"), ScriptCopy.notABytes("ctx.tcp.exchange", "send"),
-            ScriptCopy.tooManyBytes("ctx.tcp.exchange", "send"), ScriptCopy.BAD_HEX, ScriptCopy.outOfRangeNumber(65535), ScriptCopy.READ_PAST_END, ScriptCopy.VALUE_TOO_LARGE, ScriptCopy.VALUE_TOO_DEEP,
+            ScriptCopy.tooManyBytes("ctx.tcp.exchange", "send"), ScriptCopy.BAD_HEX, ScriptCopy.BAD_BASE64, ScriptCopy.DEVICES_NEED_LAN,
+            ScriptCopy.SNAPSHOT_UNAVAILABLE, ScriptCopy.SNAPSHOT_LIMIT, ScriptCopy.SNAPSHOT_SIZE_LIMIT, ScriptCopy.SNAPSHOT_SAVE_FAILED, ScriptCopy.SNAPSHOT_TIMEOUT,
+            ScriptCopy.SNAPSHOT_ENGINE_FAILED, ScriptCopy.SNAPSHOT_STOPPED, ScriptCopy.SNAPSHOT_BLANK, ScriptCopy.snapshotHttpError(503), ScriptCopy.snapshotLoadFailed("net::ERR_CONNECTION_REFUSED"), ScriptCopy.snapshotLoadFailed(""), ScriptCopy.IMAGE_UNKNOWN, ScriptCopy.outOfRangeNumber(65535), ScriptCopy.READ_PAST_END, ScriptCopy.VALUE_TOO_LARGE, ScriptCopy.VALUE_TOO_DEEP,
             ScriptCopy.VALUE_NOT_PLAIN, ScriptCopy.FUNCTION_NOT_ALLOWED, ScriptCopy.STRING_TOO_LONG, ScriptCopy.ARRAY_TOO_LONG, ScriptCopy.DYNAMIC_CODE_REFUSED, ScriptCopy.JAVA_ACCESS_REFUSED,
             ScriptCopy.REGEXP_REFUSED, ScriptCopy.HANDLE_CLOSED, ScriptCopy.TOO_MANY_HANDLES, ScriptCopy.noWordlistInput("words"),
             ScriptCopy.BAD_METHOD, ScriptCopy.TOO_MANY_HEADERS, ScriptCopy.badHeader("X-A"), ScriptCopy.TOO_MANY_REDIRECTS, ScriptCopy.badUrl("nope"), ScriptCopy.URL_NOT_HTTP,
@@ -69,7 +75,7 @@ class ScriptCopyTest {
             ScriptCopy.fieldTooLong("name", 40), ScriptCopy.BAD_ID, ScriptCopy.BAD_VERSION, ScriptCopy.BAD_TARGET, ScriptCopy.BAD_NETWORK, ScriptCopy.BAD_CATEGORY, ScriptCopy.NO_RUN,
             ScriptCopy.INPUTS_NOT_LIST, ScriptCopy.TOO_MANY_INPUTS, ScriptCopy.inputNotObject(2), ScriptCopy.inputNameBad(3), ScriptCopy.inputTypeBad("path"), ScriptCopy.inputLabelMissing("path"),
             ScriptCopy.inputTextTooLong("path", "label", 40), ScriptCopy.inputDefaultBad("path"), ScriptCopy.inputOptionsBad("mode"), ScriptCopy.inputRangeBad("n"), ScriptCopy.inputFieldBad("path", "help"),
-            ScriptCopy.BROADCAST_NOT_BOOLEAN, ScriptCopy.BROADCAST_NEEDS_LAN, ScriptCopy.BROADCAST_NOT_DECLARED, ScriptCopy.BROADCAST_LIMIT, ScriptCopy.BROADCAST_TOO_BIG, ScriptCopy.BROADCAST_UDP_ONLY,
+            ScriptCopy.BAD_MIN_VERSION_CODE, ScriptCopy.BAD_MIN_VERSION_NAME, ScriptCopy.BROADCAST_NOT_BOOLEAN, ScriptCopy.BROADCAST_NEEDS_LAN, ScriptCopy.BROADCAST_NOT_DECLARED, ScriptCopy.BROADCAST_LIMIT, ScriptCopy.BROADCAST_TOO_BIG, ScriptCopy.BROADCAST_UDP_ONLY,
             ScriptCopy.NO_SCOPE, ScriptCopy.PORT_INVALID, ScriptCopy.NO_DEVICE_IN_SCOPE, ScriptCopy.TARGET_ONLY, ScriptCopy.NO_LAN, ScriptCopy.LAN_ONLY, ScriptCopy.ADDRESS_NOT_ALLOWED,
             ScriptCopy.NAME_OUTSIDE_SCOPE, ScriptCopy.DNS_TARGET_ONLY, ScriptCopy.DNS_LOCAL_ONLY, ScriptCopy.NOT_AN_ADDRESS, ScriptCopy.HOST_INVALID, ScriptCopy.NOT_CANONICAL,
         ))
@@ -90,5 +96,6 @@ class ScriptCopyTest {
         assertEquals(60, ScriptCopy.badHeader(long).removePrefix("The header ").removeSuffix(" is not allowed").length)
         assertTrue(ScriptCopy.ioFailed("IOException", long).length < 100)
         assertEquals(60, ScriptCopy.noWordlistInput(long).removePrefix("No wordlist input named ").length)
+        assertEquals(60, ScriptCopy.snapshotLoadFailed(long).removePrefix("The page could not be loaded: ").length)
     }
 }

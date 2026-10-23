@@ -192,6 +192,15 @@ object ToolCopy {
     fun openDescription(url: String) = "Open $url with"
     fun copyDescription(value: String) = "Copy $value"
 
+    // Page pictures in findings (tools platform spec section 12)
+    const val COPY_URL = "Copy URL"
+    const val OPEN_IN_BROWSER = "Open in browser"
+    const val CLOSE_PICTURE = "Close"
+    const val PICTURE_MISSING = "The picture is no longer on this phone"
+    fun pictureDescription(caption: String) = "Picture of ${caption.take(PICTURE_ECHO)}"
+    fun viewPictureDescription(caption: String) = "View picture of ${caption.take(PICTURE_ECHO)}"
+    private const val PICTURE_ECHO = 80
+
     // Export (7.5)
     fun exportSubject(tool: String, ip: String?, port: Int) = if (ip == null) "NetProbe $tool" else if (port == 0) "NetProbe $tool $ip" else "NetProbe $tool $ip:$port"
     fun exportTitle(tool: String) = "NetProbe $tool"

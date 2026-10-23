@@ -16,6 +16,8 @@ import kotlinx.serialization.json.jsonPrimitive
 data class CatalogEntry(
     val id: String, val file: String, val name: String, val version: String, val sha256: String,
     val network: NetworkScope, val description: String, val broadcast: Boolean,
+    /** The oldest app that can run the tool (versionCode, and its name for display); null when there is no minimum. An older app lists the tool as needing a newer app. */
+    val minVersionCode: Int? = null, val minVersionName: String? = null,
 ) {
     /** The tool key an installed copy has (spec D5). */
     val key: String get() = "user:$id"
@@ -31,7 +33,7 @@ sealed interface CatalogIndexResult {
 }
 
 /**
- * The format of `catalog/index.json`: `{"format": 1, "tools": [ {id, file, name, version, sha256, network, description, broadcast}, ... ]}`.
+ * The format of `catalog/index.json`: `{"format": 1, "tools": [ {id, file, name, version, sha256, network, description, broadcast, minVersionCode?, minVersionName?}, ... ]}`.
  * Pure parsing and checking, no network. A line that does not fit is rejected with a reason and does not stop the others.
  */
 object CatalogIndex {
@@ -50,6 +52,7 @@ object CatalogIndex {
     private data class Line(
         val id: String, val file: String, val name: String, val version: String = "1", val sha256: String,
         val network: String = "target", val description: String = "", val broadcast: Boolean = false,
+        val minVersionCode: Int? = null, val minVersionName: String? = null,
     )
 
     fun parse(text: String): CatalogIndexResult {
@@ -90,9 +93,11 @@ object CatalogIndex {
             scope == null -> CatalogCopy.INDEX_NETWORK
             line.description.length > MAX_DESCRIPTION -> CatalogCopy.INDEX_DESCRIPTION
             line.broadcast && scope != NetworkScope.LAN -> CatalogCopy.INDEX_BROADCAST
+            line.minVersionCode != null && line.minVersionCode < 1 -> CatalogCopy.INDEX_MIN_VERSION
+            line.minVersionName != null && !VERSION.matches(line.minVersionName) -> CatalogCopy.INDEX_MIN_VERSION
             else -> null
         }
         if (reason != null) return Checked.Bad(label, reason)
-        return Checked.Ok(CatalogEntry(line.id, line.file, line.name, line.version, line.sha256.lowercase(), scope!!, line.description, line.broadcast))
+        return Checked.Ok(CatalogEntry(line.id, line.file, line.name, line.version, line.sha256.lowercase(), scope!!, line.description, line.broadcast, line.minVersionCode, line.minVersionName))
     }
 }

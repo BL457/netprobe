@@ -274,7 +274,10 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
                     }
                 },
                 // A lapsed Undo drops the TEMP tables; a failed drop must not break the next Remove's post, which runs this commit.
-                commit = { if (token != null) runCatching { c.toolRepo.dropSnapshot(token) }.onFailure { Log.w(AppScopes.LOG_TAG, "tool snapshot drop failed", it) } }))
+                commit = {
+                    if (token != null) runCatching { c.toolRepo.dropSnapshot(token) }.onFailure { Log.w(AppScopes.LOG_TAG, "tool snapshot drop failed", it) }
+                    c.sweepSnapshots()   // the removal is final: the page pictures of its tool runs go too
+                }))
         }
     }
     fun setStatus(s: HostStatus) { viewModelScope.launch { c.hosts.setStatus(hostId, s) } }

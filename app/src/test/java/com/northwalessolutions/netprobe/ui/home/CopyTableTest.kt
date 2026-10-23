@@ -25,7 +25,8 @@ import com.northwalessolutions.netprobe.ui.settings.ListenCopy
 class CopyTableTest {
     private val date = "3 Jan 2026"
     private val templates: List<Regex> = listOf(
-        "Forget this network", "Quick scan all", "Stop quick scan", "Menu", "Forgot .+", "Removed .+", "Undo",
+        "Forget this network", "Forget this network\\?", "Forget", "Cancel", "this network",
+        "Removes .+ and every device found on it from NetProbe\\. Undo is offered for a few seconds afterwards\\.", "Quick scan all", "Stop quick scan", "Menu", "Hide devices with no open ports", "No devices with open ports", "Forgot .+", "Removed .+", "Undo",
         "Scan", "Stop", "found", "No devices found", "\\d+ devices?",
         "Last scan (just now|\\d+ seconds ago|\\d+ minutes? ago|\\d+ hours? ago|yesterday|$date)",
         "(Scanned in|Stopped after) \\d+ s(, \\d+ on another subnet)?",
@@ -60,7 +61,7 @@ class CopyTableTest {
     private fun detailOk(s: String, blankAllowed: Boolean) = if (s.isEmpty()) assertTrue("blank detail where text is expected", blankAllowed) else inTable(s)
 
     @Test fun `forget and undo strings`() {
-        listOf(HomeCopy.FORGET_NETWORK, HomeCopy.QUICK_SCAN_ALL, HomeCopy.STOP_QUICK_SCAN, HomeCopy.MENU, HomeCopy.UNDO, HomeCopy.forgot("Home"), HomeCopy.removed("DiskStation")).forEach { inTable(it) }
+        listOf(HomeCopy.FORGET_NETWORK, HomeCopy.QUICK_SCAN_ALL, HomeCopy.STOP_QUICK_SCAN, HomeCopy.MENU, HomeCopy.FORGET_TITLE, HomeCopy.FORGET_CONFIRM, HomeCopy.CANCEL, HomeCopy.THIS_NETWORK, HomeCopy.forgetBody("Home"), HomeCopy.HIDE_PORTLESS, HomeCopy.EMPTY_PORTLESS, HomeCopy.UNDO, HomeCopy.forgot("Home"), HomeCopy.removed("DiskStation")).forEach { inTable(it) }
         assertEquals("Forgot Home", HomeCopy.forgot("Home")); assertEquals("Removed DiskStation", HomeCopy.removed("DiskStation"))
     }
 

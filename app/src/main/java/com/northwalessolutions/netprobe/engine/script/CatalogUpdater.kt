@@ -31,8 +31,14 @@ data class CatalogItem(
 
 data class CatalogFailure(val name: String, val reason: String)
 
+/** A catalog tool that needs a newer app than this one: listed, never fetched or installed. */
+data class CatalogNeedsNewer(val name: String, val version: String, val minVersionCode: Int, val minVersionName: String?)
+
 /** What "Update tools from GitHub" found: nothing is installed until [CatalogUpdater.apply]. */
-data class CatalogPlan(val new: List<CatalogItem>, val updated: List<CatalogItem>, val failed: List<CatalogFailure>, val unchanged: Int) {
+data class CatalogPlan(
+    val new: List<CatalogItem>, val updated: List<CatalogItem>, val failed: List<CatalogFailure>, val unchanged: Int,
+    val needsNewerApp: List<CatalogNeedsNewer> = emptyList(),
+) {
     val installable: Int get() = new.size + updated.size
     val needsYes: Boolean get() = updated.any { it.needsYes }
 }
@@ -57,6 +63,8 @@ class CatalogUpdater(
     private val fetcher: UpdateFetcher,
     private val indexUrl: String = UpdateConfig.CATALOG_INDEX_URL,
     private val fetchBudgetMs: Long = ScriptImporter.URL_BUDGET_MS,
+    /** This app's versionCode; an entry with a higher `minVersionCode` is listed as needing a newer app and left alone. The default has no limit. */
+    private val appVersionCode: Int = Int.MAX_VALUE,
 ) {
     private sealed interface Fetched {
         class Bytes(val bytes: ByteArray) : Fetched
@@ -74,18 +82,21 @@ class CatalogUpdater(
         val newTools = ArrayList<CatalogItem>()
         val updated = ArrayList<CatalogItem>()
         val failed = ArrayList<CatalogFailure>()
+        val needsNewer = ArrayList<CatalogNeedsNewer>()
         var unchanged = 0
         parsed.rejected.forEach { failed += CatalogFailure(it.label, it.reason) }
         onProgress(0, parsed.entries.size)
         parsed.entries.forEachIndexed { position, entry ->
-            if (isUnchanged(entry)) unchanged++
+            val min = entry.minVersionCode
+            if (min != null && min > appVersionCode) needsNewer += CatalogNeedsNewer(entry.name, entry.version, min, entry.minVersionName)
+            else if (isUnchanged(entry)) unchanged++
             else when (val result = read(entry, base)) {
                 is Read.Item -> if (result.item.isNew) newTools += result.item else updated += result.item
                 is Read.Failure -> failed += CatalogFailure(entry.name, result.reason)
             }
             onProgress(position + 1, parsed.entries.size)
         }
-        return CatalogOutcome.Ready(CatalogPlan(newTools, updated, failed, unchanged))
+        return CatalogOutcome.Ready(CatalogPlan(newTools, updated, failed, unchanged, needsNewer))
     }
 
     /** Installed with this exact script and loadable: the catalog has nothing to say about it. A broken copy is repaired instead. */

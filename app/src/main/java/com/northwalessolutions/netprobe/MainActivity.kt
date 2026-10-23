@@ -20,6 +20,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.northwalessolutions.netprobe.ui.NetProbeNav
 import com.northwalessolutions.netprobe.ui.theme.LocalTypeMarker
+import com.northwalessolutions.netprobe.ui.tools.LocalSnapshotStore
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
 
 private const val BAR_COLOUR = 0xFF16202B.toInt()
@@ -43,7 +44,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             val marker by container.settings.state.map { it.typeMarker }.distinctUntilChanged().collectAsStateWithLifecycle(container.settings.state.value.typeMarker)
-            NetProbeTheme { CompositionLocalProvider(LocalTypeMarker provides marker) { Surface(Modifier.fillMaxSize()) { NetProbeNav(container) } } }
+            NetProbeTheme { CompositionLocalProvider(LocalTypeMarker provides marker, LocalSnapshotStore provides container.snapshotStore) { Surface(Modifier.fillMaxSize()) { NetProbeNav(container) } } }
         }
     }
 }

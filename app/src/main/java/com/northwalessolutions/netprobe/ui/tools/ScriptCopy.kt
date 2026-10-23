@@ -43,6 +43,7 @@ object ScriptCopy {
     fun notABytes(what: String, key: String) = "$what $key must be a string or an array of numbers from 0 to 255"
     fun tooManyBytes(what: String, key: String) = "$what $key is larger than 1 MB"
     const val BAD_HEX = "Not a valid hex string"
+    const val BAD_BASE64 = "Not a valid base64 string"
     fun outOfRangeNumber(max: Long) = "The number must be a whole number from 0 to $max"
     const val READ_PAST_END = "Read past the end of the bytes"
     const val VALUE_TOO_LARGE = "The value is too large"
@@ -83,6 +84,8 @@ object ScriptCopy {
     const val BAD_NETWORK = "The network must be target, lan or any"
     const val BAD_CATEGORY = "The category must be web, network, identity or other"
     const val NO_RUN = "The tool needs a run function"
+    const val BAD_MIN_VERSION_CODE = "The minVersionCode must be a whole number of 1 or more"
+    const val BAD_MIN_VERSION_NAME = "The minVersionName must be a version such as 0.4.3"
     const val BROADCAST_NOT_BOOLEAN = "The broadcast field must be true or false"
     const val BROADCAST_NEEDS_LAN = "A tool can declare broadcast only with the network set to lan"
     const val INPUTS_NOT_LIST = "The inputs must be a list"
@@ -117,6 +120,22 @@ object ScriptCopy {
     const val BROADCAST_LIMIT = "At most 50 broadcast packets can be sent in one run"
     const val BROADCAST_TOO_BIG = "A broadcast packet can be at most 1 KB"
     const val BROADCAST_UDP_ONLY = "The broadcast address can only be used with ctx.udp.send and ctx.udp.exchange"
+
+    // ctx.devices (spec section 12)
+    const val DEVICES_NEED_LAN = "ctx.devices needs a tool with the network set to lan or any"
+
+    // ctx.web.snapshot and image findings (spec section 12)
+    const val SNAPSHOT_UNAVAILABLE = "Page snapshots are not available"
+    const val SNAPSHOT_LIMIT = "At most 200 page snapshots can be taken in one run"
+    const val SNAPSHOT_SIZE_LIMIT = "Page snapshots can use at most 20 MB in one run"
+    const val SNAPSHOT_SAVE_FAILED = "The snapshot could not be saved"
+    const val SNAPSHOT_TIMEOUT = "The page took too long to load"
+    const val SNAPSHOT_ENGINE_FAILED = "The page could not be shown"
+    const val SNAPSHOT_STOPPED = "The snapshot was stopped"
+    const val SNAPSHOT_BLANK = "The page drew nothing"
+    fun snapshotHttpError(status: Int) = "The page answered with HTTP $status"
+    fun snapshotLoadFailed(reason: String) = "The page could not be loaded: ${reason.take(IO_ECHO)}"
+    const val IMAGE_UNKNOWN = "The image was not made by ctx.web.snapshot in this run"
 
     // dns
     const val DNS_TIMEOUT = "The DNS lookup timed out"

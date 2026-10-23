@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.engine.script
 
+import com.northwalessolutions.netprobe.engine.tools.NetworkScope
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
 import com.northwalessolutions.netprobe.ui.tools.ScriptCopy
 import org.mozilla.javascript.Context
@@ -68,12 +69,21 @@ internal object HostApi {
         fn(dns, "lookup", 1) { a -> net.lookup(text(a, 0, "ctx.dns.lookup")) }
         fn(dns, "reverse", 1) { a -> net.reverse(text(a, 0, "ctx.dns.reverse")) }
 
+        // web
+        val web = HostWeb(s, s.host.gate, s.host.renderer, s.host.snapshots, s.host.runId)
+        fn(group("web"), "snapshot", 1) { a -> web.snapshot(Opts.of(a.getOrNull(0), "ctx.web.snapshot")) }
+
         // bytes
         val bytes = group("bytes")
         fn(bytes, "fromHex", 1) { a -> Bytes.fromHex(text(a, 0, "ctx.bytes.fromHex")) }
         fn(bytes, "toHex", 1) { a -> Bytes.toHex(bytesArg(a, 0, "ctx.bytes.toHex")) }
         fn(bytes, "fromUtf8", 1) { a -> text(a, 0, "ctx.bytes.fromUtf8").toByteArray(Charsets.UTF_8) }
         fn(bytes, "toUtf8", 1) { a -> Bytes.toUtf8(bytesArg(a, 0, "ctx.bytes.toUtf8")) }
+        fn(bytes, "base64", 1) { a -> Bytes.toBase64(bytesArg(a, 0, "ctx.bytes.base64")) }
+        fn(bytes, "fromBase64", 1) { a -> Bytes.fromBase64(text(a, 0, "ctx.bytes.fromBase64")) }
+        fn(bytes, "md5", 1) { a -> Bytes.digestHex("MD5", bytesArg(a, 0, "ctx.bytes.md5")) }
+        fn(bytes, "sha1", 1) { a -> Bytes.digestHex("SHA-1", bytesArg(a, 0, "ctx.bytes.sha1")) }
+        fn(bytes, "sha256", 1) { a -> Bytes.digestHex("SHA-256", bytesArg(a, 0, "ctx.bytes.sha256")) }
         fn(bytes, "concat", 2) { a ->
             val out = java.io.ByteArrayOutputStream()
             for (i in a.indices) { out.write(bytesArg(a, i, "ctx.bytes.concat")); if (out.size() > ScriptCaps.MAX_ARRAY_LENGTH) throw ScriptHostError(ScriptCopy.VALUE_TOO_LARGE) }
@@ -112,17 +122,27 @@ internal object HostApi {
             val limit = ((a.getOrNull(2) as? Number)?.toInt() ?: ScriptCaps.MAX_ARRAY_LENGTH).coerceIn(1, ScriptCaps.MAX_ARRAY_LENGTH)
             s.blocking { s.host.wordlist(ref, offset, limit) }.take(limit)
         }
+        fn(ctx, "devices", 0) { _ ->
+            if (s.host.network == NetworkScope.TARGET) throw ScriptHostError(ScriptCopy.DEVICES_NEED_LAN)
+            s.chargeCalls(1); s.gateWait()
+            s.blocking { s.host.devices() }.take(ScriptDevices.MAX_DEVICES).map { d ->
+                mapOf("ip" to d.ip, "mac" to d.mac, "name" to d.name, "vendor" to d.vendor,
+                    "ports" to d.ports.map { p -> mapOf("port" to p.port.toDouble(), "service" to p.service, "tls" to p.tls) })
+            }
+        }
         fn(ctx, "progress", 3) { a ->
             fun count(v: Any?): Int = (v as? Number)?.toDouble()?.takeIf { !it.isNaN() }?.coerceIn(0.0, Int.MAX_VALUE.toDouble())?.toInt() ?: 0
             val total = (a.getOrNull(1) as? Number)?.let { count(it) }
             s.host.progress.update(count(a.getOrNull(0)), total, count(a.getOrNull(2)))
             Unit
         }
-        fn(ctx, "finding", 4) { a ->
+        fn(ctx, "finding", 5) { a ->
             val kind = text(a, 0, "ctx.finding").take(MAX_FINDING_KIND)
             val value = a.getOrNull(1).let { if (it is CharSequence) JsBridge.string(it) else ScriptRuntime.toString(it) }
             fun opt(i: Int): String? = a.getOrNull(i)?.takeIf { it !== Undefined.instance }?.let { if (it is CharSequence) JsBridge.string(it) else ScriptRuntime.toString(it) }
-            s.finding(kind, value, opt(2), opt(3))
+            // extra is optional; only extra.image (an id from ctx.web.snapshot) is read, other keys are ignored
+            val extra = a.getOrNull(4)?.takeIf { it !== Undefined.instance }?.let { Opts.of(it, "ctx.finding") }
+            s.finding(kind, value, opt(2), opt(3), extra?.optString("image"))
             Unit
         }
         fn(ctx, "log", 1) { a -> s.log(a.getOrNull(0).let { if (it is CharSequence) it.toString().take(ScriptCaps.MAX_LOG_LINE_CHARS * 2) else ScriptRuntime.toString(it) }); Unit }
@@ -136,7 +156,7 @@ internal object HostApi {
             try { s.ensureAlive(); false } catch (_: ScriptAbort) { true }
         }, LOCKED)
 
-        for (name in listOf("http", "tcp", "udp", "tls", "dns", "bytes", "regex")) (ScriptableObject.getProperty(ctx, name) as ScriptableObject).sealObject()
+        for (name in listOf("http", "tcp", "udp", "tls", "dns", "web", "bytes", "regex")) (ScriptableObject.getProperty(ctx, name) as ScriptableObject).sealObject()
         (ctx as ScriptableObject).sealObject()
         return ctx
     }

@@ -54,6 +54,7 @@ class ToolCopyTableTest {
         ".+  \\d+\\.\\d+\\.\\d+\\.\\d+:\\d+", "(Running|Done|Stopped|Failed|Interrupted), .+", "(Done|Stopped|Failed|Interrupted), .+, as .+",
         "Run \\d+ of \\d+", "Older run", "Newer run", "Open with\\.\\.\\.", "Copy", "Share", "Copied",
         "Running, findings appear as they are found", "No findings", "Open .+ with", "Copy .+",
+        "Copy URL", "Open in browser", "Close", "The picture is no longer on this phone", "Picture of .{1,80}", "View picture of .{1,80}",
         // export
         "NetProbe .+ \\d+\\.\\d+\\.\\d+\\.\\d+:\\d+", "NetProbe .+", "Target: .+", "Name sent: .+", "Started: $ts", "Finished: ($ts|not finished)",
         "Status: (Running|Done|Stopped|Failed|Interrupted)", "Summary: .*",
@@ -151,7 +152,9 @@ class ToolCopyTableTest {
         addAll(listOf(ToolCopy.NO_DEVICE, ToolCopy.resultsTitle(ToolCopy.DIR_BRUTEFORCE, null, 0), ToolCopy.exportSubject(ToolCopy.DIR_BRUTEFORCE, null, 0), ToolCopy.resultsTitle(ToolCopy.DIR_BRUTEFORCE, "10.0.3.10", 5000), ToolCopy.resultsStatus("Done", "2 hours ago", null),
             ToolCopy.resultsStatus("Done", "2 hours ago", "chnas.local"), ToolCopy.resultsRunning("12 of 300, 2 found  3 s"), ToolCopy.runOf(1, 3),
             ToolCopy.OLDER_RUN, ToolCopy.NEWER_RUN, ToolCopy.OPEN_WITH, ToolCopy.COPY, ToolCopy.SHARE, ToolCopy.COPIED, ToolCopy.EMPTY_RUNNING, ToolCopy.NO_FINDINGS,
-            ToolCopy.openDescription("http://10.0.3.10:5000/admin"), ToolCopy.copyDescription("/admin")))
+            ToolCopy.openDescription("http://10.0.3.10:5000/admin"), ToolCopy.copyDescription("/admin"),
+            ToolCopy.COPY_URL, ToolCopy.OPEN_IN_BROWSER, ToolCopy.CLOSE_PICTURE, ToolCopy.PICTURE_MISSING, ToolCopy.pictureDescription("NAS"), ToolCopy.pictureDescription("x".repeat(300)),
+            ToolCopy.viewPictureDescription("NAS")))
         addAll(listOf(ToolCopy.exportSubject(ToolCopy.TLS_CERTIFICATE, "10.0.3.10", 443), ToolCopy.exportTitle(ToolCopy.TLS_CERTIFICATE),
             ToolCopy.exportTarget("10.0.3.10:443"), ToolCopy.exportNameSent("chnas.local"), ToolCopy.exportStarted("2026-10-20 14:03:11"),
             ToolCopy.exportFinished("2026-10-20 14:04:02"), ToolCopy.exportFinished(null), ToolCopy.exportStatus("Done"), ToolCopy.exportSummary("7 found in 4614 paths")))

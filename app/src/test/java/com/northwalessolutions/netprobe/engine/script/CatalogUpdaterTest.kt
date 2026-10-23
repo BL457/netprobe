@@ -78,6 +78,48 @@ class CatalogUpdaterTest {
     }
     private fun names(items: List<CatalogItem>) = items.map { it.entry.id }
 
+    // Needs a newer app
+
+    private fun older(code: Int) = CatalogUpdater(importer, store, fetcher, base + "index.json", fetchBudgetMs = 5_000, appVersionCode = code)
+    private fun checkWith(u: CatalogUpdater): CatalogPlan = (runBlocking { u.check() } as CatalogOutcome.Ready).plan
+    private val newerLine: (String) -> String = { it.dropLast(1) + ""","minVersionCode":12,"minVersionName":"0.4.3"}""" }
+
+    @Test fun `a tool that needs a newer app is listed, never fetched and never installed`() {
+        publish(mapOf("tool-a" to script("tool-a"), "tool-b" to script("tool-b")), override = mapOf("tool-b" to newerLine))
+        val plan = checkWith(older(11))
+        assertEquals(listOf("tool-a"), names(plan.new))
+        assertEquals(listOf(CatalogNeedsNewer("Tool tool-b", "1.0", 12, "0.4.3")), plan.needsNewerApp)
+        assertFalse(fetcher.requested.contains(base + "tool-b.js"))
+        assertEquals(1, plan.installable)
+        val applied = apply(plan)
+        assertEquals(listOf("Tool tool-a"), applied.installed)
+        assertNull(store.entry("user:tool-b"))
+    }
+
+    @Test fun `an app at or above the minimum treats the tool as usual`() {
+        publish(mapOf("tool-b" to script("tool-b")), override = mapOf("tool-b" to newerLine))
+        for (code in listOf(12, 13)) {
+            fetcher.requested.clear()
+            val plan = checkWith(older(code))
+            assertEquals(listOf("tool-b"), names(plan.new)); assertTrue(plan.needsNewerApp.isEmpty())
+        }
+    }
+
+    @Test fun `a newer app tool that is already installed is not counted as unchanged and is not touched`() {
+        installAll(mapOf("tool-b" to script("tool-b")))
+        publish(mapOf("tool-b" to script("tool-b", version = "2.0")), override = mapOf("tool-b" to newerLine))
+        val plan = checkWith(older(11))
+        assertTrue(plan.updated.isEmpty()); assertEquals(0, plan.unchanged); assertEquals(1, plan.needsNewerApp.size)
+        assertEquals("1.0", store.entry("user:tool-b")!!.version)
+        assertFalse(fetcher.requested.contains(base + "tool-b.js"))
+    }
+
+    @Test fun `without a minimum nothing changes for an old app`() {
+        publish(mapOf("tool-a" to script("tool-a")))
+        val plan = checkWith(older(1))
+        assertEquals(listOf("tool-a"), names(plan.new)); assertTrue(plan.needsNewerApp.isEmpty())
+    }
+
     // New
 
     @Test fun `a tool that is not installed is New and only the index and that script are fetched`() {

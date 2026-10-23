@@ -91,6 +91,8 @@ data class ToolDescriptor(
     val version: String = "1", val author: String? = null, val source: ToolSource = ToolSource.BuiltIn,
     /** Only a LAN tool may declare it: it may send datagrams to the current subnet's directed broadcast address (spec section 11). */
     val broadcast: Boolean = false,
+    /** The oldest app (versionCode, and its versionName for display) the script needs; null when it works on every version. Kept as the script wrote it. */
+    val minVersionCode: Int? = null, val minVersionName: String? = null,
 )
 
 /** Rules for a descriptor's own inputs: "ip", "port" and "tls" belong to the implicit target inputs (spec D7), and names are unique. */
