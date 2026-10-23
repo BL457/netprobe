@@ -13,7 +13,7 @@ class UpdateCopyTest {
         "Look for a newer version now", "Checking for updates", "NetProbe is up to date", "Could not read the update information", "Could not check for updates",
         "Could not download the update", "The update is larger than 64 MB", "The download was not the expected size", "The download did not match its checksum",
         "Could not save the update", "Update rejected: it was not signed with NetProbe's key", "No installer is available on this phone",
-        "NetProbe .+ is available", "Release notes", "All versions on GitHub", "Got it", "What's new in .+", "Last checked (just now|[0-9]+ (minute|hour|day)s? ago)", "[0-9]{1,3}%",
+        "NetProbe .+ is available", "Release notes", "All versions on GitHub", "Got it", "In this version \\(.+\\)", "Last checked (just now|[0-9]+ (minute|hour|day)s? ago)", "[0-9]{1,3}%",
     ).map { Regex(it) }
 
     @Test fun `every update string matches a template and has no em-dash`() {

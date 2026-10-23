@@ -2,6 +2,9 @@
 
 Release notes for every NetProbe version, newest first. The section for a version is what the in-app updater shows under "What's new".
 
+## 0.3.5
+- The card shown once after an update is now titled "In this version" and lists what was just added, so you do not have to leave the app to read it.
+
 ## 0.3.4
 - After Check for updates finds a new version, the update appears on the Settings screen itself, with the same Update button as Home.
 

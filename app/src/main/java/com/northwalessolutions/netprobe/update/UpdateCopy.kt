@@ -39,7 +39,7 @@ object UpdateCopy {
     const val RELEASE_NOTES_ROW = "Release notes"
     const val RELEASE_NOTES_SUBTITLE = "All versions on GitHub"
     const val GOT_IT = "Got it"
-    fun whatsNewTitle(versionName: String) = "What's new in $versionName"
+    fun whatsNewTitle(versionName: String) = "In this version ($versionName)"
 
     private const val MS_PER_MINUTE = 60_000L
     private const val MINUTES_PER_HOUR = 60L
