@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.net.http.SslError
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
@@ -32,6 +33,9 @@ import kotlin.math.roundToInt
  * JavaScript is on; cookies, DOM storage, file and content access, pop-up windows and Safe Browsing are off. Every request the page makes,
  * including each redirect hop, goes through [RenderRequest.allow] in shouldInterceptRequest before the WebView connects; a refused one gets
  * an empty 403. Certificate errors are accepted, as the script transport accepts them: LAN devices nearly all use self-signed certificates.
+ * The WebView is laid out at the full [VIEWPORT_HEIGHT] px tall from the start; after the page finishes loading it waits the settle time,
+ * lays out once more at that size, and draws. A picture that is one flat colour gets one more settle period, then counts as a page that drew
+ * nothing. A main frame that failed (a network error, or an HTTP status of 400 or more) gives no picture, only the status and the error.
  * The picture is drawn at most [SnapshotLimits.MAX_IMAGE_WIDTH] wide and compressed to JPEG. The WebView keeps the app's normal user agent.
  */
 class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit = {}) : PageRenderer {
@@ -67,8 +71,12 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
         @Volatile private var failure: String? = null
         private var web: WebView? = null
         private var ended = false
-        private var status = HTTP_OK
+        private var status = 0
+        private var networkError: String? = null
+        private var failureQueued = false
         private var captureQueued = false
+        private var retried = false
+        private var deadline = 0L
         private val timeout = Runnable { fail(ScriptCopy.SNAPSHOT_TIMEOUT) }
 
         fun result(): RenderedPage = outcome ?: throw RenderFailure(failure ?: ScriptCopy.SNAPSHOT_ENGINE_FAILED)
@@ -81,15 +89,19 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
                 web = w
                 configure(w)
                 w.webViewClient = client
-                val height = req.width * VIEWPORT_HEIGHT_NUM / VIEWPORT_HEIGHT_DEN
-                w.measure(View.MeasureSpec.makeMeasureSpec(req.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
-                w.layout(0, 0, req.width, height)
+                layoutAtFullSize(w)
+                deadline = SystemClock.uptimeMillis() + req.timeoutMs
                 main.postDelayed(timeout, req.timeoutMs.toLong())
                 w.loadUrl(req.url)
             } catch (t: Throwable) {
                 log(t)
                 fail(ScriptCopy.SNAPSHOT_ENGINE_FAILED)
             }
+        }
+
+        private fun layoutAtFullSize(w: WebView) {
+            w.measure(View.MeasureSpec.makeMeasureSpec(req.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(VIEWPORT_HEIGHT, View.MeasureSpec.EXACTLY))
+            w.layout(0, 0, req.width, VIEWPORT_HEIGHT)
         }
 
         private fun configure(w: WebView) {
@@ -127,38 +139,86 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
             done.countDown()
         }
 
-        /** After the page finished: wait for the engine to have painted it, let scripts settle for a moment, then draw. */
+        /** Ends with the status and the error and no picture. */
+        private fun finishWithoutPicture(error: String) {
+            if (ended) return
+            outcome = RenderedPage(status, web?.title.orEmpty(), web?.url ?: req.url, null, error)
+            end()
+        }
+
+        /** The main frame failed. Both callbacks can fire for one page (an error status, then Chromium's error page), so wait a moment for the second. */
+        private fun mainFrameFailed() {
+            if (failureQueued || ended) return
+            failureQueued = true
+            main.postDelayed({
+                val error = if (status >= HTTP_ERROR_FROM) ScriptCopy.snapshotHttpError(status) else ScriptCopy.snapshotLoadFailed(networkError.orEmpty())
+                finishWithoutPicture(error)
+            }, FAILURE_GRACE_MS)
+        }
+
+        /** Time left before the overall timeout, less room to draw and compress. */
+        private fun settle(ms: Int): Long = SettleTime.clip(ms, deadline - SystemClock.uptimeMillis())
+
+        /** After the page finished: wait for the engine to have painted it, let scripts settle, then draw. */
         private fun queueCapture(w: WebView) {
-            if (captureQueued || ended) return
+            if (captureQueued || ended || failureQueued) return
             captureQueued = true
+            if (status == 0) status = HTTP_OK
             w.postVisualStateCallback(VISUAL_STATE_ID, object : WebView.VisualStateCallback() {
-                override fun onComplete(requestId: Long) { main.postDelayed({ capture() }, SETTLE_MS) }
+                override fun onComplete(requestId: Long) { main.postDelayed({ capture() }, settle(req.settleMs)) }
             })
         }
 
         private fun capture() {
             val w = web
-            if (ended || w == null) return
+            if (ended || w == null || failureQueued) return
             try {
-                val scale = min(1f, SnapshotLimits.MAX_IMAGE_WIDTH.toFloat() / req.width)
-                val outW = max(1, (req.width * scale).roundToInt())
-                val outH = max(1, (req.width * VIEWPORT_HEIGHT_NUM / VIEWPORT_HEIGHT_DEN * scale).roundToInt())
-                val bitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-                val jpeg = try {
-                    val canvas = Canvas(bitmap)
-                    canvas.drawColor(Color.WHITE)
-                    canvas.scale(scale, scale)
-                    w.draw(canvas)
-                    ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }.toByteArray()
-                } finally {
-                    bitmap.recycle()
-                }
-                outcome = RenderedPage(status, w.title.orEmpty(), w.url.orEmpty(), jpeg)
-                end()
+                layoutAtFullSize(w)      // a layout pass at the full size, then draw on the next turn of the loop
+                main.post { draw() }
             } catch (t: Throwable) {
                 log(t)
                 fail(ScriptCopy.SNAPSHOT_ENGINE_FAILED)
             }
+        }
+
+        private fun draw() {
+            val w = web
+            if (ended || w == null || failureQueued) return
+            try {
+                val scale = min(1f, SnapshotLimits.MAX_IMAGE_WIDTH.toFloat() / req.width)
+                val outW = max(1, (req.width * scale).roundToInt())
+                val outH = max(1, (VIEWPORT_HEIGHT * scale).roundToInt())
+                val bitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+                var blank = false
+                var jpeg: ByteArray? = null
+                try {
+                    val canvas = Canvas(bitmap)
+                    canvas.drawColor(Color.WHITE)
+                    canvas.scale(scale, scale)
+                    w.draw(canvas)
+                    blank = isBlank(bitmap)
+                    if (!blank) jpeg = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }.toByteArray()
+                } finally {
+                    bitmap.recycle()
+                }
+                when {
+                    jpeg != null -> { outcome = RenderedPage(status, w.title.orEmpty(), w.url.orEmpty(), jpeg); end() }
+                    !retried -> { retried = true; main.postDelayed({ capture() }, settle(req.settleMs)) }
+                    else -> finishWithoutPicture(ScriptCopy.SNAPSHOT_BLANK)
+                }
+            } catch (t: Throwable) {
+                log(t)
+                fail(ScriptCopy.SNAPSHOT_ENGINE_FAILED)
+            }
+        }
+
+        /** A cheap test on a small copy: one flat colour means the page has drawn nothing yet. */
+        private fun isBlank(bitmap: Bitmap): Boolean {
+            val small = Bitmap.createScaledBitmap(bitmap, BLANK_SAMPLE, BLANK_SAMPLE, true)
+            val pixels = IntArray(BLANK_SAMPLE * BLANK_SAMPLE)
+            small.getPixels(pixels, 0, BLANK_SAMPLE, 0, 0, BLANK_SAMPLE, BLANK_SAMPLE)
+            if (small !== bitmap) small.recycle()
+            return BlankCheck.isFlat(pixels)
         }
 
         private fun isWeb(url: String) = url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
@@ -177,11 +237,15 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
             override fun onPageFinished(view: WebView, url: String?) { queueCapture(view) }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) fail(ScriptCopy.snapshotLoadFailed(error.description.toString()))
+                if (!request.isForMainFrame) return
+                networkError = error.description.toString()
+                mainFrameFailed()
             }
 
             override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
-                if (request.isForMainFrame) status = errorResponse.statusCode
+                if (!request.isForMainFrame) return
+                status = errorResponse.statusCode
+                mainFrameFailed()
             }
 
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) { handler.proceed() }
@@ -195,12 +259,14 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
 
     private companion object {
         const val POLL_MS = 50L
-        const val SETTLE_MS = 600L
+        const val FAILURE_GRACE_MS = 100L
         const val VISUAL_STATE_ID = 1L
         const val JPEG_QUALITY = 80
-        const val VIEWPORT_HEIGHT_NUM = 3
-        const val VIEWPORT_HEIGHT_DEN = 4
+        /** The WebView is laid out this tall, whatever the width, so pages that size themselves to the window have room. */
+        const val VIEWPORT_HEIGHT = 1600
+        const val BLANK_SAMPLE = 16
         const val HTTP_OK = 200
+        const val HTTP_ERROR_FROM = 400
         const val HTTP_FORBIDDEN = 403
     }
 }

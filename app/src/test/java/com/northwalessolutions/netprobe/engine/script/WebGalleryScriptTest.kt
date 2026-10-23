@@ -21,6 +21,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -70,11 +71,52 @@ class WebGalleryScriptTest {
         assertNotNull(SnapshotStore(File(tmp.root, "snapshots")).fileFor("0/1.jpg"))
     }
 
-    @Test fun `a device with no name of its own is listed by address, and an error page says its status`() {
-        renderer.handler = { q, _ -> RenderedPage(401, "", q.url, renderer.jpeg) }
+    @Test fun `a device with no name of its own is listed by address and a page with no title says so`() {
+        renderer.handler = { q, _ -> RenderedPage(200, "", q.url, renderer.jpeg) }
         run(module(listOf(device(20, port(80)))))
         val f = progress.findings.single()
-        assertEquals("192.168.1.20", f.value); assertEquals("No title  HTTP 401", f.detail)
+        assertEquals("192.168.1.20", f.value); assertEquals("No title", f.detail)
+    }
+
+    private fun failedPage(q: RenderRequest, status: Int, error: String) = RenderedPage(status, "Error", q.url, null, error)
+
+    @Test fun `an error page gives no picture and no finding, and is counted as not answering`() {
+        renderer.handler = { q, _ -> failedPage(q, 500, "The page answered with HTTP 500") }
+        val r = run(module(listOf(device(20, port(8008)), device(30, port(8443)))))
+        assertEquals(ToolRunStatus.DONE, r.status)
+        assertEquals("0 pages from 0 devices, 2 did not answer", r.summary)
+        assertTrue(progress.findings.isEmpty())
+        assertNull(SnapshotStore(File(tmp.root, "snapshots")).fileFor("0/1.jpg"))
+    }
+
+    @Test fun `a login page gets one plain line without a picture and is not counted as not answering`() {
+        renderer.handler = { q, _ -> if (q.url.contains(".20")) failedPage(q, 401, "The page answered with HTTP 401") else failedPage(q, 403, "x") }
+        val r = run(module(listOf(device(20, port(80), name = "router"), device(30, port(80)))))
+        assertEquals("0 pages from 0 devices", r.summary)
+        assertEquals(listOf("router  192.168.1.20  login required", "192.168.1.30  login required"), progress.findings.map { it.value })
+        assertEquals(listOf("HTTP 401", "HTTP 403"), progress.findings.map { it.detail })
+        assertTrue(progress.findings.all { it.extra["image"] == null && it.url != null })
+    }
+
+    @Test fun `a page that never answered or drew nothing is skipped silently`() {
+        renderer.handler = { q, _ -> if (q.url.contains(".20")) RenderedPage(0, "", q.url, null, "The page could not be loaded: net::ERR_CONNECTION_REFUSED") else RenderedPage(200, "", q.url, null, "The page drew nothing") }
+        val r = run(module(listOf(device(20, port(80)), device(30, port(80)), device(40, port(80)))))
+        assertEquals("0 pages from 0 devices, 3 did not answer", r.summary)
+        assertTrue(progress.findings.isEmpty())
+    }
+
+    @Test fun `good pages and failed pages mix`() {
+        renderer.handler = { q, _ -> if (q.url.contains(".30")) failedPage(q, 404, "e") else RenderedPage(200, "ok", q.url, renderer.jpeg) }
+        val r = run(module(listOf(device(20, port(80)), device(30, port(80)), device(40, port(80)))))
+        assertEquals("2 pages from 2 devices, 1 did not answer", r.summary)
+        assertEquals(2, progress.findings.size)
+    }
+
+    @Test fun `seconds to let a page draw become the settle time`() {
+        run(module(listOf(device(20, port(80)))))
+        run(module(listOf(device(20, port(80)))), mapOf("settleS" to 0))
+        run(module(listOf(device(20, port(80)))), mapOf("settleS" to 7))
+        assertEquals(listOf(3_000, 0, 7_000), renderer.requests.map { it.settleMs })
     }
 
     @Test fun `https is chosen for 443, 8443 and 5001 and for a port the scan saw TLS on`() {
@@ -128,7 +170,7 @@ class WebGalleryScriptTest {
         renderer.handler = { q, _ -> if (q.url.contains(":8080")) throw RenderFailure("The page took too long to load") else RenderedPage(200, "ok", q.url, renderer.jpeg) }
         val r = run(module(listOf(device(20, port(80), port(8080)), device(30, port(8080)), device(40, port(443)))))
         assertEquals(ToolRunStatus.DONE, r.status)
-        assertEquals("2 pages from 2 devices", r.summary)
+        assertEquals("2 pages from 2 devices, 2 did not answer", r.summary)
         assertEquals(4, renderer.requests.size)
         assertEquals(listOf("192.168.1.20", "192.168.1.40"), progress.findings.map { it.value })
     }
@@ -172,7 +214,7 @@ class WebGalleryScriptTest {
 
     @Test fun `every page the gallery opens passes the lan guard, so an address off the network is never offered to the renderer`() {
         val r = run(module(listOf(ScriptDevice("8.8.8.8", "", "dns", "", listOf(port(80))), device(20, port(80)))))
-        assertEquals("1 page from 1 device", r.summary)
+        assertEquals("1 page from 1 device, 1 did not answer", r.summary)
         assertEquals(listOf("http://192.168.1.20/"), urls())
     }
 
@@ -184,18 +226,20 @@ class WebGalleryScriptTest {
 
     @Test fun `the inputs and their defaults are as the catalog promises`() {
         val inputs = module(emptyList()).descriptor.inputs
-        assertEquals(listOf("ports", "onlyOpen", "timeoutS", "maxPages"), inputs.map { it.name })
+        assertEquals(listOf("ports", "onlyOpen", "timeoutS", "settleS", "maxPages"), inputs.map { it.name })
         val ports = inputs[0] as InputSpec.TextList
         assertEquals("80,443,8080,8443,8000,8008,8081,8096,8123,9000,5000,5001,32400", ports.default); assertEquals(false, ports.required)
         assertEquals(true, (inputs[1] as InputSpec.Bool).default)
         val timeout = inputs[2] as InputSpec.Number
         assertEquals(Triple(10, 3, 30), Triple(timeout.default, timeout.min, timeout.max))
-        val pages = inputs[3] as InputSpec.Number
+        val settle = inputs[3] as InputSpec.Number
+        assertEquals(Triple(3, 0, 10), Triple(settle.default, settle.min, settle.max))
+        val pages = inputs[4] as InputSpec.Number
         assertEquals(Triple(60, 1, 200), Triple(pages.default, pages.min, pages.max))
     }
 
     @Test fun `out of range inputs are refused by the form rules`() {
-        for (bad in listOf(mapOf("timeoutS" to 2), mapOf("timeoutS" to 31), mapOf("maxPages" to 0), mapOf("maxPages" to 201))) {
+        for (bad in listOf(mapOf("timeoutS" to 2), mapOf("timeoutS" to 31), mapOf("settleS" to -1), mapOf("settleS" to 11), mapOf("maxPages" to 0), mapOf("maxPages" to 201))) {
             val r = run(module(listOf(device(20, port(80)))), bad)
             assertEquals(bad.toString(), ToolRunStatus.FAILED, r.status)
         }

@@ -132,6 +132,8 @@ object ScriptCopy {
     const val SNAPSHOT_TIMEOUT = "The page took too long to load"
     const val SNAPSHOT_ENGINE_FAILED = "The page could not be shown"
     const val SNAPSHOT_STOPPED = "The snapshot was stopped"
+    const val SNAPSHOT_BLANK = "The page drew nothing"
+    fun snapshotHttpError(status: Int) = "The page answered with HTTP $status"
     fun snapshotLoadFailed(reason: String) = "The page could not be loaded: ${reason.take(IO_ECHO)}"
     const val IMAGE_UNKNOWN = "The image was not made by ctx.web.snapshot in this run"
 

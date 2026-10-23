@@ -29,7 +29,7 @@ class ScriptCopyTest {
         "The URL path must not contain spaces, backslashes or control characters",
         "ctx\\.devices needs a tool with the network set to lan or any",
         "Page snapshots are not available", "At most 200 page snapshots can be taken in one run", "Page snapshots can use at most 20 MB in one run", "The snapshot could not be saved",
-        "The page took too long to load", "The page could not be shown", "The snapshot was stopped", "The page could not be loaded: .{0,60}",
+        "The page took too long to load", "The page could not be shown", "The snapshot was stopped", "The page drew nothing", "The page answered with HTTP \\d{3}", "The page could not be loaded: .{0,60}",
         "The image was not made by ctx\\.web\\.snapshot in this run",
         // dns, findings, regex
         "The DNS lookup timed out", "The DNS lookup failed", "A finding link must start with http:// or https://",
@@ -65,7 +65,7 @@ class ScriptCopyTest {
             ScriptCopy.optionsExpected("ctx.udp.exchange"), ScriptCopy.wrongArgument("ctx.dns.lookup", 1, "string"), ScriptCopy.notABytes("ctx.tcp.exchange", "send"),
             ScriptCopy.tooManyBytes("ctx.tcp.exchange", "send"), ScriptCopy.BAD_HEX, ScriptCopy.BAD_BASE64, ScriptCopy.DEVICES_NEED_LAN,
             ScriptCopy.SNAPSHOT_UNAVAILABLE, ScriptCopy.SNAPSHOT_LIMIT, ScriptCopy.SNAPSHOT_SIZE_LIMIT, ScriptCopy.SNAPSHOT_SAVE_FAILED, ScriptCopy.SNAPSHOT_TIMEOUT,
-            ScriptCopy.SNAPSHOT_ENGINE_FAILED, ScriptCopy.SNAPSHOT_STOPPED, ScriptCopy.snapshotLoadFailed("net::ERR_CONNECTION_REFUSED"), ScriptCopy.snapshotLoadFailed(""), ScriptCopy.IMAGE_UNKNOWN, ScriptCopy.outOfRangeNumber(65535), ScriptCopy.READ_PAST_END, ScriptCopy.VALUE_TOO_LARGE, ScriptCopy.VALUE_TOO_DEEP,
+            ScriptCopy.SNAPSHOT_ENGINE_FAILED, ScriptCopy.SNAPSHOT_STOPPED, ScriptCopy.SNAPSHOT_BLANK, ScriptCopy.snapshotHttpError(503), ScriptCopy.snapshotLoadFailed("net::ERR_CONNECTION_REFUSED"), ScriptCopy.snapshotLoadFailed(""), ScriptCopy.IMAGE_UNKNOWN, ScriptCopy.outOfRangeNumber(65535), ScriptCopy.READ_PAST_END, ScriptCopy.VALUE_TOO_LARGE, ScriptCopy.VALUE_TOO_DEEP,
             ScriptCopy.VALUE_NOT_PLAIN, ScriptCopy.FUNCTION_NOT_ALLOWED, ScriptCopy.STRING_TOO_LONG, ScriptCopy.ARRAY_TOO_LONG, ScriptCopy.DYNAMIC_CODE_REFUSED, ScriptCopy.JAVA_ACCESS_REFUSED,
             ScriptCopy.REGEXP_REFUSED, ScriptCopy.HANDLE_CLOSED, ScriptCopy.TOO_MANY_HANDLES, ScriptCopy.noWordlistInput("words"),
             ScriptCopy.BAD_METHOD, ScriptCopy.TOO_MANY_HEADERS, ScriptCopy.badHeader("X-A"), ScriptCopy.TOO_MANY_REDIRECTS, ScriptCopy.badUrl("nope"), ScriptCopy.URL_NOT_HTTP,

@@ -366,19 +366,22 @@ ctx.devices().forEach(function (d) {
 ### web
 
 ```javascript
-ctx.web.snapshot({ url, timeoutMs, width })  // returns {status, title, finalUrl, image}
+ctx.web.snapshot({ url, timeoutMs, width, settleMs })  // returns {status, httpStatus, title, finalUrl, image, error}
 ```
 
 Opens the page in a hidden web view inside NetProbe, waits for it to load, and takes a picture of it. `url` is required and must be `http://` or `https://`. `timeoutMs` defaults to 15,000 and is clamped to 1,000 to 60,000. `width` is the width of the page in pixels as the page sees it; it defaults to 1,024 and is clamped to 320 to 2,048. The picture is scaled down to at most 640 pixels wide and saved as a JPEG.
+
+`settleMs` is how long to wait after the page has loaded before the picture is taken, so scripts on the page can finish drawing. It defaults to 2,500 and is clamped to 0 to 10,000; it is cut short if the overall timeout would run out. The web view is as tall as 1,600 pixels. A picture that is one flat colour gets one more settle period, and if it is still flat the page counts as having drawn nothing.
 
 The reply:
 
 | Field | Meaning |
 | --- | --- |
-| `status` | The HTTP status of the page itself. A page that answers 401 or 404 is still drawn. |
+| `status`, `httpStatus` | The HTTP status of the page itself, 0 when it never answered. |
+| `error` | Why there is no picture: "The page answered with HTTP 503", "The page could not be loaded: ..." or "The page drew nothing". Otherwise `null`. |
 | `title` | The page title, up to 200 characters. |
 | `finalUrl` | The address the page ended on after redirects. |
-| `image` | An image id. It is not a file name: pass it to `ctx.finding` as `extra.image` (see "finding"). |
+| `image` | An image id, or `null` when the page failed (an HTTP status of 400 or more, or a network error) or drew nothing. It is not a file name: pass it to `ctx.finding` as `extra.image` (see "finding"). A page with no picture writes nothing and counts against no limit. |
 
 The page runs JavaScript. Cookies, local storage, pop-up windows, downloads, file and content addresses are all off. The page is fetched with the app's normal user agent, and certificate errors are accepted, as they are for `ctx.http`.
 

@@ -2,7 +2,7 @@
 // A tool with no target: it walks the devices NetProbe has already found (ctx.devices) and opens each web port in a hidden web view
 // (ctx.web.snapshot). Run a port scan first so the devices have their open ports. Read-only: it only loads the pages.
 tool = {
-  id: "web-gallery", name: "Web gallery", version: "1.0", author: "NetProbe",
+  id: "web-gallery", name: "Web gallery", version: "1.1", author: "NetProbe",
   description: "Takes a picture of the web page of every device on your network.",
   icon: "web", category: "web",
   target: "none", network: "lan",
@@ -14,6 +14,8 @@ tool = {
     { name: "onlyOpen", type: "bool", label: "Only ports found open", default: true,
       help: "On: only ports that a port scan found open. Off: try every port in the list on every device, which is slow." },
     { name: "timeoutS", type: "number", label: "Seconds per page", default: 10, min: 3, max: 30 },
+    { name: "settleS", type: "number", label: "Seconds to let a page draw", default: 3, min: 0, max: 10,
+      help: "How long to wait after a page has loaded before taking its picture. Slow pages need more." },
     { name: "maxPages", type: "number", label: "Most pages", default: 60, min: 1, max: 200,
       help: "The run stops after trying this many pages." }
   ],
@@ -39,6 +41,7 @@ tool = {
     var onlyOpen = inputs.onlyOpen !== false;
     var maxPages = inputs.maxPages || 60;
     var timeoutMs = (inputs.timeoutS || 10) * 1000;
+    var settleMs = (typeof inputs.settleS === "number" ? inputs.settleS : 3) * 1000;
 
     // The pages to try, in device order: a device and a port at a time.
     var devices = ctx.devices();
@@ -64,7 +67,7 @@ tool = {
       }
     }
 
-    var pages = 0, tried = 0, shownDevices = {}, deviceCount = 0, stoppedBecause = null;
+    var pages = 0, tried = 0, shownDevices = {}, deviceCount = 0, silent = 0, stoppedBecause = null;
     ctx.progress(0, plan.length, 0);
     for (var p = 0; p < plan.length; p++) {
       if (ctx.cancelled()) { break; }
@@ -72,24 +75,30 @@ tool = {
       var item = plan[p];
       tried++;
       try {
-        var shot = ctx.web.snapshot({ url: item.url, timeoutMs: timeoutMs });
+        var shot = ctx.web.snapshot({ url: item.url, timeoutMs: timeoutMs, settleMs: settleMs });
         var name = item.device.name && item.device.name !== item.device.ip ? item.device.name + "  " + item.where : item.where;
-        var detail = shot.title ? shot.title : "No title";
-        if (shot.status >= 400) { detail += "  HTTP " + shot.status; }
         var link = shot.finalUrl && shot.finalUrl.indexOf("http") === 0 ? shot.finalUrl : item.url;
-        ctx.finding("page", name, detail, link, { image: shot.image });
-        pages++;
-        if (!shownDevices[item.device.ip]) { shownDevices[item.device.ip] = true; deviceCount++; }
+        if (!shot.image) {
+          // No picture: the page answered with an error or drew nothing. Only a login page is worth a line; the rest stay silent.
+          if (shot.httpStatus === 401 || shot.httpStatus === 403) { ctx.finding("page", name + "  login required", "HTTP " + shot.httpStatus, link); }
+          else { silent++; ctx.log(item.url + ": " + shot.error); }
+        } else {
+          ctx.finding("page", name, shot.title ? shot.title : "No title", link, { image: shot.image });
+          pages++;
+          if (!shownDevices[item.device.ip]) { shownDevices[item.device.ip] = true; deviceCount++; }
+        }
       } catch (e) {
         var message = String(e.message);
         if (message === "Page snapshots are not available") { return { status: "failed", summary: message }; }
         ctx.log(item.url + ": " + message);
         // A limit of the run itself (200 pictures or 20 MB): nothing more can be kept.
         if (message.indexOf("Page snapshots can use at most") === 0 || message.indexOf("At most 200 page snapshots") === 0) { stoppedBecause = message; break; }
+        silent++;
       }
       ctx.progress(tried, plan.length, pages);
     }
     var summary = pages + (pages === 1 ? " page" : " pages") + " from " + deviceCount + (deviceCount === 1 ? " device" : " devices");
+    if (silent > 0) { summary += ", " + silent + " did not answer"; }
     if (stoppedBecause) { summary += ", stopped: " + stoppedBecause; }
     return { status: "done", summary: summary };
   }

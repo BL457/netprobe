@@ -7,10 +7,18 @@ import com.northwalessolutions.netprobe.ui.tools.ScriptCopy
  * every resource the page asks for, before connecting, and must not fetch a URL it answered false for. [mainFrame] is true for the page
  * itself and its redirects, false for images, scripts and the like (a refused resource is simply left out of the picture).
  */
-class RenderRequest(val url: String, val timeoutMs: Int, val width: Int, val allow: (url: String, mainFrame: Boolean) -> Boolean)
+class RenderRequest(
+    val url: String, val timeoutMs: Int, val width: Int, val allow: (url: String, mainFrame: Boolean) -> Boolean,
+    /** How long to wait after the page finished loading before drawing, inside [timeoutMs]. */
+    val settleMs: Int = SnapshotLimits.DEFAULT_SETTLE_MS,
+)
 
-/** A drawn page: the HTTP status of the page itself, its title, the address it ended on and the picture as JPEG, at most [SnapshotLimits.MAX_IMAGE_WIDTH] wide. */
-class RenderedPage(val status: Int, val title: String, val finalUrl: String, val jpeg: ByteArray)
+/**
+ * A page that was loaded: the HTTP status of the page itself (0 when it never answered), its title, the address it ended on and the picture as
+ * JPEG, at most [SnapshotLimits.MAX_IMAGE_WIDTH] wide. When the main frame failed (a network error, or a status of 400 or more) or drew nothing,
+ * [jpeg] is null and [error] says why.
+ */
+class RenderedPage(val status: Int, val title: String, val finalUrl: String, val jpeg: ByteArray?, val error: String? = null)
 
 /** A page that could not be drawn (no connection, a timeout, no web view on the phone). The script sees the message as a catchable error. */
 class RenderFailure(message: String) : ScriptHostError(message)
@@ -36,8 +44,36 @@ object SnapshotLimits {
     const val DEFAULT_WIDTH = 1024
     const val MIN_WIDTH = 320
     const val MAX_WIDTH = 2048
+    const val DEFAULT_SETTLE_MS = 2_500
+    const val MAX_SETTLE_MS = 10_000
     const val DEFAULT_TIMEOUT_MS = 15_000
     const val MIN_TIMEOUT_MS = 1_000
     const val MAX_TIMEOUT_MS = 60_000
     const val MAX_TITLE_CHARS = 200
+}
+
+/** How long the renderer may wait between the page finishing and drawing. */
+object SettleTime {
+    /** Room kept at the end of the overall timeout to draw and compress. */
+    const val DRAW_MARGIN_MS = 500L
+    /** [wantedMs] cut so it fits in [remainingMs] of the overall timeout; never negative. */
+    fun clip(wantedMs: Int, remainingMs: Long): Long = minOf(wantedMs.toLong(), remainingMs - DRAW_MARGIN_MS).coerceAtLeast(0L)
+}
+
+/** The "has the page drawn anything" test, on a small copy of the picture. */
+object BlankCheck {
+    private const val CHANNEL_TOLERANCE = 2
+    private const val SHIFT_RED = 16
+    private const val SHIFT_GREEN = 8
+    private const val MASK = 0xFF
+
+    /** True when every pixel (ARGB ints) is the same colour, give or take [CHANNEL_TOLERANCE] per channel, or there are none. */
+    fun isFlat(pixels: IntArray): Boolean {
+        if (pixels.isEmpty()) return true
+        val first = pixels[0]
+        return pixels.all { close(it, first) }
+    }
+
+    private fun channel(p: Int, shift: Int) = (p shr shift) and MASK
+    private fun close(a: Int, b: Int): Boolean = listOf(SHIFT_RED, SHIFT_GREEN, 0).all { Math.abs(channel(a, it) - channel(b, it)) <= CHANNEL_TOLERANCE }
 }

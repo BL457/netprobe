@@ -42,7 +42,7 @@ class HostWebTest {
     @Test fun `a snapshot returns the documented shape and stores a jpeg under the run folder`() {
         val st = store(); val h = harness(st)
         renderer.handler = { r, _ -> RenderedPage(401, "Router login", r.url + "login", renderer.jpeg) }
-        assertEquals("""{"status":401,"title":"Router login","finalUrl":"http://192.168.1.9/login","image":"img1"}""",
+        assertEquals("""{"status":401,"httpStatus":401,"title":"Router login","finalUrl":"http://192.168.1.9/login","image":"img1","error":null}""",
             json(h, "return json(ctx.web.snapshot({ url: 'http://192.168.1.9/' }));"))
         val file = st.fileFor("7/1.jpg")
         assertNotNull(file); assertEquals(renderer.jpeg.toList(), file!!.readBytes().toList())
@@ -183,6 +183,54 @@ class HostWebTest {
     }
 
     // Failure and Stop
+
+    @Test fun `a page that failed has no image, no file, no charge and does not use up the caps`() {
+        val st = store(); val h = harness(st, limits = ScriptLimits(maxTransferBytes = 10, findingsPerSecond = 1_000_000, findingsBurst = 1_000_000))
+        renderer.handler = { r, _ -> RenderedPage(503, "Unavailable", r.url, null, "The page answered with HTTP 503") }
+        assertEquals("""{"status":503,"httpStatus":503,"title":"Unavailable","finalUrl":"http://192.168.1.9/","image":null,"error":"The page answered with HTTP 503"}""",
+            json(h, "var r = ctx.web.snapshot({ url: 'http://192.168.1.9/' }); for (var i = 0; i < 300; i++) { ctx.web.snapshot({ url: 'http://192.168.1.9/' }); } return json(r);"))
+        assertNull(st.fileFor("7/1.jpg"))
+        renderer.handler = { r, _ -> RenderedPage(200, "ok", r.url, renderer.jpeg) }
+        assertEquals("\"img1\"", json(h, "return json(ctx.web.snapshot({ url: 'http://192.168.1.9/' }).image);"))
+        assertNotNull(st.fileFor("7/1.jpg"))
+    }
+
+    @Test fun `a successful page reports its status twice and a null error`() {
+        val h = harness()
+        assertEquals("""{"status":200,"httpStatus":200,"image":"img1","error":null}""",
+            json(h, "var r = ctx.web.snapshot({ url: 'http://192.168.1.9/' }); return json({ status: r.status, httpStatus: r.httpStatus, image: r.image, error: r.error });"))
+    }
+
+    @Test fun `a failed page that ended off the network is still refused`() {
+        val h = harness()
+        renderer.handler = { _, _ -> RenderedPage(500, "x", "http://8.8.8.8/", null, "e") }
+        assertEquals("\"This tool can only contact addresses on the current network\"", json(h, "return json(msg(function () { ctx.web.snapshot({ url: 'http://192.168.1.9/' }); }));"))
+    }
+
+    @Test fun `the settle time defaults to 2500 ms and is clamped to 0 to 10000`() {
+        val h = harness()
+        json(h, "ctx.web.snapshot({ url: 'http://192.168.1.9/' }); ctx.web.snapshot({ url: 'http://192.168.1.9/', settleMs: 0 }); ctx.web.snapshot({ url: 'http://192.168.1.9/', settleMs: -5 }); ctx.web.snapshot({ url: 'http://192.168.1.9/', settleMs: 99999 }); return json(1);")
+        assertEquals(listOf(2_500, 0, 0, 10_000), renderer.requests.map { it.settleMs })
+    }
+
+    @Test fun `settle time is cut to fit the timeout and never goes negative`() {
+        assertEquals(2_500L, SettleTime.clip(2_500, 10_000))
+        assertEquals(1_500L, SettleTime.clip(2_500, 2_000))
+        assertEquals(0L, SettleTime.clip(2_500, 500))
+        assertEquals(0L, SettleTime.clip(2_500, -3_000))
+        assertEquals(0L, SettleTime.clip(0, 10_000))
+    }
+
+    @Test fun `a flat picture is blank, a picture with any real difference is not`() {
+        val white = 0xFFFFFFFF.toInt()
+        assertTrue(BlankCheck.isFlat(IntArray(256) { white }))
+        assertTrue(BlankCheck.isFlat(IntArray(256) { 0xFF000000.toInt() }))
+        assertTrue("noise of one level is still flat", BlankCheck.isFlat(IntArray(256) { if (it % 2 == 0) white else 0xFFFEFEFE.toInt() }))
+        assertTrue(BlankCheck.isFlat(IntArray(0)))
+        assertFalse("a logo on white", BlankCheck.isFlat(IntArray(256) { if (it == 40) 0xFF336699.toInt() else white }))
+        assertFalse("white and black", BlankCheck.isFlat(IntArray(256) { if (it < 128) white else 0xFF000000.toInt() }))
+        assertFalse("a dark grey page is not white", BlankCheck.isFlat(IntArray(256) { if (it == 0) white else 0xFF202020.toInt() }))
+    }
 
     @Test fun `a page that cannot be drawn is an error the script can catch`() {
         val h = harness()
