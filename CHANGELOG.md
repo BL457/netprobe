@@ -7,6 +7,7 @@ Release notes for every NetProbe version, newest first. The section for a versio
 - First catalog tool: Wake on LAN. Pick a sleeping device and its MAC address is filled in for you.
 - Scripts can declare broadcast: true to send to your network's broadcast address, and device tools now receive the device's MAC as inputs.mac. The guide covers both.
 - Directory brute-force can recurse into the folders it finds, down to a depth you choose.
+- Identify service and Identify all services now try every known hello on a manual run instead of stopping at six, with no time limit. A new Settings switch, Include unsafe Hellos on service identification (off by default), adds the hellos that can upset fragile devices.
 
 ## 0.4.0
 - The Tools tab is now a grid of tiles grouped by category. Pick a tool, then fill in only the inputs that tool needs.

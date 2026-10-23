@@ -24,7 +24,7 @@ class ToolCopyTableTest {
         // Identify all services and the port row action (R2)
         "No services recognised", "port \\d+ of \\d+", "\\d+ of \\d+ ports named", "\\d+: not recognised", "\\d+: .+", "Identify", "Identifying", "Identify service on port \\d+", "all open ports",
         // Identify service (3E)
-        "[a-z0-9-]+: \\d+ bytes?, .+", "[a-z0-9-]+: .+", ".+, \\d+ probes?", "No service recognised, \\d+ probes?", "probe \\d+ of \\d+",
+        "[a-z0-9-]+: \\d+ bytes?, .+", "[a-z0-9-]+: .+", ".+, \\d+ probes?", "No service recognised, \\d+ probes?", "probe \\d+ of \\d+", "Include unsafe Hellos on service identification", "Unsafe hellos can upset fragile devices.+",
         "Tools", "\\d+ available", "Last run .+: .+ on (\\d+|UDP 161), .+", "No tools run yet", "Tools, \\d+ available, (expand|collapse)",
         "Last run .+ on (\\d+|UDP 161): .+", "Not run yet", "Results", "Show .+ results", "\\d+", "UDP 161", "Run .+ on port (\\d+|UDP 161)", "Run tool",
         // busy, Home, Quick scan all
@@ -135,7 +135,7 @@ class ToolCopyTableTest {
         addAll(listOf(ToolCopy.probeLine("redis-info", 312, "Redis 7.2.4"), ToolCopy.probeLine("ssh", 1, null), ToolCopy.probeLine("null", 0, null),
             ToolCopy.stackLine("home-assistant", "Home Assistant", null), ToolCopy.stackLine("jenkins", "Jenkins", "2.4"),
             ToolCopy.identifySummary("Redis", "Redis", "7.2.4", 3), ToolCopy.identifySummary("HTTP", "nginx", null, 1), ToolCopy.identifySummary("SSH", "OpenSSH", "8.2p1", 2),
-            ToolCopy.identifyNone(1), ToolCopy.identifyNone(5), ToolCopy.identifyProgress(2, 6),
+            ToolCopy.identifyNone(1), ToolCopy.identifyNone(5), ToolCopy.identifyProgress(2, 6), ToolCopy.UNSAFE_HELLOS_LABEL, ToolCopy.UNSAFE_HELLOS_SUPPORT,
             ToolCopy.IDENTIFY_ALL_NONE, ToolCopy.identifyAllProgress(0, 5), ToolCopy.identifyAllProgress(5, 5), ToolCopy.identifyAllSummary(3, 7),
             ToolCopy.identifyAllLine(22, true, "SSH", "OpenSSH", "9.6p1"), ToolCopy.identifyAllLine(6379, true, "Redis", "Redis", null), ToolCopy.identifyAllLine(9999, false, "Unknown", null, null),
             ToolCopy.IDENTIFY_PORT, ToolCopy.IDENTIFYING, ToolCopy.identifyPortDescription(443),

@@ -129,6 +129,8 @@ object ToolCopy {
         return "${parts.joinToString(" ")}, ${probes(n)}"
     }
     fun identifyNone(n: Int) = "No service recognised, ${probes(n)}"
+    const val UNSAFE_HELLOS_LABEL = "Include unsafe Hellos on service identification"
+    const val UNSAFE_HELLOS_SUPPORT = "Unsafe hellos can upset fragile devices such as printers and controllers. Off, only safe ones are sent."
     fun identifyProgress(n: Int, m: Int) = "probe $n of $m"
 
     // Identify all services (Director ruling R2)

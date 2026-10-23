@@ -31,16 +31,18 @@ class IdentifyAllServicesToolTest {
     private val identifier = ServiceIdentifier(table, ServiceProbes(probes, net::transport, clock = { net.clock.now }))
     private val applied = mutableListOf<Triple<Long, Int, ServiceInfo>>()
     private var budgetSeen: ActiveProbeBudget? = null
+    private var unsafe = false
     private var onApplied: (Int) -> Unit = {}
     private var storedPorts = listOf(9999, 22, 6379)
     private val tool = IdentifyAllServicesTool(
         portsFor = { storedPorts },
-        identify = { t, budget, onProbe ->
+        identify = { t, budget, limits, onProbe ->
             budgetSeen = budget
-            identifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe)
+            identifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true, limits = limits), hostId = t.hostId, onProbe = onProbe)
         },
+        unsafeHellos = { unsafe },
         apply = { h, p, i -> applied += Triple(h, p, i); onApplied(applied.size) },
-        newBudget = { ActiveProbeBudget(IdentifyAllServicesTool.MAX_PORTS, IdentifyAllServicesTool.WALL_MS, IdentifyAllServicesTool.WALL_MS) { net.clock.now } })
+        newBudget = { ActiveProbeBudget(IdentifyAllServicesTool.MAX_PORTS, IdentifyAllServicesTool.NO_WALL_MS, IdentifyAllServicesTool.NO_WALL_MS) { net.clock.now } })
     private fun target() = ToolTarget(9, ip("10.0.3.59"), 0, tls = false, serverName = null)
     private fun script() {
         net.respond = { port, _, sent ->
@@ -71,7 +73,7 @@ class IdentifyAllServicesToolTest {
         assertEquals(3, p.lastDone); assertEquals(3, p.lastTotal); assertEquals(2, p.lastFound)
         assertEquals(listOf("22: SSH OpenSSH 9.6p1", "6379: Redis 7.2.4", "9999: not recognised"), p.of(FindingKind.PROBE).map { it.value })
         assertEquals("one shared budget for the whole host", 64, budgetSeen!!.maxPorts)
-        assertEquals(60_000L, budgetSeen!!.maxMs); assertEquals(60_000L, budgetSeen!!.hostWallMs)
+        assertEquals(Long.MAX_VALUE, budgetSeen!!.maxMs); assertEquals(Long.MAX_VALUE, budgetSeen!!.hostWallMs)
     }
     @Test fun `a silent host says nothing was recognised`() = runTest {
         storedPorts = listOf(9999)

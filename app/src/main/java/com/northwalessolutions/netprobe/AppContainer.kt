@@ -276,11 +276,14 @@ class AppContainer(val context: Context) {
         add(SmbSessionTool(connect = { t -> SmbSessionTool.tcpConnect(t) }))
         add(SnmpWalkTool(exchangeFor = { t, snmp -> UdpSnmpExchange(t.ip, community = snmp.community, version = snmp.version) }))
         add(IdentifyServiceTool(
-            identify = { t, budget, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe) },
+            identify = { t, budget, limits, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true, limits = limits), hostId = t.hostId, onProbe = onProbe) },
+            plannedProbes = { port, limits -> serviceIdentifier.plannedProbes(port, limits) },
+            unsafeHellos = { settings.state.value.unsafeHellos },
             apply = { hostId, port, info -> ports.applyIdentify(hostId, port, info) }))
         add(IdentifyAllServicesTool(
             portsFor = { hostId -> ports.servicesFor(hostId).keys.toList() },
-            identify = { t, budget, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe) },
+            unsafeHellos = { settings.state.value.unsafeHellos },
+            identify = { t, budget, limits, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true, limits = limits), hostId = t.hostId, onProbe = onProbe) },
             apply = { hostId, port, info -> ports.applyIdentify(hostId, port, info) }))
     }
     /** The chosen list, else common-short (spec 5.1, 11.10); streams through withEntries, so a list is never loaded whole. */

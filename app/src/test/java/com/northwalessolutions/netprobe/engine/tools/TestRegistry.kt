@@ -12,8 +12,8 @@ object TestRegistry {
         TlsCertificateTool(peek = { _, _ -> null }),
         SmbSessionTool(connect = { null }),
         SnmpWalkTool(exchangeFor = { _, _ -> unused() }),
-        IdentifyServiceTool(identify = { _, _, _ -> unused() }, apply = { _, _, _ -> }),
-        IdentifyAllServicesTool(portsFor = { emptyList() }, identify = { _, _, _ -> unused() }, apply = { _, _, _ -> }),
+        IdentifyServiceTool(identify = { _, _, _, _ -> unused() }, plannedProbes = { _, _ -> 0 }, apply = { _, _, _ -> }),
+        IdentifyAllServicesTool(portsFor = { emptyList() }, identify = { _, _, _, _ -> unused() }, apply = { _, _, _ -> }),
     )
     fun registry(): ToolRegistry = ToolRegistry(builtIns())
 }

@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import com.northwalessolutions.netprobe.ui.OpenUrl
+import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -206,6 +207,7 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions, banner: @Composabl
             }
             ToolsSection(imported = ui.importedWordlists, onOpenWordlists = actions.onOpenWordlists, onImportTool = actions.onImportTool, onUpdateFromGitHub = actions.onUpdateFromGitHub, myTools = ui.myTools,
                          onRemoveTool = { key -> actions.onRemoveTool(key) { msg -> scope.launch { snackbar.showSnackbar(msg) } } })
+            SwitchRow(ToolCopy.UNSAFE_HELLOS_LABEL, s.unsafeHellos, ToolCopy.UNSAFE_HELLOS_SUPPORT) { v -> update { it.copy(unsafeHellos = v) } }
 
             Section(UpdateCopy.SETTINGS_SECTION)
             SwitchRow(UpdateCopy.AUTO_LABEL, s.updateAuto, UpdateCopy.AUTO_SUPPORT) { v -> update { it.copy(updateAuto = v) } }
