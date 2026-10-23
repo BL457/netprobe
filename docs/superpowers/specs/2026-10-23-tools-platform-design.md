@@ -1,0 +1,104 @@
+# NetProbe tools platform design (2026-10-23)
+
+Director brief 2026-10-23: the Tools tab "doesn't feel great to work with". Make it tile based, make it modular so people can make and import their own tools, show inputs per tool (IP and Port are not always relevant), and rewrite the current tools in the modular format. Rulings from the discussion: user tools are scripts (JavaScript), the script declares its inputs and their types and the app renders them; import from a file or a URL; results show on the tool page and in Scans history. Work happens on branch `tools-platform`; nothing is published until the Director has tested it.
+
+Lean workflow: this spec is the plan. One Gruff pass (sandbox and network safety), then sonnet batches.
+
+## 1. Goals and non-goals
+- One tool model for built-in and imported tools: a descriptor (id, name, description, icon, category, inputs, target kind) plus a run function.
+- Tools tab: a grid of tiles, then a tool page whose form is generated from the descriptor, Run pinned at the bottom, progress and findings on the same page, the run also in Scans.
+- Imported tools are JavaScript files run by an embedded engine inside a sandbox with a small host API (network, bytes, regex, findings).
+- Existing tools keep working from the device page and keep their history (same tool keys in the database).
+- Non-goals: a tool marketplace, editing scripts inside the app, running tools in the background service, tools that modify the device.
+
+## 2. Decisions
+- D1 Engine: Mozilla Rhino (`org.mozilla:rhino`), pure JVM, interpreted mode on Android. Try 1.9.1 first; if it does not run on the device (class file version or missing java.lang.invoke support), fall back to 1.7.15, which is proven on Android. This is the one new dependency, approved by the Director on 2026-10-23. The engine sits behind a `ScriptEngine` interface so Lua could be added later.
+- D2 Script contract: a tool file is a JavaScript program that assigns a `tool` object (section 4). The host reads the descriptor once at import (and at app start for installed tools) and calls `tool.run(inputs, ctx)` per run.
+- D3 Sandbox: `Context.initSafeStandardObjects`, a `ClassShutter` that denies every Java class, no `java`/`Packages`/`importClass` globals, no `eval` of host strings, instruction-count observer every 10k instructions to honour Stop and a wall-clock budget, script size cap 256 KB, string results capped at 1 MB. Scripts run on the tool dispatcher thread, one Rhino Context per run, never on the main thread.
+- D4 Network scope: a script may only open connections to the run's target host unless its descriptor declares `network: "lan"` (any private address on the current network) or `network: "any"`. The scope is shown on the tile and at import ("This tool can contact any address"). Host API calls outside the scope throw.
+- D5 Tool identity: the `ToolId` enum is replaced by a string key. Built-in keys are unchanged (`dir-bruteforce`, `http-fingerprint`, `tls-certificate`, `smb-session`, `snmp-walk`, `identify-service`, `identify-all-services`), so history rows keep resolving. Imported tool keys are `user:<slug>` where the slug comes from the descriptor id, validated `[a-z0-9-]{3,40}`; a clash with a built-in key is refused at import.
+- D6 Targets: a descriptor declares `target: "port" | "host" | "none"`. Port tools get a device picker plus a port picker (open ports of that device, or typed); host tools get the device picker; none-target tools get neither. Runs without a host have `hostId = null` (schema 6). The host-busy claim applies only when there is a host; `MAX_ACTIVE_RUNS` applies to all.
+- D7 Inputs: types `ip`, `port`, `text`, `number`, `bool`, `choice`, `wordlist`, `tls`. Each has `name`, `label`, optional `help`, `required` (default true), `default`, and type-specific fields (`min` and `max` for number, `options` for choice, `placeholder` for text). The `ip` and `port` inputs are implicit for `target: "port"` (both) and `target: "host"` (ip only), rendered as pickers; a tool may add more inputs of any type. `wordlist` renders the existing wordlist chooser and gives the script an array of lines.
+- D8 Built-ins stay Kotlin. They are rewritten as modules against the new `ToolModule` interface with real descriptors (inputs replace the one-off DirBrute sheet: wordlist, extensions, method, concurrency, timeout, status codes, baseline become declared inputs with the same defaults). SMB, SNMP and TLS parsing are not worth re-expressing in JavaScript. Three bundled example scripts ship in `assets/tools/` so the format has working references: `http-headers.js` (port tool), `banner-grab.js` (port tool, raw TCP), `dns-lookup.js` (none-target, text input). They appear under an "Examples" category and can be copied out of the app from the tool's About page.
+- D9 Storage: imported scripts live in `files/tools/<slug>.js` with `files/tools/index.json` (slug, name, version, source URL or file name, imported at, network scope, sha256). The script text is re-read at app start; a file that no longer parses is listed as broken, not loaded, and can be removed.
+- D10 Import: Settings > Tools > "Import tool" and the Tools tab overflow both offer "From file" (system picker) and "From URL" (https only, fetched when the user taps Import, 256 KB cap, reuses the updater fetcher). After the fetch the app shows the descriptor (name, version, author, description, inputs, network scope) and asks to confirm before saving. Re-importing the same slug replaces the file after a confirmation.
+- D11 Findings: `ctx.finding(kind, value, detail, url)` with kind one of the existing `FindingKind` names, or any string (stored as OTHER with the script's kind in `extra.kind`). The existing results sheet rows render them.
+- D12 No new permissions. The file picker uses the Storage Access Framework. URL import and script network calls use the existing INTERNET permission and the manual-route binding used by manual tools today.
+
+## 3. Tool model (Kotlin)
+```kotlin
+data class ToolDescriptor(val key: String, val name: String, val description: String, val icon: ToolIcon, val category: ToolCategory,
+    val target: TargetKind, val inputs: List<InputSpec>, val network: NetworkScope, val version: String, val author: String?, val source: ToolSource)
+enum class ToolCategory { WEB, NETWORK, IDENTITY, EXAMPLES, MINE }
+enum class TargetKind { PORT, HOST, NONE }
+enum class NetworkScope { TARGET, LAN, ANY }
+sealed interface ToolSource { object BuiltIn : ToolSource; data class Script(val file: File, val sha256: String) : ToolSource }
+sealed interface InputSpec { val name: String; val label: String; val help: String?; val required: Boolean /* plus per-type fields */ }
+data class ToolInputs(val values: Map<String, Any?>)   // validated, typed values keyed by input name; ip as Inet4Address, port as Int, wordlist as WordlistRef
+interface ToolModule {
+    val descriptor: ToolDescriptor
+    fun applies(port: Int, service: ServiceInfo): Boolean          // device page per-port buttons; NONE and HOST tools return false
+    fun appliesToHost(host: HostEntity): Boolean
+    suspend fun run(target: ToolTarget?, inputs: ToolInputs, control: RunControl, progress: ToolProgress): ToolResult
+}
+class ToolRegistry(builtIns: List<ToolModule>, scripts: ScriptToolStore) { val all: StateFlow<List<ToolModule>>; fun byKey(key: String): ToolModule? }
+```
+- `ToolRunner` takes `ToolRegistry` instead of `Map<ToolId, Tool>` and a nullable `ToolTarget`. `optionsJson` becomes the JSON of `ToolInputs` (values by name; wordlist stored as id, name and entry count as today). `ToolOptions` is removed; the dir-brute options sheet is replaced by the generated form, and the form remembers the last inputs per tool key (this replaces `DirBruteOptionsStore`).
+- `ToolApplicability` keeps its port rules but answers for keys; `toolsFor` returns the registry's PORT tools whose `applies` is true, built-ins first.
+
+## 4. Script contract (JavaScript)
+```javascript
+tool = {
+  id: "http-headers", name: "HTTP headers", version: "1.0", author: "BL457",
+  description: "Fetches / and lists the response headers.",
+  icon: "web", category: "web",            // icon from the fixed icon set (section 6); category web, network, identity or other
+  target: "port", network: "target",       // target: port, host or none; network: target, lan or any
+  inputs: [
+    { name: "path", type: "text", label: "Path", default: "/", required: false },
+    { name: "tls", type: "tls", label: "Use HTTPS" }
+  ],
+  run: function (inputs, ctx) {
+    var r = ctx.http.request({ method: "GET", url: (inputs.tls ? "https" : "http") + "://" + inputs.ip + ":" + inputs.port + inputs.path, timeoutMs: 4000 });
+    ctx.progress(1, 1, 0);
+    Object.keys(r.headers).forEach(function (h) { ctx.finding("HEADER", h + ": " + r.headers[h]); });
+    return { status: "done", summary: r.status + " " + r.statusText };
+  }
+};
+```
+Host API (`ctx`), all synchronous from the script's point of view; each call runs `control.gate()` first and honours cancellation:
+- `ctx.http.request({method, url, headers, body, timeoutMs, followRedirects})` returns `{status, statusText, headers, body, bodyBytes, url, timeMs}`; body capped at 1 MB. `ctx.http.many(requests, concurrency)` runs up to 16 at once and returns results in order; this is how a brute-force stays fast without threads in the script.
+- `ctx.tcp.exchange({host, port, send, timeoutMs, readUntil or maxBytes, tls, sni})` returns `{bytes, text, closed, timeMs}`; `ctx.tcp.connect` returns a handle with `send`, `recv`, `close` for multi-step protocols.
+- `ctx.udp.exchange({host, port, send, timeoutMs, maxBytes})`.
+- `ctx.tls.certificate(host, port, sni)` returns the parsed leaf and chain (subject, issuer, SANs, validity, key, signature, fingerprints) using the existing TLS tool parser.
+- `ctx.dns.lookup(name)` and `ctx.dns.reverse(ip)`.
+- `ctx.bytes`: `fromHex`, `toHex`, `fromUtf8`, `toUtf8`, `concat`, `u16be`, `u32be`, `u16le`, `u32le` and matching readers, so SMB-style and SNMP-style packets can be built.
+- `ctx.wordlist(name)` resolves a `wordlist` input to an array; `ctx.progress(done, total or null, found)`; `ctx.finding(kind, value, detail, url)`; `ctx.log(text)` (kept with the run only when the tool fails, otherwise discarded); `ctx.sleep(ms)`; `ctx.cancelled()`.
+- `run` returns `{status: "done" or "failed", summary}`; a thrown error ends the run FAILED with the error message as the summary. Returning nothing means done, with the finding count as the summary.
+
+## 5. UI
+- Tools tab root: title row, overflow (Import tool, Wordlists), then a grid of tiles (2 columns on a phone), grouped by category with headers; a tile shows icon, name, one line, and a small badge for network scope ANY and for MINE. Long-press a tile: About, Remove (MINE only), Copy source (scripts).
+- Tool page: name and description, the generated form (device picker with search over discovered devices, port picker listing that device's open ports with service names plus a typed port, then the tool's own inputs in declared order), Run pinned at the bottom outside the scroll, replaced by progress and Stop while running (the pinned-controls rule). Below the form: the live progress line, then findings as they arrive using the results sheet rows, then "Previous runs" for this tool. Back returns to the grid.
+- The device page keeps its per-port tool buttons and the host-level Identify all services; they open the tool page with the device and port prefilled, or run directly when the tool has no further inputs (today's behaviour).
+- Scans tab unchanged apart from tool names coming from the registry.
+- Settings: a "Tools" group with Import tool and the My tools list (name, version, scope, Remove).
+
+## 6. Icons
+Fixed named set mapped to Material icons, chosen by me and shown to the Director in the hand-over: `web` (Language), `search` (Search), `lock` (Lock), `folder` (FolderOpen), `share` (Share), `dns` (Dns), `terminal` (Terminal), `fingerprint` (Fingerprint), `network` (Lan), `wifi` (Wifi), `info` (Info), `bolt` (Bolt). Unknown icon names fall back to `terminal`.
+
+## 7. Data
+- Schema 6: `tool_runs.hostId` becomes nullable; `MIGRATION_5_6` recreates the table (SQLite cannot drop NOT NULL), preserving rows and the foreign key with ON DELETE CASCADE; the findings table is untouched. Exported schema 6.json committed.
+- `files/tools/index.json` as in D9. Last-used inputs per tool key in the `netprobe` SharedPreferences as JSON.
+
+## 8. Safety
+- Scripts cannot reach Java, the file system, the clipboard or Android APIs: only `ctx`.
+- Network scope (D4) checked on every host API call against the run target and the current network's known ranges; DNS names in `http.request` are resolved first and the resolved address is checked.
+- Budgets per run: wall clock 10 minutes, 20,000 host API calls, response bodies 1 MB each, 50 MB total transferred, findings 5,000. Exceeding a budget ends the run FAILED with a clear summary.
+- Import shows the descriptor and scope before saving; nothing executes at import beyond evaluating the file to read `tool` (that evaluation runs inside the same sandbox with a 2 s budget and no `ctx`).
+- Imported scripts are never fetched or updated automatically.
+
+## 9. Batches (sonnet, gate per batch, no per-task reviews)
+- B1 Model and runner: ToolDescriptor, InputSpec, ToolInputs, ToolModule, ToolRegistry; schema 6; ToolRunner on the registry with nullable targets; built-ins rewritten as modules (dir-brute inputs replace ToolOptions.DirBrute; options JSON keeps the same field names so history and export still read); ToolApplicability by key; all existing tests green or updated.
+- B2 Engine: Rhino dependency with the 1.9.1 then 1.7.15 rule, `ScriptEngine` interface, sandbox, instruction observer, host API, `ScriptToolModule`, descriptor parsing and validation, budgets, network scope, three example scripts loaded from assets, JVM tests with a fake transport for every host API call and for every refusal.
+- B3 UI: grid, tool page with generated form and pickers, pinned Run and Stop, inline progress and findings, previous runs; device page and Scans wiring; Copy objects and template tests.
+- B4 Import and management: ScriptToolStore (files, index, broken entries), import from file and URL with the confirmation sheet, My tools in Settings, long-press actions, last-used inputs.
+- B5 Device pass by the Director on a release-signed test build; fixes; CHANGELOG section; merge to master and publish only on his word.
