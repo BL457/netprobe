@@ -15,6 +15,11 @@ the same screen.
   `user:password` pairs you give it) against it. It stops at the first working login unless you turn that off, and it reports a
   lockout instead of carrying on if the device starts answering with one. It never changes anything on the device.
 
+- **Web gallery** (`web-gallery.js`) takes a picture of the web page of every device on your network. It needs no target: it walks the
+  devices NetProbe has already found (run a port scan first so they have their open ports), opens each web port in a hidden web view,
+  and shows one thumbnail per page, with the page title under it. Tap a thumbnail to see it full size. By default it looks only at
+  ports a scan found open and stops after 60 pages; both are inputs. It only loads pages and stays inside your network.
+
 ## Contributing a tool
 
 1. Write the script by following [docs/tools-scripting.md](../docs/tools-scripting.md). Import it into the app from a file and run it on
