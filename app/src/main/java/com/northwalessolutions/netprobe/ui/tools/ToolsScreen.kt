@@ -62,6 +62,7 @@ fun ToolsScreen(container: AppContainer, onOpenTool: (String) -> Unit, onOpenWor
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var about by remember { mutableStateOf<ToolAboutInfo?>(null) }
+    var removing by remember { mutableStateOf<String?>(null) }
     fun copySource(key: String) {
         val module = modules.firstOrNull { it.descriptor.key == key } as? ScriptToolModule ?: return
         clipboard.copy(module.source)
@@ -70,8 +71,13 @@ fun ToolsScreen(container: AppContainer, onOpenTool: (String) -> Unit, onOpenWor
     ToolsGridContent(groups, ToolsGridActions(
         onOpenTool = onOpenTool, onWordlists = onOpenWordlists,
         onAbout = { key -> about = modules.firstOrNull { it.descriptor.key == key }?.let { ToolGrid.about(it.descriptor) } },
-        onCopySource = ::copySource, onImport = container.toolImport::open), snackbar = snackbar)
+        onCopySource = ::copySource, onRemove = { key -> removing = key }, onImport = container.toolImport::open), snackbar = snackbar)
     ToolImportHost(container.toolImport, onNotice = { msg -> scope.launch { snackbar.showSnackbar(msg) } })
+    removing?.let { key ->
+        val name = modules.firstOrNull { it.descriptor.key == key }?.descriptor?.name
+        if (name == null) removing = null
+        else RemoveToolDialog(name, onConfirm = { removing = null; container.removeTool(key) { msg -> scope.launch { snackbar.showSnackbar(msg) } } }, onDismiss = { removing = null })
+    }
     about?.let { info ->
         ToolAboutDialog(info, canCopy = modules.any { it.descriptor.key == info.key && it is ScriptToolModule },
             onCopy = { copySource(info.key) }, onDismiss = { about = null })
@@ -128,6 +134,7 @@ private fun ToolTileCard(tile: ToolTile, actions: ToolsGridActions) {
                 customActions = buildList {
                     add(CustomAccessibilityAction(ToolsUiCopy.ABOUT) { actions.onAbout(tile.key); true })
                     if (tile.script) add(CustomAccessibilityAction(ToolsUiCopy.COPY_SOURCE) { actions.onCopySource(tile.key); true })
+                    if (tile.mine) add(CustomAccessibilityAction(ToolsUiCopy.REMOVE) { actions.onRemove(tile.key); true })
                 }
             }
             .testTag("tile:${tile.key}").padding(TILE_PAD)) {
@@ -145,8 +152,8 @@ private fun ToolTileCard(tile: ToolTile, actions: ToolsGridActions) {
         DropdownMenu(menu, { menu = false }, containerColor = NetProbeColors.surface) {
             DropdownMenuItem(text = { Text(ToolsUiCopy.ABOUT) }, onClick = { menu = false; actions.onAbout(tile.key) }, modifier = Modifier.testTag("tileAbout:${tile.key}"))
             if (tile.script) DropdownMenuItem(text = { Text(ToolsUiCopy.COPY_SOURCE) }, onClick = { menu = false; actions.onCopySource(tile.key) }, modifier = Modifier.testTag("tileCopySource:${tile.key}"))
-            // Remove: an imported tool only; disabled until the import batch brings the store that deletes it.
-            if (tile.mine) DropdownMenuItem(text = { Text(ToolsUiCopy.REMOVE) }, enabled = false, onClick = { menu = false; actions.onRemove(tile.key) }, modifier = Modifier.testTag("tileRemove:${tile.key}"))
+            // Remove: an imported tool only; it asks first.
+            if (tile.mine) DropdownMenuItem(text = { Text(ToolsUiCopy.REMOVE) }, onClick = { menu = false; actions.onRemove(tile.key) }, modifier = Modifier.testTag("tileRemove:${tile.key}"))
         }
     }
 }

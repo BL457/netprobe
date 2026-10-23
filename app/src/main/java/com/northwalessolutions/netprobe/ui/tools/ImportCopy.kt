@@ -37,6 +37,16 @@ object ImportCopy {
     const val IMPORT_ROW = "Import tool"
     const val IMPORT_SUPPORT = "From a file or a web address"
 
+    // My tools and Remove
+    const val MY_TOOLS = "My tools"
+    const val NO_TOOLS = "No imported tools yet"
+    fun myToolLine(version: String, scope: NetworkScope?) = if (scope == null) "Version ${version.take(VERSION_ECHO)}" else "Version ${version.take(VERSION_ECHO)}, contacts ${scopeWord(scope)}"
+    fun brokenLine(error: String) = "Broken: ${error.take(REASON_ECHO)}"
+    const val REMOVE = "Remove"
+    fun removeTitle(name: String) = "Remove ${name.take(NAME_ECHO)}?"
+    const val REMOVE_BODY = "The tool and its script are deleted from this phone. Its previous runs stay in Scans."
+    fun removeDescription(name: String) = "Remove ${name.take(NAME_ECHO)}"
+
     // Import dialogs
     const val IMPORT_TITLE = "Import tool"
     const val FROM_FILE = "From file"

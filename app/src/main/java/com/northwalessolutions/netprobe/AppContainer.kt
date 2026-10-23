@@ -65,6 +65,7 @@ import com.northwalessolutions.netprobe.ui.home.ContainerHeardSink
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolImportController
+import com.northwalessolutions.netprobe.ui.tools.ToolRemoval
 import com.northwalessolutions.netprobe.ui.wordlists.UrlImportController
 import com.northwalessolutions.netprobe.oui.OuiInfo
 import com.northwalessolutions.netprobe.oui.OuiMeta
@@ -206,6 +207,12 @@ class AppContainer(val context: Context) {
             log = { Log.w(AppScopes.LOG_TAG, it) },
             dir = java.io.File(context.filesDir, "tools"),
         )
+    }
+    /** Remove for an imported tool (tile menu and Settings): the script, the index line and the remembered inputs; history keeps its tool name. */
+    val toolRemoval: ToolRemoval by lazy { ToolRemoval(scriptToolStore) { } }
+    /** Runs a removal on appScope, so leaving the screen cannot stop it half way, and hands the message to [done]. */
+    fun removeTool(key: String, done: (String) -> Unit) {
+        appScope.launch { done(toolRemoval.remove(key)) }
     }
     /** The import flow shared by the Tools tab and Settings (tools platform D10): reading, fetching and saving run on appScope. */
     val toolImport: ToolImportController by lazy {

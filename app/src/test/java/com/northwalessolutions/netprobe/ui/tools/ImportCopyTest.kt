@@ -27,6 +27,9 @@ class ImportCopyTest {
         "Replaces .{1,40} .{1,20} with .{1,20}", "The script is identical to the installed one", "Network: from .+ to .+", "Network: unchanged", "SHA-256 from [0-9a-f]{1,64} to [0-9a-f]{1,64}",
         "New inputs: .+", "Removed inputs: .+", "Changed inputs: .+", "The installed tool is broken, so its inputs cannot be compared",
         "This version reaches further than the installed one: from .+ to .+", "I allow it to contact .+",
+        // my tools and remove
+        "My tools", "No imported tools yet", "Version .{1,20}(, contacts (the device only|your network|any address))?", "Broken: .{1,200}", "Remove",
+        "Remove .{1,40}\\?", "The tool and its script are deleted from this phone\\. Its previous runs stay in Scans\\.", "Remove .{1,40}",
         // saving and removing
         "The tool could not be saved", "The tool could not be removed", "(Imported|Replaced) .{1,40}", "Removed .{1,40}",
         "the device only|your network|any address",
@@ -50,6 +53,11 @@ class ImportCopyTest {
             ImportCopy.replaces("My tool", "1.0", "1.1"), ImportCopy.SAME_SCRIPT, ImportCopy.scopeChange("the device only", "any address"), ImportCopy.SCOPE_SAME,
             ImportCopy.shaChange("a".repeat(64), "b".repeat(64)), ImportCopy.inputsAdded(listOf("A (text)", "B (number)")), ImportCopy.inputsRemoved(listOf("A (text)")),
             ImportCopy.inputsChanged(listOf("A (text)")), ImportCopy.INPUTS_UNKNOWN, ImportCopy.widened("the device only", "any address"), ImportCopy.widenedYes("any address"),
+        ))
+        addAll(listOf(
+            ImportCopy.MY_TOOLS, ImportCopy.NO_TOOLS, ImportCopy.myToolLine("1.0", null), ImportCopy.myToolLine("1.0", NetworkScope.ANY), ImportCopy.myToolLine("v".repeat(50), NetworkScope.LAN),
+            ImportCopy.brokenLine(ImportCopy.FILE_MISSING), ImportCopy.brokenLine("x".repeat(500)), ImportCopy.REMOVE, ImportCopy.removeTitle("My tool"), ImportCopy.removeTitle("n".repeat(80)),
+            ImportCopy.REMOVE_BODY, ImportCopy.removeDescription("My tool"),
         ))
         NetworkScope.entries.forEach { add(ImportCopy.scopeWord(it)) }
     }

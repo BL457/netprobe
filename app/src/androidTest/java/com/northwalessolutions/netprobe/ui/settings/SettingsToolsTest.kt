@@ -24,4 +24,31 @@ class SettingsToolsTest {
         rule.setContent { NetProbeTheme { ToolsSection(imported = null, onOpenWordlists = {}) } }
         rule.onNodeWithText("3 built in").assertIsDisplayed(); rule.onNodeWithText("0 imported", substring = true).assertDoesNotExist()
     }
+    @Test fun importToolOpensTheImportFlow() {
+        var opened = 0
+        rule.setContent { NetProbeTheme { ToolsSection(imported = 0, onOpenWordlists = {}, onImportTool = { opened++ }) } }
+        rule.onNodeWithTag("importToolRow").assertHeightIsAtLeast(androidx.compose.ui.unit.Dp(56f)).performClick()
+        assertEquals(1, opened)
+    }
+    @Test fun myToolsListsWorkingAndBrokenToolsAndRemoveAsksFirst() {
+        val removed = ArrayList<String>()
+        val rows = listOf(
+            com.northwalessolutions.netprobe.ui.tools.MyToolRow("user:a-tool", "A tool", "Version 1.0, contacts your network", null),
+            com.northwalessolutions.netprobe.ui.tools.MyToolRow("user:b-tool", "B tool", "Broken: The script file is missing", "The script file is missing"),
+        )
+        rule.setContent { NetProbeTheme { ToolsSection(imported = 0, onOpenWordlists = {}, myTools = rows, onRemoveTool = { removed += it }) } }
+        rule.onNodeWithText("Version 1.0, contacts your network").assertIsDisplayed()
+        rule.onNodeWithText("Broken: The script file is missing").assertIsDisplayed()
+        rule.onNodeWithTag("myToolRemove:user:b-tool").performClick()
+        assertEquals(emptyList<String>(), removed)
+        rule.onNodeWithTag("removeCancel").performClick()
+        assertEquals(emptyList<String>(), removed)
+        rule.onNodeWithTag("myToolRemove:user:b-tool").performClick()
+        rule.onNodeWithTag("removeConfirm").performClick()
+        assertEquals(listOf("user:b-tool"), removed)
+    }
+    @Test fun withNoImportedToolsTheListSaysSo() {
+        rule.setContent { NetProbeTheme { ToolsSection(imported = 0, onOpenWordlists = {}) } }
+        rule.onNodeWithTag("myToolsEmpty").assertIsDisplayed()
+    }
 }
