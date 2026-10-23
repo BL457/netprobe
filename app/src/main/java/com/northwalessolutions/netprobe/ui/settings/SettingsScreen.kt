@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import com.northwalessolutions.netprobe.ui.OpenUrl
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -181,15 +182,30 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             ToolsSection(imported = ui.importedWordlists, onOpenWordlists = actions.onOpenWordlists)
 
             Section(SettingsCopy.ABOUT_SECTION)
-            AboutRow(ui.about)
+            SupportRow { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+            AboutRow(ui.about) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** The Support row (Ko-fi link), directly above About; opens the browser or reports none. */
+@Composable
+private fun SupportRow(onNotice: (String) -> Unit) {
+    val ctx = LocalContext.current
+    Row(Modifier.fillMaxWidth().heightIn(min = SWITCH_ROW_MIN).clickable(role = Role.Button) {
+        if (!OpenUrl.open(ctx, SettingsCopy.KOFI_URL)) onNotice(SettingsCopy.NO_BROWSER)
+    }.testTag("supportRow"), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(SettingsCopy.SUPPORT_ROW, style = NetProbeText.secondary, color = NetProbeColors.text)
+            Text(SettingsCopy.SUPPORT_SUBTITLE, style = NetProbeText.data, color = NetProbeColors.textMuted)
         }
     }
 }
 
 /** The last Settings row (3D spec 5): "About" with the version line and a chevron; it opens the existing About dialog. */
 @Composable
-private fun AboutRow(about: AboutInfo) {
+private fun AboutRow(about: AboutInfo, onNotice: (String) -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().heightIn(min = SWITCH_ROW_MIN).clickable(role = Role.Button) { open = true }.testTag("aboutRow"), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
@@ -198,7 +214,7 @@ private fun AboutRow(about: AboutInfo) {
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = NetProbeColors.textMuted)
     }
-    if (open) AboutDialog(about) { open = false }
+    if (open) AboutDialog(about, onNotice) { open = false }
 }
 
 /** The Settings overflow (3C spec 1.2): one item, enabled only while some covered value differs from its default. */

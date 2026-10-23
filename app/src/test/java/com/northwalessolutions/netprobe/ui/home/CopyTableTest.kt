@@ -42,7 +42,7 @@ class CopyTableTest {
         "Scan (finished|stopped), (\\d+ devices?|no devices found)", "Scan skipped: could not bind to Wi-Fi", "identifying \\d+ ports?",
         "\\d+ of \\d+, found \\d+",
         "Runs .+",
-        "About", "BL457", "NetProbe", "Copy", "Close", "Version \\S+ \\(\\d+\\)", "Build \\S+, \\S+ \\d\\d:\\d\\d", "Android \\S+",
+        "About", "BL457", "Support NetProbe", "Buy me a coffee on Ko-fi", "Support NetProbe on Ko-fi", "No browser available", "NetProbe", "Copy", "Close", "Version \\S+ \\(\\d+\\)", "Build \\S+, \\S+ \\d\\d:\\d\\d", "Android \\S+",
         "Set by you: (type (Router|Phone|Computer|Printer|Media|IoT|NAS|Camera|Server)(, vendor .+)?(, model .+)?|vendor .+(, model .+)?|model .+)",
         "Edit device, .+", "More options", "Edit device", "Remove device", "Name", "Type", "Vendor", "Model", "Detected: .+", "Reset to detected",
         "Router", "Phone", "Computer", "Printer", "Media", "IoT", "NAS", "Camera", "Server", "Not set", "Save", "Cancel",
@@ -66,7 +66,9 @@ class CopyTableTest {
 
     @Test fun `about strings`() {
         listOf(SettingsCopy.ABOUT_ROW, SettingsCopy.ABOUT_SECTION, SettingsCopy.TITLE, HomeCopy.APP_NAME, HomeCopy.COPY_VERSION, HomeCopy.CLOSE, HomeCopy.version("0.3.0", 3),
-            HomeCopy.build("c8a62e6", "2026-10-21 14:05"), HomeCopy.android("14"), SettingsCopy.SIGNATURE).forEach { inTable(it) }
+            HomeCopy.build("c8a62e6", "2026-10-21 14:05"), HomeCopy.android("14"), SettingsCopy.SIGNATURE,
+            SettingsCopy.SUPPORT_ROW, SettingsCopy.SUPPORT_SUBTITLE, SettingsCopy.SUPPORT_ABOUT_LINE, SettingsCopy.NO_BROWSER).forEach { inTable(it) }
+        assertEquals("https://ko-fi.com/blastdav", SettingsCopy.KOFI_URL)
         assertEquals("Version 0.3.0 (3)", HomeCopy.version("0.3.0", 3))
     }
 

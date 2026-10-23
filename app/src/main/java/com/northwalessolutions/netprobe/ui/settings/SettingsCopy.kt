@@ -16,6 +16,12 @@ object SettingsCopy {
     const val ABOUT_ROW = "About"
     /** The last line of the About dialog (Director ruling 2026-10-22 b). */
     const val SIGNATURE = "BL457"
+    /** The Ko-fi donation link, its Settings row, and its About line. */
+    const val KOFI_URL = "https://ko-fi.com/blastdav"
+    const val SUPPORT_ROW = "Support NetProbe"
+    const val SUPPORT_SUBTITLE = "Buy me a coffee on Ko-fi"
+    const val SUPPORT_ABOUT_LINE = "Support NetProbe on Ko-fi"
+    const val NO_BROWSER = "No browser available"
     /** The Large networks caption (plan review G6, proposed wording for the Director): the old one was false with Aggressive scan on. */
     const val LARGE_NETWORKS_CAPTION = "Largest block of a big network to sweep. With Aggressive scan off, a network wider than this gets your /24 only. A /22 takes about 1 minute, a /20 about 4."
     /** [unit] is written as the value shows it: "" or " ms". */
