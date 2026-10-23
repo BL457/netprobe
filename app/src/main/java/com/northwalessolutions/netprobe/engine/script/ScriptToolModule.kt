@@ -36,7 +36,7 @@ import java.net.InetAddress
  */
 class ScriptToolModule(
     override val descriptor: ToolDescriptor,
-    private val source: String,
+    val source: String,
     private val engine: ScriptEngine,
     private val env: () -> NetworkEnv?,
     private val lanBinder: (NetworkEnv) -> SocketBinder?,

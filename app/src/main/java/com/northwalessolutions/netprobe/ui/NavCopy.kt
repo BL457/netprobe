@@ -8,6 +8,8 @@ object NavCopy {
     const val SETTINGS = "Settings"
     /** Wordlists opened from a Device screen. */
     const val BACK_TO_DEVICE = "Back to device"
+    /** Wordlists opened from a tool page. */
+    const val BACK_TO_TOOL = "Back to tool"
     private const val BADGE_CAP = 9
 
     fun label(tab: Tab): String = when (tab) {
@@ -27,5 +29,11 @@ object NavCopy {
 object NavLabels {
     fun host(tab: Tab): String = NavCopy.backTo(tab)
     /** Wordlists opened from a Device screen says "Back to device"; from a root it names that destination. */
-    fun wordlists(previousRoute: String?, tab: Tab): String = if (Routes.isHost(previousRoute)) NavCopy.BACK_TO_DEVICE else NavCopy.backTo(tab)
+    fun wordlists(previousRoute: String?, tab: Tab): String = when {
+        Routes.isHost(previousRoute) -> NavCopy.BACK_TO_DEVICE
+        Routes.isTool(previousRoute) -> NavCopy.BACK_TO_TOOL
+        else -> NavCopy.backTo(tab)
+    }
+    /** A tool page opened from a Device screen (it carries a host) goes back to that device; opened from the grid it names its tab. */
+    fun tool(tab: Tab, fromDevice: Boolean): String = if (fromDevice) NavCopy.BACK_TO_DEVICE else NavCopy.backTo(tab)
 }

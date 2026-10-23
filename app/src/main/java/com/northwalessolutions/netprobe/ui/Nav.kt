@@ -42,9 +42,9 @@ import androidx.navigation.navArgument
 import com.northwalessolutions.netprobe.AppContainer
 import com.northwalessolutions.netprobe.ui.detail.DetailScreen
 import com.northwalessolutions.netprobe.ui.home.HomeScreen
-import com.northwalessolutions.netprobe.ui.manual.ManualToolsScreen
 import com.northwalessolutions.netprobe.ui.scans.ScansScreen
 import com.northwalessolutions.netprobe.ui.settings.SettingsScreen
+import com.northwalessolutions.netprobe.ui.tools.ToolsScreen
 import com.northwalessolutions.netprobe.ui.theme.LocalReducedMotion
 import com.northwalessolutions.netprobe.ui.theme.Motion
 import com.northwalessolutions.netprobe.ui.wordlists.WordlistsScreen
@@ -60,13 +60,29 @@ object Routes {
     private const val GRAPH_SUFFIX = "Tab"
     private const val HOST_SEGMENT = "/host/"
 
+    /** The tool page (tools platform B3): the tool key, and the device and port to prefill when the page is opened from a Device screen. */
+    const val TOOL_ARG = "key"
+    const val TOOL_HOST_ARG = "host"
+    const val TOOL_PORT_ARG = "port"
+    const val NO_VALUE = -1L
+    private const val TOOL_SEGMENT = "/tool/"
+    private const val COLON = ':'
+    private const val COLON_TOKEN = '~'
+
     fun hostPattern(tab: Tab): String = "${tab.root}/host/{$HOST_ARG}"
+    fun toolPattern(tab: Tab): String = "${tab.root}/tool/{$TOOL_ARG}?$TOOL_HOST_ARG={$TOOL_HOST_ARG}&$TOOL_PORT_ARG={$TOOL_PORT_ARG}"
+    /** A tool key has a colon for imported tools and examples ("user:slug"); a colon is not safe in a route, so it travels as a tilde, which no key holds. */
+    fun toolToken(key: String): String = key.replace(COLON, COLON_TOKEN)
+    fun toolKey(token: String): String = token.replace(COLON_TOKEN, COLON)
+    fun tool(tab: Tab, key: String, hostId: Long? = null, port: Int? = null): String =
+        "${tab.root}/tool/${toolToken(key)}?$TOOL_HOST_ARG=${hostId ?: NO_VALUE}&$TOOL_PORT_ARG=${port ?: NO_VALUE}"
     fun host(tab: Tab, id: Long): String = "${tab.root}/host/$id"
     fun wordlists(tab: Tab): String = "${tab.root}/wordlists"
     /** The routes a destination's graph declares: its root first. Only Devices and Scans open a Device screen. */
     fun routesOf(tab: Tab): List<String> = when (tab) {
-        Tab.DEVICES, Tab.SCANS -> listOf(tab.root, hostPattern(tab), wordlists(tab))
-        Tab.TOOLS, Tab.SETTINGS -> listOf(tab.root, wordlists(tab))
+        Tab.DEVICES, Tab.SCANS -> listOf(tab.root, hostPattern(tab), toolPattern(tab), wordlists(tab))
+        Tab.TOOLS -> listOf(tab.root, toolPattern(tab), wordlists(tab))
+        Tab.SETTINGS -> listOf(tab.root, wordlists(tab))
     }
     /** Works for a graph route ("scansTab"), a root, a pattern ("devices/host/{id}") and a concrete route ("devices/host/5"). */
     fun tabOf(route: String?): Tab? {
@@ -76,6 +92,7 @@ object Routes {
     }
     fun isRoot(route: String?): Boolean = Tab.entries.any { it.root == route }
     fun isHost(route: String?): Boolean = route != null && route.contains(HOST_SEGMENT)
+    fun isTool(route: String?): Boolean = route != null && route.contains(TOOL_SEGMENT)
 }
 
 /** The bar shows on the four roots only and hides while the keyboard is up (D5, D6). */
@@ -113,6 +130,7 @@ object TabSwitch {
 class NavSlots(
     val devices: @Composable () -> Unit, val scans: @Composable () -> Unit, val tools: @Composable () -> Unit, val settings: @Composable () -> Unit,
     val host: @Composable (tab: Tab, id: Long, backLabel: String) -> Unit = { _, _, _ -> },
+    val tool: @Composable (tab: Tab, key: String, hostId: Long?, port: Int?, backLabel: String) -> Unit = { _, _, _, _, _ -> },
     val wordlists: @Composable (tab: Tab, backLabel: String) -> Unit = { _, _ -> },
 )
 
@@ -135,7 +153,7 @@ fun NetProbeNav(container: AppContainer) {
                 onOpenWordlists = { nav.navigate(Routes.wordlists(Tab.SCANS)) { launchSingleTop = true } })
         },
         tools = {
-            ManualToolsScreen(container,
+            ToolsScreen(container, onOpenTool = { key -> nav.navigate(Routes.tool(Tab.TOOLS, key)) },
                 onOpenWordlists = { nav.navigate(Routes.wordlists(Tab.TOOLS)) { launchSingleTop = true } })
         },
         settings = {
@@ -232,6 +250,17 @@ private fun NavGraphBuilder.tabGraph(tab: Tab, slots: NavSlots, nav: NavHostCont
         if (tab == Tab.DEVICES || tab == Tab.SCANS) {
             composable(Routes.hostPattern(tab), arguments = listOf(navArgument(Routes.HOST_ARG) { type = NavType.LongType })) { entry ->
                 slots.host(tab, entry.arguments!!.getLong(Routes.HOST_ARG), NavLabels.host(tab))
+            }
+        }
+        if (tab != Tab.SETTINGS) {
+            composable(Routes.toolPattern(tab), arguments = listOf(
+                navArgument(Routes.TOOL_ARG) { type = NavType.StringType },
+                navArgument(Routes.TOOL_HOST_ARG) { type = NavType.LongType; defaultValue = Routes.NO_VALUE },
+                navArgument(Routes.TOOL_PORT_ARG) { type = NavType.LongType; defaultValue = Routes.NO_VALUE })) { entry ->
+                val args = entry.arguments!!
+                val host = args.getLong(Routes.TOOL_HOST_ARG).takeIf { it != Routes.NO_VALUE }
+                val port = args.getLong(Routes.TOOL_PORT_ARG).takeIf { it != Routes.NO_VALUE }?.toInt()
+                slots.tool(tab, Routes.toolKey(args.getString(Routes.TOOL_ARG).orEmpty()), host, port, NavLabels.tool(tab, host != null))
             }
         }
         composable(Routes.wordlists(tab)) { entry ->

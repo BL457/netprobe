@@ -5,7 +5,7 @@ import org.junit.Test
 
 /** Spec 6 (Nav rows) as regex templates, plus the badge cap and the back-label rule. */
 class NavCopyTableTest {
-    private val templates = listOf("Devices", "Scans", "Tools", "Settings", "Scans, \\d+ running", "[1-9]|9\\+", "Back to (Devices|Scans|Tools|Settings)", "Back to device").map { Regex(it) }
+    private val templates = listOf("Devices", "Scans", "Tools", "Settings", "Scans, \\d+ running", "[1-9]|9\\+", "Back to (Devices|Scans|Tools|Settings)", "Back to device", "Back to tool").map { Regex(it) }
     private fun inTable(s: String) = assertTrue("not in the copy table: '$s'", templates.any { it.matches(s) })
 
     @Test fun `labels and back rows`() {
@@ -13,7 +13,13 @@ class NavCopyTableTest {
         assertEquals(listOf("Devices", "Scans", "Tools", "Settings"), Tab.entries.map { NavCopy.label(it) })
         assertEquals("Back to Devices", NavCopy.backTo(Tab.DEVICES)); assertEquals("Back to Scans", NavCopy.backTo(Tab.SCANS))
         assertEquals("Back to Tools", NavCopy.backTo(Tab.TOOLS)); assertEquals("Back to Settings", NavCopy.backTo(Tab.SETTINGS))
-        inTable(NavCopy.BACK_TO_DEVICE)
+        inTable(NavCopy.BACK_TO_DEVICE); inTable(NavCopy.BACK_TO_TOOL)
+    }
+    @Test fun `a wordlists page opened from a tool page says Back to tool, and a tool page names where it came from`() {
+        assertEquals("Back to tool", NavLabels.wordlists("tools/tool/{key}?host={host}&port={port}", Tab.TOOLS))
+        assertEquals("Back to tool", NavLabels.wordlists("devices/tool/{key}?host={host}&port={port}", Tab.DEVICES))
+        assertEquals("Back to Tools", NavLabels.tool(Tab.TOOLS, fromDevice = false)); assertEquals("Back to device", NavLabels.tool(Tab.DEVICES, fromDevice = true))
+        assertEquals("Back to device", NavLabels.tool(Tab.SCANS, fromDevice = true))
     }
     @Test fun `badge text counts to nine then caps`() {
         assertEquals("1", NavCopy.badgeText(1)); assertEquals("8", NavCopy.badgeText(8)); assertEquals("9", NavCopy.badgeText(9))
@@ -32,7 +38,7 @@ class NavCopyTableTest {
     }
     @Test fun `no Nav string has an em dash or the word Home or Activity`() {
         val dash = 0x2014.toChar()
-        val all = Tab.entries.flatMap { listOf(NavCopy.label(it), NavCopy.backTo(it)) } + NavCopy.BACK_TO_DEVICE + NavCopy.scansBadge(3)
+        val all = Tab.entries.flatMap { listOf(NavCopy.label(it), NavCopy.backTo(it)) } + NavCopy.BACK_TO_DEVICE + NavCopy.BACK_TO_TOOL + NavCopy.scansBadge(3)
         all.forEach { assertFalse(it, it.contains(dash)); assertFalse(it, it.contains("Home")); assertFalse(it, it.contains("Activity")) }
     }
 }
