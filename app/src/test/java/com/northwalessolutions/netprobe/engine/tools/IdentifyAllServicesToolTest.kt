@@ -17,13 +17,17 @@ import com.northwalessolutions.netprobe.engine.tools.ToolTestSupport.control
 import com.northwalessolutions.netprobe.engine.tools.ToolTestSupport.ip
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
+import com.northwalessolutions.netprobe.engine.serviceid.LadderResult
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 
 /** Identify all services (Director ruling R2) over the shipped probe file and a scripted network. */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class IdentifyAllServicesToolTest {
     private val table = PortTable.fromJson("""[{"port":22,"name":"SSH"},{"port":6379,"name":"Redis"},{"port":9999,"name":"Unknown"}]""")
     private val net = FakeNetwork()
@@ -110,4 +114,34 @@ class IdentifyAllServicesToolTest {
         assertEquals(listOf(22), applied.map { it.second })
         assertEquals("the finished port is reported before the stop is seen", 1, p.lastDone.coerceAtMost(1))
     }
+    private fun slowTool(inFlight: AtomicInteger, peak: AtomicInteger, ports: List<Int>) = IdentifyAllServicesTool(
+        portsFor = { ports },
+        identify = { t, _, _, _ ->
+            peak.accumulateAndGet(inFlight.incrementAndGet()) { a, b -> maxOf(a, b) }
+            delay(PORT_MS)
+            inFlight.decrementAndGet()
+            ServiceInfo("Svc${t.port}", confidence = Confidence.CONFIRMED) to LadderResult(null, emptyList(), emptyList())
+        },
+        apply = { _, _, _ -> })
+
+    @Test fun `four ports take about one port's time, not four`() = runTest {
+        val inFlight = AtomicInteger(); val peak = AtomicInteger()
+        val p = CollectingProgress()
+        val r = slowTool(inFlight, peak, listOf(9001, 9002, 9003, 9004)).run(target(), ToolInputs.NONE, control(), p)
+        assertEquals("4 of 4 ports named", r.summary)
+        assertEquals(PORT_MS, testScheduler.currentTime)
+        assertEquals(4, peak.get())
+        assertEquals(listOf("9001: Svc9001", "9002: Svc9002", "9003: Svc9003", "9004: Svc9004"), p.of(FindingKind.PROBE).map { it.value })
+        assertEquals(4, p.lastDone); assertEquals(4, p.lastTotal)
+    }
+    @Test fun `never more than four at once, so eight ports take two rounds, and findings stay in port order`() = runTest {
+        val inFlight = AtomicInteger(); val peak = AtomicInteger()
+        val ports = (9001..9008).toList()
+        val p = CollectingProgress()
+        slowTool(inFlight, peak, ports).run(target(), ToolInputs.NONE, control(), p)
+        assertEquals(2 * PORT_MS, testScheduler.currentTime)
+        assertEquals(IdentifyAllServicesTool.PARALLEL_PORTS, peak.get())
+        assertEquals(ports.map { "$it: Svc$it" }, p.of(FindingKind.PROBE).map { it.value })
+    }
+    private companion object { const val PORT_MS = 1_000L }
 }

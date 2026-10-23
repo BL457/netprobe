@@ -14,7 +14,7 @@ class ServiceProbeFileTest {
 
     @Test fun `every probe in the file passes validation`() {
         assertTrue("skipped: ${loaded.skipped.map { it.id + ": " + it.reason }}", loaded.skipped.isEmpty())
-        assertEquals(31, loaded.probes.size)
+        assertEquals(151, loaded.probes.size)
     }
     @Test fun `the Phase 3A steps are the first probes in file order`() {
         assertEquals(listOf("null", "tls", "http-head", "http-get", "rtsp-options", "rdp-x224"), loaded.probes.take(6).map { it.id })

@@ -43,6 +43,8 @@ class ServiceProbes(
         const val MAX_PROBES_PER_PORT = LadderLimits.SCAN_MAX_CONNECTS
         const val PORT_WALL_MS = LadderLimits.SCAN_PORT_WALL_MS
         const val DEFAULT_MAX_RARITY = LadderLimits.SCAN_MAX_RARITY
+        /** The probes whose hit names only the transport ("HTTP"): on a manual run a product hello hinted for the same port may still replace it. */
+        val GENERIC_HTTP: Set<String> = setOf("http-head")
         /** null, tls, http-head, http-get, rtsp-options, rdp-x224: the Phase 3A steps, the first probes of the file. */
         const val THREE_A_PROBES = 6
         private const val MIN_STEP_MS = 50L
@@ -126,6 +128,8 @@ class ServiceProbes(
         private var tlsOn = false
         private var narrowed: Set<String>? = null
         private var nullReplied = false
+        /** A generic HTTP hit on a manual run: only the hellos hinted for this port still run, and a product match replaces the HTTP result. */
+        private var genericHttpHit = false
         private var getDone = false
         private val sent = mutableListOf<String>()
         private val sentIds = HashSet<String>()
@@ -179,6 +183,7 @@ class ServiceProbes(
             for (p in plan(port, hellos, limits)) {
                 if (ended || !canConnect()) break
                 if (!admissible(p)) continue
+                if (genericHttpHit && port !in p.ports) continue
                 runStep(p)
             }
             finishHttpTier()
@@ -287,8 +292,14 @@ class ServiceProbes(
             if (hit.soft) {
                 if (best == null || best?.confidence != Confidence.CONFIRMED) best = info
                 if (hit.narrow.isNotEmpty()) narrowed = hit.narrow.toSet()
+            } else if (limits.allHellos && hit.probeId in GENERIC_HTTP && productHelloRemains()) {
+                best = info; genericHttpHit = true
             } else { best = info; ended = true }
         }
+
+        /** Another hello hinted for this very port, other than the generic HTTP ones, has not been sent yet. */
+        private fun productHelloRemains(): Boolean =
+            probes.any { port in it.ports && it.sendsBytes && it.id !in GENERIC_HTTP && it.id !in sentIds && admissible(it) }
 
         /** HTTP, IPP and RTSP replies carry the Server header, realm and X-Powered-By; their old parsers fill what a regex cannot (spec 13). */
         private fun enrich(info: ServiceInfo, replyText: String): ServiceInfo {

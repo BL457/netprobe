@@ -9,8 +9,16 @@ import com.northwalessolutions.netprobe.engine.serviceid.LadderResult
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolModelCopy
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Identify all services (Director ruling R2): the full ladder over every open port of one host as ONE tool run, under
@@ -39,16 +47,33 @@ class IdentifyAllServicesTool(
         val budget = newBudget()
         val limits = LadderLimits.thorough(unsafeHellos())
         var named = 0
+        var done = 0
         progress.update(0, total, 0)
-        for ((i, port) in ports.withIndex()) {
-            control.gate()
-            currentCoroutineContext().ensureActive()
-            val (info, ladder) = identify(target.copy(port = port), budget, limits) { }
-            if (ladder.info != null) apply(target.hostId, port, info)
-            val recognised = info.confidence == Confidence.CONFIRMED
-            if (recognised) named++
-            progress.finding(Finding(FindingKind.PROBE, ToolCopy.identifyAllLine(port, recognised, info.name, info.product, info.version)))
-            progress.update(i + 1, total, named)
+        // Up to PARALLEL_PORTS ports at once. A port is applied and reported the moment its ladder ends, one line per port, under a lock
+        // and shielded from cancellation, so a Stop keeps (and reports) every port that finished before it.
+        val report = Mutex()
+        coroutineScope {
+            val permits = Semaphore(PARALLEL_PORTS)
+            for (port in ports) {
+                launch {
+                    permits.withPermit {
+                        control.gate()
+                        currentCoroutineContext().ensureActive()
+                        val (info, ladder) = identify(target.copy(port = port), budget, limits) { }
+                        currentCoroutineContext().ensureActive()   // a Stop seen while the ladder ran: this port is not applied
+                        withContext(NonCancellable) {
+                            if (ladder.info != null) apply(target.hostId, port, info)
+                            val recognised = info.confidence == Confidence.CONFIRMED
+                            report.withLock {
+                                if (recognised) named++
+                                done++
+                                progress.finding(Finding(FindingKind.PROBE, ToolCopy.identifyAllLine(port, recognised, info.name, info.product, info.version)))
+                                progress.update(done, total, named)
+                            }
+                        }
+                    }
+                }
+            }
         }
         val summary = if (named == 0) ToolCopy.IDENTIFY_ALL_NONE else ToolCopy.identifyAllSummary(named, total)
         return ToolResult(ToolRunStatus.DONE, summary)
@@ -56,6 +81,8 @@ class IdentifyAllServicesTool(
 
     companion object {
         const val MAX_PORTS = 64
+        /** Ports of the one host identified at the same time. */
+        const val PARALLEL_PORTS = 4
         const val NO_WALL_MS = LadderLimits.NO_WALL_MS
     }
 }

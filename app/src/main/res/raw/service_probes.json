@@ -1109,5 +1109,4522 @@
    "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
    "220 ftp\r\n"
   ]
+ },
+ {
+  "id": "ftp-syst",
+  "service": "FTP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "SYST\\r\\n",
+  "ports": [
+   21,
+   2121
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^220[ -][^\\r\\n]*\\r\\n(?:.*\\r\\n)?215 ([^\\r\\n]{1,80})",
+    "detail": "SYST $1",
+    "service": "FTP"
+   },
+   {
+    "regex": "(?s)^220[ -][^\\r\\n]*\\r\\n(?:.*\\r\\n)?530 ",
+    "detail": "login required before SYST",
+    "service": "FTP"
+   }
+  ],
+  "samples": [
+   "220 (vsFTPd 3.0.5)\r\n215 UNIX Type: L8\r\n",
+   "220 FTP ready\r\n530 Please login with USER and PASS.\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "smtp-ehlo",
+  "service": "SMTP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "EHLO netprobe.local\\r\\n",
+  "ports": [
+   25,
+   587,
+   2525
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^220[ -][^\\r\\n]*?\\b(Postfix|Exim|Sendmail|OpenSMTPD|Haraka)\\b[^\\r\\n]*\\r\\n(?:.*\\r\\n)?250[ -]",
+    "product": "$1",
+    "detail": "EHLO accepted",
+    "service": "SMTP"
+   },
+   {
+    "regex": "(?s)^220[ -][^\\r\\n]*\\r\\n(?:.*\\r\\n)?250[ -]",
+    "detail": "EHLO accepted",
+    "service": "SMTP"
+   }
+  ],
+  "samples": [
+   "220 mail.example.net ESMTP Postfix (Debian)\r\n250-mail.example.net\r\n250-PIPELINING\r\n250-SIZE 10240000\r\n250 STARTTLS\r\n",
+   "220 relay ESMTP ready\r\n250 relay\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "pop3-capa",
+  "service": "POP3",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "CAPA\\r\\n",
+  "ports": [
+   110
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\+OK[^\\r\\n]*\\b(Dovecot)\\b[^\\r\\n]*\\r\\n\\+OK",
+    "product": "$1",
+    "detail": "CAPA accepted",
+    "service": "POP3"
+   },
+   {
+    "regex": "(?s)^\\+OK[^\\r\\n]*\\r\\n\\+OK[^\\r\\n]*\\r\\n[A-Z]",
+    "detail": "CAPA accepted",
+    "service": "POP3"
+   }
+  ],
+  "samples": [
+   "+OK Dovecot ready.\r\n+OK\r\nCAPA\r\nTOP\r\nUIDL\r\n.\r\n",
+   "+OK POP3 server ready\r\n+OK Capability list follows\r\nTOP\r\nUSER\r\n.\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "imap-capability",
+  "service": "IMAP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "a001 CAPABILITY\\r\\n",
+  "ports": [
+   143
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\* OK[^\\r\\n]*?\\b(Dovecot|Cyrus|Courier-IMAP|Zimbra)\\b.*\\* CAPABILITY IMAP4",
+    "product": "$1",
+    "detail": "CAPABILITY listed",
+    "service": "IMAP"
+   },
+   {
+    "regex": "(?s)\\* CAPABILITY IMAP4",
+    "detail": "CAPABILITY listed",
+    "service": "IMAP"
+   }
+  ],
+  "samples": [
+   "* OK [CAPABILITY IMAP4rev1 STARTTLS] Dovecot ready.\r\n* CAPABILITY IMAP4rev1 LITERAL+ STARTTLS\r\na001 OK Pre-login capabilities listed.\r\n",
+   "* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\na001 OK done\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "ssh-version-exchange",
+  "service": "SSH",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "SSH-2.0-NetProbe\\r\\n",
+  "ports": [
+   22,
+   2222,
+   22222
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^SSH-(\\d\\.\\d+)-([A-Za-z][A-Za-z0-9]*(?:_for_Windows)?)[_-]?([^\\s]*)",
+    "product": "$2",
+    "version": "$3",
+    "detail": "protocol $1",
+    "service": "SSH"
+   }
+  ],
+  "samples": [
+   "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13\r\n\u0000\u0000\u0004\u00bc\n\u0014",
+   "SSH-2.0-dropbear_2022.83\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "telnet-negotiate",
+  "service": "Telnet",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\xff\\xfb\\x18\\xff\\xfb\\x1f\\xff\\xfd\\x01\\xff\\xfd\\x03",
+  "ports": [
+   23,
+   2323
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?is)^(?:\\xff[\\xfa-\\xfe].){1,20}.*?(?:login|username|password)\\s*:",
+    "detail": "login prompt after option negotiation",
+    "service": "Telnet"
+   },
+   {
+    "regex": "^\\xff[\\xfb-\\xfe]",
+    "detail": "option negotiation",
+    "service": "Telnet"
+   }
+  ],
+  "samples": [
+   "\u00ff\u00fd\u0018\u00ff\u00fd \u00ff\u00fb\u0001\r\nUbuntu 22.04 LTS\r\nhost login: ",
+   "\u00ff\u00fb\u0001\u00ff\u00fb\u0003"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "finger",
+  "service": "Finger",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\r\\n",
+  "ports": [
+   79
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^Login +Name +(?:Tty|TTY)",
+    "detail": "user listing",
+    "service": "Finger"
+   },
+   {
+    "regex": "^No one logged on",
+    "detail": "no users",
+    "service": "Finger"
+   }
+  ],
+  "samples": [
+   "Login     Name       Tty      Idle  Login Time   Office\r\nroot      root       tty1          Oct 23 09:00\r\n",
+   "No one logged on.\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "gopher-menu",
+  "service": "Gopher",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\r\\n",
+  "ports": [
+   70
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^[0-9ihI+gsT][^\\t\\r\\n]*\\t[^\\t\\r\\n]*\\t[^\\t\\r\\n]*\\t\\d+",
+    "detail": "gopher menu",
+    "service": "Gopher"
+   }
+  ],
+  "samples": [
+   "iWelcome to the hole\tfake\t(NULL)\t0\r\n1About\t/about\tgopher.example.net\t70\r\n.\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "ident",
+  "service": "Ident",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "113, 113\\r\\n",
+  "ports": [
+   113
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\d+ *, *\\d+ *: *(?:ERROR|USERID)",
+    "detail": "ident (auth) service",
+    "service": "Ident"
+   }
+  ],
+  "samples": [
+   "113 , 113 : ERROR : NO-USER\r\n",
+   "113, 113 : USERID : UNIX : nobody\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "echo",
+  "service": "Echo",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "netprobe-echo-test\\r\\n",
+  "ports": [
+   7
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^netprobe-echo-test\\r\\n",
+    "detail": "echoes what it is sent",
+    "service": "Echo"
+   }
+  ],
+  "samples": [
+   "netprobe-echo-test\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "rsync-list",
+  "service": "rsync",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "@RSYNCD: 31.0\\n#list\\n",
+  "ports": [
+   873
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^@RSYNCD: (\\d+\\.\\d+)",
+    "product": "rsync",
+    "version": "$1",
+    "detail": "daemon protocol",
+    "service": "rsync"
+   }
+  ],
+  "samples": [
+   "@RSYNCD: 31.0\nbackup\tNightly backups\n@RSYNCD: EXIT\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "git-upload-pack",
+  "service": "Git",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "0031git-upload-pack /netprobe.git\\0host=localhost\\0",
+  "ports": [
+   9418
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^[0-9a-f]{4}ERR ([^\\r\\n]{0,100})",
+    "product": "git-daemon",
+    "detail": "$1",
+    "service": "Git"
+   },
+   {
+    "regex": "^[0-9a-f]{4}[0-9a-f]{40} ",
+    "product": "git-daemon",
+    "detail": "advertises refs",
+    "service": "Git"
+   }
+  ],
+  "samples": [
+   "0048ERR access denied or repository not exported: /netprobe.git",
+   "00a8aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HEAD\u0000multi_ack thin-pack\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "svnserve-greeting",
+  "service": "Subversion",
+  "protocols": [
+   "tcp",
+   "null"
+  ],
+  "send": "( 2 ( edit-pipeline svndiff1 ) 16:svn://localhost/ 8:netprobe ( ) )\\n",
+  "ports": [
+   3690
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\( success \\( (\\d+) (\\d+) \\(",
+    "product": "svnserve",
+    "detail": "protocol $1 to $2",
+    "service": "Subversion"
+   },
+   {
+    "regex": "^\\( success \\( \\( ",
+    "product": "svnserve",
+    "detail": "auth request",
+    "service": "Subversion"
+   }
+  ],
+  "samples": [
+   "( success ( 2 2 ( ANONYMOUS ) ( edit-pipeline svndiff1 absent-entries depth mergeinfo log-revprops ) ) )\n",
+   "( success ( ( ANONYMOUS ) 5:realm ) )\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "cvs-pserver",
+  "service": "CVS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "BEGIN AUTH REQUEST\\n/cvsroot\\nanonymous\\nA\\nEND AUTH REQUEST\\n",
+  "ports": [],
+  "commonPorts": [
+   2401
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^(?:I HATE YOU|I LOVE YOU)\\n",
+    "detail": "pserver authentication answer",
+    "service": "CVS"
+   },
+   {
+    "regex": "^cvs \\[pserver aborted\\]: ([^\\n]{1,80})",
+    "detail": "$1",
+    "service": "CVS"
+   }
+  ],
+  "samples": [
+   "I HATE YOU\n",
+   "cvs [pserver aborted]: bad auth protocol start: GET\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "irc-register",
+  "service": "IRC",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "NICK netprobe\\r\\nUSER netprobe 0 * :netprobe\\r\\n",
+  "ports": [],
+  "commonPorts": [
+   6667,
+   6660,
+   6668
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 2500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^:[^ \\r\\n]+ (?:NOTICE|001|002|003|004|005|020) .*?\\r\\n:[^ \\r\\n]+ 004 \\S+ \\S+ ([A-Za-z][A-Za-z-]*?)-?(\\d[\\w.]*) ",
+    "product": "$1",
+    "version": "$2",
+    "detail": "registered",
+    "service": "IRC"
+   },
+   {
+    "regex": "(?s)^(?::[^ \\r\\n]+ (?:NOTICE|00[1-5]|020|433|451) |ERROR :)",
+    "detail": "IRC server line",
+    "service": "IRC"
+   }
+  ],
+  "samples": [
+   ":irc.example.net NOTICE AUTH :*** Looking up your hostname...\r\n:irc.example.net 001 netprobe :Welcome to the ExampleNet IRC Network netprobe!n@host\r\n:irc.example.net 004 netprobe irc.example.net ircd-hybrid-8.2.39 DFGHRSWabcdefgijklnopqrsuwxy bciklmnoprstveIMORS\r\n",
+   ":irc.example.net NOTICE AUTH :*** Found your hostname\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "xmpp-stream",
+  "service": "XMPP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "<?xml version='1.0'?><stream:stream to='{ip}' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams' version='1.0'>",
+  "ports": [
+   5222,
+   5269
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)<stream:stream[^>]*xmlns:stream=['\"]http://etherx\\.jabber\\.org/streams['\"][^>]*?from=['\"]([^'\"]{1,60})['\"]",
+    "detail": "domain $1",
+    "service": "XMPP"
+   },
+   {
+    "regex": "(?s)<stream:stream[^>]*xmlns:stream=['\"]http://etherx\\.jabber\\.org/streams['\"]",
+    "detail": "XML stream opened",
+    "service": "XMPP"
+   }
+  ],
+  "samples": [
+   "<?xml version='1.0'?><stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:client' from='example.net' id='abc123' version='1.0' xml:lang='en'><stream:features>",
+   "<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:client'><stream:error><host-unknown/></stream:error>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "stomp-connect",
+  "service": "STOMP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "CONNECT\\naccept-version:1.2\\nhost:/\\n\\n\\0",
+  "ports": [
+   61613
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^CONNECTED\\n.*?server:([^/\\n]+)(?:/([^\\n]+))?",
+    "product": "$1",
+    "version": "$2",
+    "service": "STOMP"
+   },
+   {
+    "regex": "^CONNECTED\\n",
+    "detail": "session accepted",
+    "service": "STOMP"
+   },
+   {
+    "regex": "^ERROR\\n",
+    "detail": "error frame",
+    "service": "STOMP"
+   }
+  ],
+  "samples": [
+   "CONNECTED\nversion:1.2\nserver:RabbitMQ/3.12.10\nheart-beat:0,0\n\n\u0000",
+   "ERROR\nmessage:Authentication failed\n\n\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "nats-connect",
+  "service": "NATS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "CONNECT {\"verbose\":false,\"pedantic\":false,\"name\":\"netprobe\"}\\r\\nPING\\r\\n",
+  "ports": [
+   4222
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^INFO \\{[^\\r\\n]*\"version\":\\s*\"([^\"]+)\"",
+    "product": "NATS",
+    "version": "$1",
+    "service": "NATS"
+   },
+   {
+    "regex": "^INFO \\{",
+    "product": "NATS",
+    "service": "NATS"
+   }
+  ],
+  "samples": [
+   "INFO {\"server_id\":\"NDXYZ\",\"server_name\":\"n1\",\"version\":\"2.10.9\",\"proto\":1,\"max_payload\":1048576}\r\nPONG\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "zookeeper-srvr",
+  "service": "ZooKeeper",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "srvr",
+  "ports": [
+   2181
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^Zookeeper version: ([\\d.]+)",
+    "product": "ZooKeeper",
+    "version": "$1",
+    "service": "ZooKeeper"
+   },
+   {
+    "regex": "is not executed because it is not in the whitelist",
+    "product": "ZooKeeper",
+    "detail": "four-letter command not whitelisted",
+    "service": "ZooKeeper"
+   }
+  ],
+  "samples": [
+   "Zookeeper version: 3.8.1-74db005175a4ec545697012f9069cb9dcc8cdda7, built on 2023-01-25 16:32 UTC\nLatency min/avg/max: 0/0.0/0\n",
+   "srvr is not executed because it is not in the whitelist.\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "beanstalkd-stats",
+  "service": "beanstalkd",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "stats\\r\\n",
+  "ports": [
+   11300
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^OK \\d+\\r\\n---.*\\nversion: \"?([\\d.]+)",
+    "product": "beanstalkd",
+    "version": "$1",
+    "service": "beanstalkd"
+   },
+   {
+    "regex": "^OK \\d+\\r\\n---",
+    "product": "beanstalkd",
+    "service": "beanstalkd"
+   }
+  ],
+  "samples": [
+   "OK 912\r\n---\ncurrent-jobs-urgent: 0\nid: 0123456789abcdef\nversion: 1.12\nrusage-utime: 0.01\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "gearman-version",
+  "service": "Gearman",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "version\\n",
+  "ports": [
+   4730
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^OK (\\d+\\.\\d+[\\d.]*)\\r?\\n$",
+    "product": "gearmand",
+    "version": "$1",
+    "service": "Gearman"
+   }
+  ],
+  "samples": [
+   "OK 1.1.20\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "clamd-version",
+  "service": "ClamAV",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "VERSION\\n",
+  "ports": [
+   3310
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^ClamAV ([\\d.]+)",
+    "product": "ClamAV",
+    "version": "$1",
+    "service": "ClamAV"
+   }
+  ],
+  "samples": [
+   "ClamAV 1.0.3/27119/Fri Oct 20 07:25:00 2023\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "spamd-ping",
+  "service": "SpamAssassin",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "PING SPAMC/1.5\\r\\n\\r\\n",
+  "ports": [
+   783
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^SPAMD/([\\d.]+) 0 PONG",
+    "product": "spamd",
+    "detail": "protocol $1",
+    "service": "SpamAssassin"
+   }
+  ],
+  "samples": [
+   "SPAMD/1.5 0 PONG\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "statsd-health",
+  "service": "StatsD",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "health\\n",
+  "ports": [
+   8126
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^health: (?:up|down)\\r?\\n",
+    "product": "statsd",
+    "detail": "management port",
+    "service": "StatsD"
+   }
+  ],
+  "samples": [
+   "health: up\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "epmd-names",
+  "service": "Erlang EPMD",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\x01n",
+  "ports": [
+   4369
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00\\x00\\x11\\x11.*?name (\\S{1,40}) at port (\\d+)",
+    "product": "epmd",
+    "detail": "node $1 on port $2",
+    "service": "Erlang EPMD"
+   },
+   {
+    "regex": "^\\x00\\x00\\x11\\x11",
+    "product": "epmd",
+    "detail": "no nodes registered",
+    "service": "Erlang EPMD"
+   }
+  ],
+  "samples": [
+   "\u0000\u0000\u0011\u0011name rabbit at port 25672\n",
+   "\u0000\u0000\u0011\u0011"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "tor-protocolinfo",
+  "service": "Tor",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "PROTOCOLINFO 1\\r\\n",
+  "ports": [
+   9051
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^250-PROTOCOLINFO 1.*250-VERSION Tor=\"([\\d.]+)",
+    "product": "Tor",
+    "version": "$1",
+    "detail": "control port",
+    "service": "Tor"
+   },
+   {
+    "regex": "^514 Authentication required",
+    "product": "Tor",
+    "detail": "control port, authentication required",
+    "service": "Tor"
+   }
+  ],
+  "samples": [
+   "250-PROTOCOLINFO 1\r\n250-AUTH METHODS=COOKIE,SAFECOOKIE COOKIEFILE=\"/run/tor/control.authcookie\"\r\n250-VERSION Tor=\"0.4.8.9\"\r\n250 OK\r\n",
+   "514 Authentication required.\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "munin-node",
+  "service": "Munin",
+  "protocols": [
+   "tcp",
+   "null"
+  ],
+  "send": "version\\n",
+  "ports": [
+   4949
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?m)^munin node at (\\S+) version: ([\\d.]+)",
+    "product": "munin-node",
+    "version": "$2",
+    "detail": "host $1",
+    "service": "Munin"
+   },
+   {
+    "regex": "^# munin node at (\\S+)",
+    "product": "munin-node",
+    "detail": "host $1",
+    "service": "Munin"
+   }
+  ],
+  "samples": [
+   "# munin node at nas.local\nmunin node at nas.local version: 2.0.69\n",
+   "# munin node at nas.local\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "teamspeak3-query",
+  "service": "TeamSpeak",
+  "protocols": [
+   "tcp",
+   "null"
+  ],
+  "send": "version\\n",
+  "ports": [
+   10011
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)version=([\\d.]+) build=\\d+ platform=(\\w+)",
+    "product": "TeamSpeak 3",
+    "version": "$1",
+    "detail": "ServerQuery on $2",
+    "service": "TeamSpeak"
+   },
+   {
+    "regex": "^TS3\\n\\r",
+    "product": "TeamSpeak 3",
+    "detail": "ServerQuery",
+    "service": "TeamSpeak"
+   }
+  ],
+  "samples": [
+   "TS3\n\rWelcome to the TeamSpeak 3 ServerQuery interface, type \"help\" for a list of commands.\n\rversion=3.13.7 build=1655727713 platform=Linux\n\rerror id=0 msg=ok\n\r",
+   "TS3\n\rWelcome to the TeamSpeak 3 ServerQuery interface\n\r"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "mpd",
+  "service": "MPD",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^OK MPD ([\\d.]+)",
+    "product": "MPD",
+    "version": "$1",
+    "service": "MPD"
+   }
+  ],
+  "samples": [
+   "OK MPD 0.23.5\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "asterisk-ami",
+  "service": "Asterisk",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^Asterisk Call Manager/([\\d.]+)",
+    "product": "Asterisk Manager",
+    "version": "$1",
+    "service": "Asterisk"
+   }
+  ],
+  "samples": [
+   "Asterisk Call Manager/5.0.1\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "freeswitch-esl",
+  "service": "FreeSWITCH",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^Content-Type: auth/request",
+    "product": "FreeSWITCH",
+    "detail": "event socket",
+    "service": "FreeSWITCH"
+   }
+  ],
+  "samples": [
+   "Content-Type: auth/request\n\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "managesieve",
+  "service": "ManageSieve",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\"IMPLEMENTATION\" \"([^\"]{1,60})\"",
+    "product": "$1",
+    "detail": "sieve",
+    "service": "ManageSieve"
+   }
+  ],
+  "samples": [
+   "\"IMPLEMENTATION\" \"Dovecot Pigeonhole\"\r\n\"SIEVE\" \"fileinto vacation\"\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "tarantool",
+  "service": "Tarantool",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^Tarantool ([\\d.]+)",
+    "product": "Tarantool",
+    "version": "$1",
+    "detail": "binary protocol greeting",
+    "service": "Tarantool"
+   }
+  ],
+  "samples": [
+   "Tarantool 2.11.1 (Binary) 5f6a7e0c-1111-2222-3333-444455556666  \n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "dict",
+  "service": "DICT",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^220 \\S+ dictd ([\\d.]+)",
+    "product": "dictd",
+    "version": "$1",
+    "service": "DICT"
+   }
+  ],
+  "samples": [
+   "220 host dictd 1.12.1/rf on Linux 5.15 <auth.mime> <1.2.3@host>\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "gpsd",
+  "service": "gpsd",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\{\"class\":\"VERSION\",\"release\":\"([\\d.]+)",
+    "product": "gpsd",
+    "version": "$1",
+    "service": "gpsd"
+   }
+  ],
+  "samples": [
+   "{\"class\":\"VERSION\",\"release\":\"3.25\",\"rev\":\"3.25\",\"proto_major\":3,\"proto_minor\":14}\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "ganglia-gmond",
+  "service": "Ganglia",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^<\\?xml[^>]*standalone=\"yes\"\\?>\\s*<!DOCTYPE GANGLIA_XML",
+    "product": "gmond",
+    "detail": "XML dump on connect",
+    "service": "Ganglia"
+   }
+  ],
+  "samples": [
+   "<?xml version=\"1.0\" encoding=\"ISO-8859-1\" standalone=\"yes\"?>\n<!DOCTYPE GANGLIA_XML [\n   <!ELEMENT GANGLIA_XML (GRID|CLUSTER|HOST)*>\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "chargen",
+  "service": "Chargen",
+  "protocols": [
+   "null"
+  ],
+  "send": "",
+  "ports": [],
+  "rarity": 1,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^ !\"#\\$%&\\'\\(\\)\\*\\+,-\\./0123456789",
+    "detail": "character generator",
+    "service": "Chargen"
+   }
+  ],
+  "samples": [
+   " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "220 mail ESMTP ready\r\n"
+  ]
+ },
+ {
+  "id": "couchdb-root",
+  "service": "CouchDB",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET / HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   5984
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"couchdb\"\\s*:\\s*\"Welcome\".*?\"version\"\\s*:\\s*\"([\\d.]+)\"",
+    "product": "CouchDB",
+    "version": "$1",
+    "service": "CouchDB"
+   },
+   {
+    "regex": "\"couchdb\"\\s*:\\s*\"Welcome\"",
+    "product": "CouchDB",
+    "service": "CouchDB"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 153\r\n\r\n{\"couchdb\":\"Welcome\",\"version\":\"3.3.3\",\"git_sha\":\"40afbcfc7\",\"uuid\":\"abc\",\"features\":[\"access-ready\"],\"vendor\":{\"name\":\"The Apache Software Foundation\"}}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "elasticsearch-root",
+  "service": "Elasticsearch",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET / HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   9200,
+   9201
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"distribution\"\\s*:\\s*\"opensearch\".*?\"number\"\\s*:\\s*\"([\\d.]+)\"",
+    "service": "OpenSearch",
+    "product": "OpenSearch",
+    "version": "$1"
+   },
+   {
+    "regex": "(?s)\"version\"\\s*:\\s*\\{[^}]*?\"number\"\\s*:\\s*\"([\\d.]+)\".*\"tagline\"\\s*:\\s*\"You Know, for Search\"",
+    "product": "Elasticsearch",
+    "version": "$1",
+    "service": "Elasticsearch"
+   },
+   {
+    "regex": "(?i)\\r\\nX-elastic-product:\\s*Elasticsearch",
+    "product": "Elasticsearch",
+    "detail": "authentication required",
+    "service": "Elasticsearch"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 175\r\n\r\n{\n  \"name\" : \"node-1\",\n  \"cluster_name\" : \"elasticsearch\",\n  \"version\" : {\n    \"number\" : \"8.11.1\",\n    \"build_flavor\" : \"default\"\n  },\n  \"tagline\" : \"You Know, for Search\"\n}\n",
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 132\r\n\r\n{\"name\":\"os1\",\"version\":{\"distribution\":\"opensearch\",\"number\":\"2.11.1\"},\"tagline\":\"The OpenSearch Project: https://opensearch.org/\"}",
+   "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nX-elastic-product: Elasticsearch\r\nContent-Length: 52\r\n\r\n{\"error\":{\"type\":\"security_exception\"},\"status\":401}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "etcd-version",
+  "service": "etcd",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /version HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   2379,
+   4001
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "\"etcdserver\"\\s*:\\s*\"([\\d.]+[^\"]{0,20})\"",
+    "product": "etcd",
+    "version": "$1",
+    "service": "etcd"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 44\r\n\r\n{\"etcdserver\":\"3.5.9\",\"etcdcluster\":\"3.5.0\"}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "consul-leader",
+  "service": "Consul",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /v1/status/leader HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8500
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^HTTP/1\\.[01] \\d{3}.*\\r\\nX-Consul-[A-Za-z-]+:",
+    "product": "Consul",
+    "detail": "HTTP API",
+    "service": "Consul"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nX-Consul-Default-Acl-Policy: allow\r\nContent-Length: 15\r\n\r\n\"10.0.0.5:8300\""
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "prometheus-buildinfo",
+  "service": "Prometheus",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /api/v1/status/buildinfo HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   9090,
+   9091
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "\"status\"\\s*:\\s*\"success\"\\s*,\\s*\"data\"\\s*:\\s*\\{\\s*\"version\"\\s*:\\s*\"([\\d.]+)\"",
+    "product": "Prometheus",
+    "version": "$1",
+    "service": "Prometheus"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 107\r\n\r\n{\"status\":\"success\",\"data\":{\"version\":\"2.48.0\",\"revision\":\"6d80b3\",\"branch\":\"HEAD\",\"goVersion\":\"go1.21.4\"}}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "alertmanager-status",
+  "service": "Alertmanager",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /api/v2/status HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   9093
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "\"versionInfo\"\\s*:\\s*\\{[^}]*?\"version\"\\s*:\\s*\"([\\d.]+)\"",
+    "product": "Alertmanager",
+    "version": "$1",
+    "service": "Alertmanager"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 81\r\n\r\n{\"cluster\":{\"status\":\"ready\"},\"versionInfo\":{\"branch\":\"HEAD\",\"version\":\"0.26.0\"}}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "grafana-health",
+  "service": "Grafana",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /api/health HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   3000
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"commit\"\\s*:\\s*\"[^\"]*\"\\s*,\\s*\"database\"\\s*:\\s*\"ok\"\\s*,\\s*\"version\"\\s*:\\s*\"([\\d.]+)\"",
+    "product": "Grafana",
+    "version": "$1",
+    "service": "Grafana"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 68\r\n\r\n{\n  \"commit\": \"abc1234\",\n  \"database\": \"ok\",\n  \"version\": \"10.2.2\"\n}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "docker-registry",
+  "service": "Docker Registry",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /v2/ HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   5000
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?i)\\r\\nDocker-Distribution-Api-Version:\\s*registry/2\\.0",
+    "product": "Docker Registry",
+    "detail": "registry v2 API",
+    "service": "Docker Registry"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nDocker-Distribution-Api-Version: registry/2.0\r\nContent-Length: 2\r\n\r\n{}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "jenkins-login",
+  "service": "Jenkins",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /login HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8080,
+   8081
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?i)\\r\\nX-Jenkins:\\s*([\\d.]+)",
+    "product": "Jenkins",
+    "version": "$1",
+    "service": "Jenkins"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nX-Jenkins: 2.426.1\r\nX-Hudson: 1.395\r\nContent-Length: 13\r\n\r\n<html></html>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "kubernetes-version",
+  "service": "Kubernetes",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /version HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   6443,
+   8080,
+   8001,
+   8443
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"gitVersion\"\\s*:\\s*\"v([\\d.]+[^\"]{0,30})\"",
+    "product": "Kubernetes API",
+    "version": "$1",
+    "service": "Kubernetes"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 90\r\n\r\n{\n  \"major\": \"1\",\n  \"minor\": \"28\",\n  \"gitVersion\": \"v1.28.3\",\n  \"goVersion\": \"go1.20.10\"\n}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "traefik-version",
+  "service": "Traefik",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /api/version HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8080
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "\"Codename\"\\s*:\\s*\"[^\"]*\"\\s*,\\s*\"Version\"\\s*:\\s*\"([\\d.]+)\"",
+    "product": "Traefik",
+    "version": "$1",
+    "service": "Traefik"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 82\r\n\r\n{\"Codename\":\"saintmarcelin\",\"Version\":\"2.10.5\",\"startDate\":\"2023-10-20T08:00:00Z\"}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "portainer-status",
+  "service": "Portainer",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /api/system/status HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   9000
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "\"Version\"\\s*:\\s*\"([\\d.]+)\"\\s*,\\s*\"InstanceID\"",
+    "product": "Portainer",
+    "version": "$1",
+    "service": "Portainer"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 72\r\n\r\n{\"Version\":\"2.19.4\",\"InstanceID\":\"299ab403-70a8-4c05-92f7-bf7a994d50df\"}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "influxdb-ping",
+  "service": "InfluxDB",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /ping HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8086
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?i)\\r\\nX-Influxdb-Version:\\s*v?([\\w.-]+)",
+    "product": "InfluxDB",
+    "version": "$1",
+    "service": "InfluxDB"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 204 No Content\r\nX-Influxdb-Build: OSS\r\nX-Influxdb-Version: 1.8.10\r\n\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "minio-health",
+  "service": "MinIO",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /minio/health/live HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   9000,
+   9001
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?i)\\r\\nServer:\\s*MinIO",
+    "product": "MinIO",
+    "detail": "object storage",
+    "service": "MinIO"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nServer: MinIO\r\nAccept-Ranges: bytes\r\nContent-Length: 0\r\n\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "rabbitmq-management",
+  "service": "RabbitMQ",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /api/overview HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   15672
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?i)\\r\\nWWW-Authenticate:\\s*Basic realm=\"RabbitMQ Management\"",
+    "product": "RabbitMQ",
+    "detail": "management API",
+    "service": "RabbitMQ"
+   },
+   {
+    "regex": "(?s)\"rabbitmq_version\"\\s*:\\s*\"([\\d.]+)\"",
+    "product": "RabbitMQ",
+    "version": "$1",
+    "service": "RabbitMQ"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nWWW-Authenticate: Basic realm=\"RabbitMQ Management\"\r\nContent-Length: 26\r\n\r\n{\"error\":\"not_authorised\"}",
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 61\r\n\r\n{\"management_version\":\"3.12.10\",\"rabbitmq_version\":\"3.12.10\"}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "vault-health",
+  "service": "Vault",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /v1/sys/health HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8200
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"initialized\"\\s*:\\s*(?:true|false).*?\"version\"\\s*:\\s*\"([\\d.]+)\"",
+    "product": "HashiCorp Vault",
+    "version": "$1",
+    "service": "Vault"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 132\r\n\r\n{\"initialized\":true,\"sealed\":false,\"standby\":false,\"server_time_utc\":1698000000,\"version\":\"1.15.2\",\"cluster_name\":\"vault-cluster-1\"}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "prometheus-exporter",
+  "service": "Prometheus exporter",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /metrics HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   9182,
+   9121,
+   9187,
+   9113,
+   9115,
+   9633,
+   9419
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?is)^HTTP/1\\.[01] 200[^\\r\\n]*\\r\\n(?:.*\\r\\n)?Content-Type:\\s*text/plain;\\s*version=0\\.0\\.4",
+    "detail": "metrics endpoint",
+    "service": "Prometheus exporter"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4; charset=utf-8\r\n\r\n# HELP go_gc_duration_seconds A summary\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "nsqd-info",
+  "service": "NSQ",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /info HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   4151,
+   4161
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"version\"\\s*:\\s*\"([\\d.]+)\"[^}]*\"broadcast_address\"",
+    "product": "nsqd",
+    "version": "$1",
+    "service": "NSQ"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 97\r\n\r\n{\"version\":\"1.2.1\",\"broadcast_address\":\"nsq1\",\"hostname\":\"nsq1\",\"http_port\":4151,\"tcp_port\":4150}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "netdata-info",
+  "service": "Netdata",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /api/v1/info HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   19999
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\\r\\n\\r\\n\\{\\s*\"version\"\\s*:\\s*\"v?([\\w.-]+)\"\\s*,\\s*\"uid\"",
+    "product": "Netdata",
+    "version": "$1",
+    "service": "Netdata"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 64\r\n\r\n{\"version\":\"v1.43.2\",\"uid\":\"aaaa-bbbb\",\"mirrored_hosts\":[\"nas\"]}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "moonraker-info",
+  "service": "Moonraker",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /server/info HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   7125
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"moonraker_version\"\\s*:\\s*\"v?([\\w.-]+)\"",
+    "product": "Moonraker",
+    "version": "$1",
+    "detail": "Klipper API",
+    "service": "Moonraker"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 108\r\n\r\n{\"result\": {\"klippy_connected\": true, \"moonraker_version\": \"v0.8.0-143-g4e6e5ec\", \"api_version\": [1, 0, 5]}}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "transmission-rpc",
+  "service": "Transmission",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /transmission/rpc HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   9091
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?i)\\r\\nX-Transmission-Session-Id:\\s*\\w+",
+    "product": "Transmission",
+    "detail": "RPC (session id challenge)",
+    "service": "Transmission"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 409 Conflict\r\nContent-Type: text/html\r\nX-Transmission-Session-Id: AbCdEf123456\r\nContent-Length: 22\r\n\r\n<h1>409: Conflict</h1>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "syncthing-gui",
+  "service": "Syncthing",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET / HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8384
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?i)\\r\\nX-Syncthing-Id:\\s*([A-Z0-9-]{20,})",
+    "product": "Syncthing",
+    "detail": "device $1",
+    "service": "Syncthing"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nX-Syncthing-Id: MFZWI3D-BONSGYC-YLTMRWG-C43ENR5-QXGZDMM-FZWI3DP-BONSGYY-LTMRWAD\r\nContent-Length: 13\r\n\r\n<html></html>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "jellyfin-public",
+  "service": "Jellyfin",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /System/Info/Public HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8096
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"Version\"\\s*:\\s*\"([\\d.]+)\"\\s*,\\s*\"ProductName\"\\s*:\\s*\"Jellyfin Server\"",
+    "product": "Jellyfin",
+    "version": "$1",
+    "service": "Jellyfin"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 120\r\n\r\n{\"LocalAddress\":\"http://10.0.0.5:8096\",\"ServerName\":\"jf\",\"Version\":\"10.8.13\",\"ProductName\":\"Jellyfin Server\",\"Id\":\"abc\"}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "plex-identity",
+  "service": "Plex",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /identity HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   32400
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "<MediaContainer[^>]*machineIdentifier=\"[^\"]+\"[^>]*version=\"([\\w.-]+)\"",
+    "product": "Plex Media Server",
+    "version": "$1",
+    "service": "Plex"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: 156\r\n\r\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<MediaContainer size=\"0\" claimed=\"1\" machineIdentifier=\"0123abcd\" version=\"1.40.0.7998-c29d4c0c8\">\n</MediaContainer>\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "hue-config",
+  "service": "Philips Hue",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /api/config HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   80
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"apiversion\"\\s*:\\s*\"([\\d.]+)\"[^}]*\"bridgeid\"",
+    "product": "Philips Hue Bridge",
+    "version": "$1",
+    "service": "Philips Hue"
+   },
+   {
+    "regex": "\"bridgeid\"\\s*:\\s*\"[0-9A-Fa-f]{16}\"",
+    "product": "Philips Hue Bridge",
+    "service": "Philips Hue"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 188\r\n\r\n{\"name\":\"Philips hue\",\"datastoreversion\":\"163\",\"swversion\":\"1962154040\",\"apiversion\":\"1.62.0\",\"mac\":\"00:17:88:aa:bb:cc\",\"bridgeid\":\"001788FFFEAABBCC\",\"factorynew\":false,\"modelid\":\"BSB002\"}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "sonos-description",
+  "service": "Sonos",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /xml/device_description.xml HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   1400
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)<manufacturer>Sonos, Inc\\.</manufacturer>.*?<modelName>([^<]{1,40})</modelName>",
+    "product": "Sonos",
+    "detail": "$1",
+    "service": "Sonos"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: 313\r\n\r\n<?xml version=\"1.0\"?><root xmlns=\"urn:schemas-upnp-org:device-1-0\"><device><friendlyName>10.0.0.9 - Sonos One</friendlyName><manufacturer>Sonos, Inc.</manufacturer><manufacturerURL>http://www.sonos.com</manufacturerURL><modelDescription>Sonos One</modelDescription><modelName>Sonos One</modelName></device></root>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "roku-device-info",
+  "service": "Roku",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /query/device-info HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8060
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)<device-info>.*<model-name>([^<]{1,40})</model-name>",
+    "product": "Roku",
+    "detail": "$1",
+    "service": "Roku"
+   },
+   {
+    "regex": "(?i)\\r\\nServer:\\s*Roku/([\\d.]+)",
+    "product": "Roku",
+    "version": "$1",
+    "service": "Roku"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: 154\r\n\r\n<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<device-info>\n<udn>abc</udn>\n<serial-number>X0</serial-number>\n<model-name>Roku Ultra</model-name>\n</device-info>\n",
+   "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nServer: Roku/9.4.0 UPnP/1.0 Roku/9.4.0\r\nContent-Length: 4\r\n\r\n<x/>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "airplay-server-info",
+  "service": "AirPlay",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /server-info HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   7000
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)<key>model</key>\\s*<string>([^<]{1,40})</string>.*<key>srcvers</key>\\s*<string>([\\d.]+)</string>",
+    "product": "AirPlay",
+    "version": "$2",
+    "detail": "$1",
+    "service": "AirPlay"
+   },
+   {
+    "regex": "(?i)\\r\\nServer:\\s*AirTunes/([\\d.]+)",
+    "product": "AirPlay",
+    "version": "$1",
+    "service": "AirPlay"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/x-apple-plist+xml\r\nContent-Length: 240\r\n\r\n<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>deviceid</key><string>AA:BB:CC:DD:EE:FF</string><key>model</key><string>AppleTV5,3</string><key>protovers</key><string>1.0</string><key>srcvers</key><string>220.68</string></dict></plist>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "chromecast-eureka",
+  "service": "Google Cast",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /setup/eureka_info?params=name,version,build_info HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   8008
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)\"cast_build_revision\"\\s*:\\s*\"([\\d.]+)\"",
+    "product": "Chromecast",
+    "version": "$1",
+    "detail": "Google Cast device",
+    "service": "Google Cast"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 104\r\n\r\n{\"build_info\":{\"build_type\":1,\"cast_build_revision\":\"1.56.500000\"},\"name\":\"Living Room TV\",\"version\":12}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "upnp-description",
+  "service": "UPnP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /description.xml HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   49152,
+   49153,
+   49154,
+   52235,
+   2869,
+   8200
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)urn:schemas-upnp-org:device-1-0.*?<friendlyName>([^<]{1,60})</friendlyName>.*?<manufacturer>([^<]{1,40})</manufacturer>",
+    "detail": "$1 ($2)",
+    "service": "UPnP"
+   },
+   {
+    "regex": "urn:schemas-upnp-org:device-1-0",
+    "detail": "UPnP device description",
+    "service": "UPnP"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: 231\r\n\r\n<?xml version=\"1.0\"?><root xmlns=\"urn:schemas-upnp-org:device-1-0\"><specVersion><major>1</major><minor>0</minor></specVersion><device><friendlyName>Living Room</friendlyName><manufacturer>Example Corp</manufacturer></device></root>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "upnp-rootdesc",
+  "service": "UPnP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /rootDesc.xml HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   5000,
+   5431
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)urn:schemas-upnp-org:device-1-0.*?<friendlyName>([^<]{1,60})</friendlyName>.*?<manufacturer>([^<]{1,40})</manufacturer>",
+    "detail": "$1 ($2)",
+    "service": "UPnP"
+   },
+   {
+    "regex": "urn:schemas-upnp-org:device-1-0",
+    "detail": "UPnP device description",
+    "service": "UPnP"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nContent-Length: 163\r\n\r\n<?xml version=\"1.0\"?><root xmlns=\"urn:schemas-upnp-org:device-1-0\"><device><friendlyName>Router</friendlyName><manufacturer>MiniUPnP</manufacturer></device></root>"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "homekit-accessories",
+  "service": "HomeKit",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /accessories HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   51826,
+   51827,
+   51828
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^HTTP/1\\.1 470 ",
+    "detail": "HAP accessory, pairing required",
+    "service": "HomeKit"
+   },
+   {
+    "regex": "(?i)\\r\\nContent-Type:\\s*application/hap\\+json",
+    "detail": "HAP accessory",
+    "service": "HomeKit"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 470 Connection Authorization Required\r\nContent-Type: application/hap+json\r\nContent-Length: 17\r\n\r\n{\"status\":-70401}",
+   "HTTP/1.1 200 OK\r\nContent-Type: application/hap+json\r\n\r\n{}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "ethereum-jsonrpc",
+  "service": "Ethereum",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "POST / HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nContent-Type: application/json\\r\\nContent-Length: 66\\r\\nConnection: close\\r\\n\\r\\n{\"jsonrpc\":\"2.0\",\"method\":\"web3_clientVersion\",\"params\":[],\"id\":1}",
+  "ports": [
+   8545
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "\"result\"\\s*:\\s*\"([A-Za-z][\\w.-]*)/v?([\\w.-]+)",
+    "product": "$1",
+    "version": "$2",
+    "detail": "JSON-RPC",
+    "service": "Ethereum"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 76\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"Geth/v1.13.5-stable/linux-amd64/go1.21.4\"}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "ipp-get-printer",
+  "service": "IPP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "POST /ipp/print HTTP/1.1\\r\\nHost: {ip}:{port}\\r\\nContent-Type: application/ipp\\r\\nContent-Length: 160\\r\\nConnection: close\\r\\n\\r\\n\\x01\\x01\\0\\x0b\\0\\0\\0\\x01\\x01G\\0\\x12attributes-charset\\0\\x05utf-8H\\0\\x1battributes-natural-language\\0\\x02enE\\0\\x0bprinter-uri\\0\\x19ipp://localhost/ipp/printD\\0\\x14requested-attributes\\0\\x16printer-make-and-model\\x03",
+  "ports": [
+   8631
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 2000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^HTTP/1\\.[01] 200.*printer-make-and-model\\x00.([\\x20-\\x7e]{3,80})",
+    "detail": "$1",
+    "service": "IPP"
+   },
+   {
+    "regex": "(?s)^HTTP/1\\.[01] \\d{3}.*\\r\\nContent-Type: application/ipp",
+    "detail": "IPP endpoint",
+    "service": "IPP"
+   },
+   {
+    "regex": "(?s)^HTTP/1\\.[01] \\d{3}.*\\r\\nServer: CUPS/([\\d.]+)",
+    "product": "CUPS",
+    "version": "$1",
+    "service": "IPP"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: application/ipp\r\nContent-Length: 60\r\n\r\n\u0001\u0001\u0000\u0000\u0000\u0000\u0000\u0001\u0001G\u0000\u0012attributes-charset\u0000\u0005utf-8\u0004A\u0000\u0016printer-make-and-model\u0000\nHP LaserJet\u0003"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "http-proxy-connect",
+  "service": "HTTP proxy",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "CONNECT 127.0.0.1:9 HTTP/1.1\\r\\nHost: 127.0.0.1:9\\r\\n\\r\\n",
+  "ports": [
+   3128,
+   3129,
+   8118,
+   8888
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?is)^HTTP/1\\.[01] \\d{3}.*?\\r\\n(?:Server|Proxy-Agent|X-Cache): ?(squid|tinyproxy|privoxy|3proxy|polipo|haproxy)/?([\\d.]*)",
+    "product": "$1",
+    "version": "$2",
+    "detail": "proxy",
+    "service": "HTTP proxy"
+   },
+   {
+    "regex": "(?is)^HTTP/1\\.[01] 407 .*Proxy-Authenticate",
+    "detail": "proxy, authentication required",
+    "service": "HTTP proxy"
+   },
+   {
+    "regex": "^HTTP/1\\.[01] 200 Connection established",
+    "detail": "open proxy",
+    "service": "HTTP proxy"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 503 Service Unavailable\r\nServer: squid/6.1\r\nX-Squid-Error: ERR_CONNECT_FAIL 111\r\n\r\n",
+   "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\n\r\n",
+   "HTTP/1.0 200 Connection established\r\n\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "HTTP/1.1 400 Bad Request\r\nServer: nginx/1.25\r\n\r\n"
+  ]
+ },
+ {
+  "id": "hazelcast-health",
+  "service": "Hazelcast",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "GET /hazelcast/health HTTP/1.0\\r\\nHost: {ip}:{port}\\r\\nConnection: close\\r\\n\\r\\n",
+  "ports": [
+   5701
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "Hazelcast::NodeState=(\\w+)",
+    "product": "Hazelcast",
+    "detail": "node state $1",
+    "service": "Hazelcast"
+   }
+  ],
+  "samples": [
+   "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHazelcast::NodeState=ACTIVE\nHazelcast::ClusterState=ACTIVE\nHazelcast::ClusterSafe=TRUE\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "zabbix-agent",
+  "service": "Zabbix",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "agent.version\\n",
+  "ports": [
+   10050
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^ZBXD\\x01.{8}(\\d+\\.\\d+\\.\\d+[\\w.-]*)",
+    "product": "Zabbix agent",
+    "version": "$1",
+    "service": "Zabbix"
+   },
+   {
+    "regex": "(?s)^ZBXD\\x01.{8}ZBX_NOTSUPPORTED",
+    "product": "Zabbix agent",
+    "detail": "item not allowed",
+    "service": "Zabbix"
+   },
+   {
+    "regex": "^ZBXD\\x01",
+    "product": "Zabbix agent",
+    "service": "Zabbix"
+   }
+  ],
+  "samples": [
+   "ZBXD\u0001\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u00006.4.8"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "dns-tcp-version-bind",
+  "service": "DNS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\x1e\\x137\\x01\\0\\0\\x01\\0\\0\\0\\0\\0\\0\\x07version\\x04bind\\0\\0\\x10\\0\\x03",
+  "ports": [
+   53
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^..\\x13\\x37[\\x80-\\xff].*?\\xc0\\x0c\\x00\\x10\\x00\\x03.{4}\\x00..([\\x20-\\x7e]{3,60})",
+    "detail": "version.bind $1",
+    "service": "DNS"
+   },
+   {
+    "regex": "(?s)^..\\x13\\x37[\\x80-\\xff]",
+    "detail": "answers over TCP",
+    "service": "DNS"
+   }
+  ],
+  "samples": [
+   "\u0000;\u00137\u0085\u0080\u0000\u0001\u0000\u0001\u0000\u0000\u0000\u0000\u0007version\u0004bind\u0000\u0000\u0010\u0000\u0003\u00c0\f\u0000\u0010\u0000\u0003\u0000\u0000\u0000\u0000\u0000\u0011\u00109.18.12-1ubuntu1",
+   "\u0000\u001e\u00137\u0081\u0085\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0007version\u0004bind\u0000\u0000\u0010\u0000\u0003"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "dns-tcp-root-ns",
+  "service": "DNS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\x11NP\\x01\\0\\0\\x01\\0\\0\\0\\0\\0\\0\\0\\0\\x02\\0\\x01",
+  "ports": [
+   53
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^..NP[\\x80-\\xff][\\x80-\\xff]",
+    "detail": "recursive resolver",
+    "service": "DNS"
+   },
+   {
+    "regex": "(?s)^..NP[\\x80-\\xff]",
+    "detail": "DNS server, recursion not offered",
+    "service": "DNS"
+   }
+  ],
+  "samples": [
+   "\u0000\u0011NP\u0081\u0080\u0000\u0001\u0000\r\u0000\u0000\u0000\u0000\u0000\u0000\u0002\u0000\u0001",
+   "\u0000\u0011NP\u0084\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0002\u0000\u0001"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "mysql-quit-early",
+  "service": "MySQL",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x01\\0\\0\\x01\\x01",
+  "ports": [],
+  "commonPorts": [
+   3306,
+   3307
+  ],
+  "rarity": 6,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^.{3}\\x00\\x0a(\\d[\\w.+~-]*MariaDB[\\w.+~-]*)\\x00",
+    "product": "MariaDB",
+    "version": "$1",
+    "service": "MySQL"
+   },
+   {
+    "regex": "(?s)^.{3}\\x00\\x0a(\\d[\\w.+~-]*)\\x00",
+    "product": "MySQL",
+    "version": "$1",
+    "service": "MySQL"
+   },
+   {
+    "regex": "(?s)^.{3}\\x00\\xff[\\x69\\x6a]\\x04",
+    "product": "MySQL",
+    "detail": "host blocked or not allowed",
+    "service": "MySQL"
+   }
+  ],
+  "samples": [
+   "I\u0000\u0000\u0000\n8.0.36-0ubuntu0.22.04.1\u0000\b\u0000\u0000\u0000",
+   "#\u0000\u0000\u0000\u00ffj\u0004Host '10.0.0.2' is not allowed"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "vnc-rfb-reply",
+  "service": "VNC",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "RFB 003.008\\n",
+  "ports": [
+   5900,
+   5901,
+   5902,
+   5903
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^RFB (\\d{3})\\.(\\d{3})\\n",
+    "detail": "RFB $1.$2",
+    "service": "VNC"
+   }
+  ],
+  "samples": [
+   "RFB 003.008\n\u0001\u0002",
+   "RFB 003.889\n\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "smb1-negotiate",
+  "service": "SMB",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\0\\0/\\xffSMBr\\0\\0\\0\\0\\x18S\\xc8\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\xff\\xfe\\0\\0\\0\\0\\0\\x0c\\0\\x02NT LM 0.12\\0",
+  "ports": [
+   445
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00\\x00..\\xffSMB\\x72",
+    "detail": "SMB1 negotiate answered",
+    "service": "SMB"
+   },
+   {
+    "regex": "(?s)^\\x00\\x00..\\xfeSMB",
+    "detail": "SMB2 only, SMB1 disabled",
+    "service": "SMB"
+   }
+  ],
+  "samples": [
+   "\u0000\u0000\u0000U\u00ffSMBr\u0000\u0000\u0000\u0000\u0098S\u00c8\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+   "\u0000\u0000\u0000|\u00feSMB@\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "netbios-session-request",
+  "service": "NetBIOS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x81\\0\\0D CKFDENECFDEFFCFGEFFCCACACACACACA\\0 EOEFFEFAFCEPECEFCACACACACACACAAA\\0",
+  "ports": [
+   139
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\x82\\x00\\x00\\x00",
+    "detail": "session request accepted",
+    "service": "NetBIOS"
+   },
+   {
+    "regex": "^\\x83\\x00\\x00\\x01[\\x80-\\x8f]",
+    "detail": "session refused, called name not present",
+    "service": "NetBIOS"
+   },
+   {
+    "regex": "^\\x84\\x00\\x00\\x06",
+    "detail": "session retarget",
+    "service": "NetBIOS"
+   }
+  ],
+  "samples": [
+   "\u0082\u0000\u0000\u0000",
+   "\u0083\u0000\u0000\u0001\u0082"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "postgresql-sslrequest",
+  "service": "PostgreSQL",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\0\\0\\x08\\x04\\xd2\\x16/",
+  "ports": [
+   5432,
+   5433
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^S$",
+    "product": "PostgreSQL",
+    "detail": "SSL supported",
+    "service": "PostgreSQL"
+   },
+   {
+    "regex": "^N$",
+    "product": "PostgreSQL",
+    "detail": "SSL not offered",
+    "service": "PostgreSQL"
+   }
+  ],
+  "samples": [
+   "S",
+   "N"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "mssql-prelogin",
+  "service": "MSSQL",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x12\\x01\\0/\\0\\0\\x01\\0\\0\\0\\x1a\\0\\x06\\x01\\0 \\0\\x01\\x02\\0!\\0\\x01\\x03\\0\"\\0\\x04\\x04\\0&\\0\\x01\\xff\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0",
+  "ports": [
+   1433,
+   1434
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x04\\x01..\\x00\\x00..\\x00\\x00\\x1a\\x00\\x06.{21}\\x10",
+    "product": "SQL Server 2022",
+    "version": "16",
+    "detail": "TDS major 16",
+    "service": "MSSQL"
+   },
+   {
+    "regex": "(?s)^\\x04\\x01..\\x00\\x00..\\x00\\x00\\x1a\\x00\\x06.{21}\\x0f",
+    "product": "SQL Server 2019",
+    "version": "15",
+    "detail": "TDS major 15",
+    "service": "MSSQL"
+   },
+   {
+    "regex": "(?s)^\\x04\\x01..\\x00\\x00..\\x00\\x00\\x1a\\x00\\x06.{21}\\x0e",
+    "product": "SQL Server 2017",
+    "version": "14",
+    "detail": "TDS major 14",
+    "service": "MSSQL"
+   },
+   {
+    "regex": "(?s)^\\x04\\x01..\\x00\\x00..\\x00\\x00\\x1a\\x00\\x06.{21}\\x0d",
+    "product": "SQL Server 2016",
+    "version": "13",
+    "detail": "TDS major 13",
+    "service": "MSSQL"
+   },
+   {
+    "regex": "(?s)^\\x04\\x01..\\x00\\x00..\\x00\\x00\\x1a\\x00\\x06.{21}\\x0c",
+    "product": "SQL Server 2014",
+    "version": "12",
+    "detail": "TDS major 12",
+    "service": "MSSQL"
+   },
+   {
+    "regex": "(?s)^\\x04\\x01..\\x00\\x00..\\x00\\x00\\x1a\\x00\\x06.{21}\\x0b",
+    "product": "SQL Server 2012",
+    "version": "11",
+    "detail": "TDS major 11",
+    "service": "MSSQL"
+   },
+   {
+    "regex": "(?s)^\\x04\\x01..\\x00\\x00..\\x00\\x00\\x1a\\x00\\x06.{21}\\x0a",
+    "product": "SQL Server 2008",
+    "version": "10",
+    "detail": "TDS major 10",
+    "service": "MSSQL"
+   },
+   {
+    "regex": "(?s)^\\x04\\x01..\\x00\\x00..\\x00\\x00.\\x00\\x06",
+    "product": "SQL Server",
+    "detail": "TDS prelogin response",
+    "service": "MSSQL"
+   }
+  ],
+  "samples": [
+   "\u0004\u0001\u0000+\u0000\u0000\u0001\u0000\u0000\u0000\u001a\u0000\u0006\u0001\u0000 \u0000\u0001\u0002\u0000!\u0000\u0001\u0003\u0000\"\u0000\u0004\u0004\u0000&\u0000\u0001\u00ff\u000f\u0000\u0007\u00d0\u0000\u0000\u0000\u0000\u0000",
+   "\u0004\u0001\u0000+\u0000\u0000\u0001\u0000\u0000\u0000\u001a\u0000\u0006\u0001\u0000 \u0000\u0001\u0002\u0000!\u0000\u0001\u0003\u0000\"\u0000\u0004\u0004\u0000&\u0000\u0001\u00ff\u0010\u0000\u0007\u00d0\u0000\u0000\u0000\u0000\u0000",
+   "\u0004\u0001\u0000+\u0000\u0000\u0001\u0000\u0000\u0000\u001a\u0000\u0006\u0001\u0000 \u0000\u0001\u0002\u0000!\u0000\u0001\u0003\u0000\"\u0000\u0004\u0004\u0000&\u0000\u0001\u00ff\u000e\u0000\u0007\u00d0\u0000\u0000\u0000\u0000\u0000",
+   "\u0004\u0001\u0000+\u0000\u0000\u0001\u0000\u0000\u0000\u001a\u0000\u0006\u0001\u0000 \u0000\u0001\u0002\u0000!\u0000\u0001\u0003\u0000\"\u0000\u0004\u0004\u0000&\u0000\u0001\u00ff\r\u0000\u0007\u00d0\u0000\u0000\u0000\u0000\u0000",
+   "\u0004\u0001\u0000+\u0000\u0000\u0001\u0000\u0000\u0000\u001a\u0000\u0006\u0001\u0000 \u0000\u0001\u0002\u0000!\u0000\u0001\u0003\u0000\"\u0000\u0004\u0004\u0000&\u0000\u0001\u00ff\f\u0000\u0007\u00d0\u0000\u0000\u0000\u0000\u0000",
+   "\u0004\u0001\u0000+\u0000\u0000\u0001\u0000\u0000\u0000\u001a\u0000\u0006\u0001\u0000 \u0000\u0001\u0002\u0000!\u0000\u0001\u0003\u0000\"\u0000\u0004\u0004\u0000&\u0000\u0001\u00ff\u000b\u0000\u0007\u00d0\u0000\u0000\u0000\u0000\u0000",
+   "\u0004\u0001\u0000+\u0000\u0000\u0001\u0000\u0000\u0000\u001a\u0000\u0006\u0001\u0000 \u0000\u0001\u0002\u0000!\u0000\u0001\u0003\u0000\"\u0000\u0004\u0004\u0000&\u0000\u0001\u00ff\n\u0000\u0007\u00d0\u0000\u0000\u0000\u0000\u0000",
+   "\u0004\u0001\u0000+\u0000\u0000\u0001\u0000\u0000\u0000\u001a\u0000\u0006\u0001\u0000 \u0000\u0001\u0002\u0000!\u0000\u0001\u0003\u0000\"\u0000\u0004\u0004\u0000&\u0000\u0001\u00ff\t\u0000\u0007\u00d0\u0000\u0000\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "oracle-tns-connect",
+  "service": "Oracle TNS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0Z\\0\\0\\x01\\0\\0\\0\\x016\\x01,\\0\\0\\x08\\0\\x7f\\xff\\x7f\\x08\\0\\0\\0\\x01\\0 \\0:\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0(CONNECT_DATA=(COMMAND=version))",
+  "ports": [
+   1521,
+   1522,
+   1526,
+   1529
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^..\\x00\\x00\\x04.{3}.*\\(VSNNUM=(\\d+)\\)",
+    "product": "Oracle TNS Listener",
+    "detail": "VSNNUM $1",
+    "service": "Oracle TNS"
+   },
+   {
+    "regex": "(?s)^..\\x00\\x00\\x06.{3}.*TNSLSNR for ([^\\r\\n:]{1,30}): Version ([\\d.]+)",
+    "product": "Oracle TNS Listener",
+    "version": "$2",
+    "detail": "$1",
+    "service": "Oracle TNS"
+   },
+   {
+    "regex": "(?s)^..\\x00\\x00\\x02\\x00\\x00\\x00\\x01[\\x2c-\\x40]",
+    "product": "Oracle TNS Listener",
+    "detail": "connect accepted",
+    "service": "Oracle TNS"
+   },
+   {
+    "regex": "(?s)^..\\x00\\x00\\x04\\x00\\x00\\x00.{4}\\(DESCRIPTION",
+    "product": "Oracle TNS Listener",
+    "detail": "connect refused",
+    "service": "Oracle TNS"
+   },
+   {
+    "regex": "(?s)^..\\x00\\x00\\x05\\x00\\x00\\x00.{2,4}\\(ADDRESS",
+    "product": "Oracle TNS Listener",
+    "detail": "redirect",
+    "service": "Oracle TNS"
+   }
+  ],
+  "samples": [
+   "\u0000e\u0000\u0000\u0004\u0000\u0000\u0000\u0000\u0000\u0000Y(DESCRIPTION=(TMP=)(VSNNUM=318767104)(ERR=1189)(ERROR_STACK=(ERROR=(CODE=1189)(EMFI=4))))",
+   "\u0000B\u0000\u0000\u0006\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\fTNSLSNR for Linux: Version 19.0.0.0.0 - Production\n",
+   "\u0000 \u0000\u0000\u0002\u0000\u0000\u0000\u00016\u0000\u0000\b\u0000\u007f\u00ff\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+   "\u0000(\u0000\u0000\u0004\u0000\u0000\u0000\"\u0000\u0000 (DESCRIPTION=(ERR=12514))"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "redis-ping",
+  "service": "Redis",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "PING\\r\\n",
+  "ports": [
+   6380,
+   6381,
+   7000,
+   7001,
+   7002,
+   16379,
+   26379
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\+PONG\\r\\n",
+    "product": "Redis",
+    "detail": "PING answered",
+    "service": "Redis"
+   },
+   {
+    "regex": "^-(?:NOAUTH|DENIED) ",
+    "product": "Redis",
+    "detail": "auth required",
+    "service": "Redis"
+   }
+  ],
+  "samples": [
+   "+PONG\r\n",
+   "-NOAUTH Authentication required.\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "redis-info-server",
+  "service": "Redis",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "*2\\r\\n$4\\r\\nINFO\\r\\n$6\\r\\nserver\\r\\n",
+  "ports": [
+   6380,
+   6381,
+   7000,
+   7001,
+   7002,
+   16379
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\$\\d+\\r\\n# Server\\r\\nredis_version:[\\d.]+.*?valkey_version:([\\d.]+)",
+    "service": "Valkey",
+    "product": "Valkey",
+    "version": "$1"
+   },
+   {
+    "regex": "(?s)^\\$\\d+\\r\\n# Server\\r\\nredis_version:[\\d.]+.*?dragonfly_version:(?:df-)?v?([\\w.-]+)",
+    "service": "Dragonfly",
+    "product": "Dragonfly",
+    "version": "$1"
+   },
+   {
+    "regex": "(?s)^\\$\\d+\\r\\n# Server\\r\\nredis_version:([\\d.]+).*?redis_mode:(\\w+)",
+    "product": "Redis",
+    "version": "$1",
+    "detail": "mode $2",
+    "service": "Redis"
+   },
+   {
+    "regex": "^\\$\\d+\\r\\n# Server\\r\\nredis_version:([\\d.]+)",
+    "product": "Redis",
+    "version": "$1",
+    "service": "Redis"
+   }
+  ],
+  "samples": [
+   "$300\r\n# Server\r\nredis_version:7.2.4\r\nredis_git_sha1:00000000\r\nredis_mode:standalone\r\nos:Linux 5.15\r\n",
+   "$300\r\n# Server\r\nredis_version:7.2.4\r\nserver_name:valkey\r\nvalkey_version:8.0.0\r\nredis_mode:standalone\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "redis-sentinel",
+  "service": "Redis Sentinel",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "*2\\r\\n$4\\r\\nINFO\\r\\n$8\\r\\nsentinel\\r\\n",
+  "ports": [
+   26379
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\$\\d+\\r\\n# Sentinel\\r\\nsentinel_masters:(\\d+)",
+    "product": "Redis Sentinel",
+    "detail": "$1 masters",
+    "service": "Redis Sentinel"
+   }
+  ],
+  "samples": [
+   "$200\r\n# Sentinel\r\nsentinel_masters:1\r\nsentinel_tilt:0\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "memcached-stats",
+  "service": "Memcached",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "stats\\r\\n",
+  "ports": [
+   11212
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^STAT pid \\d+\\r\\n.*STAT version ([\\d.]+)",
+    "product": "Memcached",
+    "version": "$1",
+    "service": "Memcached"
+   },
+   {
+    "regex": "^STAT pid \\d+\\r\\n",
+    "product": "Memcached",
+    "service": "Memcached"
+   }
+  ],
+  "samples": [
+   "STAT pid 1234\r\nSTAT uptime 100\r\nSTAT version 1.6.21\r\nSTAT pointer_size 64\r\nEND\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "mongodb-opquery",
+  "service": "MongoDB",
+  "protocols": [
+   "tcp"
+  ],
+  "send": ":\\0\\0\\0\\x01\\0\\0\\0\\0\\0\\0\\0\\xd4\\x07\\0\\0\\0\\0\\0\\0admin.$cmd\\0\\0\\0\\0\\0\\xff\\xff\\xff\\xff\\x13\\0\\0\\0\\x10ismaster\\0\\x01\\0\\0\\0\\0",
+  "ports": [
+   27017,
+   27018,
+   27019
+  ],
+  "rarity": 6,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^.{12}\\x01\\x00\\x00\\x00.{20}.*\\x08ismaster\\x00[\\x00\\x01]",
+    "product": "MongoDB",
+    "detail": "legacy OP_REPLY to isMaster",
+    "service": "MongoDB"
+   }
+  ],
+  "samples": [
+   "L\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0001\u0000\u0000\u0000\b\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000(\u0000\u0000\u0000\u0000\u0000\u0000\u0000\bismaster\u0000\u0001\u0010maxWireVersion\u0000\u0011\u0000\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "mqtt-v31",
+  "service": "MQTT",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x10\\x1f\\0\\x06MQIsdp\\x03\\x02\\0<\\0\\x11netprobe-{rand}",
+  "ports": [
+   1883,
+   8883
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\x20\\x02[\\x00\\x01][\\x00-\\x05]",
+    "detail": "MQTT 3.1 CONNACK",
+    "service": "MQTT"
+   }
+  ],
+  "samples": [
+   " \u0002\u0000\u0000",
+   " \u0002\u0000\u0005"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "mqtt-v5",
+  "service": "MQTT",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x10\\x1e\\0\\x04MQTT\\x05\\x02\\0<\\0\\0\\x11netprobe-{rand}",
+  "ports": [
+   1883
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\x20[\\x03-\\x7f][\\x00\\x01][\\x00-\\xff]",
+    "detail": "MQTT 5 CONNACK",
+    "service": "MQTT"
+   }
+  ],
+  "samples": [
+   " \u0003\u0000\u0000\u0000",
+   " \u0003\u0000\u0084\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "kafka-apiversions",
+  "service": "Kafka",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\0\\0\\x12\\0\\x12\\0\\0\\0\\0\\x137\\0\\x08netprobe",
+  "ports": [
+   9092,
+   9093
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00\\x00..\\x00\\x00\\x13\\x37\\x00\\x00\\x00\\x00\\x00[\\x03-\\x7f]",
+    "detail": "ApiVersions answered",
+    "service": "Kafka"
+   },
+   {
+    "regex": "(?s)^\\x00\\x00..\\x00\\x00\\x13\\x37\\x00\\x23",
+    "detail": "ApiVersions v0 unsupported",
+    "service": "Kafka"
+   }
+  ],
+  "samples": [
+   "\u0000\u0000\u0000\u001c\u0000\u0000\u00137\u0000\u0000\u0000\u0000\u0000\u0003\u0000\u0000\u0000\u0000\u0000\t\u0000\u0001\u0000\u0000\u0000\r\u0000\u0012\u0000\u0000\u0000\u0003",
+   "\u0000\u0000\u0000\u0006\u0000\u0000\u00137\u0000#"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "cassandra-options",
+  "service": "Cassandra",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x04\\0\\0\\0\\x05\\0\\0\\0\\0",
+  "ports": [
+   9042,
+   9142
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^[\\x83-\\x85][\\x00-\\x0f]..\\x06.{4}.*CQL_VERSION\\x00\\x01\\x00.([\\d.]+)",
+    "product": "Cassandra CQL",
+    "version": "$1",
+    "detail": "native protocol",
+    "service": "Cassandra"
+   },
+   {
+    "regex": "(?s)^[\\x83-\\x85][\\x00-\\x0f]..\\x06.{4}.*CQL_VERSION",
+    "product": "Cassandra CQL",
+    "service": "Cassandra"
+   }
+  ],
+  "samples": [
+   "\u0084\u0000\u0000\u0000\u0006\u0000\u0000\u0000'\u0000\u0002\u0000\u000bCQL_VERSION\u0000\u0001\u0000\u00053.4.6\u0000\u000bCOMPRESSION\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "rethinkdb-handshake",
+  "service": "RethinkDB",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\xc3\\xbd\\xc24",
+  "ports": [
+   28015
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\{\"success\":true,\"min_protocol_version\":\\d+,\"max_protocol_version\":\\d+,\"server_version\":\"([\\d.]+)",
+    "product": "RethinkDB",
+    "version": "$1",
+    "service": "RethinkDB"
+   }
+  ],
+  "samples": [
+   "{\"success\":true,\"min_protocol_version\":0,\"max_protocol_version\":0,\"server_version\":\"2.4.2~0bionic\"}\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "aerospike-info",
+  "service": "Aerospike",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x02\\x01\\0\\0\\0\\0\\0\\x06build\\n",
+  "ports": [
+   3000
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x02\\x01.{6}build\\t([\\d.]+)",
+    "product": "Aerospike",
+    "version": "$1",
+    "service": "Aerospike"
+   }
+  ],
+  "samples": [
+   "\u0002\u0001\u0000\u0000\u0000\u0000\u0000\u000ebuild\t6.4.0.5\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "neo4j-bolt",
+  "service": "Neo4j Bolt",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "``\\xb0\\x17\\0\\0\\x04\\x05\\0\\0\\x04\\x04\\0\\0\\x03\\x04\\0\\0\\0\\0",
+  "ports": [
+   7687
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00\\x00[\\x00-\\x0f][\\x03-\\x08]$",
+    "detail": "Bolt handshake answered",
+    "service": "Neo4j Bolt"
+   }
+  ],
+  "samples": [
+   "\u0000\u0000\u0004\u0005",
+   "\u0000\u0000\u0004\u0004"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "ldap-anon-bind",
+  "service": "LDAP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "0\\x0c\\x02\\x01\\x01`\\x07\\x02\\x01\\x03\\x04\\0\\x80\\0",
+  "ports": [
+   389,
+   3268
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x30.{1,3}\\x02\\x01\\x01\\x61.{1,3}\\x0a\\x01\\x00",
+    "detail": "anonymous bind accepted",
+    "service": "LDAP"
+   },
+   {
+    "regex": "(?s)^\\x30.{1,3}\\x02\\x01\\x01\\x61",
+    "detail": "bind response",
+    "service": "LDAP"
+   }
+  ],
+  "samples": [
+   "0\f\u0002\u0001\u0001a\u0007\n\u0001\u0000\u0004\u0000\u0004\u0000",
+   "0\u0013\u0002\u0001\u0001a\u000e\n\u00011\u0004\u0000\u0004\u0007invalid"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "ldap-rootdse",
+  "service": "LDAP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "0|\\x02\\x01\\x01cw\\x04\\0\\n\\x01\\0\\n\\x01\\0\\x02\\x01\\0\\x02\\x01\\0\\x01\\x01\\0\\x87\\x0bobjectClass0W\\x04\\nvendorName\\x04\\rvendorVersion\\x04\\x14defaultNamingContext\\x04\\x0enamingContexts\\x04\\x14supportedLDAPVersion",
+  "ports": [
+   389,
+   3268
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x30.{1,3}\\x02\\x01\\x01\\x64.*defaultNamingContext\\x31.\\x04.(DC=[\\x20-\\x7e]{1,80})",
+    "product": "Active Directory",
+    "detail": "$1",
+    "service": "LDAP"
+   },
+   {
+    "regex": "(?s)^\\x30.{1,3}\\x02\\x01\\x01\\x64.*vendorName\\x31.\\x04.([\\x20-\\x7e]{2,50}).*vendorVersion\\x31.\\x04.([\\x20-\\x7e]{1,40})",
+    "product": "$1",
+    "version": "$2",
+    "service": "LDAP"
+   },
+   {
+    "regex": "(?s)^\\x30.{1,3}\\x02\\x01\\x01\\x64.*vendorName\\x31.\\x04.([\\x20-\\x7e]{2,50})",
+    "product": "$1",
+    "service": "LDAP"
+   },
+   {
+    "regex": "(?s)^\\x30.{1,3}\\x02\\x01\\x01\\x64",
+    "detail": "rootDSE readable",
+    "service": "LDAP"
+   },
+   {
+    "regex": "(?s)^\\x30.{1,3}\\x02\\x01\\x01\\x65",
+    "detail": "search refused without bind",
+    "service": "LDAP"
+   }
+  ],
+  "samples": [
+   "0>\u0002\u0001\u0001d9\u0004\u00000503\u0004\u0014defaultNamingContext1\u001b\u0004\u0019DC=corp,DC=example,DC=com0\f\u0002\u0001\u0001e\u0007\n\u0001\u0000\u0004\u0000\u0004\u0000",
+   "0N\u0002\u0001\u0001dI\u0004\u00000E0\u001b\u0004\nvendorName1\r\u0004\u000b389 Project0&\u0004\rvendorVersion1\u0015\u0004\u0013389-Directory/2.4.30\f\u0002\u0001\u0001e\u0007\n\u0001\u0000\u0004\u0000\u0004\u0000",
+   "00\u0002\u0001\u0001d+\u0004\u00000'0%\u0004\u000enamingContexts1\u0013\u0004\u0011dc=example,dc=org0\f\u0002\u0001\u0001e\u0007\n\u0001\u0000\u0004\u0000\u0004\u0000",
+   "0\f\u0002\u0001\u0001e\u0007\n\u0001\u0000\u0004\u0000\u0004\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "kerberos-asreq",
+  "service": "Kerberos",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\0\\0\\x91j\\x81\\x8e0\\x81\\x8b\\xa1\\x03\\x02\\x01\\x05\\xa2\\x03\\x02\\x01\\n\\xa4\\x7f0}\\xa0\\x07\\x03\\x05\\0\\0\\0\\0\\0\\xa1\\x150\\x13\\xa0\\x03\\x02\\x01\\x01\\xa1\\x0c0\\n\\x1b\\x08netprobe\\xa2\\x10\\x1b\\x0eNETPROBE.LOCAL\\xa3#0!\\xa0\\x03\\x02\\x01\\x02\\xa1\\x1a0\\x18\\x1b\\x06krbtgt\\x1b\\x0eNETPROBE.LOCAL\\xa5\\x11\\x18\\x0f20370913024805Z\\xa7\\x04\\x02\\x02\\x137\\xa8\\x0b0\\t\\x02\\x01\\x12\\x02\\x01\\x11\\x02\\x01\\x17",
+  "ports": [
+   88
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00\\x00..\\x7e.{1,3}\\x30.{1,3}\\xa0\\x03\\x02\\x01\\x05\\xa1\\x03\\x02\\x01\\x1e.*?\\xa9.\\x1b.([A-Za-z0-9._-]{3,60})",
+    "detail": "KRB-ERROR for realm $1",
+    "service": "Kerberos"
+   },
+   {
+    "regex": "(?s)^\\x00\\x00..\\x7e.{1,3}\\x30.{1,3}\\xa0\\x03\\x02\\x01\\x05\\xa1\\x03\\x02\\x01\\x1e",
+    "detail": "KRB-ERROR",
+    "service": "Kerberos"
+   }
+  ],
+  "samples": [
+   "\u0000\u0000\u0000\\~Z0X\u00a0\u0003\u0002\u0001\u0005\u00a1\u0003\u0002\u0001\u001e\u00a4\u0011\u0018\u000f20261023120000Z\u00a5\u0003\u0002\u0001\u0000\u00a6\u0003\u0002\u0001\u0019\u00a9\r\u001b\u000bEXAMPLE.COM\u00aa 0\u001e\u00a0\u0003\u0002\u0001\u0002\u00a1\u00170\u0015\u001b\u0006krbtgt\u001b\u000bEXAMPLE.COM"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "iscsi-login",
+  "service": "iSCSI",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "C\\x87\\0\\0\\0\\0\\0X\\x80\\0\\0\\0\\0\\x01\\0\\0\\0\\0\\0\\x01\\0\\x01\\0\\0\\0\\0\\0\\x01\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0InitiatorName=iqn.1993-08.org.netprobe:01:scan\\0SessionType=Discovery\\0AuthMethod=None\\0\\0\\0\\0",
+  "ports": [
+   3260
+  ],
+  "rarity": 6,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1500,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x23.[\\x00-\\x02][\\x00-\\x02].*?(?:TargetPortalGroupTag|AuthMethod|TargetAlias|TargetName)=",
+    "detail": "login response with target keys",
+    "service": "iSCSI"
+   },
+   {
+    "regex": "(?s)^\\x23.[\\x00-\\x02][\\x00-\\x02]",
+    "detail": "login response",
+    "service": "iSCSI"
+   }
+  ],
+  "samples": [
+   "#\u0087\u0000\u0000\u0000\u0000\u0000(\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000AuthMethod=None\u0000TargetPortalGroupTag=1\u0000\u0000",
+   "#\u0087\u0000\u0000\u0000\u0000\u0000(\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "rpc-portmap-null",
+  "service": "RPC portmapper",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x80\\0\\0(NPrb\\0\\0\\0\\0\\0\\0\\0\\x02\\0\\x01\\x86\\xa0\\0\\0\\0\\x02\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0",
+  "ports": [
+   111
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\x80\\x00\\x00\\x18NPrb\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00",
+    "detail": "NULL call accepted",
+    "service": "RPC portmapper"
+   },
+   {
+    "regex": "^\\x80\\x00\\x00.NPrb\\x00\\x00\\x00\\x01",
+    "detail": "RPC reply",
+    "service": "RPC portmapper"
+   }
+  ],
+  "samples": [
+   "\u0080\u0000\u0000\u0018NPrb\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+   "\u0080\u0000\u0000\u0018NPrb\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "nfs-null",
+  "service": "NFS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x80\\0\\0(NPrb\\0\\0\\0\\0\\0\\0\\0\\x02\\0\\x01\\x86\\xa3\\0\\0\\0\\x03\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0",
+  "ports": [
+   2049
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\x80\\x00\\x00\\x18NPrb\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00{8}\\x00\\x00\\x00\\x00",
+    "detail": "NFS v3 NULL accepted",
+    "service": "NFS"
+   },
+   {
+    "regex": "(?s)^\\x80\\x00\\x00.NPrb\\x00\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00{8}\\x00\\x00\\x00\\x02",
+    "detail": "NFS, other versions only",
+    "service": "NFS"
+   },
+   {
+    "regex": "(?s)^\\x80\\x00\\x00.NPrb\\x00\\x00\\x00\\x01",
+    "service": "RPC",
+    "detail": "RPC reply, NFS program not offered"
+   }
+  ],
+  "samples": [
+   "\u0080\u0000\u0000\u0018NPrb\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+   "\u0080\u0000\u0000 NPrb\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0002",
+   "\u0080\u0000\u0000\u0018NPrb\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "x11-setup",
+  "service": "X11",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "l\\0\\x0b\\0\\0\\0\\0\\0\\0\\0\\0\\0",
+  "ports": [
+   6000,
+   6001,
+   6002
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00.\\x0b\\x00\\x00\\x00..([\\x20-\\x7e]{4,100})",
+    "detail": "refused: $1",
+    "service": "X11"
+   },
+   {
+    "regex": "(?s)^\\x01.\\x0b\\x00",
+    "detail": "open X server, no authorisation needed",
+    "service": "X11"
+   },
+   {
+    "regex": "(?s)^\\x02.\\x0b\\x00",
+    "detail": "authentication required",
+    "service": "X11"
+   }
+  ],
+  "samples": [
+   "\u0000-\u000b\u0000\u0000\u0000\f\u0000Client is not authorized to connect to Server\u0000\u0000\u0000",
+   "\u0001\u0000\u000b\u0000\u0000\u0000\u0000\u0000\u000b\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "lpd-queue-state",
+  "service": "LPD",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x04lp\\n",
+  "ports": [
+   515
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?i)^(?:no entries|no printable jobs|rank +owner|[^\\r\\n]{0,40}is ready|[^\\r\\n]{0,40}unknown printer|printer: )",
+    "detail": "queue state answered",
+    "service": "LPD"
+   }
+  ],
+  "samples": [
+   "no entries\n",
+   "lp is ready and printing\nno entries\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "jetdirect-pjl-id",
+  "service": "JetDirect",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x1b%-12345X@PJL INFO ID\\r\\n\\x1b%-12345X\\r\\n",
+  "ports": [
+   9100,
+   9101,
+   9102
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^@PJL INFO ID\\r?\\n\"?([^\"\\r\\n]{1,60})",
+    "product": "$1",
+    "detail": "PJL INFO ID",
+    "service": "JetDirect"
+   }
+  ],
+  "samples": [
+   "@PJL INFO ID\r\n\"HP LaserJet 4200\"\r\n\f"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "afp-getstatus",
+  "service": "AFP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\x03\\0\\x01\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0",
+  "ports": [
+   548
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x01\\x03\\x00\\x01.{12}.{10}.([\\x20-\\x7e]{1,31}).*?AFP(\\d\\.\\d+)",
+    "product": "AFP",
+    "version": "$2",
+    "detail": "server $1",
+    "service": "AFP"
+   },
+   {
+    "regex": "(?s)^\\x01\\x03\\x00\\x01.{12}.{10}.([\\x20-\\x7e]{1,31})",
+    "product": "AFP",
+    "detail": "server $1",
+    "service": "AFP"
+   }
+  ],
+  "samples": [
+   "\u0001\u0003\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000@\u0000\u0000\u0000\u0000\u0000 \u0000*\u0000,\u0000:\u0080\u0000\u0006TimeNAS\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\tMacintosh\u0001\u0006AFP3.4"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "minecraft-status",
+  "service": "Minecraft",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x0e\\0/\\x08netprobec\\xdd\\x01\\x01\\0",
+  "ports": [
+   25565
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^[\\x80-\\xff]{0,4}[\\x00-\\x7f]\\x00[\\x80-\\xff]{0,4}[\\x00-\\x7f]\\{.*\"version\"\\s*:\\s*\\{\\s*\"name\"\\s*:\\s*\"([^\"]{1,40})\"",
+    "product": "Minecraft Java server",
+    "version": "$1",
+    "service": "Minecraft"
+   }
+  ],
+  "samples": [
+   "z\u0000x{\"description\":{\"text\":\"A Minecraft Server\"},\"players\":{\"max\":20,\"online\":1},\"version\":{\"name\":\"1.20.4\",\"protocol\":765}}"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "source-rcon-auth",
+  "service": "Source RCON",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\n\\0\\0\\0\\x137\\0\\0\\x03\\0\\0\\0\\0\\0",
+  "ports": [],
+  "commonPorts": [
+   27015,
+   25575
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x0a\\x00\\x00\\x00(?:\\x13\\x37\\x00\\x00|\\xff\\xff\\xff\\xff)[\\x00\\x02]\\x00\\x00\\x00\\x00\\x00",
+    "detail": "RCON answered (an empty password is a failed login attempt)",
+    "service": "Source RCON"
+   }
+  ],
+  "samples": [
+   "\n\u0000\u0000\u0000\u00ff\u00ff\u00ff\u00ff\u0002\u0000\u0000\u0000\u0000\u0000",
+   "\n\u0000\u0000\u0000\u00137\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "openvpn-tcp-reset",
+  "service": "OpenVPN",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\x0e8NPRBnprb\\0\\0\\0\\0\\0",
+  "ports": [
+   1194,
+   1195
+  ],
+  "rarity": 6,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00\\x1a\\x40.{8}\\x01\\x00\\x00\\x00\\x00NPRBnprb",
+    "detail": "control channel hard reset answered",
+    "service": "OpenVPN"
+   }
+  ],
+  "samples": [
+   "\u0000\u001a@SRVSESID\u0001\u0000\u0000\u0000\u0000NPRBnprb\u0000\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "ajp13-cping",
+  "service": "AJP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x124\\0\\x01\\n",
+  "ports": [
+   8009
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^AB\\x00\\x01\\x09",
+    "product": "Apache JServ",
+    "detail": "AJP13 CPong",
+    "service": "AJP"
+   }
+  ],
+  "samples": [
+   "AB\u0000\u0001\t"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "fastcgi-get-values",
+  "service": "FastCGI",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x01\\t\\0\\0\\00\\0\\0\\x0e\\0FCGI_MAX_CONNS\\r\\0FCGI_MAX_REQS\\x0f\\0FCGI_MPXS_CONNS",
+  "ports": [
+   9000,
+   9001
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x01\\x0a\\x00\\x00..[\\x00-\\x07]\\x00.*FCGI_MAX_",
+    "detail": "GET_VALUES_RESULT",
+    "service": "FastCGI"
+   }
+  ],
+  "samples": [
+   "\u0001\n\u0000\u0000\u00005\u0000\u0000\u000e\u0002FCGI_MAX_CONNS10\r\u0002FCGI_MAX_REQS10\u000f\u0001FCGI_MPXS_CONNS0"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "s7-cotp",
+  "service": "Siemens S7",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x03\\0\\0\\x16\\x11\\xe0\\0\\0\\0\\x01\\0\\xc1\\x02\\x01\\0\\xc2\\x02\\x01\\x02\\xc0\\x01\\n",
+  "ports": [
+   102
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x03\\x00\\x00.[\\x06-\\x20]\\xd0.{5}.*\\xc1\\x02\\x01\\x00\\xc2\\x02\\x01\\x02",
+    "product": "Siemens S7",
+    "detail": "ISO-TSAP connection confirm, TSAP 01.02 accepted",
+    "service": "Siemens S7"
+   },
+   {
+    "regex": "(?s)^\\x03\\x00\\x00.[\\x06-\\x20]\\xd0",
+    "service": "ISO-TSAP",
+    "detail": "COTP connection confirm"
+   }
+  ],
+  "samples": [
+   "\u0003\u0000\u0000\u0016\u0011\u00d0\u0000\u0001\u0000\u0002\u0000\u00c0\u0001\n\u00c1\u0002\u0001\u0000\u00c2\u0002\u0001\u0002",
+   "\u0003\u0000\u0000\u000b\u0006\u00d0\u0000\u0001\u0000\u0002\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "enip-listidentity",
+  "service": "EtherNet/IP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "c\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0NPRBnprb\\0\\0\\0\\0",
+  "ports": [
+   44818
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x63\\x00..\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00NPRBnprb\\x00\\x00\\x00\\x00\\x01\\x00\\x0c\\x00...{32}.([\\x20-\\x7e]{1,40})",
+    "detail": "product $1",
+    "service": "EtherNet/IP"
+   },
+   {
+    "regex": "(?s)^\\x63\\x00..\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00NPRBnprb",
+    "detail": "ListIdentity answered",
+    "service": "EtherNet/IP"
+   }
+  ],
+  "samples": [
+   "c\u00002\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000NPRBnprb\u0000\u0000\u0000\u0000\u0001\u0000\f\u0000,\u0000\u0001\u0000\u0000\u0002\u00af\u0012\n\u0000\u0000\u0005\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\f\u0000:\u0000\u0001\u000b0\u00004\u0012\u0000\u0000\nMicroLogix\u0003"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "dnp3-link-status",
+  "service": "DNP3",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x05d\\x05\\xc9\\x01\\0\\x02\\0;\\x95",
+  "ports": [
+   20000
+  ],
+  "rarity": 5,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x05\\x64\\x05.",
+    "detail": "link layer status reply",
+    "service": "DNP3"
+   }
+  ],
+  "samples": [
+   "\u0005d\u0005\u000b\u0002\u0000\u0001\u0000\u00138"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "iec104-testfr",
+  "service": "IEC 60870-5-104",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "h\\x04C\\0\\0\\0",
+  "ports": [
+   2404
+  ],
+  "rarity": 6,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\x68\\x04\\x83\\x00\\x00\\x00",
+    "detail": "TESTFR confirm",
+    "service": "IEC 60870-5-104"
+   }
+  ],
+  "samples": [
+   "h\u0004\u0083\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "opcua-hello",
+  "service": "OPC UA",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "HELF8\\0\\0\\0\\0\\0\\0\\0\\0\\0\\x01\\0\\0\\0\\x01\\0\\0\\0\\0\\0\\0\\0\\0\\0\\x18\\0\\0\\0opc.tcp://localhost:4840",
+  "ports": [
+   4840
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^ACKF",
+    "detail": "Hello acknowledged",
+    "service": "OPC UA"
+   },
+   {
+    "regex": "^ERRF",
+    "detail": "error message to Hello",
+    "service": "OPC UA"
+   }
+  ],
+  "samples": [
+   "ACKF\u001c\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000",
+   "ERRF\u0010\u0000\u0000\u0000\u0000\u0000f\u0080\u0000\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "bgp-open",
+  "service": "BGP",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\0\\x1d\\x01\\x04\\xfd\\xe9\\0Z\\n\\xff\\xff\\x01\\0",
+  "ports": [],
+  "commonPorts": [
+   179
+  ],
+  "rarity": 6,
+  "safety": "careful",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\xff{16}..[\\x01\\x03]",
+    "detail": "BGP message returned",
+    "service": "BGP"
+   }
+  ],
+  "samples": [
+   "\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u00ff\u0000\u0015\u0003\u0002\u0002"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "socks4-connect",
+  "service": "SOCKS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x04\\x01\\0\\t\\x7f\\0\\0\\x01\\0",
+  "ports": [
+   1080,
+   9050,
+   9150
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00[\\x5a-\\x5d].{6}$",
+    "detail": "SOCKS4 reply",
+    "service": "SOCKS"
+   }
+  ],
+  "samples": [
+   "\u0000[\u0000\t\u007f\u0000\u0000\u0001",
+   "\u0000Z\u0000\u0000\u0000\u0000\u0000\u0000"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "socks5-greeting",
+  "service": "SOCKS",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\x05\\x01\\0",
+  "ports": [
+   1080,
+   9050,
+   9150
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "^\\x05\\x00$",
+    "detail": "SOCKS5, no authentication",
+    "service": "SOCKS"
+   },
+   {
+    "regex": "^\\x05\\x02$",
+    "detail": "SOCKS5, username and password",
+    "service": "SOCKS"
+   },
+   {
+    "regex": "^\\x05\\xff$",
+    "detail": "SOCKS5, no acceptable method",
+    "service": "SOCKS"
+   }
+  ],
+  "samples": [
+   "\u0005\u0000",
+   "\u0005\u0002",
+   "\u0005\u00ff"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "kasa-sysinfo",
+  "service": "TP-Link Kasa",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "\\0\\0\\0\\x1d\\xd0\\xf2\\x81\\xf8\\x8b\\xff\\x9a\\xf7\\xd5\\xef\\x94\\xb6\\xd1\\xb4\\xc0\\x9f\\xec\\x95\\xe6\\x8f\\xe1\\x87\\xe8\\xca\\xf0\\x8b\\xf6\\x8b\\xf6",
+  "ports": [
+   9999
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^\\x00\\x00..\\xd0\\xf2\\x81\\xf8\\x8b\\xff\\x9a\\xf7\\xd5\\xef\\x94\\xb6\\xd1\\xb4\\xc0\\x9f\\xec\\x95\\xe6\\x8f\\xe1\\x87\\xe8\\xca\\xf0\\x8b",
+    "product": "Kasa smart device",
+    "detail": "get_sysinfo answered",
+    "service": "TP-Link Kasa"
+   }
+  ],
+  "samples": [
+   "\u0000\u0000\u0000j\u00d0\u00f2\u0081\u00f8\u008b\u00ff\u009a\u00f7\u00d5\u00ef\u0094\u00b6\u00d1\u00b4\u00c0\u009f\u00ec\u0095\u00e6\u008f\u00e1\u0087\u00e8\u00ca\u00f0\u008b\u00a9\u00da\u00ad\u00f2\u0084\u00e1\u0093\u00b1\u008b\u00a9\u0098\u00b6\u0086\u00a8\u0090\u00b0\u00f2\u0087\u00ee\u0082\u00e6\u00c6\u00f4\u00c0\u00f0\u00c5\u00f5\u00c4\u00e6\u00ca\u00e8\u0085\u00ea\u008e\u00eb\u0087\u00a5\u009f\u00bd\u00f5\u00a6\u0097\u00a7\u0097\u00bf\u00ea\u00b9\u0090\u00b2\u009e\u00bc\u00dd\u00b1\u00d8\u00b9\u00ca\u00e8\u00d2\u00f0\u00bc\u00dd\u00b0\u00c0\u00e2\u00ce\u00ec\u0089\u00fb\u0089\u00d6\u00b5\u00da\u00be\u00db\u00f9\u00c3\u00f3\u008e\u00f3\u008e"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002("
+  ]
+ },
+ {
+  "id": "raop-options",
+  "service": "AirPlay",
+  "protocols": [
+   "tcp"
+  ],
+  "send": "OPTIONS * RTSP/1.0\\r\\nCSeq: 1\\r\\nUser-Agent: NetProbe\\r\\nApple-Challenge: AAAAAAAAAAAAAAAAAAAAAA\\r\\n\\r\\n",
+  "ports": [
+   5000,
+   7000
+  ],
+  "rarity": 4,
+  "safety": "safe",
+  "tls": "never",
+  "waitMs": 1000,
+  "maxBytes": 2048,
+  "parser": null,
+  "matches": [
+   {
+    "regex": "(?s)^RTSP/1\\.0 \\d{3}.*\\r\\nServer: AirTunes/([\\d.]+)",
+    "product": "AirPlay (RAOP)",
+    "version": "$1",
+    "service": "AirPlay"
+   }
+  ],
+  "samples": [
+   "RTSP/1.0 200 OK\r\nCSeq: 1\r\nServer: AirTunes/220.68\r\nPublic: ANNOUNCE, SETUP, RECORD\r\n\r\n"
+  ],
+  "negativeSamples": [
+   "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n",
+   "SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n",
+   "\u0015\u0003\u0001\u0000\u0002\u0002(",
+   "RTSP/1.0 200 OK\r\nCSeq: 1\r\nServer: Wowza\r\n\r\n"
+  ]
  }
 ]
