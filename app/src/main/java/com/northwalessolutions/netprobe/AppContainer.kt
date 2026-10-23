@@ -62,7 +62,6 @@ import com.northwalessolutions.netprobe.engine.tools.smb.SmbSessionTool
 import com.northwalessolutions.netprobe.ui.home.RunSettings
 import com.northwalessolutions.netprobe.ui.home.ContainerHeardSink
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
-import com.northwalessolutions.netprobe.ui.tools.DirBruteOptionsStore
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.wordlists.UrlImportController
 import com.northwalessolutions.netprobe.oui.OuiInfo
@@ -343,11 +342,6 @@ class AppContainer(val context: Context) {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
         return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
-    /** Last-used brute-force options, saved globally (spec 5.1). */
-    val dirBruteOptions by lazy {
-        val prefs = context.getSharedPreferences("netprobe", Context.MODE_PRIVATE)
-        DirBruteOptionsStore({ prefs.getString(DirBruteOptionsStore.KEY, null) }, { prefs.edit().putString(DirBruteOptionsStore.KEY, it).apply() })
     }
     val serviceProbes by lazy { ServiceProbes(ServiceProbeRules.load(RawResources.read(context, R.raw.service_probes)).probes, stackRules = stackRules) }
     val serviceIdentifier by lazy { ServiceIdentifier(portTable, serviceProbes) }

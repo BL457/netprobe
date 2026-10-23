@@ -36,6 +36,16 @@ class RemovedNamesTest {
         assertEquals("scansOpenScans", com.northwalessolutions.netprobe.engine.portscan.PrefsOpenScanStore.KEY)
         assertEquals("Scans", NavCopy.SCANS); assertEquals("Scans", com.northwalessolutions.netprobe.ui.scans.ScansCopy.TITLE)
     }
+    @Test fun `the brute-force options sheet and its store are gone, the generated form took their job`() {
+        val forbidden = listOf("DirBrute" + "Sheet", "DirBrute" + "OptionsStore", "dirBrute" + "Options", "onStart" + "DirBrute")
+        val hits = sources.filter { (_, text) -> forbidden.any { text.contains(it) } }.map { it.first }
+        assertTrue("old sheet or store still referenced in: $hits", hits.isEmpty())
+    }
+    @Test fun `the old manual tools screen is gone, the grid and the tool page replaced it`() {
+        val forbidden = listOf("ManualTools" + "Screen", "ManualTools" + "ViewModel", "Manual" + "Presenter")
+        val hits = sources.filter { (_, text) -> forbidden.any { text.contains(it) } }.map { it.first }
+        assertTrue("old manual screen still referenced in: $hits", hits.isEmpty())
+    }
     @Test fun `the Home overflow code offers nothing but Quick scan all and Forget`() {
         val menu = sources.first { it.first.replace(File.separatorChar, '/').endsWith("ui/home/HomeComponents.kt") }.second
         assertEquals("HomeComponents.kt holds only the overflow's two menu items", 2, Regex(Regex.escape("DropdownMenuItem(")).findAll(menu).count())

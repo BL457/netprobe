@@ -157,7 +157,6 @@ fun DetailContent(state: DetailUiState, actions: DetailActions, startNoteExpande
         }
     }
     state.vuln?.let { VulnSheet(it, onClose = actions.onCloseVulns, onRerun = actions.onRerunVulns, onOpen = actions.onOpenLink) }
-    toolState.dirBrute?.let { DirBruteSheet(it, onRun = toolActions.onStartDirBrute, onManageWordlists = { toolActions.onCloseDirBrute(); toolActions.onManageWordlists() }, onDismiss = toolActions.onCloseDirBrute) }
     toolState.results?.let { r ->
         // A live run's status line follows the per-tick bar, read inside the sheet's status text only.
         val liveStatus: (() -> String)? = if (r.active && liveToolBar != null) { { liveToolBar()?.let { ToolCopy.resultsRunning(it.progress) } ?: r.statusLine } } else null

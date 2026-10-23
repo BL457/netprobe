@@ -163,7 +163,7 @@ fun NetProbeNav(container: AppContainer) {
         },
         host = { tab, id, backLabel ->
             DetailScreen(container, id, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate(Routes.wordlists(tab)) { launchSingleTop = true } },
-                backLabel = backLabel)
+                onOpenTool = { key, hostId, port -> nav.navigate(Routes.tool(tab, key, hostId, port)) }, backLabel = backLabel)
         },
         tool = { tab, key, hostId, port, backLabel ->
             ToolPageScreen(container, key, hostId, port, onBack = { nav.popBackStack() },

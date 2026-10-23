@@ -169,3 +169,12 @@ object ToolFormRules {
         else -> ToolsUiCopy.COMPLETE_FORM
     }
 }
+
+/** Where a Device screen button sends a tool. */
+object ToolLaunch {
+    /**
+     * A tool with nothing to ask runs at once from the device page (today's behaviour). A tool with inputs of its own opens its page with the
+     * device and port filled in; so does a tool whose network is "any", because its per-run confirmation lives on the page.
+     */
+    fun opensPage(d: ToolDescriptor): Boolean = d.inputs.isNotEmpty() || ToolFormRules.needsConfirm(d)
+}

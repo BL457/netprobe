@@ -42,7 +42,7 @@ object ManualMessages {
 }
 
 /**
- * The manual start path (3C spec 4.3, 4.5, G8). Every dependency is a function so the JVM tests drive it with fakes; ManualToolsViewModel
+ * The manual start path (3C spec 4.3, 4.5, G8). Every dependency is a function so the JVM tests drive it with fakes; ToolPageViewModel
  * passes the container's undo store, network repository, settings, binder lookup, host repository and tool runner.
  */
 class ManualStarter(

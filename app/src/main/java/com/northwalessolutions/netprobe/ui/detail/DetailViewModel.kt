@@ -20,8 +20,6 @@ import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.engine.tools.ToolTarget
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner.Companion.forHost
-import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteInputs
-import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
@@ -30,7 +28,6 @@ import com.northwalessolutions.netprobe.ui.home.RemovedHosts
 import com.northwalessolutions.netprobe.ui.home.RowRules
 import com.northwalessolutions.netprobe.ui.home.ScanController
 import com.northwalessolutions.netprobe.ui.tools.DetailToolsState
-import com.northwalessolutions.netprobe.ui.tools.DirBruteSheetState
 import com.northwalessolutions.netprobe.ui.tools.FindingRow
 import com.northwalessolutions.netprobe.ui.tools.PortTool
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
@@ -38,7 +35,6 @@ import com.northwalessolutions.netprobe.ui.tools.ToolExport
 import com.northwalessolutions.netprobe.ui.tools.ToolResultsModel
 import com.northwalessolutions.netprobe.ui.tools.ToolRunBar
 import com.northwalessolutions.netprobe.ui.tools.ToolsUiModel
-import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.withLock
@@ -79,14 +75,11 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailUiState())
 
     private val resultsRunId = MutableStateFlow<Long?>(null)
-    private val dirBrutePort = MutableStateFlow<Int?>(null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val resultsSource: Flow<Pair<ToolRunEntity, List<FindingRow>>?> = resultsRunId.flatMapLatest { id ->
         if (id == null) flowOf(null) else combine(c.toolRepo.run(id), c.toolRepo.findings(id)) { r, f -> r?.let { it to ToolResultsModel.rows(f) } }
     }
-    /** The wordlist store does resource I/O on first use, so it is first touched inside this flow, which runs on Dispatchers.Default (toolState's flowOn). */
-    private val wordlists: Flow<List<WordlistMeta>> = flow { emitAll(c.wordlistStore.lists) }
 
     /**
      * The runner republishes every PROGRESS_INTERVAL_MS while a run is live. Only these fields change what [toolState] lays out: which
@@ -105,14 +98,13 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
      * changes only; the bar's progress text and fraction and the live results status line come from [toolBar].
      */
     val toolState: StateFlow<DetailToolsState> = combine(listOf(c.hosts.host(hostId), c.ports.portsForHost(hostId), c.toolRepo.runsForHost(hostId),
-        structuralActive, c.hostBusy.busy, resultsSource, dirBrutePort, wordlists, c.appMessages.current)) { arr ->
+        structuralActive, c.hostBusy.busy, resultsSource, c.appMessages.current)) { arr ->
         @Suppress("UNCHECKED_CAST") val ports = arr[1] as List<PortEntity>
         @Suppress("UNCHECKED_CAST") val runs = arr[2] as List<ToolRunEntity>
         @Suppress("UNCHECKED_CAST") val activeMap = arr[3] as Map<Long, ToolRunner.Active>
         @Suppress("UNCHECKED_CAST") val busyMap = arr[4] as Map<Long, HostBusyRegistry.Work>
         @Suppress("UNCHECKED_CAST") val results = arr[5] as Pair<ToolRunEntity, List<FindingRow>>?
-        @Suppress("UNCHECKED_CAST") val lists = arr[7] as List<WordlistMeta>
-        val h = arr[0] as HostEntity?; val sheetPort = arr[6] as Int?; val appMessage = arr[8] as AppMessage?
+        val h = arr[0] as HostEntity?; val appMessage = arr[6] as AppMessage?
         val active = activeMap.forHost(hostId)
         val now = System.currentTimeMillis()
         val busy = busyMap[hostId]
@@ -123,7 +115,6 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             results = if (h == null) null else results?.let { (run, findings) ->
                 ToolResultsModel.ofRows(c.toolRegistry, run, runs.filter { it.toolId == run.toolId }, h.ip, findings, active, now)
             },
-            dirBrute = if (h == null) null else sheetPort?.let { port -> dirBruteSheet(h, port, ports, lists, busy, activeMap.size) },
             appMessage = appMessage,
             removeAllowed = DetailBusyRules.removeAllowed(busyMap, hostId),
             runTool = active?.toolKey, runPort = active?.port ?: 0,
@@ -139,41 +130,14 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         }
     }
 
-    private fun dirBruteSheet(h: HostEntity, port: Int, ports: List<PortEntity>, lists: List<WordlistMeta>, busy: HostBusyRegistry.Work?, runningHosts: Int): DirBruteSheetState {
-        val service = ports.firstOrNull { it.port == port }?.toServiceInfo()
-        val tls = service?.let { ToolApplicability.targetTls(ToolKeys.DIR_BRUTEFORCE, port, it) } ?: false
-        val saved = c.dirBruteOptions.load()
-        val initial = if (lists.any { it.id == saved.wordlistId }) saved else saved.copy(wordlistId = DirBruteOptions.DEFAULT_WORDLIST)
-        val reason = busy?.let(ToolsUiModel::busyMessage) ?: ToolCopy.BUSY_TOO_MANY.takeIf { runningHosts >= ToolRunner.MAX_ACTIVE_RUNS }
-        return DirBruteSheetState(port, ToolExport.target(ToolKeys.DIR_BRUTEFORCE, h.ip, port, tls), lists, initial, reason)
-    }
-
-    /** A chip or port-sheet row (spec 8.1, 8.3): brute-force opens its sheet, the others start at once; a held host shows its reason. */
+    /**
+     * A chip, port-sheet row or Identify (spec 8.1, 8.3): a tool with nothing to ask starts at once (the screen sends tools with inputs, or a
+     * network "any" scope, to the tool page instead); a held host shows its reason.
+     */
     fun runTool(toolKey: String, port: Int) {
         DetailBusyRules.toolRefusal(c.hostBusy.busy.value, hostId)?.let { message.value = it; return }
-        if (toolKey == ToolKeys.DIR_BRUTEFORCE) {
-            // Off the main thread: the first wordlistStore access reads the built-in lists.
-            c.appScope.launch(Dispatchers.Default) {
-                val saved = c.dirBruteOptions.load()
-                if (c.wordlistStore.lists.value.none { it.id == saved.wordlistId }) message.value = ToolCopy.WORDLIST_FALLBACK
-                dirBrutePort.value = port
-            }
-            return
-        }
         start(toolKey, port, ToolInputs.NONE)
     }
-    /** Run in the options sheet: save the options, close the sheet, start the run (spec 8.4). */
-    fun startDirBrute(o: DirBruteOptions) {
-        val port = dirBrutePort.value ?: return
-        val options = o.coerced()
-        dirBrutePort.value = null
-        c.appScope.launch(Dispatchers.Default) {
-            c.dirBruteOptions.save(options)
-            val meta = c.wordlistStore.lists.value.firstOrNull { it.id == options.wordlistId }
-            start(ToolKeys.DIR_BRUTEFORCE, port, DirBruteInputs.of(options, meta?.name ?: "", meta?.entries ?: 0))
-        }
-    }
-    fun closeDirBrute() { dirBrutePort.value = null }
 
     private fun start(toolKey: String, port: Int, inputs: ToolInputs) {
         c.appScope.launch {

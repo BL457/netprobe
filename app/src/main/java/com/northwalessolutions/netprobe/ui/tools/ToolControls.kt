@@ -15,7 +15,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.ui.theme.DISABLED_ALPHA
 import com.northwalessolutions.netprobe.ui.theme.Dimens
 import com.northwalessolutions.netprobe.ui.theme.NetProbeColors
@@ -37,8 +36,8 @@ fun ActionPill(label: String, enabled: Boolean, onClick: () -> Unit, tag: String
 
 /** Every tool action the Device screen fires; DetailScreen wires them to DetailViewModel (Task 16). */
 data class ToolActions(
-    val onRunTool: (String, Int) -> Unit = { _, _ -> }, val onStartDirBrute: (DirBruteOptions) -> Unit = {}, val onCloseDirBrute: () -> Unit = {},
-    val onManageWordlists: () -> Unit = {}, val onOpenResults: (String) -> Unit = {}, val onOlderRun: () -> Unit = {}, val onNewerRun: () -> Unit = {},
+    val onRunTool: (String, Int) -> Unit = { _, _ -> },
+    val onOpenResults: (String) -> Unit = {}, val onOlderRun: () -> Unit = {}, val onNewerRun: () -> Unit = {},
     val onCloseResults: () -> Unit = {}, val onShare: () -> Unit = {}, val onCopyFinding: (FindingRow) -> Unit = {}, val onOpenFinding: (FindingRow) -> Unit = {},
     val onStopTool: () -> Unit = {}, val onDismissAppMessage: (Long) -> Unit = {},
 )

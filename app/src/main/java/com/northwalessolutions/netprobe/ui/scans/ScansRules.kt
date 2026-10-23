@@ -117,10 +117,13 @@ object ScansRules {
 
     private fun runningTool(a: ToolRunner.Active, c: Ctx): ScansItem {
         val host = c.toolHost(a.hostId, null)
-        val startedAt = c.history.firstOrNull { it.run.id == a.runId }?.run?.startedAt ?: (c.i.now - a.activeMs)
+        val stored = c.history.firstOrNull { it.run.id == a.runId }?.run
+        val startedAt = stored?.startedAt ?: (c.i.now - a.activeMs)
+        // The registry's name while the tool is installed, else the name stored with the run (a removed tool), else the key.
+        val name = stored?.let { ToolsUiModel.nameOf(c.i.registry, it) } ?: ToolsUiModel.nameOf(c.i.registry, a.toolKey)
         return ScansItem("tool:${a.runId}", ScansSource.TOOL, null, c.i.currentNetworkId, a.hostId, host, a.toolKey, a.port, ScansState.RUNNING,
             a.done, a.total, a.found, startedAt, a.activeMs, null, null, a.runId,
-            ScansCopy.toolLine(ToolsUiModel.nameOf(c.i.registry, a.toolKey), host, a.port, a.hostId == null), ToolsUiModel.bar(a, c.i.registry).progress)
+            ScansCopy.toolLine(name, host, a.port, a.hostId == null), ToolsUiModel.bar(a, c.i.registry).progress)
     }
 
     private fun endedLive(e: LiveWork.Ended, c: Ctx): ScansItem {

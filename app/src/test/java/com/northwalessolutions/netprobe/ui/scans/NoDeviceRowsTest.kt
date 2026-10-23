@@ -3,7 +3,10 @@ package com.northwalessolutions.netprobe.ui.scans
 import com.northwalessolutions.netprobe.data.NetworkRun
 import com.northwalessolutions.netprobe.data.ToolRunEntity
 import com.northwalessolutions.netprobe.data.ToolRunStatus
+import com.northwalessolutions.netprobe.engine.tools.TargetKind
 import com.northwalessolutions.netprobe.engine.tools.TestRegistry
+import com.northwalessolutions.netprobe.engine.tools.ToolRegistry
+import com.northwalessolutions.netprobe.ui.tools.UiToolFakes
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolExport
@@ -36,6 +39,14 @@ class NoDeviceRowsTest {
         assertEquals("user:dns-lookup on No device", item.title); assertNull(item.hostId)
         assertEquals(StopRoute.Tool(null, 5), ScansTargets.stop(item))
         assertTrue(ScansTargets.toolStopApplies(StopRoute.Tool(null, 5), 5)); assertFalse(ScansTargets.toolStopApplies(StopRoute.Tool(null, 5), 6))
+    }
+    @Test fun `a live run of a removed tool takes the name stored with its run, and an installed script tool is named by the registry`() {
+        val live = ToolRunner.Active(5, 7, "user:gone", 80, 4_000, 1, 2, 0, 0, false)
+        val stored = NetworkRun(run(5, 7, ToolRunStatus.RUNNING, toolId = "user:gone", name = "Old tool"), "10.0.3.59")
+        assertEquals("Old tool on Office NAS:80", ScansRules.build(input(history = listOf(stored), active = mapOf(5L to live))).running.single().title)
+        val scripts = ToolRegistry(TestRegistry.builtIns()).also { it.setScriptTools(listOf(UiToolFakes.module("user:dns-lookup", "Lookup names", target = TargetKind.NONE))) }
+        val renamed = ScansInput(scripts, emptyList(), emptyMap(), emptyList(), listOf(NetworkRun(run(6, null), null)), emptyMap(), 1, now, 0, null, emptySet(), null, emptyMap(), formatDate = { "3 Jan 2026" })
+        assertEquals("the registry's current name wins over the stored one", "Lookup names on No device", ScansRules.build(renamed).recent.single().title)
     }
     @Test fun `the running count includes runs with no device`() {
         val a = ToolRunner.Active(5, null, "user:dns-lookup", 0, 0, 0, null, 0, 0, false)

@@ -1,5 +1,6 @@
 package com.northwalessolutions.netprobe.engine.script
 
+import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.ToolRunStatus
 import com.northwalessolutions.netprobe.engine.common.SocketBinder
 import com.northwalessolutions.netprobe.engine.common.currentBinder
@@ -17,6 +18,7 @@ import com.northwalessolutions.netprobe.engine.tools.ToolProgress
 import com.northwalessolutions.netprobe.engine.tools.ToolResult
 import com.northwalessolutions.netprobe.engine.tools.ToolTarget
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
+import com.northwalessolutions.netprobe.netenv.Ipv4
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
 import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.ui.tools.ScriptCopy
@@ -43,8 +45,20 @@ class ScriptToolModule(
     private val wordlistLines: suspend (WordlistRef, Int, Int) -> List<String> = { _, _, _ -> emptyList() },
     private val transportFor: (SocketBinder?, (InetAddress) -> Boolean) -> ScriptTransport = { binder, lan -> SocketScriptTransport(binder, lan) },
 ) : ToolModule {
-    /** Script tools are opened from the Tools page; the device page's per-port buttons are the built-ins' (spec section 5). */
-    override fun applies(port: Int, service: ServiceInfo): Boolean = false
+    /** A tool with a device or a port is offered on the device page like a built-in (ruling a of the B3 hand-over); a tool with no target is not. */
+    override fun applies(port: Int, service: ServiceInfo): Boolean = descriptor.target != TargetKind.NONE
+
+    /**
+     * Whether the device page offers the tool for [host]: TARGET and ANY scopes always (the device is the target, or anything may be reached);
+     * LAN only while the host's address is inside the current network's subnet.
+     */
+    override fun appliesToHost(host: HostEntity): Boolean {
+        if (descriptor.target == TargetKind.NONE) return false
+        if (descriptor.network != NetworkScope.LAN) return true
+        val network = env() ?: return false
+        val address = Ipv4.parse(host.ip) ?: return false
+        return SubnetMath.of(network.interfaceIp, network.prefixLength).contains(address)
+    }
 
     /** Re-validates the typed inputs against the descriptor: types, ranges, options, required (the same rules the form shows). */
     override fun check(inputs: ToolInputs): Map<String, String> =

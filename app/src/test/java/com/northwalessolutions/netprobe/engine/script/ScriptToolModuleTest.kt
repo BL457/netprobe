@@ -60,10 +60,35 @@ class ScriptToolModuleTest {
     private fun run(m: ScriptToolModule, t: ToolTarget? = target, inputs: ToolInputs = ToolInputs.NONE) =
         runBlocking { m.run(t, inputs, control, progress) }
 
-    @Test fun `script tools are not offered on the device page`() {
-        val m = module("")
-        assertFalse(m.applies(80, ServiceInfo("HTTP", confidence = com.northwalessolutions.netprobe.engine.serviceid.Confidence.PORT_TABLE)))
-        assertFalse(m.appliesToHost(com.northwalessolutions.netprobe.data.TestHosts.host()))
+    // Changed on purpose in the UI batch (ruling b): a script tool with a device or a port is offered on the device page like a built-in.
+    private val http = ServiceInfo("HTTP", confidence = com.northwalessolutions.netprobe.engine.serviceid.Confidence.PORT_TABLE)
+    private fun hostAt(ip: String) = com.northwalessolutions.netprobe.data.TestHosts.host(ip)
+
+    @Test fun `a port or host tool applies, a tool with no target does not`() {
+        assertTrue(module("", TargetKind.PORT).applies(80, http))
+        assertTrue(module("", TargetKind.HOST).applies(80, http))
+        assertFalse(module("", TargetKind.NONE).applies(80, http))
+        assertFalse(module("", TargetKind.NONE).appliesToHost(hostAt("192.168.1.20")))
+    }
+    @Test fun `a target or any scope tool is offered for every host`() {
+        for (scope in listOf(NetworkScope.TARGET, NetworkScope.ANY)) {
+            val m = module("", TargetKind.HOST, scope)
+            assertTrue(scope.name, m.appliesToHost(hostAt("192.168.1.20")))
+            assertTrue(scope.name, m.appliesToHost(hostAt("172.16.9.9")))
+        }
+        assertTrue("with no network known", module("", TargetKind.PORT, NetworkScope.TARGET, currentEnv = null).appliesToHost(hostAt("10.9.9.9")))
+    }
+    @Test fun `a lan tool is offered only for a host inside the current subnet`() {
+        val m = module("", TargetKind.HOST, NetworkScope.LAN)
+        assertTrue(m.appliesToHost(hostAt("192.168.1.20")))
+        assertTrue(m.appliesToHost(hostAt("192.168.1.254")))
+        assertFalse(m.appliesToHost(hostAt("192.168.2.20")))
+        assertFalse(m.appliesToHost(hostAt("10.0.0.1")))
+        assertFalse("an address that does not parse", m.appliesToHost(hostAt("not-an-ip")))
+        assertFalse("no network, nothing is inside it", module("", TargetKind.HOST, NetworkScope.LAN, currentEnv = null).appliesToHost(hostAt("192.168.1.20")))
+    }
+    @Test fun `the source is readable for Copy source`() {
+        assertTrue(module("return 1;").source.contains("return 1;"))
     }
 
     @Test fun `a port tool gets ip port and tls from the target when the inputs lack them`() {

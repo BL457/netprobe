@@ -13,9 +13,7 @@ import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolRegistry
 import com.northwalessolutions.netprobe.engine.tools.ToolRoute
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
-import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.ui.home.RelativeTime
-import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 
 // @Immutable: built fresh by the view model and never mutated, so Compose compares them by equals() and skips unchanged blocks.
 @Immutable data class ToolChip(val toolId: String, val port: Int, val label: String, val description: String)
@@ -31,9 +29,8 @@ import com.northwalessolutions.netprobe.wordlists.WordlistMeta
                             val findings: List<FindingRow>, val active: Boolean,
                             /** "via Wi-Fi", "via Ethernet" or "via VPN or other route" for a manual run (3C spec 4.5); null shows nothing. */
                             val route: String? = null)
-@Immutable data class DirBruteSheetState(val port: Int, val targetUrl: String, val lists: List<WordlistMeta>, val initial: DirBruteOptions, val busyReason: String?)
 @Immutable data class DetailToolsState(val tools: ToolsUiState? = null, val bar: ToolRunBar? = null, val busy: HostBusyRegistry.Work? = null,
-                            val results: ToolResultsState? = null, val dirBrute: DirBruteSheetState? = null, val appMessage: AppMessage? = null,
+                            val results: ToolResultsState? = null, val appMessage: AppMessage? = null,
                             /** Remove device is refused only while a tool run holds the host (spec 4.3); computed by DetailBusyRules. */
                             val removeAllowed: Boolean = true,
                             /** The tool running on this host and its port (0 for a whole-device tool); the port row shows Identifying for its own port. */
