@@ -7,6 +7,14 @@ Every tool here is one JavaScript file, written the way the [tools guide](../doc
 tool's description, network scope and whether it can send broadcast packets before it installs anything, and you can read the source on
 the same screen.
 
+## Tools here
+
+- **Wake on LAN** (`wake-on-lan.js`) sends a magic packet so a sleeping device on your network wakes up.
+- **Default credentials** (`default-creds.js`) fetches a device's web admin page, works out whether it asks for HTTP Basic
+  authentication, Digest authentication or an HTML login form, and tries a short table of well-known factory defaults (plus any
+  `user:password` pairs you give it) against it. It stops at the first working login unless you turn that off, and it reports a
+  lockout instead of carrying on if the device starts answering with one. It never changes anything on the device.
+
 ## Contributing a tool
 
 1. Write the script by following [docs/tools-scripting.md](../docs/tools-scripting.md). Import it into the app from a file and run it on

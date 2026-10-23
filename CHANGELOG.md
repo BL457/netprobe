@@ -2,6 +2,9 @@
 
 Release notes for every NetProbe version, newest first. The section for a version is what the in-app updater shows under "What's new".
 
+## 0.4.3
+- Catalog: Default credentials check for web admin pages.
+
 ## 0.4.2
 - Service identification knows many more hellos: 126 protocols, up from 15.
 
