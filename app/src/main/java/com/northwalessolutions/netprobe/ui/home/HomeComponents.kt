@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -109,13 +110,15 @@ fun NetworkLine(env: NetworkEnv?, networkName: String?, onRequestLocation: () ->
 
 @Composable
 fun HomeMenu(quickEnabled: Boolean, quickScanning: Boolean, onQuick: () -> Unit, onStopQuick: () -> Unit,
-             forgetEnabled: Boolean = false, onForget: () -> Unit = {}) {
+             forgetEnabled: Boolean = false, onForget: () -> Unit = {}, hidePortless: Boolean = false, onHidePortless: (Boolean) -> Unit = {}) {
     Box {
         var open by remember { mutableStateOf(false) }
         IconButton(onClick = { open = true }, modifier = Modifier.testTag("homeMenu")) { Icon(Icons.Default.MoreVert, HomeCopy.MENU, tint = NetProbeColors.textSecondary) }
         DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
             DropdownMenuItem(text = { Text(if (quickScanning) HomeCopy.STOP_QUICK_SCAN else HomeCopy.QUICK_SCAN_ALL) }, enabled = quickEnabled,
                 onClick = { open = false; if (quickScanning) onStopQuick() else onQuick() })
+            DropdownMenuItem(text = { Text(HomeCopy.HIDE_PORTLESS) }, onClick = { open = false; onHidePortless(!hidePortless) },
+                trailingIcon = { if (hidePortless) Icon(Icons.Default.Check, null, tint = NetProbeColors.signal) }, modifier = Modifier.testTag("hidePortless"))
             DropdownMenuItem(text = { Text(HomeCopy.FORGET_NETWORK) }, enabled = forgetEnabled, onClick = { open = false; onForget() })
         }
     }

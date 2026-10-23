@@ -44,7 +44,7 @@ data class HomeUiState(val env: NetworkEnv? = null, val scanning: Boolean = fals
                        val groups: List<HostGroup> = emptyList(), val lastRunRanges: List<RangeProgress> = emptyList(),
                        val scanCompleted: Boolean = true, val networkId: Long? = null, val undoText: String? = null,
                        val appMessage: String? = null, val appMessageId: Long? = null, val workRunningOnNetwork: Boolean = false,
-                       val homeRange: String? = null)
+                       val homeRange: String? = null, val hidePortless: Boolean = false)
 
 object IdentityLine {
     val DeviceType.label: String get() = when (this) { DeviceType.ROUTER -> "Router"; DeviceType.PHONE -> "Phone"; DeviceType.COMPUTER -> "Computer"; DeviceType.PRINTER -> "Printer"
@@ -94,9 +94,10 @@ object RowRules {
 object HomeFilter {
     private const val OCTET = 256
     private fun ipKey(ip: String): Long = ip.split('.').fold(0L) { a, p -> a * OCTET + (p.toLongOrNull() ?: 0) }
-    fun apply(rows: List<HostRow>, filter: StatusFilter, query: String): List<HostRow> {
+    fun apply(rows: List<HostRow>, filter: StatusFilter, query: String, hidePortless: Boolean = false): List<HostRow> {
         val q = query.trim().lowercase()
-        return rows.filter { r -> when (filter) { StatusFilter.ALL -> true; StatusFilter.INTERESTING -> r.status == HostStatus.INTERESTING
+        return rows.filter { r -> !hidePortless || r.openPorts > 0 }
+            .filter { r -> when (filter) { StatusFilter.ALL -> true; StatusFilter.INTERESTING -> r.status == HostStatus.INTERESTING
                 StatusFilter.INVESTIGATED -> r.status == HostStatus.INVESTIGATED; StatusFilter.IGNORED -> r.status == HostStatus.IGNORED; StatusFilter.UNMARKED -> r.status == HostStatus.UNMARKED } }
             .filter { r -> q.isEmpty() || r.displayName.lowercase().contains(q) || r.ip.contains(q) || r.identityLine.lowercase().contains(q) || (r.mac?.lowercase()?.contains(q) == true) }
             .sortedWith(compareByDescending<HostRow> { it.isGateway }.thenBy { ipKey(it.ip) })
@@ -148,12 +149,13 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         val all = hs.map { h -> RowRules.row(h, e, runSettings.maxPrefix, pc[h.id] ?: 0, stale = StaleRule.of(run, h), extraRanges = extra,
             manualRanges = runSettings.manual, aggressive = runSettings.aggressive) }
         val stats = HomeStats.of(hs, all, done)
-        val shown = HomeFilter.apply(all, f, q)
+        val hidePortless = (arr[18] as SettingsState).hidePortless
+        val shown = HomeFilter.apply(all, f, q, hidePortless)
         HomeUiState(e, cs.scanning, if (cs.scanning) st else null, shown, f, q, cs.message ?: qs.message ?: msg, e?.ssid ?: e?.gateway?.hostAddress, qs.scanning,
             lastScanAt = stats.lastScanAt, totalHosts = stats.totalHosts, otherSubnetHosts = stats.otherSubnetHosts,
             scanStartedAt = run.takeIf { it > 0 }, scanFinishedAt = done, groups = HomeGroups.of(shown),
             lastRunRanges = lastRun, scanCompleted = arr[14] as Boolean,
-            networkId = arr[15] as Long?, undoText = (arr[16] as PendingUndo?)?.text, homeRange = e?.let { runSettings.home(it).toString() })
+            networkId = arr[15] as Long?, undoText = (arr[16] as PendingUndo?)?.text, homeRange = e?.let { runSettings.home(it).toString() }, hidePortless = hidePortless)
     }
 
     /** Rows held by a port scan or a tool show "running"; the newest end-of-run message is offered to the notice line (spec 4.3, 8.8).
@@ -198,6 +200,7 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         else if (!locationGranted) extraMessage.value = LOCATION_DENIED
     }
     fun setFilter(f: StatusFilter) { filter.value = f }
+    fun setHidePortless(v: Boolean) { c.settings.update { it.copy(hidePortless = v) } }
     fun setQuery(q: String) { query.value = q }
     /** The "Copy details" text for a Devices row (R4): the stored host and its open ports are read at the pick. */
     suspend fun detailsText(r: HostRow): String {

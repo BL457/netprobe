@@ -13,6 +13,13 @@ class HomeFilterTest {
     @Test fun `gateway first then numeric ip order`() {
         assertEquals(listOf("192.168.1.1", "192.168.1.3", "192.168.1.20", "192.168.1.100"), HomeFilter.apply(rows, StatusFilter.ALL, "").map { it.ip })
     }
+    @Test fun `hide devices with no open ports keeps only rows with a port, before the status and search filters`() {
+        val withPorts = rows.map { r -> if (r.ip == "192.168.1.3" || r.ip == "192.168.1.20") r.copy(openPorts = 2) else r }
+        assertEquals(listOf("192.168.1.3", "192.168.1.20"), HomeFilter.apply(withPorts, StatusFilter.ALL, "", hidePortless = true).map { it.ip })
+        assertEquals(listOf("192.168.1.20"), HomeFilter.apply(withPorts, StatusFilter.INTERESTING, "", hidePortless = true).map { it.ip })
+        assertTrue("the gateway is hidden too when it has no open ports", HomeFilter.apply(withPorts, StatusFilter.ALL, "router", hidePortless = true).isEmpty())
+        assertEquals(4, HomeFilter.apply(withPorts, StatusFilter.ALL, "", hidePortless = false).size)
+    }
     @Test fun `status filters`() {
         assertEquals(listOf("192.168.1.20"), HomeFilter.apply(rows, StatusFilter.INTERESTING, "").map { it.ip })
         assertEquals(listOf("192.168.1.1", "192.168.1.3"), HomeFilter.apply(rows, StatusFilter.UNMARKED, "").map { it.ip })

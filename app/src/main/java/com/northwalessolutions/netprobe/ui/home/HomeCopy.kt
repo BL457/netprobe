@@ -23,6 +23,9 @@ object HomeCopy {
     const val QUICK_SCAN_ALL = "Quick scan all"
     const val STOP_QUICK_SCAN = "Stop quick scan"
     const val MENU = "Menu"
+    /** The overflow's tick item and the list's empty line while it hides everything. */
+    const val HIDE_PORTLESS = "Hide devices with no open ports"
+    const val EMPTY_PORTLESS = "No devices with open ports"
     const val UNDO = "Undo"
     const val APP_NAME = "NetProbe"
     const val COPY_VERSION = "Copy"

@@ -46,9 +46,10 @@ class RemovedNamesTest {
         val hits = sources.filter { (_, text) -> forbidden.any { text.contains(it) } }.map { it.first }
         assertTrue("old manual screen still referenced in: $hits", hits.isEmpty())
     }
-    @Test fun `the Home overflow code offers nothing but Quick scan all and Forget`() {
+    @Test fun `the Home overflow code offers nothing but Quick scan all, Hide devices with no open ports and Forget`() {
         val menu = sources.first { it.first.replace(File.separatorChar, '/').endsWith("ui/home/HomeComponents.kt") }.second
-        assertEquals("HomeComponents.kt holds only the overflow's two menu items", 2, Regex(Regex.escape("DropdownMenuItem(")).findAll(menu).count())
-        assertTrue(menu.contains("HomeCopy.FORGET_NETWORK")); assertFalse(menu.contains("onSettings")); assertFalse(menu.contains("onAbout"))
+        assertEquals("HomeComponents.kt holds only the overflow's three menu items", 3, Regex(Regex.escape("DropdownMenuItem(")).findAll(menu).count())
+        assertTrue(menu.contains("HomeCopy.FORGET_NETWORK")); assertTrue(menu.contains("HomeCopy.HIDE_PORTLESS"))
+        assertFalse(menu.contains("onSettings")); assertFalse(menu.contains("onAbout"))
     }
 }

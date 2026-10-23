@@ -30,7 +30,7 @@ data class HomeActions(
     val onScan: () -> Unit = {}, val onStop: () -> Unit = {}, val onOpenHost: (Long) -> Unit = {}, val onDismissMessage: () -> Unit = {},
     val onFilter: (StatusFilter) -> Unit = {}, val onQuery: (String) -> Unit = {}, val onQuickScanAll: () -> Unit = {},
     val onStopQuickScan: () -> Unit = {}, val onRequestLocation: () -> Unit = {},
-    val onForget: () -> Unit = {}, val onUndo: () -> Unit = {}, val onDismissUndo: () -> Unit = {}, val onDismissApp: () -> Unit = {},
+    val onForget: () -> Unit = {}, val onHidePortless: (Boolean) -> Unit = {}, val onUndo: () -> Unit = {}, val onDismissUndo: () -> Unit = {}, val onDismissApp: () -> Unit = {},
     /** A long-press copy pick on a row (R4); the screen reads the text, copies it and shows "Copied". */
     val onCopy: (HostRow, CopyKind) -> Unit = { _, _ -> },
 )
@@ -40,6 +40,7 @@ private const val MS_PER_S = 1000L
 private fun emptyText(s: HomeUiState): String = when {
     s.query.isNotBlank() -> HomeCopy.emptySearch(s.query)
     s.filter != StatusFilter.ALL -> HomeCopy.emptyFilter(s.filter.label)
+    s.hidePortless && s.totalHosts > 0 -> HomeCopy.EMPTY_PORTLESS
     s.scanning -> HomeCopy.EMPTY_SCANNING
     else -> HomeCopy.EMPTY_NONE
 }
@@ -69,7 +70,8 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
                 HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && !radarBusy && state.totalHosts > 0 && state.env != null),
                     quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan,
-                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.workRunningOnNetwork, onForget = actions.onForget)
+                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.workRunningOnNetwork, onForget = actions.onForget,
+                    hidePortless = state.hidePortless, onHidePortless = actions.onHidePortless)
             }
             RadarBlock(mode, progress?.found ?: 0, ProgressLine.of(progress, elapsedS), summary, canScan = state.env != null,
                 onScan = { actions.onDismissMessage(); actions.onScan() }, onStop = actions.onStop, modifier = Modifier.padding(top = 12.dp),

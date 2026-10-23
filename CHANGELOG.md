@@ -3,6 +3,7 @@
 Release notes for every NetProbe version, newest first. The section for a version is what the in-app updater shows under "What's new".
 
 ## 0.4.3
+- Devices menu: Hide devices with no open ports. A tick shows when it is on, and it stays on until you turn it off.
 - Catalog: Default credentials check for web admin pages.
 - Catalog: Web gallery takes a picture of the web page of every device on your network and shows them as a gallery of thumbnails. Tap a picture to see it full size, copy its address or open it in your browser.
 - Scripts can list the devices NetProbe has found (ctx.devices), draw a web page to a picture (ctx.web.snapshot) and attach it to a finding, and work out base64, MD5, SHA-1 and SHA-256 (ctx.bytes). The guide covers all three.

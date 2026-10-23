@@ -25,6 +25,8 @@ data class SettingsState(
     val updateAuto: Boolean = true,
     /** "Include unsafe Hellos on service identification": off by default; manual Identify tools only, covered by reset. */
     val unsafeHellos: Boolean = false,
+    /** "Hide devices with no open ports" on the Devices overflow: off by default; covered by reset. */
+    val hidePortless: Boolean = false,
 )
 
 /** The single source of defaults (3C spec 1.1). AppSettings.load reads every default from [DEFAULTS], so the two can never drift. */
@@ -73,7 +75,8 @@ class AppSettings(private val prefs: SharedPreferences) {
             extGatewayProbe = prefs.getBoolean("extGatewayProbe", d.extGatewayProbe),
             listenMulticast = prefs.getBoolean("listenMulticast", d.listenMulticast),
             typeMarker = TypeMarker.entries.firstOrNull { it.name == prefs.getString("typeMarker", d.typeMarker.name) } ?: d.typeMarker,
-            updateAuto = prefs.getBoolean("updateAuto", d.updateAuto), unsafeHellos = prefs.getBoolean("unsafeHellos", d.unsafeHellos))
+            updateAuto = prefs.getBoolean("updateAuto", d.updateAuto), unsafeHellos = prefs.getBoolean("unsafeHellos", d.unsafeHellos),
+            hidePortless = prefs.getBoolean("hidePortless", d.hidePortless))
     }
     /** Port-scan options for the detail screen and "Quick scan all". */
     fun scanOptions() = ScanOptions(concurrency = state.value.scanConcurrency, connectTimeoutMs = state.value.scanTimeoutMs)
@@ -82,7 +85,7 @@ class AppSettings(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean("mdns", s.mdns).putBoolean("ssdp", s.ssdp).putBoolean("netbios", s.netbios).putBoolean("rdns", s.reverseDns).putBoolean("snmp", s.snmp).putBoolean("http", s.httpTitle)
             .putInt("sweepConc", s.sweepConcurrency).putInt("connTimeout", s.connectTimeoutMs).putInt("maxPrefix", s.maxPrefix).putInt("scanConc", s.scanConcurrency).putInt("scanTimeout", s.scanTimeoutMs)
             .putString("nvdKey", s.nvdApiKey)
-            .putBoolean("extEnabled", s.extEnabled).putInt("extMax", s.extMax.coerceIn(EXT_MAX_MIN, EXT_MAX_MAX)).putBoolean("extGatewayProbe", s.extGatewayProbe).putBoolean("listenMulticast", s.listenMulticast).putString("typeMarker", s.typeMarker.name).putBoolean("updateAuto", s.updateAuto).putBoolean("unsafeHellos", s.unsafeHellos).apply()
+            .putBoolean("extEnabled", s.extEnabled).putInt("extMax", s.extMax.coerceIn(EXT_MAX_MIN, EXT_MAX_MAX)).putBoolean("extGatewayProbe", s.extGatewayProbe).putBoolean("listenMulticast", s.listenMulticast).putString("typeMarker", s.typeMarker.name).putBoolean("updateAuto", s.updateAuto).putBoolean("unsafeHellos", s.unsafeHellos).putBoolean("hidePortless", s.hidePortless).apply()
         _state.value = load()
     }
 
