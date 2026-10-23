@@ -2,6 +2,15 @@
 
 Release notes for every NetProbe version, newest first. The section for a version is what the in-app updater shows under "What's new".
 
+## 0.4.0
+- The Tools tab is now a grid of tiles grouped by category. Pick a tool, then fill in only the inputs that tool needs.
+- Each tool has its own page: device and port pickers where they apply, a Run button that stays at the bottom, live progress, results as they arrive, and previous runs of that tool.
+- Make your own tools in JavaScript and import them from a file or an https link. A review sheet shows the tool's name, inputs, network scope and source before anything is saved.
+- Three example scripts are included: HTTP headers, banner grab and DNS lookup. The scripting guide is in docs/tools-scripting.md.
+- Manage imported tools under Settings, Tools: see version and scope, remove, or long-press a tile for About and Copy source.
+- Tools remember the inputs you last used. Secret inputs such as SNMP communities are never stored.
+- The dir-brute options sheet is gone; its settings live on the tool page.
+
 ## 0.3.5
 - The card shown once after an update is now titled "In this version" and lists what was just added, so you do not have to leave the app to read it.
 
