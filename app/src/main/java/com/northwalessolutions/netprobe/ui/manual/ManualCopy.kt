@@ -21,6 +21,9 @@ object ManualCopy {
     const val HISTORY_EMPTY = "No tools run on this network yet"
     private fun at(ip: String, portLabel: String) = if (portLabel == com.northwalessolutions.netprobe.ui.tools.ToolCopy.ALL_PORTS_LABEL) ip else "$ip:$portLabel"
     fun historyRow(tool: String, ip: String, portLabel: String) = "$tool on ${at(ip, portLabel)}"
+    /** A run that had no device (schema 6). */
+    fun historyRowNoDevice(tool: String, noDevice: String) = "$tool on $noDevice"
+    fun historyDescriptionNoDevice(tool: String, noDevice: String) = "Show $tool results for $noDevice"
     fun historyLine(summary: String, relative: String) = "$summary, $relative"
     fun historyDescription(tool: String, ip: String, portLabel: String) = "Show $tool results for ${at(ip, portLabel)}"
 }

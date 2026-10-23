@@ -26,7 +26,7 @@ class FingerprintIdentityCouplingTest {
     }
     private suspend fun hintsFor(body: String): List<String> {
         val p = CollectingProgress()
-        HttpFingerprintTool({ page(body) }, fpRules) { "abcdef012345" }.run(ToolTarget(1, host, 80, false, null), ToolOptions.None, control(), p)
+        HttpFingerprintTool({ page(body) }, fpRules) { "abcdef012345" }.run(ToolTarget(1, host, 80, false, null), ToolInputs.NONE, control(), p)
         return p.hints()
     }
     private suspend fun identify(body: String) = identifier.identify(HostEvidence(DiscoveredHost(host), emptySet(), emptyMap(), null, toolHints = hintsFor(body)))
@@ -52,7 +52,7 @@ class FingerprintIdentityCouplingTest {
     }
     private suspend fun runOn(get: HttpGet, port: Int, tls: Boolean): Pair<ToolResult, CollectingProgress> {
         val p = CollectingProgress()
-        return HttpFingerprintTool({ get }, fpRules) { "abcdef012345" }.run(ToolTarget(1, host, port, tls, null), ToolOptions.None, control(), p) to p
+        return HttpFingerprintTool({ get }, fpRules) { "abcdef012345" }.run(ToolTarget(1, host, port, tls, null), ToolInputs.NONE, control(), p) to p
     }
     private val robotsDisallowAll = "User-agent: *" + LF + "Disallow: /" + LF   // CHNAS robots.txt: 26 bytes, one rule
 

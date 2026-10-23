@@ -53,16 +53,17 @@ class IdentifyAllServicesToolTest {
     }
 
     @Test fun `it is a host tool named Identify all services and applies to no single port`() {
-        assertEquals(ToolId.IDENTIFY_ALL, tool.id); assertEquals("Identify all services", tool.name)
+        assertEquals(ToolKeys.IDENTIFY_ALL, tool.descriptor.key); assertEquals("Identify all services", tool.descriptor.name)
+        assertEquals(TargetKind.HOST, tool.descriptor.target); assertEquals(ToolCategory.IDENTITY, tool.descriptor.category)
         assertFalse(tool.applies(22, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)))
-        assertEquals("identify-all-services", ToolId.IDENTIFY_ALL.key); assertEquals(ToolId.IDENTIFY_ALL, ToolId.byKey("identify-all-services"))
-        assertFalse(ToolApplicability.appliesTo(ToolId.IDENTIFY_ALL, 22, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)))
-        assertFalse(ToolId.IDENTIFY_ALL in ToolApplicability.toolsFor(22, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)))
+        assertEquals("identify-all-services", ToolKeys.IDENTIFY_ALL); assertEquals(ToolKeys.IDENTIFY_ALL, TestRegistry.registry().byKey("identify-all-services")?.descriptor?.key)
+        assertFalse(ToolApplicability.appliesTo(ToolKeys.IDENTIFY_ALL, 22, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)))
+        assertFalse(ToolKeys.IDENTIFY_ALL in ToolApplicability.toolsFor(TestRegistry.registry(), 22, ServiceInfo("SSH", confidence = Confidence.PORT_TABLE)).map { it.descriptor.key })
     }
     @Test fun `every stored port is run in order, each applied, the summary counts the ones named, progress ends at all of them`() = runTest {
         script()
         val p = CollectingProgress()
-        val r = tool.run(target(), ToolOptions.None, control(), p)
+        val r = tool.run(target(), ToolInputs.NONE, control(), p)
         assertEquals(ToolRunStatus.DONE, r.status)
         assertEquals("2 of 3 ports named", r.summary)
         assertEquals(listOf(22, 6379), applied.map { it.second }.filter { it != 9999 }.sorted())
@@ -74,13 +75,13 @@ class IdentifyAllServicesToolTest {
     }
     @Test fun `a silent host says nothing was recognised`() = runTest {
         storedPorts = listOf(9999)
-        val r = tool.run(target(), ToolOptions.None, control(), CollectingProgress())
+        val r = tool.run(target(), ToolInputs.NONE, control(), CollectingProgress())
         assertEquals("No services recognised", r.summary)
     }
     @Test fun `a host with no stored ports recognises nothing and sends nothing`() = runTest {
         storedPorts = emptyList()
         val p = CollectingProgress()
-        val r = tool.run(target(), ToolOptions.None, control(), p)
+        val r = tool.run(target(), ToolInputs.NONE, control(), p)
         assertEquals("No services recognised", r.summary)
         assertEquals(0, p.lastTotal); assertTrue(net.connectLog().isEmpty())
     }
@@ -92,7 +93,7 @@ class IdentifyAllServicesToolTest {
     @Test fun `more than 64 stored ports are cut at 64`() = runTest {
         storedPorts = (1..100).toList()
         val p = CollectingProgress()
-        tool.run(target(), ToolOptions.None, control(), p)
+        tool.run(target(), ToolInputs.NONE, control(), p)
         assertEquals(64, p.lastTotal)
     }
     @Test fun `stop part way keeps the ports already finished and applied`() = runTest {
@@ -101,7 +102,7 @@ class IdentifyAllServicesToolTest {
         lateinit var job: Job
         onApplied = { n -> if (n == 1) job.cancel() }
         val p = CollectingProgress()
-        job = launch(start = CoroutineStart.UNDISPATCHED) { tool.run(target(), ToolOptions.None, control(), p) }
+        job = launch(start = CoroutineStart.UNDISPATCHED) { tool.run(target(), ToolInputs.NONE, control(), p) }
         job.join()
         assertTrue(job.isCancelled)
         assertEquals(listOf(22), applied.map { it.second })

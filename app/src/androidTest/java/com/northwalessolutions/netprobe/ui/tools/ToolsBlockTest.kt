@@ -4,7 +4,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
 import org.junit.Assert.*
 import org.junit.Rule
@@ -15,7 +15,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ToolsBlockTest {
     @get:Rule val rule = createComposeRule()
-    private val ran = mutableListOf<Pair<ToolId, Int>>(); private val opened = mutableListOf<ToolId>()
+    private val ran = mutableListOf<Pair<String, Int>>(); private val opened = mutableListOf<String>()
 
     private fun show(state: ToolsUiState, busy: Boolean = false) = rule.setContent {
         var expanded by remember { mutableStateOf(false) }
@@ -41,9 +41,9 @@ class ToolsBlockTest {
         show(ToolsFakes.tools())
         rule.onNodeWithTag("toolsHeader").performClick()
         rule.onNodeWithTag("toolChip:http-fingerprint:5000").assert(hasContentDescription("Run HTTP fingerprint on port 5000")).performClick()
-        assertEquals(listOf(ToolId.HTTP_FINGERPRINT to 5000), ran)
+        assertEquals(listOf(ToolKeys.HTTP_FINGERPRINT to 5000), ran)
         rule.onNodeWithTag("toolResults:dir-bruteforce").assert(hasContentDescription("Show Directory brute-force results")).performClick()
-        assertEquals(listOf(ToolId.DIR_BRUTEFORCE), opened)
+        assertEquals(listOf(ToolKeys.DIR_BRUTEFORCE), opened)
         rule.onNodeWithTag("toolResults:http-fingerprint").assertDoesNotExist()
         rule.onAllNodesWithText("Results").assertCountEquals(1)
     }
@@ -56,6 +56,6 @@ class ToolsBlockTest {
         show(ToolsFakes.tools(), busy = true)
         rule.onNodeWithTag("toolsHeader").performClick()
         rule.onNodeWithTag("toolChip:dir-bruteforce:5000").performClick()
-        assertEquals(listOf(ToolId.DIR_BRUTEFORCE to 5000), ran)   // the view model answers a held host with its busy snackbar (Task 16)
+        assertEquals(listOf(ToolKeys.DIR_BRUTEFORCE to 5000), ran)   // the view model answers a held host with its busy snackbar (Task 16)
     }
 }

@@ -7,7 +7,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.ui.home.HomeCopy
 import com.northwalessolutions.netprobe.ui.theme.NetProbeTheme
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
@@ -25,7 +25,7 @@ class ManualToolsContentTest {
     private val events = mutableListOf<String>()
     private var s by mutableStateOf(ManualUiState())
     private val actions = ManualActions(onRun = { events += "run" }, onStop = { events += "stop" }, onOpenRun = { events += "open $it" },
-        onTool = { events += "tool ${it.key}" }, onManageWordlists = { events += "manage wordlists" })
+        onTool = { events += "tool $it" }, onManageWordlists = { events += "manage wordlists" })
     private var live: String? = null
     private fun show(state: ManualUiState) { s = state; rule.setContent { NetProbeTheme { ManualToolsContent(s, actions, liveProgress = { live }) } } }
     private fun history(n: Int) = (1..n).map {
@@ -50,7 +50,7 @@ class ManualToolsContentTest {
         rule.onNodeWithText(ManualCopy.ERR_PORT_NEEDED).assertExists()
     }
     @Test fun smbDisablesThePortFieldAndSaysWhichPort() {
-        show(ManualUiState(form = ManualForm(tool = ToolId.SMB_SESSION), portEnabled = false, showHttps = false, fixedLine = ManualCopy.FIXED_SMB))
+        show(ManualUiState(form = ManualForm(tool = ToolKeys.SMB_SESSION), portEnabled = false, showHttps = false, fixedLine = ManualCopy.FIXED_SMB))
         rule.onNodeWithTag("manualPort").assertIsNotEnabled()
         rule.onNodeWithText(ManualCopy.FIXED_SMB).assertExists()
         rule.onNodeWithText(ManualCopy.USE_HTTPS).assertDoesNotExist()
@@ -58,17 +58,17 @@ class ManualToolsContentTest {
     @Test fun theToolRowListsEveryToolInOrder() {
         show(ManualUiState())
         rule.onNodeWithTag("manualTool").assert(hasText(ManualCopy.toolRow(ToolCopy.HTTP_FINGERPRINT))).performClick()
-        val ys = ToolId.entries.map { rule.onNodeWithTag("manualTool:${it.key}").fetchSemanticsNode().positionInRoot.y }
+        val ys = ToolKeys.BUILT_IN.map { rule.onNodeWithTag("manualTool:$it").fetchSemanticsNode().positionInRoot.y }
         assertEquals(ys.sorted(), ys)
-        rule.onNodeWithTag("manualTool:${ToolId.SNMP_WALK.key}").performClick()
+        rule.onNodeWithTag("manualTool:${ToolKeys.SNMP_WALK}").performClick()
         assertEquals(listOf("tool snmp-walk"), events)
     }
     @Test fun identifyServiceIsInThePickerAndStartsWithoutASheet() {   // 3E spec 8
         show(ManualUiState())
         rule.onNodeWithTag("manualTool").performClick()
-        rule.onNodeWithTag("manualTool:${ToolId.IDENTIFY.key}").assert(hasText(ToolCopy.IDENTIFY)).performClick()
+        rule.onNodeWithTag("manualTool:${ToolKeys.IDENTIFY}").assert(hasText(ToolCopy.IDENTIFY)).performClick()
         assertEquals(listOf("tool identify-service"), events)
-        s = ManualUiState(form = ManualForm(tool = ToolId.IDENTIFY, ipText = "10.0.3.9", portText = "6379"))
+        s = ManualUiState(form = ManualForm(tool = ToolKeys.IDENTIFY, ipText = "10.0.3.9", portText = "6379"))
         rule.waitForIdle()
         rule.onNodeWithTag("manualPort").assertIsEnabled()
         rule.onNodeWithText(ManualCopy.USE_HTTPS).assertDoesNotExist()

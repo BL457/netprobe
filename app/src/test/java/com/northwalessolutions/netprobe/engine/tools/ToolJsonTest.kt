@@ -6,10 +6,11 @@ import java.net.Inet4Address
 import java.net.InetAddress
 
 class ToolJsonTest {
+    private val d = ToolDescriptor("x", "x", "", ToolIcon.TERMINAL, ToolCategory.WEB, TargetKind.PORT, emptyList())
     private val t = ToolTarget(7, InetAddress.getByName("10.0.3.9") as Inet4Address, 443, tls = true, serverName = "chnas.local")
     @Test fun `options json always carries tls and serverName`() {
-        assertEquals("{\"tls\":true,\"serverName\":\"chnas.local\"}", ToolOptionsJson.encode(t, ToolOptions.None))
-        assertEquals("{\"tls\":true,\"serverName\":null}", ToolOptionsJson.encode(t.copy(serverName = null), ToolOptions.None))
+        assertEquals("{\"tls\":true,\"serverName\":\"chnas.local\"}", ToolOptionsJson.encode(t, d, ToolInputs.NONE))
+        assertEquals("{\"tls\":true,\"serverName\":null}", ToolOptionsJson.encode(t.copy(serverName = null), d, ToolInputs.NONE))
     }
     @Test fun `withOption adds or replaces one key and leaves malformed json alone`() {
         assertEquals("{\"tls\":false,\"methodUsed\":\"GET_ONLY\"}", ToolOptionsJson.withOption("{\"tls\":false}", "methodUsed", "GET_ONLY"))

@@ -1,7 +1,7 @@
 package com.northwalessolutions.netprobe.ui.tools
 
 import com.northwalessolutions.netprobe.data.ToolRunStatus
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolRoute
 import java.util.Locale
 
@@ -18,10 +18,14 @@ object ToolCopy {
     const val SNMP_WALK = "SNMP walk"
     const val IDENTIFY = "Identify service"
     const val IDENTIFY_ALL = "Identify all services"
-    fun toolName(id: ToolId): String = when (id) {
-        ToolId.DIR_BRUTEFORCE -> DIR_BRUTEFORCE; ToolId.HTTP_FINGERPRINT -> HTTP_FINGERPRINT; ToolId.TLS_CERTIFICATE -> TLS_CERTIFICATE
-        ToolId.SMB_SESSION -> SMB_SESSION; ToolId.SNMP_WALK -> SNMP_WALK; ToolId.IDENTIFY -> IDENTIFY; ToolId.IDENTIFY_ALL -> IDENTIFY_ALL
+    /** The display name of a built-in key; any other key is shown as it is (a removed script tool is named by its stored toolName instead). */
+    fun toolName(key: String): String = when (key) {
+        ToolKeys.DIR_BRUTEFORCE -> DIR_BRUTEFORCE; ToolKeys.HTTP_FINGERPRINT -> HTTP_FINGERPRINT; ToolKeys.TLS_CERTIFICATE -> TLS_CERTIFICATE
+        ToolKeys.SMB_SESSION -> SMB_SESSION; ToolKeys.SNMP_WALK -> SNMP_WALK; ToolKeys.IDENTIFY -> IDENTIFY; ToolKeys.IDENTIFY_ALL -> IDENTIFY_ALL
+        else -> key
     }
+    /** Shown where a run has no device (a tool with no target). */
+    const val NO_DEVICE = "No device"
 
     // Tools row and blocks (8.1)
     const val TOOLS = "Tools"
@@ -175,7 +179,7 @@ object ToolCopy {
     const val COPIED = "Copied"
     const val EMPTY_RUNNING = "Running, findings appear as they are found"
     const val NO_FINDINGS = "No findings"
-    fun resultsTitle(tool: String, ip: String, port: Int) = if (port == 0) "$tool  $ip" else "$tool  $ip:$port"
+    fun resultsTitle(tool: String, ip: String?, port: Int) = if (ip == null) "$tool  $NO_DEVICE" else if (port == 0) "$tool  $ip" else "$tool  $ip:$port"
     fun resultsStatus(label: String, relative: String, nameSent: String?) = "$label, $relative${nameSent?.let { ", as $it" } ?: ""}"
     fun resultsRunning(progress: String) = "Running, $progress"
     fun runOf(n: Int, m: Int) = "Run $n of $m"
@@ -183,7 +187,7 @@ object ToolCopy {
     fun copyDescription(value: String) = "Copy $value"
 
     // Export (7.5)
-    fun exportSubject(tool: String, ip: String, port: Int) = if (port == 0) "NetProbe $tool $ip" else "NetProbe $tool $ip:$port"
+    fun exportSubject(tool: String, ip: String?, port: Int) = if (ip == null) "NetProbe $tool" else if (port == 0) "NetProbe $tool $ip" else "NetProbe $tool $ip:$port"
     fun exportTitle(tool: String) = "NetProbe $tool"
     fun exportTarget(target: String) = "Target: $target"
     fun exportNameSent(name: String) = "Name sent: $name"

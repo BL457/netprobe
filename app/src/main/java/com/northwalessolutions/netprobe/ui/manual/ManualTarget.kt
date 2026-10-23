@@ -3,7 +3,7 @@ package com.northwalessolutions.netprobe.ui.manual
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceIdentifier
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.netenv.Ipv4
 import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.SubnetMath
@@ -32,14 +32,14 @@ object ManualTarget {
     /** 0.0.0.0/8 "this network", 127.0.0.0/8 loopback, 224.0.0.0/4 multicast, 240.0.0.0/4 reserved (255.255.255.255 included). */
     private val RESERVED = listOf(Subnet(0x00000000, 8), Subnet(0x7F000000, 8), Subnet(0xE0000000.toInt(), 4), Subnet(0xF0000000.toInt(), 4))
 
-    fun fixedPort(tool: ToolId): Int? = when (tool) {
-        ToolId.SNMP_WALK -> ToolApplicability.SNMP_PORT
-        ToolId.SMB_SESSION -> ToolApplicability.SMB_PORT
-        ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT, ToolId.TLS_CERTIFICATE, ToolId.IDENTIFY -> null
-        ToolId.IDENTIFY_ALL -> ALL_PORTS
+    fun fixedPort(tool: String): Int? = when (tool) {
+        ToolKeys.SNMP_WALK -> ToolApplicability.SNMP_PORT
+        ToolKeys.SMB_SESSION -> ToolApplicability.SMB_PORT
+        ToolKeys.IDENTIFY_ALL -> ALL_PORTS
+        else -> null
     }
 
-    fun check(ipText: String, portText: String, tool: ToolId, home: Subnet?, attempted: Boolean): ManualCheck {
+    fun check(ipText: String, portText: String, tool: String, home: Subnet?, attempted: Boolean): ManualCheck {
         val ipTrim = ipText.trim(); val portTrim = portText.trim()
         val parsed = Ipv4.parse(ipTrim)
         val ipProblem = when {
@@ -60,14 +60,14 @@ object ManualTarget {
     }
 
     /** TLS certificate always speaks TLS; SMB and SNMP never do; the web tools follow the "Use HTTPS" switch (spec 4.1 item 5). */
-    fun tls(tool: ToolId, https: Boolean): Boolean = when (tool) {
-        ToolId.TLS_CERTIFICATE -> true
-        ToolId.SMB_SESSION, ToolId.SNMP_WALK, ToolId.IDENTIFY, ToolId.IDENTIFY_ALL -> false
-        ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT -> https
+    fun tls(tool: String, https: Boolean): Boolean = when (tool) {
+        ToolKeys.TLS_CERTIFICATE -> true
+        ToolKeys.DIR_BRUTEFORCE, ToolKeys.HTTP_FINGERPRINT -> https
+        else -> false
     }
 
     /** The switch's starting value (spec 4.1 item 5): a known host's stored service on the port decides, else a TLS port number. */
-    fun httpsDefault(tool: ToolId, port: Int?, service: ServiceInfo?): Boolean {
+    fun httpsDefault(tool: String, port: Int?, service: ServiceInfo?): Boolean {
         if (port == null) return false
         if (service != null) return ToolApplicability.targetTls(tool, port, service)
         return port in ServiceIdentifier.TLS

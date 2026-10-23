@@ -2,27 +2,44 @@ package com.northwalessolutions.netprobe.engine.tools
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.net.Inet4Address
 
-/** tool_runs.optionsJson (spec 7.1): always tls and serverName, plus the brute-force fields for a DirBrute run. */
+/**
+ * tool_runs.optionsJson (spec 7.1): tls and serverName when the run has a target, then the tool's recorded inputs by name. The implicit
+ * ip, port and tls inputs are not repeated (the run row and the target carry them), secrets are never written, a wordlist is written as
+ * <name>Id, <name>Name and <name>Entries (so a dir-brute run keeps the field names history and export read), a list as an array.
+ */
 object ToolOptionsJson {
-    fun encode(target: ToolTarget, options: ToolOptions): String = buildJsonObject {
-        put("tls", target.tls)
-        put("serverName", target.serverName?.let { JsonPrimitive(it) } ?: JsonNull)
-        if (options is ToolOptions.DirBrute) {
-            val o = options.options
-            put("wordlistId", o.wordlistId); put("wordlistName", options.wordlistName); put("wordlistEntries", options.wordlistEntries)
-            put("extensions", JsonArray(o.extensions.map { JsonPrimitive(it) }))
-            put("method", o.method.name); put("methodUsed", o.method.name)   // the chosen method; the calibration switch rewrites methodUsed (spec 5.2, G8)
-            put("concurrency", o.concurrency); put("timeoutS", o.timeoutS)
-            put("statusCodes", JsonArray(o.statusCodes.map { JsonPrimitive(it) })); put("baseline", o.baseline)
+    fun encode(target: ToolTarget?, descriptor: ToolDescriptor, inputs: ToolInputs): String = buildJsonObject {
+        if (target != null) {
+            put("tls", target.tls)
+            put("serverName", target.serverName?.let { JsonPrimitive(it) } ?: JsonNull)
+        }
+        for ((name, value) in inputs.withoutSecrets(descriptor).values) {
+            if (name == ToolInputs.IP || name == ToolInputs.PORT || name == ToolInputs.TLS) continue
+            when (value) {
+                null -> Unit
+                is WordlistRef -> { put("${name}Id", value.id); put("${name}Name", value.name); put("${name}Entries", value.entries) }
+                else -> put(name, element(value))
+            }
         }
     }.toString()
+
+    private fun element(value: Any): JsonElement = when (value) {
+        is Boolean -> JsonPrimitive(value)
+        is Int -> JsonPrimitive(value)
+        is Long -> JsonPrimitive(value)
+        is Inet4Address -> JsonPrimitive(value.hostAddress)
+        is List<*> -> JsonArray(value.filterNotNull().map { element(it) })
+        else -> JsonPrimitive(value.toString())
+    }
     /** [json] with [key] set to the string [value]; a malformed [json] is returned unchanged. */
     fun withOption(json: String, key: String, value: String): String = withOption(json, key, JsonPrimitive(value))
     /** [json] with [key] set to the number [value], the same JSON type [encode] writes for counts (wordlistEntries). */

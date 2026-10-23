@@ -1,6 +1,5 @@
 package com.northwalessolutions.netprobe.ui.scans
 
-import com.northwalessolutions.netprobe.engine.tools.ToolId
 import org.junit.Assert.*
 import org.junit.Test
 

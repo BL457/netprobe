@@ -23,7 +23,7 @@ class SmbSessionTest {
     private fun le64(b: ByteArray, at: Int) = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN).getLong(at)
     private suspend fun run(vararg connections: Script?): Triple<ToolResult, CollectingProgress, List<Script?>> {
         val queue = ArrayDeque(connections.toList()); val p = CollectingProgress()
-        val r = SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L }).run(target, ToolOptions.None, control(), p)
+        val r = SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L }).run(target, ToolInputs.NONE, control(), p)
         return Triple(r, p, connections.toList())
     }
     private fun anonymous(final: ByteArray) = Script(SmbFixtures.negotiateResponse(0x0302, 3), SmbFixtures.challengeResponse(0x77), final)
@@ -39,7 +39,7 @@ class SmbSessionTest {
         val queue = ArrayDeque<SmbTransport?>(listOf(frozen, anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)),
             guest(0x0302, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE))))
         val r = SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L })
-            .run(target, ToolOptions.None, c, CollectingProgress())
+            .run(target, ToolInputs.NONE, c, CollectingProgress())
         assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest refused", r.summary); assertTrue(frozen.closed)
     }
     @Test fun `anonymous allowed, guest refused, signing required`() = runTest {
@@ -135,7 +135,7 @@ class SmbSessionTest {
         val queue = ArrayDeque<SmbTransport?>(listOf(dropped, anonymous(SmbFixtures.sessionSetupResponse(Smb2.STATUS_SUCCESS, 0x77, Smb2.SESSION_FLAG_IS_NULL)),
             guest(0x0302, SmbFixtures.errorResponse(Smb2.SESSION_SETUP, SmbFixtures.STATUS_LOGON_FAILURE))))
         val r = SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L })
-            .run(target, ToolOptions.None, c, CollectingProgress())
+            .run(target, ToolInputs.NONE, c, CollectingProgress())
         assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest refused", r.summary); assertTrue(dropped.closed)
     }
     @Test fun `a reply lost mid anonymous leg with no pause reads as refused`() = runTest {
@@ -170,7 +170,7 @@ class SmbSessionTest {
     private suspend fun runWith(c: RunControl, vararg connections: SmbTransport?): ToolResult {
         val queue = ArrayDeque(connections.toList())
         return SmbSessionTool(connect = { queue.removeFirstOrNull() }, randomBytes = { n -> ByteArray(n) { 0x5a } }, clock = { 0L })
-            .run(target, ToolOptions.None, c, CollectingProgress())
+            .run(target, ToolInputs.NONE, c, CollectingProgress())
     }
     @Test fun `a reply lost mid guest leg to a pause is retried once`() = runTest {
         val c = ToolTestSupport.EpochControl()

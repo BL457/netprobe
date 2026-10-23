@@ -26,9 +26,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.ui.rootInsets
 import com.northwalessolutions.netprobe.AppContainer
-import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.ui.LiveLine
 import com.northwalessolutions.netprobe.ui.home.HomeCopy
@@ -43,7 +43,7 @@ import com.northwalessolutions.netprobe.ui.tools.ToolResultsSheet
 
 /** Every action the screen fires; ManualToolsScreen wires them to ManualToolsViewModel, the Compose tests record them. */
 data class ManualActions(
-    val onIp: (String) -> Unit = {}, val onPort: (String) -> Unit = {}, val onTool: (ToolId) -> Unit = {},
+    val onIp: (String) -> Unit = {}, val onPort: (String) -> Unit = {}, val onTool: (String) -> Unit = {},
     val onHttps: (Boolean) -> Unit = {}, val onRun: () -> Unit = {}, val onStop: () -> Unit = {}, val onOpenRun: (Long) -> Unit = {},
     val onOlderRun: () -> Unit = {}, val onNewerRun: () -> Unit = {}, val onCloseResults: () -> Unit = {}, val onShare: () -> Unit = {},
     val onCopyFinding: (FindingRow) -> Unit = {}, val onOpenFinding: (FindingRow) -> Unit = {}, val onStartDirBrute: (DirBruteOptions) -> Unit = {},
@@ -162,9 +162,9 @@ fun ManualToolsContent(state: ManualUiState, actions: ManualActions, liveProgres
     }
 }
 
-/** "Tool: HTTP fingerprint" with a chevron; the menu lists the five tools in ToolId order (spec 4.1 item 4). */
+/** "Tool: HTTP fingerprint" with a chevron; the menu lists the five tools in built-in order (spec 4.1 item 4). */
 @Composable
-private fun ToolPicker(tool: ToolId, enabled: Boolean, onPick: (ToolId) -> Unit) {
+private fun ToolPicker(tool: String, enabled: Boolean, onPick: (String) -> Unit) {
     Box {
         var open by remember { mutableStateOf(false) }
         Row(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).alpha(if (enabled) 1f else DISABLED_ALPHA)
@@ -173,8 +173,8 @@ private fun ToolPicker(tool: ToolId, enabled: Boolean, onPick: (ToolId) -> Unit)
             Icon(Icons.Default.KeyboardArrowDown, null, tint = NetProbeColors.textSecondary)
         }
         DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
-            ToolId.entries.forEach { t ->
-                DropdownMenuItem(text = { Text(ToolCopy.toolName(t)) }, onClick = { open = false; onPick(t) }, modifier = Modifier.testTag("manualTool:${t.key}"))
+            ToolKeys.BUILT_IN.forEach { t ->
+                DropdownMenuItem(text = { Text(ToolCopy.toolName(t)) }, onClick = { open = false; onPick(t) }, modifier = Modifier.testTag("manualTool:$t"))
             }
         }
     }

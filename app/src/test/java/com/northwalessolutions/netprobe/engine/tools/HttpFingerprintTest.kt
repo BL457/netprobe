@@ -18,7 +18,7 @@ class HttpFingerprintTest {
     private fun ok(status: Int, body: String = "", headers: List<Pair<String, String>> = emptyList(), reason: String = "OK") =
         HttpResult.Ok(HttpResponse(status, reason, headers, body.toByteArray(), false, body.length.toLong()))
     private suspend fun run(get: HttpGet, t: ToolTarget = target()): Pair<com.northwalessolutions.netprobe.engine.tools.ToolResult, CollectingProgress> {
-        val p = CollectingProgress(); return HttpFingerprintTool({ get }, rules) { "abcdef012345" }.run(t, ToolOptions.None, control(), p) to p
+        val p = CollectingProgress(); return HttpFingerprintTool({ get }, rules) { "abcdef012345" }.run(t, ToolInputs.NONE, control(), p) to p
     }
 
     @Test fun `a root GET lost to a pause is retried once after the resume`() = runTest {
@@ -28,7 +28,7 @@ class HttpFingerprintTest {
             else if (path == "/") ok(200, "<title>NAS</title>") else ok(404)
         }
         val p = CollectingProgress()
-        val r = HttpFingerprintTool({ get }, rules) { "abcdef012345" }.run(target(), ToolOptions.None, c, p)
+        val r = HttpFingerprintTool({ get }, rules) { "abcdef012345" }.run(target(), ToolInputs.NONE, c, p)
         assertEquals(ToolRunStatus.DONE, r.status); assertEquals("200 OK", p.of(FindingKind.STATUS).first().value)
     }
     @Test fun `names synology from the title and strips the version in the framework hint`() = runTest {

@@ -11,8 +11,9 @@ import com.northwalessolutions.netprobe.data.ToolRunEntity
 import com.northwalessolutions.netprobe.engine.discovery.KnownRanges
 import com.northwalessolutions.netprobe.engine.neigh.GatewayMac
 import com.northwalessolutions.netprobe.engine.tools.AppMessage
-import com.northwalessolutions.netprobe.engine.tools.ToolId
-import com.northwalessolutions.netprobe.engine.tools.ToolOptions
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
+import com.northwalessolutions.netprobe.engine.tools.ToolRunner.Companion.forHost
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteInputs
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.netenv.HomeRange
@@ -23,6 +24,7 @@ import com.northwalessolutions.netprobe.ui.tools.FindingRow
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolExport
 import com.northwalessolutions.netprobe.ui.tools.ToolResultsModel
+import com.northwalessolutions.netprobe.ui.tools.ToolsUiModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -36,7 +38,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
     private data class PendingBrute(val request: ManualRequest, val sheet: DirBruteSheetState)
-    private data class ResultsSource(val run: ToolRunEntity, val sameTool: List<ToolRunEntity>, val ip: String, val rows: List<FindingRow>)
+    private data class ResultsSource(val run: ToolRunEntity, val sameTool: List<ToolRunEntity>, val ip: String?, val rows: List<FindingRow>)
 
     private val form = MutableStateFlow(ManualForm())
     private val message = MutableStateFlow<String?>(null)
@@ -55,7 +57,7 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         envNow = { c.networkEnvMonitor.current() },
         target = { id, ip -> c.hosts.manualTarget(id, ip) },
         discard = { id -> c.hosts.discardManual(id) },
-        runnerStart = { t, tool, options -> c.toolRunner.start(t, tool, options) })
+        runnerStart = { t, tool, inputs -> c.toolRunner.start(t, tool, inputs) })
 
     /**
      * Always resolved as a scan does, MAC-aware (plan review G7, amendment A5): the gateway-and-prefix key alone cannot tell two sites with the
@@ -85,8 +87,8 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
     }
     private val resultsSource: Flow<ResultsSource?> = resultsRunId.flatMapLatest { id ->
         if (id == null) flowOf(null) else c.toolRepo.run(id).flatMapLatest { r ->
-            if (r == null) flowOf(null) else combine(c.toolRepo.findings(id), c.toolRepo.runsForHost(r.hostId), c.hosts.host(r.hostId)) { f, runs, h ->
-                h?.let { ResultsSource(r, runs.filter { it.toolId == r.toolId }, it.ip, ToolResultsModel.rows(f)) }
+            if (r == null) flowOf(null) else combine(c.toolRepo.findings(id), c.toolRepo.runsOfSameTool(r), r.hostId?.let { c.hosts.host(it) } ?: flowOf(null)) { f, same, h ->
+                if (r.hostId != null && h == null) null else ResultsSource(r, same, h?.ip, ToolResultsModel.rows(f))
             }
         }
     }
@@ -99,17 +101,17 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         val e = arr[1] as NetworkEnv?; val s = arr[10] as SettingsState
         val home = e?.let { HomeRange.of(it.interfaceIp, it.prefixLength, s.maxPrefix, s.extEnabled).subnet }
         val now = System.currentTimeMillis()
-        val results = (arr[5] as ResultsSource?)?.let { src -> ToolResultsModel.ofRows(src.run, src.sameTool, src.ip, src.rows, activeMap[src.run.hostId], now) }
-        ManualPresenter.present(arr[0] as ManualForm, home, e != null, arr[2] as KnownTarget?, historyRuns, (arr[9] as Long?)?.let { activeMap[it] },
+        val results = (arr[5] as ResultsSource?)?.let { src -> ToolResultsModel.ofRows(c.toolRegistry, src.run, src.sameTool, src.ip, src.rows, activeMap[src.run.id], now) }
+        ManualPresenter.present(c.toolRegistry, arr[0] as ManualForm, home, e != null, arr[2] as KnownTarget?, historyRuns, (arr[9] as Long?)?.let { activeMap.forHost(it) },
             results, (arr[6] as PendingBrute?)?.sheet, arr[7] as String?, arr[8] as AppMessage?, now)
     }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ManualUiState())
 
     /** The pill's per-tick progress for the run this screen started, read only in LiveLine's draw (3B QA F4). */
-    val liveProgress: StateFlow<String?> = combine(c.toolRunner.active, startedHostId) { m, id -> ManualPresenter.liveProgress(id?.let { m[it] }) }
+    val liveProgress: StateFlow<String?> = combine(c.toolRunner.active, startedHostId) { m, id -> ManualPresenter.liveProgress(id?.let { m.forHost(it) }, c.toolRegistry) }
         .distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
     /** The open results sheet's live status line while its run is live, for ToolResultsSheet's liveStatus (3B QA F4). */
     val liveResults: StateFlow<String?> = combine(c.toolRunner.active, resultsSource) { m, src ->
-        ManualPresenter.liveResultsStatus(src?.let { s -> m[s.run.hostId]?.takeIf { it.runId == s.run.id } })
+        ManualPresenter.liveResultsStatus(src?.let { s -> m[s.run.id] }, c.toolRegistry)
     }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     init {
@@ -122,7 +124,7 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
 
     fun setIp(text: String) { form.update { it.copy(ipText = text, httpsChoice = null) } }
     fun setPort(text: String) { form.update { it.copy(portText = text.filter(Char::isDigit).take(MAX_PORT_CHARS), httpsChoice = null) } }
-    fun setTool(tool: ToolId) { form.update { it.copy(tool = tool, httpsChoice = null) } }
+    fun setTool(tool: String) { form.update { it.copy(tool = tool, httpsChoice = null) } }
     fun setHttps(on: Boolean) { form.update { it.copy(httpsChoice = on) } }
 
     /** Run (spec 4.3): validate; brute-force opens its sheet and creates nothing until the sheet's Run; the other tools start at once. */
@@ -149,7 +151,7 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
             val initial = if (lists.any { it.id == saved.wordlistId }) saved else saved.copy(wordlistId = DirBruteOptions.DEFAULT_WORDLIST)
             if (initial != saved) message.value = ToolCopy.WORDLIST_FALLBACK
             val reason = ToolCopy.BUSY_TOO_MANY.takeIf { c.toolRunner.active.value.size >= ToolRunner.MAX_ACTIVE_RUNS }
-            pending.value = PendingBrute(r, DirBruteSheetState(r.port, ToolExport.target(ToolId.DIR_BRUTEFORCE, r.ip.hostAddress, r.port, r.tls), lists, initial, reason))
+            pending.value = PendingBrute(r, DirBruteSheetState(r.port, ToolExport.target(ToolKeys.DIR_BRUTEFORCE, r.ip.hostAddress, r.port, r.tls), lists, initial, reason))
         }
     }
     /** The sheet's Run: save the options, close the sheet, start (spec 4.3 step 3). */
@@ -160,7 +162,7 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         c.appScope.launch(Dispatchers.Default) {
             c.dirBruteOptions.save(options)
             val meta = c.wordlistStore.lists.value.firstOrNull { it.id == options.wordlistId }
-            begin(p.request.copy(options = ToolOptions.DirBrute(options, meta?.name ?: "", meta?.entries ?: 0)))
+            begin(p.request.copy(inputs = DirBruteInputs.of(options, meta?.name ?: "", meta?.entries ?: 0)))
         }
     }
     /** Cancel creates nothing: no row was made for the open sheet (spec 4.3 step 3). */
@@ -171,7 +173,7 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         ManualMessages.of(result, c.hostBusy.busy.value)?.let { message.value = it }
         if (result.start is ToolRunner.Start.Started) startedHostId.value = result.hostId
     }
-    fun stopTool() { startedHostId.value?.let { c.toolRunner.stop(it) } }
+    fun stopTool() { startedHostId.value?.let { c.toolRunner.stopHost(it) } }
 
     fun openRun(runId: Long) { resultsRunId.value = runId }
     fun olderRun() { stepRun(+1) }
@@ -180,7 +182,7 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val current = resultsRunId.value ?: return@launch
             val shown = c.toolRepo.run(current).first() ?: return@launch
-            val same = c.toolRepo.runsForHost(shown.hostId).first().filter { it.toolId == shown.toolId }
+            val same = c.toolRepo.runsOfSameTool(shown).first()
             same.getOrNull(same.indexOfFirst { it.id == current } + delta)?.let { resultsRunId.value = it.id }
         }
     }
@@ -190,9 +192,9 @@ class ManualToolsViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val id = resultsRunId.value ?: return@launch
             val shown = c.toolRepo.run(id).first() ?: return@launch
-            val h = c.hosts.byIdOnce(shown.hostId) ?: return@launch
-            val export = ToolExport.of(shown, h.ip, c.toolRepo.findingsOnce(id))
-            c.actionRunner.share(ToolExport.subject(export.toolName, h.ip, shown.port), ToolExport.text(export))
+            val ip = shown.hostId?.let { host -> c.hosts.byIdOnce(host)?.ip ?: return@launch }
+            val export = ToolExport.of(shown, ip, c.toolRepo.findingsOnce(id), toolName = ToolsUiModel.nameOf(c.toolRegistry, shown))
+            c.actionRunner.share(ToolExport.subject(export.toolName, ip, shown.port), ToolExport.text(export))
         }
     }
     /** As the Device screen (3B 8.5): Copy copies the URL when there is one, else the value; below API 33 a snackbar confirms. */

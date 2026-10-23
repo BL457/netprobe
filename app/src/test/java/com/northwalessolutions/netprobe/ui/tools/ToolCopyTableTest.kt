@@ -1,7 +1,7 @@
 package com.northwalessolutions.netprobe.ui.tools
 
 import com.northwalessolutions.netprobe.data.ToolRunStatus
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolRoute
 import com.northwalessolutions.netprobe.ui.wordlists.WordlistCopy
 import com.northwalessolutions.netprobe.ui.wordlists.WordlistImport
@@ -20,7 +20,7 @@ class ToolCopyTableTest {
     private val ts = "\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"
     private val templates: List<Regex> = listOf(
         // names, Tools row and blocks
-        "Directory brute-force", "HTTP fingerprint", "TLS certificate", "SMB session", "SNMP walk", "Identify service", "Identify all services",
+        "No device", ".+  No device", "Directory brute-force", "HTTP fingerprint", "TLS certificate", "SMB session", "SNMP walk", "Identify service", "Identify all services",
         // Identify all services and the port row action (R2)
         "No services recognised", "port \\d+ of \\d+", "\\d+ of \\d+ ports named", "\\d+: not recognised", "\\d+: .+", "Identify", "Identifying", "Identify service on port \\d+", "all open ports",
         // Identify service (3E)
@@ -108,7 +108,7 @@ class ToolCopyTableTest {
     }
 
     private fun everyString(): List<String> = buildList {
-        ToolId.entries.forEach { add(ToolCopy.toolName(it)) }
+        ToolKeys.BUILT_IN.forEach { add(ToolCopy.toolName(it)) }
         for (n in listOf(1, 3)) { add(ToolCopy.available(n)); add(ToolCopy.rowDescription(n, false)); add(ToolCopy.rowDescription(n, true)) }
         for (snmp in listOf(false, true)) {
             val p = ToolCopy.portLabel(5000, snmp)
@@ -142,7 +142,7 @@ class ToolCopyTableTest {
             ToolCopy.EXTENSIONS_SUPPORT, ToolCopy.METHOD, ToolCopy.HEAD_THEN_GET, ToolCopy.GET_ONLY, ToolCopy.CONCURRENCY, ToolCopy.TIMEOUT, ToolCopy.seconds(3),
             ToolCopy.REPORT_CODES, ToolCopy.DEFAULT_CODES_TEXT, ToolCopy.FILTER, ToolCopy.FILTER_SUPPORT, ToolCopy.paths(1), ToolCopy.paths(312), ToolCopy.RUN,
             ToolCopy.ERR_EXT_CHARS, ToolCopy.ERR_EXT_TOO_MANY, ToolCopy.ERR_CODE_RANGE, ToolCopy.ERR_CODE_EMPTY, ToolCopy.WORDLIST_FALLBACK, ToolCopy.BRUTE_FALLBACK_PREFIX, ToolCopy.EXPAND, ToolCopy.SECONDS_UNIT))
-        addAll(listOf(ToolCopy.resultsTitle(ToolCopy.DIR_BRUTEFORCE, "10.0.3.10", 5000), ToolCopy.resultsStatus("Done", "2 hours ago", null),
+        addAll(listOf(ToolCopy.NO_DEVICE, ToolCopy.resultsTitle(ToolCopy.DIR_BRUTEFORCE, null, 0), ToolCopy.exportSubject(ToolCopy.DIR_BRUTEFORCE, null, 0), ToolCopy.resultsTitle(ToolCopy.DIR_BRUTEFORCE, "10.0.3.10", 5000), ToolCopy.resultsStatus("Done", "2 hours ago", null),
             ToolCopy.resultsStatus("Done", "2 hours ago", "chnas.local"), ToolCopy.resultsRunning("12 of 300, 2 found  3 s"), ToolCopy.runOf(1, 3),
             ToolCopy.OLDER_RUN, ToolCopy.NEWER_RUN, ToolCopy.OPEN_WITH, ToolCopy.COPY, ToolCopy.SHARE, ToolCopy.COPIED, ToolCopy.EMPTY_RUNNING, ToolCopy.NO_FINDINGS,
             ToolCopy.openDescription("http://10.0.3.10:5000/admin"), ToolCopy.copyDescription("/admin")))

@@ -25,29 +25,42 @@ class ToolApplicabilityTest {
         assertEquals("https", ToolApplicability.webScheme(5001, unknown))                    // no banner: ServiceIdentifier.TLS fallback
         assertEquals("http", ToolApplicability.webScheme(7123, svc("HTTP")))                 // an unknown port confirmed HTTP by 3A's ladder
         assertNull(ToolApplicability.webScheme(22, svc("SSH")))
-        assertTrue(ToolApplicability.appliesTo(ToolId.DIR_BRUTEFORCE, 81, unknown))
-        assertTrue(ToolApplicability.appliesTo(ToolId.HTTP_FINGERPRINT, 7123, svc("HTTP")))
+        assertTrue(ToolApplicability.appliesTo(ToolKeys.DIR_BRUTEFORCE, 81, unknown))
+        assertTrue(ToolApplicability.appliesTo(ToolKeys.HTTP_FINGERPRINT, 7123, svc("HTTP")))
     }
     @Test fun `tls certificate applies to https and the bare tls ports`() {
-        assertTrue(ToolApplicability.appliesTo(ToolId.TLS_CERTIFICATE, 5001, svc("HTTPS")))
-        for (p in listOf(465, 636, 993, 995, 5986, 8883)) assertTrue("$p", ToolApplicability.appliesTo(ToolId.TLS_CERTIFICATE, p, unknown))
-        assertFalse(ToolApplicability.appliesTo(ToolId.TLS_CERTIFICATE, 5000, svc("HTTP")))
+        assertTrue(ToolApplicability.appliesTo(ToolKeys.TLS_CERTIFICATE, 5001, svc("HTTPS")))
+        for (p in listOf(465, 636, 993, 995, 5986, 8883)) assertTrue("$p", ToolApplicability.appliesTo(ToolKeys.TLS_CERTIFICATE, p, unknown))
+        assertFalse(ToolApplicability.appliesTo(ToolKeys.TLS_CERTIFICATE, 5000, svc("HTTP")))
     }
     @Test fun `smb session is port 445 only, 139 excluded`() {
-        assertTrue(ToolApplicability.appliesTo(ToolId.SMB_SESSION, 445, svc("SMB")))
-        assertFalse(ToolApplicability.appliesTo(ToolId.SMB_SESSION, 139, svc("NetBIOS")))
+        assertTrue(ToolApplicability.appliesTo(ToolKeys.SMB_SESSION, 445, svc("SMB")))
+        assertFalse(ToolApplicability.appliesTo(ToolKeys.SMB_SESSION, 139, svc("NetBIOS")))
     }
     @Test fun `snmp walk is per host only, gated on a discovery answer`() {
-        assertFalse(ToolApplicability.appliesTo(ToolId.SNMP_WALK, 161, unknown))
+        assertFalse(ToolApplicability.appliesTo(ToolKeys.SNMP_WALK, 161, unknown))
         assertFalse(ToolApplicability.snmp(host(snmp = null))); assertTrue(ToolApplicability.snmp(host(snmp = "Linux 5.10")))
     }
-    @Test fun `toolsFor lists in ToolId order and target tls matches the scheme`() {
-        assertEquals(listOf(ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT), ToolApplicability.toolsFor(5000, svc("HTTP")))
-        assertEquals(listOf(ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT, ToolId.TLS_CERTIFICATE), ToolApplicability.toolsFor(5001, svc("HTTPS")))
-        assertEquals(listOf(ToolId.SMB_SESSION), ToolApplicability.toolsFor(445, svc("SMB")))
-        assertTrue(ToolApplicability.appliesTo(ToolId.IDENTIFY, 9999, unknown)); assertTrue(ToolApplicability.toolsFor(9999, unknown).isEmpty())   // any port, but not a Device screen chip
-        assertTrue(ToolApplicability.targetTls(ToolId.DIR_BRUTEFORCE, 5001, svc("HTTPS"))); assertFalse(ToolApplicability.targetTls(ToolId.DIR_BRUTEFORCE, 5000, svc("HTTP")))
-        assertTrue(ToolApplicability.targetTls(ToolId.TLS_CERTIFICATE, 993, unknown)); assertFalse(ToolApplicability.targetTls(ToolId.SMB_SESSION, 445, svc("SMB")))
+    @Test fun `toolsFor lists the registry's port tools in registry order and target tls matches the scheme`() {
+        val reg = TestRegistry.registry()
+        fun keys(port: Int, s: ServiceInfo) = ToolApplicability.toolsFor(reg, port, s).map { it.descriptor.key }
+        assertEquals(listOf(ToolKeys.DIR_BRUTEFORCE, ToolKeys.HTTP_FINGERPRINT), keys(5000, svc("HTTP")))
+        assertEquals(listOf(ToolKeys.DIR_BRUTEFORCE, ToolKeys.HTTP_FINGERPRINT, ToolKeys.TLS_CERTIFICATE), keys(5001, svc("HTTPS")))
+        assertEquals(listOf(ToolKeys.SMB_SESSION), keys(445, svc("SMB")))
+        assertTrue(ToolApplicability.appliesTo(ToolKeys.IDENTIFY, 9999, unknown)); assertTrue(keys(9999, unknown).isEmpty())   // any port, but not a Device screen chip
+        assertTrue(ToolApplicability.targetTls(ToolKeys.DIR_BRUTEFORCE, 5001, svc("HTTPS"))); assertFalse(ToolApplicability.targetTls(ToolKeys.DIR_BRUTEFORCE, 5000, svc("HTTP")))
+        assertTrue(ToolApplicability.targetTls(ToolKeys.TLS_CERTIFICATE, 993, unknown)); assertFalse(ToolApplicability.targetTls(ToolKeys.SMB_SESSION, 445, svc("SMB")))
+    }
+    @Test fun `each module answers applies and appliesToHost with the same rules as the key based table`() {
+        val reg = TestRegistry.registry()
+        val samples = listOf(81 to unknown, 445 to svc("SMB"), 139 to svc("NetBIOS"), 5001 to svc("HTTPS"), 993 to unknown, 22 to svc("SSH"), 7123 to svc("HTTP"))
+        for (m in reg.all.value) for ((port, s) in samples) assertEquals("${m.descriptor.key} $port", ToolApplicability.appliesTo(m.descriptor.key, port, s), m.applies(port, s))
+        val snmp = reg.byKey(ToolKeys.SNMP_WALK)!!
+        assertFalse(snmp.appliesToHost(host(snmp = null))); assertTrue(snmp.appliesToHost(host(snmp = "Linux 5.10")))
+        assertTrue(reg.byKey(ToolKeys.IDENTIFY_ALL)!!.appliesToHost(host()))
+        assertFalse(reg.byKey(ToolKeys.SMB_SESSION)!!.appliesToHost(host(snmp = "Linux")))
+        assertEquals(listOf(ToolKeys.SNMP_WALK, ToolKeys.IDENTIFY_ALL), ToolApplicability.hostToolsFor(reg, host(snmp = "x")).map { it.descriptor.key })
+        assertEquals(listOf(ToolKeys.IDENTIFY_ALL), ToolApplicability.hostToolsFor(reg, host()).map { it.descriptor.key })
     }
     @Test fun `server name is mdns then reverse dns, trailing dot removed`() {
         assertEquals("chnas.local", ToolApplicability.serverName(host(mdns = "chnas.local.", rdns = "chnas.lan")))
@@ -56,6 +69,6 @@ class ToolApplicabilityTest {
     }
     @Test fun `finding kind parses leniently`() {
         assertEquals(FindingKind.PATH, FindingKind.parse("PATH")); assertEquals(FindingKind.OTHER, FindingKind.parse("WAT"))
-        assertEquals(ToolId.SNMP_WALK, ToolId.byKey("snmp-walk")); assertNull(ToolId.byKey("nope"))
+        assertEquals(ToolKeys.SNMP_WALK, TestRegistry.registry().byKey("snmp-walk")?.descriptor?.key); assertNull(TestRegistry.registry().byKey("nope"))
     }
 }

@@ -7,7 +7,7 @@ import com.northwalessolutions.netprobe.engine.discovery.DiscoveryStatus
 import com.northwalessolutions.netprobe.engine.portscan.PortScanState
 import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
 import com.northwalessolutions.netprobe.engine.tools.AppMessage
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolRegistry
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.scans.LiveWork
 import com.northwalessolutions.netprobe.ui.detail.detailProgress
@@ -19,7 +19,7 @@ import com.northwalessolutions.netprobe.ui.wordlists.WordlistCopy
 
 /** Everything the Scans list is built from, gathered by the view model (3D spec 3.4). */
 data class ScansInput(
-    val live: List<LiveWork.Live>, val active: Map<Long, ToolRunner.Active>, val ended: List<LiveWork.Ended>, val history: List<NetworkRun>,
+    val registry: ToolRegistry, val live: List<LiveWork.Live>, val active: Map<Long, ToolRunner.Active>, val ended: List<LiveWork.Ended>, val history: List<NetworkRun>,
     val hostNames: Map<Long, String>, val currentNetworkId: Long?, val now: Long, val clearedAt: Long, val forgottenNetworkId: Long?,
     val removedHostIds: Set<Long>, val radarStatus: DiscoveryStatus? = null, val portStates: Map<Long, PortScanState> = emptyMap(),
     val formatDate: (Long) -> String = RelativeTime::defaultDate,
@@ -42,7 +42,7 @@ object ScansRules {
     fun build(i: ScansInput): ScansList {
         // Tool history belongs to the current network (spec 3.4 rule 7); with none, only the in-memory outcomes remain.
         val history = if (i.currentNetworkId == null) emptyList() else i.history
-        val ipByHost = history.associate { it.run.hostId to it.ip }
+        val ipByHost = history.mapNotNull { nr -> nr.run.hostId?.let { host -> nr.ip?.let { ip -> host to ip } } }.toMap()
         val c = Ctx(i, history, ipByHost)
         val running = (i.live.map { runningLive(it, c) } + i.active.values.map { runningTool(it, c) })
             .filterNot { dropped(it, i) }
@@ -70,6 +70,8 @@ object ScansRules {
     private class Ctx(val i: ScansInput, val history: List<NetworkRun>, val ipByHost: Map<Long, String>) {
         fun host(hostId: Long?, fallback: String?): String =
             (hostId?.let { i.hostNames[it] }) ?: (hostId?.let { ipByHost[it] }) ?: fallback ?: ScansCopy.UNKNOWN_HOST
+        /** A tool run's device: "No device" when the run had none (schema 6), else as [host]. */
+        fun toolHost(hostId: Long?, fallback: String?): String = if (hostId == null) ToolCopy.NO_DEVICE else host(hostId, fallback)
     }
 
     private fun dropped(item: ScansItem, i: ScansInput): Boolean =
@@ -114,11 +116,11 @@ object ScansRules {
     }
 
     private fun runningTool(a: ToolRunner.Active, c: Ctx): ScansItem {
-        val host = c.host(a.hostId, null)
+        val host = c.toolHost(a.hostId, null)
         val startedAt = c.history.firstOrNull { it.run.id == a.runId }?.run?.startedAt ?: (c.i.now - a.activeMs)
-        return ScansItem("tool:${a.runId}", ScansSource.TOOL, null, c.i.currentNetworkId, a.hostId, host, a.toolId, a.port, ScansState.RUNNING,
+        return ScansItem("tool:${a.runId}", ScansSource.TOOL, null, c.i.currentNetworkId, a.hostId, host, a.toolKey, a.port, ScansState.RUNNING,
             a.done, a.total, a.found, startedAt, a.activeMs, null, null, a.runId,
-            ScansCopy.tool(ToolCopy.toolName(a.toolId), host, a.port), ToolsUiModel.bar(a).progress)
+            ScansCopy.toolLine(ToolsUiModel.nameOf(c.i.registry, a.toolKey), host, a.port, a.hostId == null), ToolsUiModel.bar(a, c.i.registry).progress)
     }
 
     private fun endedLive(e: LiveWork.Ended, c: Ctx): ScansItem {
@@ -137,7 +139,6 @@ object ScansRules {
     }
 
     private fun historyItem(nr: NetworkRun, c: Ctx): ScansItem? {
-        val tool = ToolId.byKey(nr.run.toolId) ?: return null
         val state = when (nr.run.status) {
             ToolRunStatus.RUNNING -> return null        // live (and then in Running) or in the gap between insert and publish (spec 3.4 rule 2)
             ToolRunStatus.DONE -> ScansState.DONE
@@ -146,11 +147,11 @@ object ScansRules {
             ToolRunStatus.INTERRUPTED -> ScansState.INTERRUPTED
         }
         val run = nr.run
-        val host = c.host(run.hostId, nr.ip)
+        val host = c.toolHost(run.hostId, nr.ip)
         val summary = ToolsUiModel.summaryOf(run)
         val time = run.finishedAt ?: run.startedAt
-        return ScansItem("tool:${run.id}", ScansSource.TOOL, null, c.i.currentNetworkId, run.hostId, host, tool, run.port, state, null, null, null,
+        return ScansItem("tool:${run.id}", ScansSource.TOOL, null, c.i.currentNetworkId, run.hostId, host, run.toolId, run.port, state, null, null, null,
             run.startedAt, run.finishedAt?.let { (it - run.startedAt).coerceAtLeast(0) }, run.finishedAt, summary, run.id,
-            ScansCopy.tool(ToolCopy.toolName(tool), host, run.port), ScansCopy.recentLine(summary, RelativeTime.of(time, c.i.now, c.i.formatDate)))
+            ScansCopy.toolLine(ToolsUiModel.nameOf(c.i.registry, run), host, run.port, run.hostId == null), ScansCopy.recentLine(summary, RelativeTime.of(time, c.i.now, c.i.formatDate)))
     }
 }

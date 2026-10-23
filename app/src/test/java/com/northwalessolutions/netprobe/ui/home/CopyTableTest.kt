@@ -175,12 +175,13 @@ class CopyTableTest {
             "Uses port 445", "Uses UDP 161", "Uses the open ports stored for this address","Known device: .+, results also show on its page", "Connect to Wi-Fi or Ethernet to run a tool",
             "Enter an address like 10\\.0\\.3\\.20", "That address cannot be used", "This tool needs a port", "Use a port from 1 to 65535",
             "Recent runs on this network", "No tools run on this network yet", ".+ on \\d+\\.\\d+\\.\\d+\\.\\d+(:(\\d+|UDP 161))?", ".+, .+",
-            "Show .+ results for \\d+\\.\\d+\\.\\d+\\.\\d+:(\\d+|UDP 161)").map { Regex(it) }
+            "Show .+ results for \\d+\\.\\d+\\.\\d+\\.\\d+:(\\d+|UDP 161)", ".+ on No device", "Show .+ results for No device").map { Regex(it) }
         val strings = listOf(ManualCopy.IP, ManualCopy.IP_PLACEHOLDER, ManualCopy.PORT, ManualCopy.PORT_PLACEHOLDER,
             ManualCopy.toolRow("HTTP fingerprint"), ManualCopy.USE_HTTPS, ManualCopy.FIXED_SMB, ManualCopy.FIXED_SNMP, ManualCopy.FIXED_ALL, ManualCopy.knownDevice("CHNAS"),
             ManualCopy.NO_LAN, ManualCopy.ERR_IP, ManualCopy.ERR_ADDRESS, ManualCopy.ERR_PORT_NEEDED, ManualCopy.ERR_PORT_RANGE, ManualCopy.HISTORY,
             ManualCopy.HISTORY_EMPTY, ManualCopy.historyRow("HTTP fingerprint", "10.0.3.5", "5000"), ManualCopy.historyRow("SNMP walk", "10.0.3.1", "UDP 161"), ManualCopy.historyRow("Identify all services", "10.0.3.5", "all open ports"),
-            ManualCopy.historyLine("Synology DSM, 6 findings", "2 min ago"), ManualCopy.historyDescription("HTTP fingerprint", "10.0.3.5", "5000"))
+            ManualCopy.historyLine("Synology DSM, 6 findings", "2 min ago"), ManualCopy.historyDescription("HTTP fingerprint", "10.0.3.5", "5000"),
+            ManualCopy.historyRowNoDevice("DNS lookup", "No device"), ManualCopy.historyDescriptionNoDevice("DNS lookup", "No device"))
         strings.forEach { s -> assertTrue("not in the manual tools copy table: '$s'", manualTemplates.any { it.matches(s) }); assertFalse("em-dash in '$s'", s.contains('\u2014')) }
         assertEquals("HTTP fingerprint on 10.0.3.5:5000", ManualCopy.historyRow("HTTP fingerprint", "10.0.3.5", "5000"))
         assertEquals("Synology DSM, 6 findings, 2 min ago", ManualCopy.historyLine("Synology DSM, 6 findings", "2 min ago"))

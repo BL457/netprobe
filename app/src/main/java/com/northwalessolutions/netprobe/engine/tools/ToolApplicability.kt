@@ -22,20 +22,29 @@ object ToolApplicability {
             else -> null
         }
     }
-    fun appliesTo(tool: ToolId, port: Int, service: ServiceInfo): Boolean = when (tool) {
-        ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT -> webScheme(port, service) != null
-        ToolId.TLS_CERTIFICATE -> webScheme(port, service) == "https" || port in TLS_EXTRA
-        ToolId.SMB_SESSION -> port == SMB_PORT
-        ToolId.SNMP_WALK -> false
-        ToolId.IDENTIFY -> true
-        ToolId.IDENTIFY_ALL -> false   // a per-host tool: it works over the whole port list
+    /** The per-port rule of one built-in tool key (spec 4.2); any other key does not apply. Each built-in module answers [ToolModule.applies] from here. */
+    fun appliesTo(tool: String, port: Int, service: ServiceInfo): Boolean = when (tool) {
+        ToolKeys.DIR_BRUTEFORCE, ToolKeys.HTTP_FINGERPRINT -> webScheme(port, service) != null
+        ToolKeys.TLS_CERTIFICATE -> webScheme(port, service) == "https" || port in TLS_EXTRA
+        ToolKeys.SMB_SESSION -> port == SMB_PORT
+        ToolKeys.SNMP_WALK -> false
+        ToolKeys.IDENTIFY -> true
+        ToolKeys.IDENTIFY_ALL -> false   // a per-host tool: it works over the whole port list
+        else -> false
     }
-    /** Applicable per-port tools in ToolId order for the Device screen (SNMP walk is per host, and Identify service is a manual tool for now, 3E spec O1). */
-    fun toolsFor(port: Int, service: ServiceInfo): List<ToolId> = ToolId.entries.filter { it != ToolId.SNMP_WALK && it != ToolId.IDENTIFY && it != ToolId.IDENTIFY_ALL && appliesTo(it, port, service) }
-    fun targetTls(tool: ToolId, port: Int, service: ServiceInfo): Boolean = when (tool) {
-        ToolId.TLS_CERTIFICATE -> true
-        ToolId.DIR_BRUTEFORCE, ToolId.HTTP_FINGERPRINT -> webScheme(port, service) == "https"
-        ToolId.SMB_SESSION, ToolId.SNMP_WALK, ToolId.IDENTIFY, ToolId.IDENTIFY_ALL -> false
+    /** The Identify tools have no chip or block on the Device screen: they are manual tools and a port row action (3E spec O1, ruling R2). */
+    private val NOT_ON_DEVICE_PAGE = setOf(ToolKeys.IDENTIFY, ToolKeys.IDENTIFY_ALL)
+    fun onDevicePage(toolKey: String): Boolean = toolKey !in NOT_ON_DEVICE_PAGE
+    /** The registry's PORT tools that apply to the port, in registry order (built-ins first), for the Device screen chips. */
+    fun toolsFor(registry: ToolRegistry, port: Int, service: ServiceInfo): List<ToolModule> =
+        registry.all.value.filter { it.descriptor.target == TargetKind.PORT && onDevicePage(it.descriptor.key) && it.applies(port, service) }
+    /** The registry's HOST tools that apply to the device, for the host-level buttons. */
+    fun hostToolsFor(registry: ToolRegistry, host: HostEntity): List<ToolModule> =
+        registry.all.value.filter { it.descriptor.target == TargetKind.HOST && it.appliesToHost(host) }
+    fun targetTls(tool: String, port: Int, service: ServiceInfo): Boolean = when (tool) {
+        ToolKeys.TLS_CERTIFICATE -> true
+        ToolKeys.DIR_BRUTEFORCE, ToolKeys.HTTP_FINGERPRINT -> webScheme(port, service) == "https"
+        else -> false
     }
     fun snmp(host: HostEntity): Boolean = host.snmpSysDescr != null
     /** mDNS name, else reverse DNS, trailing dot removed; null when absent or not a DNS-shaped name (spec 4.9). */

@@ -15,10 +15,12 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.AppMessage
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
-import com.northwalessolutions.netprobe.engine.tools.ToolId
-import com.northwalessolutions.netprobe.engine.tools.ToolOptions
+import com.northwalessolutions.netprobe.engine.tools.ToolInputs
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.engine.tools.ToolTarget
+import com.northwalessolutions.netprobe.engine.tools.ToolRunner.Companion.forHost
+import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteInputs
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
 import com.northwalessolutions.netprobe.engine.vulns.VulnResult
@@ -30,6 +32,7 @@ import com.northwalessolutions.netprobe.ui.home.ScanController
 import com.northwalessolutions.netprobe.ui.tools.DetailToolsState
 import com.northwalessolutions.netprobe.ui.tools.DirBruteSheetState
 import com.northwalessolutions.netprobe.ui.tools.FindingRow
+import com.northwalessolutions.netprobe.ui.tools.PortTool
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolExport
 import com.northwalessolutions.netprobe.ui.tools.ToolResultsModel
@@ -94,7 +97,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         c.toolRunner.active.distinctUntilChanged { a, b -> ToolStateKey.of(a, hostId) == ToolStateKey.of(b, hostId) }
 
     /** The pinned bar's per-tick fields, read only by the bar's leaf composables and the live results status line (3B QA F4). */
-    val toolBar: StateFlow<ToolRunBar?> = c.toolRunner.active.map { it[hostId]?.let(ToolsUiModel::bar) }.distinctUntilChanged()
+    val toolBar: StateFlow<ToolRunBar?> = c.toolRunner.active.map { m -> m.forHost(hostId)?.let { ToolsUiModel.bar(it, c.toolRegistry) } }.distinctUntilChanged()
         .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     /**
@@ -110,20 +113,21 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         @Suppress("UNCHECKED_CAST") val results = arr[5] as Pair<ToolRunEntity, List<FindingRow>>?
         @Suppress("UNCHECKED_CAST") val lists = arr[7] as List<WordlistMeta>
         val h = arr[0] as HostEntity?; val sheetPort = arr[6] as Int?; val appMessage = arr[8] as AppMessage?
-        val active = activeMap[hostId]
+        val active = activeMap.forHost(hostId)
         val now = System.currentTimeMillis()
         val busy = busyMap[hostId]
         DetailToolsState(
-            tools = h?.let { ToolsUiModel.of(it, ports.map { p -> p.port to p.toServiceInfo() }, runs, now) },
-            bar = active?.let(ToolsUiModel::bar),
+            tools = h?.let { ToolsUiModel.of(c.toolRegistry, it, ports.map { p -> p.port to p.toServiceInfo() }, runs, now) },
+            bar = active?.let { ToolsUiModel.bar(it, c.toolRegistry) },
             busy = busy,
             results = if (h == null) null else results?.let { (run, findings) ->
-                ToolResultsModel.ofRows(run, runs.filter { it.toolId == run.toolId }, h.ip, findings, active, now)
+                ToolResultsModel.ofRows(c.toolRegistry, run, runs.filter { it.toolId == run.toolId }, h.ip, findings, active, now)
             },
             dirBrute = if (h == null) null else sheetPort?.let { port -> dirBruteSheet(h, port, ports, lists, busy, activeMap.size) },
             appMessage = appMessage,
             removeAllowed = DetailBusyRules.removeAllowed(busyMap, hostId),
-            runTool = active?.toolId, runPort = active?.port ?: 0,
+            runTool = active?.toolKey, runPort = active?.port ?: 0,
+            portTools = ports.associate { p -> p.port to ToolApplicability.toolsFor(c.toolRegistry, p.port, p.toServiceInfo()).map { PortTool(it.descriptor.key, it.descriptor.name) } },
         )
     }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DetailToolsState())
 
@@ -137,17 +141,17 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
 
     private fun dirBruteSheet(h: HostEntity, port: Int, ports: List<PortEntity>, lists: List<WordlistMeta>, busy: HostBusyRegistry.Work?, runningHosts: Int): DirBruteSheetState {
         val service = ports.firstOrNull { it.port == port }?.toServiceInfo()
-        val tls = service?.let { ToolApplicability.targetTls(ToolId.DIR_BRUTEFORCE, port, it) } ?: false
+        val tls = service?.let { ToolApplicability.targetTls(ToolKeys.DIR_BRUTEFORCE, port, it) } ?: false
         val saved = c.dirBruteOptions.load()
         val initial = if (lists.any { it.id == saved.wordlistId }) saved else saved.copy(wordlistId = DirBruteOptions.DEFAULT_WORDLIST)
         val reason = busy?.let(ToolsUiModel::busyMessage) ?: ToolCopy.BUSY_TOO_MANY.takeIf { runningHosts >= ToolRunner.MAX_ACTIVE_RUNS }
-        return DirBruteSheetState(port, ToolExport.target(ToolId.DIR_BRUTEFORCE, h.ip, port, tls), lists, initial, reason)
+        return DirBruteSheetState(port, ToolExport.target(ToolKeys.DIR_BRUTEFORCE, h.ip, port, tls), lists, initial, reason)
     }
 
     /** A chip or port-sheet row (spec 8.1, 8.3): brute-force opens its sheet, the others start at once; a held host shows its reason. */
-    fun runTool(toolId: ToolId, port: Int) {
+    fun runTool(toolKey: String, port: Int) {
         DetailBusyRules.toolRefusal(c.hostBusy.busy.value, hostId)?.let { message.value = it; return }
-        if (toolId == ToolId.DIR_BRUTEFORCE) {
+        if (toolKey == ToolKeys.DIR_BRUTEFORCE) {
             // Off the main thread: the first wordlistStore access reads the built-in lists.
             c.appScope.launch(Dispatchers.Default) {
                 val saved = c.dirBruteOptions.load()
@@ -156,7 +160,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             }
             return
         }
-        start(toolId, port, ToolOptions.None)
+        start(toolKey, port, ToolInputs.NONE)
     }
     /** Run in the options sheet: save the options, close the sheet, start the run (spec 8.4). */
     fun startDirBrute(o: DirBruteOptions) {
@@ -166,20 +170,20 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
         c.appScope.launch(Dispatchers.Default) {
             c.dirBruteOptions.save(options)
             val meta = c.wordlistStore.lists.value.firstOrNull { it.id == options.wordlistId }
-            start(ToolId.DIR_BRUTEFORCE, port, ToolOptions.DirBrute(options, meta?.name ?: "", meta?.entries ?: 0))
+            start(ToolKeys.DIR_BRUTEFORCE, port, DirBruteInputs.of(options, meta?.name ?: "", meta?.entries ?: 0))
         }
     }
     fun closeDirBrute() { dirBrutePort.value = null }
 
-    private fun start(toolId: ToolId, port: Int, options: ToolOptions) {
+    private fun start(toolKey: String, port: Int, inputs: ToolInputs) {
         c.appScope.launch {
             val h = c.hosts.byIdOnce(hostId) ?: return@launch
             val ip = RowRules.parseIpv4(h.ip) ?: return@launch
             val service = c.ports.servicesFor(hostId)[port]
-            val tls = service?.let { ToolApplicability.targetTls(toolId, port, it) } ?: (toolId == ToolId.TLS_CERTIFICATE)
+            val tls = service?.let { ToolApplicability.targetTls(toolKey, port, it) } ?: (toolKey == ToolKeys.TLS_CERTIFICATE)
             // Brute-force always sends the IP; the fingerprint and TLS tools send the known name (spec 4.9).
-            val name = if (toolId == ToolId.DIR_BRUTEFORCE) null else ToolApplicability.serverName(h)
-            when (c.toolRunner.start(ToolTarget(hostId, ip, port, tls, name), toolId, options)) {
+            val name = if (toolKey == ToolKeys.DIR_BRUTEFORCE) null else ToolApplicability.serverName(h)
+            when (c.toolRunner.start(ToolTarget(hostId, ip, port, tls, name), toolKey, inputs)) {
                 ToolRunner.Start.HostBusy -> message.value = ToolsUiModel.busyMessage(c.hostBusy.busy.value[hostId] ?: HostBusyRegistry.Work.TOOL)
                 ToolRunner.Start.TooMany -> message.value = ToolCopy.BUSY_TOO_MANY
                 ToolRunner.Start.NoNetwork -> message.value = ScanController.NO_NETWORK
@@ -187,11 +191,11 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             }
         }
     }
-    fun stopTool() { c.toolRunner.stop(hostId) }
+    fun stopTool() { c.toolRunner.stopHost(hostId) }
 
     /** "Results" opens the newest run of that tool (spec 8.1); the switcher moves through this tool's runs. */
-    fun openResults(toolId: ToolId) {
-        viewModelScope.launch { resultsRunId.value = c.toolRepo.runsForHost(hostId).first().firstOrNull { it.toolId == toolId.key }?.id }
+    fun openResults(toolKey: String) {
+        viewModelScope.launch { resultsRunId.value = c.toolRepo.runsForHost(hostId).first().firstOrNull { it.toolId == toolKey }?.id }
     }
     fun olderRun() { stepRun(+1) }
     fun newerRun() { stepRun(-1) }
@@ -210,7 +214,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             val id = resultsRunId.value ?: return@launch
             val run = c.toolRepo.run(id).first() ?: return@launch
             val h = c.hosts.byIdOnce(hostId) ?: return@launch
-            val export = ToolExport.of(run, h.ip, c.toolRepo.findingsOnce(id))
+            val export = ToolExport.of(run, h.ip, c.toolRepo.findingsOnce(id), toolName = ToolsUiModel.nameOf(c.toolRegistry, run))
             c.actionRunner.share(ToolExport.subject(export.toolName, h.ip, run.port), ToolExport.text(export))
         }
     }

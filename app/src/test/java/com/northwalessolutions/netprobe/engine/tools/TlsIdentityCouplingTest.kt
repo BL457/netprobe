@@ -28,7 +28,7 @@ class TlsIdentityCouplingTest {
     private suspend fun identify(fixture: String): DeviceIdentity {
         val p = CollectingProgress()
         TlsCertificateTool({ _, _ -> TlsDetails("TLSv1.3", "TLS_AES_128_GCM_SHA256", listOf(leaf(fixture)), null) })
-            .run(ToolTarget(1, host, 443, true, null), ToolOptions.None, control(), p)
+            .run(ToolTarget(1, host, 443, true, null), ToolInputs.NONE, control(), p)
         return identifier.identify(HostEvidence(DiscoveredHost(host), emptySet(), emptyMap(), null, toolHints = p.hints()))
     }
     @Test fun `a synology subject sets vendor and type`() = runTest {

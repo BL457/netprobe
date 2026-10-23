@@ -8,7 +8,9 @@ import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.AppMessage
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.TargetKind
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
+import com.northwalessolutions.netprobe.engine.tools.ToolRegistry
 import com.northwalessolutions.netprobe.engine.tools.ToolRoute
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
@@ -16,8 +18,10 @@ import com.northwalessolutions.netprobe.ui.home.RelativeTime
 import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 
 // @Immutable: built fresh by the view model and never mutated, so Compose compares them by equals() and skips unchanged blocks.
-@Immutable data class ToolChip(val toolId: ToolId, val port: Int, val label: String, val description: String)
-@Immutable data class ToolBlock(val toolId: ToolId, val name: String, val hasRun: Boolean, val history: String, val chips: List<ToolChip>)
+@Immutable data class ToolChip(val toolId: String, val port: Int, val label: String, val description: String)
+@Immutable data class ToolBlock(val toolId: String, val name: String, val hasRun: Boolean, val history: String, val chips: List<ToolChip>)
+/** One entry of a port sheet's "Run tool" list: the registry key and the name shown. */
+@Immutable data class PortTool(val key: String, val name: String)
 @Immutable data class ToolsUiState(val available: Int, val headerHistory: String, val blocks: List<ToolBlock>)
 /** The pinned bar during a run (spec 8.2); [fraction] null draws an indeterminate line. */
 @Immutable data class ToolRunBar(val label: String, val progress: String, val fraction: Float?)
@@ -32,39 +36,54 @@ import com.northwalessolutions.netprobe.wordlists.WordlistMeta
                             /** Remove device is refused only while a tool run holds the host (spec 4.3); computed by DetailBusyRules. */
                             val removeAllowed: Boolean = true,
                             /** The tool running on this host and its port (0 for a whole-device tool); the port row shows Identifying for its own port. */
-                            val runTool: ToolId? = null, val runPort: Int = 0)
+                            val runTool: String? = null, val runPort: Int = 0,
+                            /** The tools each port's sheet offers (the registry's applicable PORT tools), by port. */
+                            val portTools: Map<Int, List<PortTool>> = emptyMap())
 
 object ToolsUiModel {
     private const val MS_PER_S = 1000L
-    /** The Tools block (spec 8.1), or null when no tool applies to the host. [runs] are newest first (the DAO order). */
-    fun of(host: HostEntity, ports: List<Pair<Int, ServiceInfo>>, runs: List<ToolRunEntity>, now: Long, formatDate: (Long) -> String = RelativeTime::defaultDate): ToolsUiState? {
-        val blocks = (ToolId.entries - ToolId.IDENTIFY - ToolId.IDENTIFY_ALL).mapNotNull { id ->   // Identify service is a manual tool for now (3E spec O1)
-            val snmp = id == ToolId.SNMP_WALK
-            val targets = if (snmp) listOfNotNull(ToolApplicability.SNMP_PORT.takeIf { ToolApplicability.snmp(host) })
-                          else ports.filter { (p, s) -> ToolApplicability.appliesTo(id, p, s) }.map { it.first }.sorted()
+    /** A run's tool name: the registry's while the tool is installed, else the name stored with the run, else the built-in name or the key. */
+    fun nameOf(registry: ToolRegistry, run: ToolRunEntity): String =
+        registry.byKey(run.toolId)?.descriptor?.name ?: run.toolName.ifEmpty { ToolCopy.toolName(run.toolId) }
+    fun nameOf(registry: ToolRegistry, toolKey: String): String = registry.byKey(toolKey)?.descriptor?.name ?: ToolCopy.toolName(toolKey)
+
+    /**
+     * The Tools block (spec 8.1), or null when no tool applies to the host. [runs] are newest first (the DAO order). Blocks follow the
+     * registry order: a PORT tool gets a chip per applicable port, a HOST tool one chip (SNMP on UDP 161, others on all open ports).
+     * The Identify tools are not offered here (they are manual tools and a port row action, 3E spec O1).
+     */
+    fun of(registry: ToolRegistry, host: HostEntity, ports: List<Pair<Int, ServiceInfo>>, runs: List<ToolRunEntity>, now: Long,
+           formatDate: (Long) -> String = RelativeTime::defaultDate): ToolsUiState? {
+        val blocks = registry.all.value.mapNotNull { module ->
+            val d = module.descriptor
+            if (!ToolApplicability.onDevicePage(d.key)) return@mapNotNull null
+            val snmp = d.key == ToolKeys.SNMP_WALK
+            val targets = when (d.target) {
+                TargetKind.PORT -> ports.filter { (p, s) -> module.applies(p, s) }.map { it.first }.sorted()
+                TargetKind.HOST -> if (module.appliesToHost(host)) listOf(if (snmp) ToolApplicability.SNMP_PORT else 0) else emptyList()
+                TargetKind.NONE -> emptyList()
+            }
             if (targets.isEmpty()) return@mapNotNull null
-            val name = ToolCopy.toolName(id)
-            val newest = runs.firstOrNull { it.toolId == id.key }
-            ToolBlock(id, name, newest != null,
+            val newest = runs.firstOrNull { it.toolId == d.key }
+            ToolBlock(d.key, d.name, newest != null,
                 newest?.let { ToolCopy.blockHistory(RelativeTime.of(it.startedAt, now, formatDate), ToolCopy.portLabel(it.port, snmp), summaryOf(it)) } ?: ToolCopy.NOT_RUN_YET,
-                targets.map { p -> val label = ToolCopy.portLabel(p, snmp); ToolChip(id, p, label, ToolCopy.chipDescription(name, label)) })
+                targets.map { p -> val label = ToolCopy.portLabel(p, snmp); ToolChip(d.key, p, label, ToolCopy.chipDescription(d.name, label)) })
         }
         if (blocks.isEmpty()) return null
-        val newest = runs.firstOrNull { ToolId.byKey(it.toolId) != null }
+        val newest = runs.firstOrNull { registry.byKey(it.toolId) != null }
         val header = newest?.let { r ->
-            val id = ToolId.byKey(r.toolId)!!
-            ToolCopy.rowHistory(RelativeTime.of(r.startedAt, now, formatDate), ToolCopy.toolName(id), ToolCopy.portLabel(r.port, id == ToolId.SNMP_WALK), summaryOf(r))
+            ToolCopy.rowHistory(RelativeTime.of(r.startedAt, now, formatDate), nameOf(registry, r), ToolCopy.portLabel(r.port, r.toolId == ToolKeys.SNMP_WALK), summaryOf(r))
         } ?: ToolCopy.NO_TOOLS_RUN
         return ToolsUiState(blocks.size, header, blocks)
     }
     fun summaryOf(r: ToolRunEntity): String = r.summary.ifEmpty { ToolCopy.statusLabel(r.status) }
-    fun bar(a: ToolRunner.Active): ToolRunBar {
-        val snmp = a.toolId == ToolId.SNMP_WALK
-        val label = ToolCopy.pinnedLabel(ToolCopy.toolName(a.toolId), ToolCopy.portLabel(a.port, snmp))
+    fun bar(a: ToolRunner.Active, registry: ToolRegistry): ToolRunBar {
+        val snmp = a.toolKey == ToolKeys.SNMP_WALK
+        val label = ToolCopy.pinnedLabel(nameOf(registry, a.toolKey), ToolCopy.portLabel(a.port, snmp))
         val started = a.total != null || a.done > 0 || a.found > 0
         val progress = if (!started) ToolCopy.STARTING
-                       else if (a.toolId == ToolId.IDENTIFY && a.total != null) ToolCopy.identifyProgress(a.done, a.total)
-                       else if (a.toolId == ToolId.IDENTIFY_ALL && a.total != null) ToolCopy.identifyAllProgress(a.done, a.total)
+                       else if (a.toolKey == ToolKeys.IDENTIFY && a.total != null) ToolCopy.identifyProgress(a.done, a.total)
+                       else if (a.toolKey == ToolKeys.IDENTIFY_ALL && a.total != null) ToolCopy.identifyAllProgress(a.done, a.total)
                        else ToolCopy.progress(a.done, a.total, a.found, a.errors, a.activeMs / MS_PER_S)
         val fraction = a.total?.let { t -> if (t <= 0) 0f else (a.done.toFloat() / t).coerceIn(0f, 1f) }
         return ToolRunBar(label, progress, fraction)
@@ -80,17 +99,17 @@ object ToolResultsModel {
     fun rows(findings: List<ToolFindingEntity>): List<FindingRow> = findings.map { FindingRow(it.id, it.value, it.detail, FindingExtra.decode(it.extra)["url"]) }
 
     /** The results sheet (spec 8.5) for [run], positioned in [sameTool] (newest first, this host and tool). */
-    fun of(run: ToolRunEntity, sameTool: List<ToolRunEntity>, ip: String, findings: List<ToolFindingEntity>, active: ToolRunner.Active?, now: Long,
-           formatDate: (Long) -> String = RelativeTime::defaultDate): ToolResultsState = ofRows(run, sameTool, ip, rows(findings), active, now, formatDate)
+    fun of(registry: ToolRegistry, run: ToolRunEntity, sameTool: List<ToolRunEntity>, ip: String?, findings: List<ToolFindingEntity>, active: ToolRunner.Active?, now: Long,
+           formatDate: (Long) -> String = RelativeTime::defaultDate): ToolResultsState = ofRows(registry, run, sameTool, ip, rows(findings), active, now, formatDate)
 
-    fun ofRows(run: ToolRunEntity, sameTool: List<ToolRunEntity>, ip: String, rows: List<FindingRow>, active: ToolRunner.Active?, now: Long,
+    /** [ip] is null for a run with no device; the title then reads "No device". */
+    fun ofRows(registry: ToolRegistry, run: ToolRunEntity, sameTool: List<ToolRunEntity>, ip: String?, rows: List<FindingRow>, active: ToolRunner.Active?, now: Long,
                formatDate: (Long) -> String = RelativeTime::defaultDate): ToolResultsState {
-        val tool = ToolId.byKey(run.toolId) ?: ToolId.DIR_BRUTEFORCE
         val live = active?.takeIf { it.runId == run.id }
-        val status = if (live != null) ToolCopy.resultsRunning(ToolsUiModel.bar(live).progress)
+        val status = if (live != null) ToolCopy.resultsRunning(ToolsUiModel.bar(live, registry).progress)
                      else ToolCopy.resultsStatus(ToolCopy.statusLabel(run.status), RelativeTime.of(run.startedAt, now, formatDate), ToolRunOptions.parse(run.optionsJson).serverName)
         val index = sameTool.indexOfFirst { it.id == run.id }.let { if (it < 0) 1 else it + 1 }
-        return ToolResultsState(run.id, ToolCopy.resultsTitle(ToolCopy.toolName(tool), ip, run.port), status, run.summary, index, maxOf(sameTool.size, 1), rows, live != null,
+        return ToolResultsState(run.id, ToolCopy.resultsTitle(ToolsUiModel.nameOf(registry, run), ip, run.port), status, run.summary, index, maxOf(sameTool.size, 1), rows, live != null,
             route = ToolCopy.routeLine(ToolRoute.parse(run.route)))
     }
 }

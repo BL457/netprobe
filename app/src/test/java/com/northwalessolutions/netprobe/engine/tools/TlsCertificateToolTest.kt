@@ -19,7 +19,7 @@ class TlsCertificateToolTest {
         return ks.getCertificate("a") as X509Certificate
     }
     @Test fun `no handshake is FAILED`() = runTest {
-        val r = TlsCertificateTool({ _, _ -> null }).run(target, ToolOptions.None, control(), CollectingProgress())
+        val r = TlsCertificateTool({ _, _ -> null }).run(target, ToolInputs.NONE, control(), CollectingProgress())
         assertEquals(ToolRunStatus.FAILED, r.status); assertEquals("No TLS handshake on this port", r.summary)
     }
     @Test fun `a handshake lost to a pause is retried once after the resume`() = runTest {
@@ -27,14 +27,14 @@ class TlsCertificateToolTest {
         val r = TlsCertificateTool({ _, name ->
             calls++
             if (calls == 1) { c.epoch++; null } else TlsDetails("TLSv1.2", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", listOf(leaf()), name)
-        }, { leaf().notBefore.time + 1 }).run(target, ToolOptions.None, c, CollectingProgress())
+        }, { leaf().notBefore.time + 1 }).run(target, ToolInputs.NONE, c, CollectingProgress())
         assertEquals(ToolRunStatus.DONE, r.status); assertEquals(2, calls)
     }
     @Test fun `a handshake reports its findings, passes the target name and summarises`() = runTest {
         var asked: String? = "unset"
         val p = CollectingProgress()
         val r = TlsCertificateTool({ _, name -> asked = name; TlsDetails("TLSv1.2", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", listOf(leaf()), name) }, { leaf().notBefore.time + 1 })
-            .run(target, ToolOptions.None, control(), p)
+            .run(target, ToolInputs.NONE, control(), p)
         assertEquals("chnas.local", asked); assertEquals(ToolRunStatus.DONE, r.status)
         assertTrue(r.summary.startsWith("rsa.lan, expires ")); assertTrue(r.summary.endsWith(", self-signed"))
         assertTrue(p.of(FindingKind.CERT_SUBJECT).isNotEmpty())

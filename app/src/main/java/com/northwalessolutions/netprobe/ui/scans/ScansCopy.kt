@@ -24,6 +24,8 @@ object ScansCopy {
     fun portScan(host: String) = "Port scan on $host"
     /** The port is the number the run used: 161 for the SNMP walk. */
     fun tool(tool: String, host: String, port: Int) = "$tool on $host:$port"
+    /** The title of a tool row; a run with no device has no port to show, so it reads "<tool> on No device". */
+    fun toolLine(tool: String, host: String, port: Int, noDevice: Boolean) = if (noDevice) "$tool on $host" else tool(tool, host, port)
     fun wordlistImport(host: String) = "Wordlist from $host"
     fun quickProgress(done: Int, total: Int, seconds: Long) = "$done of $total devices, $seconds s"
 

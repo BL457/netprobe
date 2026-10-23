@@ -10,7 +10,7 @@ class ScansCopyTableTest {
     private val templates: List<Regex> = listOf(
         "Scans", "Running", "Recent", "Nothing running", "Scans and tool runs show here while they run, and finished ones stay for a day",
         "Clear history", "History cleared", "Undo", "Radar scan", "Quick scan all", "Port scan", "Stop", "device",
-        "Port scan on .+", ".+ on .+:\\d+", "Wordlist from .+", "\\d+ of \\d+ devices, \\d+ s",
+        "Port scan on .+", ".+ on No device", ".+ on .+:\\d+", "Wordlist from .+", "\\d+ of \\d+ devices, \\d+ s",
         "Done in (\\d+ s|\\d+ min( \\d+ s)?), (no devices|1 device|\\d+ devices)",
         "Done in (\\d+ s|\\d+ min( \\d+ s)?), (no devices|1 device|\\d+ devices) scanned",
         "Done in (\\d+ s|\\d+ min( \\d+ s)?), (no open ports|1 open port|\\d+ open ports)",
@@ -41,7 +41,8 @@ class ScansCopyTableTest {
         assertEquals("Done in 14 s, no open ports", ScansCopy.portDone(0, 14)); assertEquals("Stopped after 8 s", ScansCopy.stoppedAfter(8))
     }
     @Test fun `titles and lines`() {
-        inTable(ScansCopy.portScan("Office NAS")); inTable(ScansCopy.tool("Directory brute-force", "Office NAS", 443)); inTable(ScansCopy.tool("SNMP walk", "10.0.3.9", 161))
+        inTable(ScansCopy.portScan("Office NAS")); inTable(ScansCopy.tool("Directory brute-force", "Office NAS", 443)); inTable(ScansCopy.tool("SNMP walk", "10.0.3.9", 161)); inTable(ScansCopy.toolLine("DNS lookup", "No device", 0, true))
+        assertEquals("DNS lookup on No device", ScansCopy.toolLine("DNS lookup", "No device", 0, true)); assertEquals("SNMP walk on 10.0.3.9:161", ScansCopy.toolLine("SNMP walk", "10.0.3.9", 161, false))
         inTable(ScansCopy.wordlistImport("raw.githubusercontent.com")); inTable(ScansCopy.quickProgress(3, 30, 42))
         assertEquals("Port scan on Office NAS", ScansCopy.portScan("Office NAS")); assertEquals("Directory brute-force on Office NAS:443", ScansCopy.tool("Directory brute-force", "Office NAS", 443))
         assertEquals("SNMP walk on 10.0.3.9:161", ScansCopy.tool("SNMP walk", "10.0.3.9", 161)); assertEquals("3 of 30 devices, 42 s", ScansCopy.quickProgress(3, 30, 42))

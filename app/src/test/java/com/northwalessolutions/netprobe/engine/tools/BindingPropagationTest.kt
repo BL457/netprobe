@@ -81,7 +81,7 @@ class BindingPropagationTest {
         val accepted = AtomicInteger(0); val tcp = http404(accepted)
         val tool = HttpFingerprintTool({ t -> HttpGet { tls, port, path -> HttpClient(500).request(t.ip, port, tls, "GET", path) } }, emptyList())
         val rig = Rig(backgroundScope, tool, bind = { _, _, block -> withContext(BoundNetwork(RefusingBinder)) { block() } })
-        rig.runner.start(ToolTarget(7, lo, tcp.localPort, tls = false, serverName = null), ToolId.HTTP_FINGERPRINT, ToolOptions.None); runCurrent()
+        rig.runner.start(ToolTarget(7, lo, tcp.localPort, tls = false, serverName = null), ToolKeys.HTTP_FINGERPRINT, ToolInputs.NONE); runCurrent()
         assertEquals(Triple(1L, ToolRunStatus.FAILED, "Tool skipped: could not bind to Wi-Fi"), rig.store.finished.single())
         Thread.sleep(SETTLE_MS)
         assertEquals("no connection reached the server", 0, accepted.get())

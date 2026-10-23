@@ -5,7 +5,7 @@ import com.northwalessolutions.netprobe.data.ManualRow
 import com.northwalessolutions.netprobe.data.TestHosts
 import com.northwalessolutions.netprobe.engine.discovery.KnownRanges
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolRoute
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.engine.tools.ToolTarget
@@ -54,7 +54,7 @@ class ManualStarterTest {
             })
         companion object { const val NEW_ROW = 40L }
     }
-    private fun req(ipText: String, tool: ToolId = ToolId.HTTP_FINGERPRINT, port: Int = 443, tls: Boolean = true) = ManualRequest(env, ip(ipText), port, tool, tls)
+    private fun req(ipText: String, tool: String = ToolKeys.HTTP_FINGERPRINT, port: Int = 443, tls: Boolean = true) = ManualRequest(env, ip(ipText), port, tool, tls)
 
     @Test fun `the pending Undo is committed before the row is looked up or made`() = runBlocking {
         val rig = Rig(); rig.starter.startManual(req("10.0.3.5"))
@@ -94,16 +94,16 @@ class ManualStarterTest {
         val rig = Rig(binder = false)
         assertTrue(rig.starter.startManual(req("10.20.0.5")).start is ToolRunner.Start.Started)
         assertEquals(ToolRoute.OTHER, rig.targets.single().route)
-        val public = Rig(); public.starter.startManual(req("1.1.1.1", ToolId.TLS_CERTIFICATE))
+        val public = Rig(); public.starter.startManual(req("1.1.1.1", ToolKeys.TLS_CERTIFICATE))
         assertEquals(ToolRoute.OTHER, public.targets.single().route)
     }
     @Test fun `the target carries the port, tls, route and the name rule`() = runBlocking {
         val nas = TestHosts.host(ip = "10.0.3.59", mdns = "chnas.local").copy(id = 9)
-        val fingerprint = Rig(existing = nas); fingerprint.starter.startManual(req("10.0.3.59", ToolId.HTTP_FINGERPRINT, port = 5000, tls = false))
+        val fingerprint = Rig(existing = nas); fingerprint.starter.startManual(req("10.0.3.59", ToolKeys.HTTP_FINGERPRINT, port = 5000, tls = false))
         assertEquals(ToolTarget(9, ip("10.0.3.59"), 5000, tls = false, serverName = "chnas.local", route = ToolRoute.WIFI), fingerprint.targets.single())
-        val brute = Rig(existing = nas); brute.starter.startManual(req("10.0.3.59", ToolId.DIR_BRUTEFORCE, port = 5001, tls = true))
+        val brute = Rig(existing = nas); brute.starter.startManual(req("10.0.3.59", ToolKeys.DIR_BRUTEFORCE, port = 5001, tls = true))
         assertEquals("brute-force always sends the IP (3B 4.9)", ToolTarget(9, ip("10.0.3.59"), 5001, tls = true, serverName = null, route = ToolRoute.WIFI), brute.targets.single())
-        val fresh = Rig(); fresh.starter.startManual(req("10.0.3.200", ToolId.TLS_CERTIFICATE))
+        val fresh = Rig(); fresh.starter.startManual(req("10.0.3.200", ToolKeys.TLS_CERTIFICATE))
         assertNull("a fresh manual row has no name to send", fresh.targets.single().serverName)
     }
     @Test fun `a network change between the tap and the start refuses and discards the new row`() = runBlocking {
@@ -127,7 +127,7 @@ class ManualStarterTest {
         assertEquals(ScanController.NO_NETWORK, ManualMessages.of(ManualResult(ToolRunner.Start.NoNetwork, null), emptyMap()))
     }
     @Test fun `brute-force opens its sheet first, so the starter is reached only from the sheet's Run`() {
-        assertEquals(ManualStep.OPEN_SHEET, ManualFlow.firstStep(ToolId.DIR_BRUTEFORCE))
-        for (t in ToolId.entries - ToolId.DIR_BRUTEFORCE) assertEquals(t.key, ManualStep.START, ManualFlow.firstStep(t))
+        assertEquals(ManualStep.OPEN_SHEET, ManualFlow.firstStep(ToolKeys.DIR_BRUTEFORCE))
+        for (t in ToolKeys.BUILT_IN - ToolKeys.DIR_BRUTEFORCE) assertEquals(t, ManualStep.START, ManualFlow.firstStep(t))
     }
 }

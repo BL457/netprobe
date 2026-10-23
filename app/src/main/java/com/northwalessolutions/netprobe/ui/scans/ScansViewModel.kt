@@ -21,6 +21,7 @@ import com.northwalessolutions.netprobe.ui.tools.FindingRow
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolExport
 import com.northwalessolutions.netprobe.ui.tools.ToolResultsModel
+import com.northwalessolutions.netprobe.ui.tools.ToolsUiModel
 import com.northwalessolutions.netprobe.ui.tools.ToolResultsState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -56,7 +57,7 @@ data class ScansUiState(
  */
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class ScansViewModel(private val c: AppContainer) : ViewModel() {
-    private data class ResultsSource(val run: ToolRunEntity, val sameTool: List<ToolRunEntity>, val ip: String, val rows: List<FindingRow>)
+    private data class ResultsSource(val run: ToolRunEntity, val sameTool: List<ToolRunEntity>, val ip: String?, val rows: List<FindingRow>)
 
     private val resultsRunId = MutableStateFlow<Long?>(null)
     private val clearPrompt = MutableStateFlow(false)
@@ -75,8 +76,8 @@ class ScansViewModel(private val c: AppContainer) : ViewModel() {
 
     private val resultsSource: Flow<ResultsSource?> = resultsRunId.flatMapLatest { id ->
         if (id == null) flowOf(null) else c.toolRepo.run(id).flatMapLatest { r ->
-            if (r == null) flowOf(null) else combine(c.toolRepo.findings(id), c.toolRepo.runsForHost(r.hostId), c.hosts.host(r.hostId)) { f, runs, h ->
-                h?.let { ResultsSource(r, runs.filter { it.toolId == r.toolId }, it.ip, ToolResultsModel.rows(f)) }
+            if (r == null) flowOf(null) else combine(c.toolRepo.findings(id), c.toolRepo.runsOfSameTool(r), r.hostId?.let { c.hosts.host(it) } ?: flowOf(null)) { f, same, h ->
+                if (r.hostId != null && h == null) null else ResultsSource(r, same, h?.ip, ToolResultsModel.rows(f))
             }
         }
     }
@@ -92,9 +93,9 @@ class ScansViewModel(private val c: AppContainer) : ViewModel() {
         @Suppress("UNCHECKED_CAST") val ports = arr[9] as Map<Long, PortScanState>
         val network = arr[10] as NetworkEntity?
         val now = System.currentTimeMillis()
-        val list = ScansRules.build(ScansInput(live, active, ended, historyRows, hostRows.associate { it.id to DisplayName.of(it) }, network?.id, now, arr[5] as Long,
+        val list = ScansRules.build(ScansInput(c.toolRegistry, live, active, ended, historyRows, hostRows.associate { it.id to DisplayName.of(it) }, network?.id, now, arr[5] as Long,
             arr[6] as Long?, removed, arr[8] as DiscoveryStatus?, ports))
-        val results = (arr[14] as ResultsSource?)?.let { src -> ToolResultsModel.ofRows(src.run, src.sameTool, src.ip, src.rows, active[src.run.hostId], now) }
+        val results = (arr[14] as ResultsSource?)?.let { src -> ToolResultsModel.ofRows(c.toolRegistry, src.run, src.sameTool, src.ip, src.rows, active[src.run.id], now) }
         ScansUiState(list, hostRows.filter { !it.manualOnly }.map { it.id }.toSet(), results, (arr[11] as PendingUndo?)?.text, arr[13] as Boolean, arr[12] as AppMessage?)
     }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), ScansUiState())
 
@@ -110,7 +111,7 @@ class ScansViewModel(private val c: AppContainer) : ViewModel() {
     fun stop(item: ScansItem) {
         when (val route = ScansTargets.stop(item)) {
             is StopRoute.Live -> c.liveWork.stop(route.id)
-            is StopRoute.Tool -> if (ScansTargets.toolStopApplies(route, c.toolRunner.active.value[route.hostId]?.runId)) c.toolRunner.stop(route.hostId)
+            is StopRoute.Tool -> if (ScansTargets.toolStopApplies(route, c.toolRunner.active.value[route.runId]?.runId)) c.toolRunner.stop(route.runId)
             null -> Unit
         }
     }
@@ -122,7 +123,7 @@ class ScansViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val current = resultsRunId.value ?: return@launch
             val shown = c.toolRepo.run(current).first() ?: return@launch
-            val same = c.toolRepo.runsForHost(shown.hostId).first().filter { it.toolId == shown.toolId }
+            val same = c.toolRepo.runsOfSameTool(shown).first()
             same.getOrNull(same.indexOfFirst { it.id == current } + delta)?.let { resultsRunId.value = it.id }
         }
     }
@@ -131,9 +132,9 @@ class ScansViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val id = resultsRunId.value ?: return@launch
             val shown = c.toolRepo.run(id).first() ?: return@launch
-            val h = c.hosts.byIdOnce(shown.hostId) ?: return@launch
-            val export = ToolExport.of(shown, h.ip, c.toolRepo.findingsOnce(id))
-            c.actionRunner.share(ToolExport.subject(export.toolName, h.ip, shown.port), ToolExport.text(export))
+            val ip = shown.hostId?.let { host -> c.hosts.byIdOnce(host)?.ip ?: return@launch }
+            val export = ToolExport.of(shown, ip, c.toolRepo.findingsOnce(id), toolName = ToolsUiModel.nameOf(c.toolRegistry, shown))
+            c.actionRunner.share(ToolExport.subject(export.toolName, ip, shown.port), ToolExport.text(export))
         }
     }
     /** As the Device screen (3B 8.5): Copy copies the URL when there is one, else the value; below API 33 a snackbar confirms. */

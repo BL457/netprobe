@@ -40,7 +40,7 @@ class IdentifyServiceToolTest {
             if (sent != null && sent.contains("INFO")) Reply.text("\$122\r\n# Server\r\nredis_version:7.2.4\r\nredis_git_sha1:00000000\r\n") else Reply.SILENT
         }
         val p = CollectingProgress()
-        val r = tool.run(target(6379), ToolOptions.None, control(), p)
+        val r = tool.run(target(6379), ToolInputs.NONE, control(), p)
         assertEquals(ToolRunStatus.DONE, r.status)
         assertEquals("Redis 7.2.4, 2 probes", r.summary)
         val lines = p.of(FindingKind.PROBE).map { it.value }
@@ -52,28 +52,29 @@ class IdentifyServiceToolTest {
     @Test fun `a banner on the null read is one probe and the summary says so`() = runTest {
         net.respond = { _, _, sent -> if (sent == null) Reply.text("SSH-2.0-OpenSSH_9.6p1 Debian-3\r\n") else Reply.SILENT }
         val p = CollectingProgress()
-        val r = tool.run(target(22), ToolOptions.None, control(), p)
+        val r = tool.run(target(22), ToolInputs.NONE, control(), p)
         assertEquals("SSH OpenSSH 9.6p1, 1 probe", r.summary)
         assertEquals(listOf("null: 32 bytes, SSH OpenSSH 9.6p1"), p.of(FindingKind.PROBE).map { it.value })
         assertEquals(1, applied.size)
     }
     @Test fun `a silent port recognises nothing, says so, and still reports the probes sent`() = runTest {
         val p = CollectingProgress()
-        val r = tool.run(target(9999), ToolOptions.None, control(), p)
+        val r = tool.run(target(9999), ToolInputs.NONE, control(), p)
         assertTrue(r.summary, Regex("No service recognised, \\d+ probes?").matches(r.summary))
         assertTrue(p.of(FindingKind.PROBE).isNotEmpty())
         assertTrue("nothing answered, so the port row is not written", applied.isEmpty())
     }
     @Test fun `the tool runs on a fresh budget of one port and 20 s regardless of any switch`() = runTest {
-        tool.run(target(22), ToolOptions.None, control(), CollectingProgress())
+        tool.run(target(22), ToolInputs.NONE, control(), CollectingProgress())
         assertEquals(1, budgetSeen!!.maxPorts); assertEquals(20_000L, budgetSeen!!.hostWallMs)
         assertEquals(1, budgetSeen!!.enteredPorts.coerceAtMost(1))
     }
     @Test fun `identify service applies to any port and is a tool of its own`() {
-        assertEquals(ToolId.IDENTIFY, tool.id); assertEquals("Identify service", tool.name)
+        assertEquals(ToolKeys.IDENTIFY, tool.descriptor.key); assertEquals("Identify service", tool.descriptor.name)
+        assertEquals(TargetKind.PORT, tool.descriptor.target); assertEquals(ToolCategory.IDENTITY, tool.descriptor.category)
         assertTrue(tool.applies(9999, ServiceInfo("Unknown", confidence = com.northwalessolutions.netprobe.engine.serviceid.Confidence.PORT_TABLE)))
-        assertEquals("identify-service", ToolId.IDENTIFY.key)
-        assertEquals(ToolId.IDENTIFY, ToolId.byKey("identify-service"))
+        assertEquals("identify-service", ToolKeys.IDENTIFY)
+        assertEquals(ToolKeys.IDENTIFY, TestRegistry.registry().byKey("identify-service")?.descriptor?.key)
         assertEquals(FindingKind.PROBE, FindingKind.parse("PROBE")); assertEquals(FindingKind.STACK, FindingKind.parse("STACK"))
     }
 }

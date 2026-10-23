@@ -45,7 +45,7 @@ import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.HostStatus
 import com.northwalessolutions.netprobe.engine.portscan.ScanProfile
 import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.ui.tools.PortTool
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolRunBar
 import com.northwalessolutions.netprobe.ui.CopyMenuCopy
@@ -296,7 +296,7 @@ private fun TryAsRow(ip: String, port: Int, pairs: List<Pair<String, String>>, o
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortSheet(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onVulns: () -> Unit, onClose: () -> Unit,
-              tools: List<ToolId> = emptyList(), toolsBusy: Boolean = false, onTool: (ToolId) -> Unit = {}, onCopyAddress: (() -> Unit)? = null) {
+              tools: List<PortTool> = emptyList(), toolsBusy: Boolean = false, onTool: (String) -> Unit = {}, onCopyAddress: (() -> Unit)? = null) {
     ModalBottomSheet(onDismissRequest = onClose, containerColor = NetProbeColors.surface, shape = SHEET_SHAPE) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter).padding(bottom = 16.dp)) {
             Text("$ip:${p.port} ${p.service.name}", style = NetProbeText.rowName, color = NetProbeColors.text, modifier = Modifier.padding(bottom = 8.dp))
@@ -310,9 +310,9 @@ fun PortSheet(ip: String, p: PortRow, onAction: (DeviceAction) -> Unit, onVulns:
             if (tools.isNotEmpty()) {
                 Text(ToolCopy.RUN_TOOL, style = NetProbeText.caption, color = NetProbeColors.textMuted, modifier = Modifier.padding(top = 4.dp))
                 tools.forEach { tool ->
-                    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button) { onTool(tool); onClose() }.testTag("sheetTool:${tool.key}"),
+                    Box(Modifier.fillMaxWidth().heightIn(min = Dimens.touch).clickable(role = Role.Button) { onTool(tool.key); onClose() }.testTag("sheetTool:${tool.key}"),
                         contentAlignment = Alignment.CenterStart) {
-                        Text(ToolCopy.toolName(tool), style = NetProbeText.secondary, color = if (toolsBusy) NetProbeColors.textMuted else NetProbeColors.signal)
+                        Text(tool.name, style = NetProbeText.secondary, color = if (toolsBusy) NetProbeColors.textMuted else NetProbeColors.signal)
                     }
                 }
             }

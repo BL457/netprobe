@@ -1,6 +1,5 @@
 package com.northwalessolutions.netprobe.ui.scans
 
-import com.northwalessolutions.netprobe.engine.tools.ToolId
 
 enum class ScansSource { RADAR, QUICK_SCAN_ALL, PORT_SCAN, TOOL, WORDLIST_IMPORT, VENDOR_DB }
 
@@ -14,7 +13,7 @@ enum class ScansState { RUNNING, DONE, STOPPED, FAILED, INTERRUPTED }
  */
 data class ScansItem(
     val key: String, val source: ScansSource, val liveId: Long?, val networkId: Long?, val hostId: Long?, val host: String?,
-    val tool: ToolId?, val port: Int?, val state: ScansState, val done: Int?, val total: Int?, val found: Int?,
+    val tool: String?, val port: Int?, val state: ScansState, val done: Int?, val total: Int?, val found: Int?,
     val startedAt: Long, val durationMs: Long?, val endedAt: Long?, val summary: String?, val runId: Long?,
     val title: String, val detail: String,
 ) {

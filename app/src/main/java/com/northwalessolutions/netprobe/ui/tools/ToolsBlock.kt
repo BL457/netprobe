@@ -23,7 +23,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.northwalessolutions.netprobe.engine.tools.ToolId
 import com.northwalessolutions.netprobe.ui.theme.*
 
 private val ROW_MIN = 58.dp
@@ -41,7 +40,7 @@ private val BLOCK_VERTICAL = 10.dp
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ToolsBlock(state: ToolsUiState, expanded: Boolean, busy: Boolean, onToggle: () -> Unit, onRunChip: (ToolId, Int) -> Unit, onResults: (ToolId) -> Unit) {
+fun ToolsBlock(state: ToolsUiState, expanded: Boolean, busy: Boolean, onToggle: () -> Unit, onRunChip: (String, Int) -> Unit, onResults: (String) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         // The tag goes before clearAndSetSemantics: anything after it in the chain is cleared with the children (3B QA F6).
         Row(Modifier.fillMaxWidth().heightIn(min = ROW_MIN).clickable(onClick = onToggle).testTag("toolsHeader")
@@ -66,7 +65,7 @@ fun ToolsBlock(state: ToolsUiState, expanded: Boolean, busy: Boolean, onToggle: 
                     Text(block.name, style = NetProbeText.secondary, color = NetProbeColors.text, modifier = Modifier.weight(1f))
                     if (block.hasRun) {
                         Box(Modifier.heightIn(min = Dimens.touch).widthIn(min = Dimens.touch).clickable(role = Role.Button) { onResults(block.toolId) }
-                            .semantics { contentDescription = ToolCopy.resultsDescription(block.name) }.testTag("toolResults:${block.toolId.key}"),
+                            .semantics { contentDescription = ToolCopy.resultsDescription(block.name) }.testTag("toolResults:${block.toolId}"),
                             contentAlignment = Alignment.CenterEnd) {
                             Text(ToolCopy.RESULTS, style = NetProbeText.action, color = NetProbeColors.signal)
                         }
@@ -76,7 +75,7 @@ fun ToolsBlock(state: ToolsUiState, expanded: Boolean, busy: Boolean, onToggle: 
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(CHIP_GAP)) {
                     block.chips.forEach { chip ->
                         Box(Modifier.heightIn(min = Dimens.touch).alpha(if (busy) DISABLED_ALPHA else 1f).clickable(role = Role.Button) { onRunChip(chip.toolId, chip.port) }
-                            .semantics { contentDescription = chip.description }.testTag("toolChip:${chip.toolId.key}:${chip.port}"),
+                            .semantics { contentDescription = chip.description }.testTag("toolChip:${chip.toolId}:${chip.port}"),
                             contentAlignment = Alignment.Center) {
                             Box(Modifier.heightIn(min = CHIP_VISUAL).clip(CircleShape).border(1.dp, NetProbeColors.border, CircleShape).padding(horizontal = CHIP_PAD),
                                 contentAlignment = Alignment.Center) {

@@ -17,14 +17,14 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Owns tool runs (spec 4.4): one per host, at most MAX_ACTIVE_RUNS hosts at once, on appScope so leaving the Device screen does not
+ * Owns tool runs (spec 4.4): one per host (a run with no device has no host to claim), at most MAX_ACTIVE_RUNS runs at once, every live run keyed by its runId, on appScope so leaving the Device screen does not
  * stop them. Each run has a RunControl holding the pause gate and its own rate bucket. A foreground collector pauses and resumes every
  * run; an env collector stops the runs whose network identity changed; a ticker republishes elapsed time while any run is live.
  */
 class ToolRunner(
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher,
-    private val tools: Map<ToolId, Tool>,
+    private val registry: ToolRegistry,
     private val repo: ToolStore,
     private val busy: HostBusyRegistry,
     private val messages: AppMessages,
@@ -40,13 +40,14 @@ class ToolRunner(
      */
     private val routeBind: suspend (ToolRoute, NetworkEnv, suspend () -> Unit) -> Unit = { route, e, block -> ManualRoute.bind(route, e, { null }) { block() } },
 ) {
-    data class Active(val runId: Long, val hostId: Long, val toolId: ToolId, val port: Int, val activeMs: Long,
+    data class Active(val runId: Long, val hostId: Long?, val toolKey: String, val port: Int, val activeMs: Long,
                       val done: Int, val total: Int?, val found: Int, val errors: Int, val paused: Boolean)
     sealed interface Start { data class Started(val runId: Long) : Start; object HostBusy : Start; object TooMany : Start; object NoNetwork : Start }
 
-    private val runs = ConcurrentHashMap<Long, Run>()          // hostId -> live run
+    private val runs = ConcurrentHashMap<Long, Run>()          // runId -> live run
     private val startLock = Mutex()
     private val _active = MutableStateFlow<Map<Long, Active>>(emptyMap())
+    /** Live runs by runId; use forHost for the run of one device. */
     val active: StateFlow<Map<Long, Active>> = _active
     private var ticker: Job? = null              // guarded by tickerLock
     private val tickerLock = Any()
@@ -80,30 +81,35 @@ class ToolRunner(
     }
 
     @OptIn(DelicateCoroutinesApi::class)                     // CoroutineStart.ATOMIC, see below
-    suspend fun start(target: ToolTarget, toolId: ToolId, options: ToolOptions): Start {
+    suspend fun start(target: ToolTarget?, toolKey: String, inputs: ToolInputs): Start {
         repo.ready.await()                                     // a run started at launch is never marked INTERRUPTED (rule 1)
-        val tool = tools[toolId] ?: throw IllegalArgumentException("no tool registered for ${toolId.key}")   // before any claim or row
+        val tool = registry.byKey(toolKey) ?: throw IllegalArgumentException("no tool registered for $toolKey")   // before any claim or row
+        val hostId = target?.hostId
         val run: Run = startLock.withLock {
             val e = env.value ?: return Start.NoNetwork
             if (runs.size >= MAX_ACTIVE_RUNS) return Start.TooMany
-            if (!busy.tryClaim(target.hostId, HostBusyRegistry.Work.TOOL)) return Start.HostBusy
+            if (hostId != null && !busy.tryClaim(hostId, HostBusyRegistry.Work.TOOL)) return Start.HostBusy   // only a run with a device has a host to claim
             val startedAt = clock()
-            val optionsJson = ToolOptionsJson.encode(target, options)
-            val runId = try {
-                repo.startRun(target.hostId, toolId.key, target.port, startedAt, optionsJson, target.route?.name)
+            val optionsJson = try {
+                ToolOptionsJson.encode(target, tool.descriptor, tool.recorded(inputs))
             } catch (t: Throwable) {
-                busy.release(target.hostId, HostBusyRegistry.Work.TOOL); throw t
+                if (hostId != null) busy.release(hostId, HostBusyRegistry.Work.TOOL); throw t
             }
-            Run(runId, target.hostId, toolId, target.port, startedAt, NetworkSignature.identityKey(e), e, optionsJson).also { r ->
+            val runId = try {
+                repo.startRun(hostId, toolKey, target?.port ?: 0, startedAt, optionsJson, target?.route?.name, tool.descriptor.name)
+            } catch (t: Throwable) {
+                if (hostId != null) busy.release(hostId, HostBusyRegistry.Work.TOOL); throw t
+            }
+            Run(runId, hostId, toolKey, tool.descriptor.name, target?.port ?: 0, startedAt, NetworkSignature.identityKey(e), e, optionsJson).also { r ->
                 // Launched, assigned, then registered, all inside the lock (plan review G14), so a Stop or a network change can never
                 // find the run in `runs` without its job. ATOMIC, not LAZY: a job cancelled before its first dispatch still runs its
                 // body, so the end state is always written and the host released. The body waits on `registered` before the tool
                 // starts and before end() runs, so end() can never remove the run ahead of its registration.
-                val job = scope.launch(dispatcher, start = CoroutineStart.ATOMIC) { execute(target, tool, options, r) }
+                val job = scope.launch(dispatcher, start = CoroutineStart.ATOMIC) { execute(target, tool, inputs, r) }
                 r.job = job
                 try {
                     beforeRegister()
-                    synchronized(pauseLock) { runs[target.hostId] = r; if (!foreground.value) r.pause(startedAt) }
+                    synchronized(pauseLock) { runs[r.runId] = r; if (!foreground.value) r.pause(startedAt) }
                 } catch (t: Throwable) {
                     job.cancel(); throw t                      // never registered: the job ends as STOPPED and releases the host
                 } finally {
@@ -117,9 +123,12 @@ class ToolRunner(
         return Start.Started(run.runId)
     }
 
-    fun stop(hostId: Long) { runs[hostId]?.job?.cancel() }
+    /** Stops one run by its id; a run that has already ended is ignored. */
+    fun stop(runId: Long) { runs[runId]?.job?.cancel() }
+    /** Stops the live run on one device, if any. */
+    fun stopHost(hostId: Long) { runs.values.firstOrNull { it.hostId == hostId }?.job?.cancel() }
 
-    private suspend fun execute(target: ToolTarget, tool: Tool, options: ToolOptions, run: Run) {
+    private suspend fun execute(target: ToolTarget?, tool: ToolModule, inputs: ToolInputs, run: Run) {
         val progress = object : ToolProgress {
             override fun update(done: Int, total: Int?, found: Int, errors: Int) { run.done = done; run.total = total; run.found = found; run.errors = errors }
             override suspend fun finding(f: Finding) {
@@ -139,10 +148,12 @@ class ToolRunner(
             run.registered.await()
             currentCoroutineContext().ensureActive()           // a run cancelled before its first dispatch never enters the tool
             var result: ToolResult? = null
-            val route = target.route
+            val route = target?.route
             // A manual run follows its own route (3C spec 4.5); every other run keeps the scan binding through [bind].
-            if (route == null) bind(target.ip, run.env) { result = tool.run(target, options, Control(run), progress) }
-            else routeBind(route, run.env) { result = tool.run(target, options, Control(run), progress) }
+            // A run with no device has no address to bind for; it runs on the system route until the script engine decides its scope.
+            if (target == null) result = tool.run(null, inputs, Control(run), progress)
+            else if (route == null) bind(target.ip, run.env) { result = tool.run(target, inputs, Control(run), progress) }
+            else routeBind(route, run.env) { result = tool.run(target, inputs, Control(run), progress) }
             // A tool that swallows the closed socket's IOException (TlsPeek, TcpSmbTransport) returns FAILED after a Stop:
             // a cancelled run is STOPPED whatever the tool returned.
             currentCoroutineContext().ensureActive()
@@ -175,12 +186,13 @@ class ToolRunner(
             log(first)
             try { repo.finish(run.runId, at, status, summary) } catch (second: Exception) { log(second) }   // left RUNNING: INTERRUPTED next launch
         }
-        runs.remove(run.hostId, run)
-        busy.release(run.hostId, HostBusyRegistry.Work.TOOL)
+        runs.remove(run.runId, run)
+        run.hostId?.let { busy.release(it, HostBusyRegistry.Work.TOOL) }
         publish()
-        messages.post(ToolCopy.finished(tools[run.toolId]?.name ?: ToolCopy.toolName(run.toolId), summary), run.hostId)
+        messages.post(ToolCopy.finished(registry.byKey(run.toolKey)?.descriptor?.name ?: run.toolName.ifEmpty { run.toolKey }, summary), run.hostId)
         if (status == ToolRunStatus.FAILED && run.recorded.get() == 0) return
-        try { onFinished(run.hostId) } catch (ex: Exception) { log(ex) }
+        val host = run.hostId ?: return                        // a run with no device has nothing to re-identify
+        try { onFinished(host) } catch (ex: Exception) { log(ex) }
     }
 
     /** Compute and assign under one lock, so a slow publisher can never overwrite a newer map (a stale map would pin toolRunActive). */
@@ -188,7 +200,7 @@ class ToolRunner(
         synchronized(publishLock) {
             val now = clock(); val fg = foreground.value
             _active.value = runs.values.associate { r ->
-                r.hostId to Active(r.runId, r.hostId, r.toolId, r.port, r.activeMs(now), r.done, r.total, r.found, r.errors, !fg)
+                r.runId to Active(r.runId, r.hostId, r.toolKey, r.port, r.activeMs(now), r.done, r.total, r.found, r.errors, !fg)
             }
         }
     }
@@ -231,7 +243,7 @@ class ToolRunner(
         override fun excused(startEpoch: Int): Boolean = startEpoch != run.pauseEpoch || !foreground.value
     }
 
-    private inner class Run(val runId: Long, val hostId: Long, val toolId: ToolId, val port: Int, startedAt: Long, val startKey: String, val env: NetworkEnv,
+    private inner class Run(val runId: Long, val hostId: Long?, val toolKey: String, val toolName: String, val port: Int, startedAt: Long, val startKey: String, val env: NetworkEnv,
                             private var optionsJson: String) {
         @Synchronized fun withOption(key: String, value: String): String { optionsJson = ToolOptionsJson.withOption(optionsJson, key, value); return optionsJson }
         @Synchronized fun withOption(key: String, value: Int): String { optionsJson = ToolOptionsJson.withOption(optionsJson, key, value); return optionsJson }
@@ -253,6 +265,8 @@ class ToolRunner(
     }
 
     companion object {
+        /** The live run on one device, if any. */
+        fun Map<Long, Active>.forHost(hostId: Long): Active? = values.firstOrNull { it.hostId == hostId }
         const val MAX_ACTIVE_RUNS = 4; const val KEEP_RUNS_PER_TOOL = 10; const val PROGRESS_INTERVAL_MS = 200L
         const val TOOL_THREADS = 16; const val MAX_REQUESTS_PER_SECOND = 100
     }

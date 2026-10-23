@@ -7,8 +7,8 @@ import com.northwalessolutions.netprobe.data.NetworkSignature
 import com.northwalessolutions.netprobe.engine.tools.ManualRoute
 import com.northwalessolutions.netprobe.engine.tools.RouteContext
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
-import com.northwalessolutions.netprobe.engine.tools.ToolId
-import com.northwalessolutions.netprobe.engine.tools.ToolOptions
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
+import com.northwalessolutions.netprobe.engine.tools.ToolInputs
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.engine.tools.ToolTarget
 import com.northwalessolutions.netprobe.netenv.NetworkEnv
@@ -20,7 +20,7 @@ import kotlinx.coroutines.withContext
 import java.net.Inet4Address
 
 /** One Run tap after validation (3C spec 4.3): [tls] already follows ManualTarget.tls, [options] the brute-force sheet when there was one. */
-data class ManualRequest(val env: NetworkEnv, val ip: Inet4Address, val port: Int, val tool: ToolId, val tls: Boolean, val options: ToolOptions = ToolOptions.None)
+data class ManualRequest(val env: NetworkEnv, val ip: Inet4Address, val port: Int, val tool: String, val tls: Boolean, val inputs: ToolInputs = ToolInputs.NONE)
 /** [hostId] is the row the run was keyed on, or null when the start ended before any row (no network, no binder). */
 data class ManualResult(val start: ToolRunner.Start, val hostId: Long?)
 
@@ -28,7 +28,7 @@ enum class ManualStep { OPEN_SHEET, START }
 
 object ManualFlow {
     /** Spec 4.3 step 3: brute-force opens its options sheet first and creates nothing until the sheet's Run; the other tools start at once. */
-    fun firstStep(tool: ToolId): ManualStep = if (tool == ToolId.DIR_BRUTEFORCE) ManualStep.OPEN_SHEET else ManualStep.START
+    fun firstStep(tool: String): ManualStep = if (tool == ToolKeys.DIR_BRUTEFORCE) ManualStep.OPEN_SHEET else ManualStep.START
 }
 
 /** Spec 4.3 step 6: the 3B messages in the screen's snackbar; null when the run started. */
@@ -58,7 +58,7 @@ class ManualStarter(
     private val target: suspend (Long, String) -> ManualRow,
     /** Deletes the row only while it is still manualOnly with no run (HostRepository.discardManual). */
     private val discard: suspend (Long) -> Unit,
-    private val runnerStart: suspend (ToolTarget, ToolId, ToolOptions) -> ToolRunner.Start,
+    private val runnerStart: suspend (ToolTarget, String, ToolInputs) -> ToolRunner.Start,
 ) {
     suspend fun startManual(r: ManualRequest): ManualResult = committedBefore { begin(r) }
 
@@ -69,14 +69,14 @@ class ManualStarter(
         if (ManualRoute.needsBinder(route) && !hasBinder(r.env)) return ManualResult(ToolRunner.Start.NoNetwork, null)
         val row = target(networkId, r.ip.hostAddress)
         // Brute-force always sends the IP (3B 4.9); the other tools send the row's known name, which a fresh manual row does not have.
-        val name = if (r.tool == ToolId.DIR_BRUTEFORCE) null else ToolApplicability.serverName(row.host)
+        val name = if (r.tool == ToolKeys.DIR_BRUTEFORCE) null else ToolApplicability.serverName(row.host)
         // Plan review G15: a route chosen for the tap's network must never be bound on another; the runner reads its own env at start.
         if (envNow()?.let { NetworkSignature.identityKey(it) } != NetworkSignature.identityKey(r.env)) {
             if (row.inserted) discard(row.host.id)
             return ManualResult(ToolRunner.Start.NoNetwork, row.host.id)
         }
         val started = try {
-            runnerStart(ToolTarget(row.host.id, r.ip, r.port, r.tls, name, route), r.tool, r.options)
+            runnerStart(ToolTarget(row.host.id, r.ip, r.port, r.tls, name, route), r.tool, r.inputs)
         } catch (t: Throwable) {
             if (row.inserted) withContext(NonCancellable) { discard(row.host.id) }
             throw t

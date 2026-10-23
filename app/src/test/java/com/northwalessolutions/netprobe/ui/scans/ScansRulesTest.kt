@@ -8,9 +8,10 @@ import com.northwalessolutions.netprobe.engine.portscan.IdentifyCount
 import com.northwalessolutions.netprobe.engine.portscan.PortScanState
 import com.northwalessolutions.netprobe.engine.portscan.ScanProgress
 import com.northwalessolutions.netprobe.engine.tools.AppMessage
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.scans.LiveWork
+import com.northwalessolutions.netprobe.engine.tools.TestRegistry
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -24,15 +25,15 @@ class ScansRulesTest {
     private fun ended(id: Long, endedAt: Long?, startedAt: Long = (endedAt ?: now) - 3_000, outcome: LiveWork.Outcome = LiveWork.Outcome.DONE, summary: String = "Done in 3 s, 2 open ports",
                       kind: LiveWork.Kind = LiveWork.Kind.PORT_SCAN, hostId: Long? = 7, networkId: Long? = 1) =
         LiveWork.Ended(live(id, kind, hostId, startedAt, networkId), outcome, endedAt, summary)
-    private fun run(id: Long, status: ToolRunStatus, startedAt: Long, finishedAt: Long?, hostId: Long = 7, tool: ToolId = ToolId.HTTP_FINGERPRINT, port: Int = 80, summary: String = "Done") =
-        NetworkRun(ToolRunEntity(id = id, hostId = hostId, toolId = tool.key, port = port, startedAt = startedAt, finishedAt = finishedAt, status = status, optionsJson = "{}", summary = summary),
+    private fun run(id: Long, status: ToolRunStatus, startedAt: Long, finishedAt: Long?, hostId: Long = 7, tool: String = ToolKeys.HTTP_FINGERPRINT, port: Int = 80, summary: String = "Done") =
+        NetworkRun(ToolRunEntity(id = id, hostId = hostId, toolId = tool, port = port, startedAt = startedAt, finishedAt = finishedAt, status = status, optionsJson = "{}", summary = summary),
             ip = "10.0.3.$hostId")
-    private fun active(runId: Long, hostId: Long = 7, tool: ToolId = ToolId.DIR_BRUTEFORCE, port: Int = 443, activeMs: Long = 4_000, done: Int = 10, total: Int? = 100, found: Int = 2) =
+    private fun active(runId: Long, hostId: Long = 7, tool: String = ToolKeys.DIR_BRUTEFORCE, port: Int = 443, activeMs: Long = 4_000, done: Int = 10, total: Int? = 100, found: Int = 2) =
         ToolRunner.Active(runId, hostId, tool, port, activeMs, done, total, found, 0, false)
     private fun input(live: List<LiveWork.Live> = emptyList(), active: Map<Long, ToolRunner.Active> = emptyMap(), ended: List<LiveWork.Ended> = emptyList(),
                       history: List<NetworkRun> = emptyList(), names: Map<Long, String> = mapOf(7L to "Office NAS"), currentNetworkId: Long? = 1, clearedAt: Long = 0,
                       forgotten: Long? = null, removed: Set<Long> = emptySet(), radar: DiscoveryStatus? = null, ports: Map<Long, PortScanState> = emptyMap()) =
-        ScansInput(live, active, ended, history, names, currentNetworkId, now, clearedAt, forgotten, removed, radar, ports, formatDate = { "3 Jan 2026" })
+        ScansInput(TestRegistry.registry(), live, active, ended, history, names, currentNetworkId, now, clearedAt, forgotten, removed, radar, ports, formatDate = { "3 Jan 2026" })
 
     @Test fun `running is newest first and a tie breaks by key`() {
         val l = ScansRules.build(input(live = listOf(live(1, startedAt = now - 9_000), live(3, startedAt = now - 1_000), live(2, startedAt = now - 1_000)))).running
@@ -49,7 +50,7 @@ class ScansRulesTest {
         assertTrue("windowed by its start", ScansRules.build(input(ended = listOf(old))).recent.isEmpty())
     }
     @Test fun `a live tool run and its RUNNING history row give one running item`() {
-        val l = ScansRules.build(input(active = mapOf(7L to active(5)), history = listOf(run(5, ToolRunStatus.RUNNING, now - 4_000, null))))
+        val l = ScansRules.build(input(active = mapOf(5L to active(5)), history = listOf(run(5, ToolRunStatus.RUNNING, now - 4_000, null))))
         assertEquals(listOf("tool:5"), l.running.map { it.key }); assertTrue(l.recent.isEmpty())
         assertEquals(now - 4_000, l.running.single().startedAt)
     }
@@ -106,7 +107,7 @@ class ScansRulesTest {
         val l = ScansRules.build(input(
             live = listOf(live(1, LiveWork.Kind.RADAR, hostId = null, startedAt = now - 7_000), live(2, LiveWork.Kind.QUICK_SCAN_ALL, hostId = null, startedAt = now - 42_000, done = 3, total = 30),
                 live(3, LiveWork.Kind.PORT_SCAN, hostId = 7, startedAt = now - 1_000, done = 312, total = 65_535, found = 4)),
-            active = mapOf(7L to active(5, hostId = 9, activeMs = 4_000)), ports = ports, radar = DiscoveryStatus(probed = 171, total = 254, found = 9),
+            active = mapOf(5L to active(5, hostId = 9, activeMs = 4_000)), ports = ports, radar = DiscoveryStatus(probed = 171, total = 254, found = 9),
             names = mapOf(7L to "Office NAS", 9L to "10.0.3.9")))
         val byKey = l.running.associateBy { it.key }
         assertEquals("Radar scan", byKey.getValue("live:1").title); assertEquals("probing 171 of 254  7 s", byKey.getValue("live:1").detail)
@@ -144,7 +145,7 @@ class ScansRulesTest {
         assertEquals("just now", l.recent.first { it.key == "live:2" }.detail.substringAfterLast(", "))
     }
     @Test fun `the running count matches the running list and the badge is its size`() {
-        val live = listOf(live(1), live(2, LiveWork.Kind.RADAR, hostId = null)); val act = mapOf(7L to active(5), 8L to active(6, hostId = 8))
+        val live = listOf(live(1), live(2, LiveWork.Kind.RADAR, hostId = null)); val act = mapOf(5L to active(5), 8L to active(6, hostId = 8))
         val list = ScansRules.build(input(live = live, active = act)).running
         assertEquals(ScansRules.runningCount(live, act), list.size); assertEquals(4, ScansRules.badge(list)); assertEquals(0, ScansRules.badge(emptyList()))
     }

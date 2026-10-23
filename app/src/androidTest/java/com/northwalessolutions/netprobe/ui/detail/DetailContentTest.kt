@@ -248,40 +248,42 @@ class DetailContentTest {
         rule.onNodeWithText("Full").assertIsNotEnabled()
     }
     @Test fun thePortSheetShowsRunToolRowsOnlyForApplicableTools() {
-        val ran = mutableListOf<Pair<com.northwalessolutions.netprobe.engine.tools.ToolId, Int>>()
+        val ran = mutableListOf<Pair<String, Int>>()
         showTools(DetailFakes.state(listOf(DetailFakes.port(5000, "http"), DetailFakes.port(22, "ssh", name = "SSH"))),
-            com.northwalessolutions.netprobe.ui.tools.DetailToolsState(), com.northwalessolutions.netprobe.ui.tools.ToolActions(onRunTool = { t, p -> ran += t to p }))
+            com.northwalessolutions.netprobe.ui.tools.DetailToolsState(portTools = mapOf(5000 to listOf(
+                com.northwalessolutions.netprobe.ui.tools.PortTool("dir-bruteforce", "Directory brute-force"), com.northwalessolutions.netprobe.ui.tools.PortTool("http-fingerprint", "HTTP fingerprint")))),
+            com.northwalessolutions.netprobe.ui.tools.ToolActions(onRunTool = { t, p -> ran += t to p }))
         rule.onNodeWithText("5000").performTouchInput { longClick() }
         rule.onNodeWithText("Run tool").assertIsDisplayed()
         rule.onNodeWithTag("sheetTool:dir-bruteforce").assertIsDisplayed(); rule.onNodeWithTag("sheetTool:http-fingerprint").assertIsDisplayed()
         rule.onNodeWithTag("sheetTool:smb-session").assertDoesNotExist()
         rule.onNodeWithTag("sheetTool:http-fingerprint").performClick()
-        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolId.HTTP_FINGERPRINT to 5000), ran)
+        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolKeys.HTTP_FINGERPRINT to 5000), ran)
         rule.onNodeWithText("22").performTouchInput { longClick() }
         rule.onNodeWithText("Run tool").assertDoesNotExist()
     }
     @Test fun theIdentifyActionSitsInThePortRowAndRunsTheIdentifyTool() {   // Director ruling R2
-        val ran = mutableListOf<Pair<com.northwalessolutions.netprobe.engine.tools.ToolId, Int>>()
+        val ran = mutableListOf<Pair<String, Int>>()
         showTools(DetailFakes.state(listOf(DetailFakes.port(5000, "http"), DetailFakes.port(22, "ssh", name = "SSH"))),
             com.northwalessolutions.netprobe.ui.tools.DetailToolsState(), com.northwalessolutions.netprobe.ui.tools.ToolActions(onRunTool = { t, p -> ran += t to p }))
         rule.onAllNodesWithTag("portIdentify")[1].performClick()
-        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolId.IDENTIFY to 22), ran)
+        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolKeys.IDENTIFY to 22), ran)
         assertEquals(0, actions.size)
     }
     @Test fun aRunningIdentifyShowsIdentifyingOnItsOwnPortOnly() {
         showTools(DetailFakes.state(listOf(DetailFakes.port(5000, "http"), DetailFakes.port(22, "ssh", name = "SSH"))),
-            com.northwalessolutions.netprobe.ui.tools.DetailToolsState(runTool = com.northwalessolutions.netprobe.engine.tools.ToolId.IDENTIFY, runPort = 22,
+            com.northwalessolutions.netprobe.ui.tools.DetailToolsState(runTool = com.northwalessolutions.netprobe.engine.tools.ToolKeys.IDENTIFY, runPort = 22,
                 busy = com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry.Work.TOOL))
         rule.onAllNodesWithText("Identifying").assertCountEquals(1)
         rule.onAllNodesWithText("Identify").assertCountEquals(1)
     }
     @Test fun identifyAllServicesIsInTheOverflowAndRunsOverTheWholeDevice() {
-        val ran = mutableListOf<Pair<com.northwalessolutions.netprobe.engine.tools.ToolId, Int>>()
+        val ran = mutableListOf<Pair<String, Int>>()
         showTools(DetailFakes.state(), com.northwalessolutions.netprobe.ui.tools.DetailToolsState(),
             com.northwalessolutions.netprobe.ui.tools.ToolActions(onRunTool = { t, p -> ran += t to p }))
         rule.onNodeWithTag("detailMenu").performClick()
         rule.onNodeWithText("Identify all services").performClick()
-        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolId.IDENTIFY_ALL to 0), ran)
+        assertEquals(listOf(com.northwalessolutions.netprobe.engine.tools.ToolKeys.IDENTIFY_ALL to 0), ran)
     }
     @Test fun longPressOnTheHeaderOffersTheDeviceCopyMenu() {   // Director ruling R4
         show(DetailFakes.state())
