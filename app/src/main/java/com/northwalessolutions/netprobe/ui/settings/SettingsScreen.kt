@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.northwalessolutions.netprobe.ui.rootInsets
+import com.northwalessolutions.netprobe.update.UpdateCopy
 import com.northwalessolutions.netprobe.oui.OuiCopy
 import com.northwalessolutions.netprobe.oui.OuiUpdateState
 import com.northwalessolutions.netprobe.AppContainer
@@ -68,12 +69,16 @@ data class SettingsUi(val state: SettingsState, val networkName: String? = null,
                       /** The About row and its dialog (3D spec 5). */
                       val about: AboutInfo = AboutInfo("", 0, "", ""),
                       /** The vendor database row and its pinned progress line. */
-                      val vendorDb: VendorDbUi = VendorDbUi())
+                      val vendorDb: VendorDbUi = VendorDbUi(),
+                      /** The manual update check: running, and its last result line. */
+                      val updateCheck: UpdateCheckUi = UpdateCheckUi())
+
+data class UpdateCheckUi(val checking: Boolean = false, val result: String? = null)
 
 /** [current] reads the live settings at the Reset tap, so the Undo snapshot is never a stale recomposition value. */
 data class SettingsActions(val update: ((SettingsState) -> SettingsState) -> Unit = {}, val current: () -> SettingsState = { SettingsState() },
                            val onManualChange: (List<Subnet>) -> Unit = {}, val clearVulnCache: suspend () -> String = { "" }, val onOpenWordlists: () -> Unit = {},
-                           val onUpdateVendors: () -> Unit = {}, val onStopVendors: () -> Unit = {})
+                           val onUpdateVendors: () -> Unit = {}, val onStopVendors: () -> Unit = {}, val onCheckUpdates: () -> Unit = {})
 
 // The bar inset and the IME join the content insets (3D spec 1.4); a separate imePadding would count the navigation bar twice.
 @Composable
@@ -95,15 +100,19 @@ fun SettingsScreen(container: AppContainer, onOpenWordlists: () -> Unit = {}) {
     val vendorDb = VendorDbUi(
         status = vendorInfo?.let { OuiCopy.status(java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(it.updatedAt)), it.count) } ?: OuiCopy.NOT_DOWNLOADED,
         running = (update as? OuiUpdateState.Running)?.let { OuiCopy.downloading(it.step, it.total) }, result = vendorResult)
+    val updates = container.updates
+    DisposableEffect(updates) { updates.attach(); onDispose { updates.detach() } }
+    val checking by updates.checking.collectAsStateWithLifecycle()
+    val checkResult by updates.result.collectAsStateWithLifecycle()
     SettingsContent(
         SettingsUi(s, network?.displayName, network?.id, manual, local, if (wordlistsLoaded) wordlists.count { !it.builtIn } else null,
-            ListenCopy.status(listenStatus), AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME), vendorDb),
+            ListenCopy.status(listenStatus), AboutInfo(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, BuildConfig.GIT_SHA, BuildConfig.BUILD_TIME), vendorDb, UpdateCheckUi(checking, checkResult)),
         SettingsActions(update = { container.settings.update(it) }, current = { container.settings.state.value },
             onManualChange = { list -> network?.id?.let { container.settings.manual.set(it, list) } },
             clearVulnCache = {
                 try { container.vulnCache.clear(); "Vulnerability cache cleared" } catch (ce: CancellationException) { throw ce } catch (e: Exception) { "Could not clear cache: ${e.message}" }
             },
-            onOpenWordlists = onOpenWordlists, onUpdateVendors = { updater.start() }, onStopVendors = { updater.cancel() }))
+            onOpenWordlists = onOpenWordlists, onUpdateVendors = { updater.start() }, onStopVendors = { updater.cancel() }, onCheckUpdates = updates::checkNow))
 }
 
 /** Settings layout (Radar spec 6, 3C spec 1 and 2.3). PINNED: the title row and the overflow menu sit in the topBar, never in the scroll. */
@@ -181,10 +190,27 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             }
             ToolsSection(imported = ui.importedWordlists, onOpenWordlists = actions.onOpenWordlists)
 
+            Section(UpdateCopy.SETTINGS_SECTION)
+            SwitchRow(UpdateCopy.AUTO_LABEL, s.updateAuto, UpdateCopy.AUTO_SUPPORT) { v -> update { it.copy(updateAuto = v) } }
+            CheckUpdatesRow(ui.updateCheck, actions.onCheckUpdates)
+
             Section(SettingsCopy.ABOUT_SECTION)
             SupportRow { msg -> scope.launch { snackbar.showSnackbar(msg) } }
             AboutRow(ui.about) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** "Check for updates": forces a check; the result line replaces the subtitle until the screen is left. */
+@Composable
+private fun CheckUpdatesRow(ui: UpdateCheckUi, onCheck: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = SWITCH_ROW_MIN).clickable(enabled = !ui.checking, role = Role.Button, onClick = onCheck).testTag("checkUpdatesRow"),
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(UpdateCopy.CHECK_ROW, style = NetProbeText.secondary, color = NetProbeColors.text)
+            Text(if (ui.checking) UpdateCopy.CHECKING else ui.result ?: UpdateCopy.CHECK_SUBTITLE, style = NetProbeText.data, color = NetProbeColors.textMuted,
+                modifier = Modifier.testTag("checkUpdatesStatus"))
         }
     }
 }

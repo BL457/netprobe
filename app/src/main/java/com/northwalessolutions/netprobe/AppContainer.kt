@@ -64,6 +64,12 @@ import com.northwalessolutions.netprobe.oui.OuiInfo
 import com.northwalessolutions.netprobe.oui.OuiMeta
 import com.northwalessolutions.netprobe.oui.OuiStore
 import com.northwalessolutions.netprobe.oui.OuiUpdater
+import com.northwalessolutions.netprobe.update.AndroidApkVerifier
+import com.northwalessolutions.netprobe.update.HttpsUpdateFetcher
+import com.northwalessolutions.netprobe.update.SharedUpdatePrefs
+import com.northwalessolutions.netprobe.update.UpdateChecker
+import com.northwalessolutions.netprobe.update.UpdateController
+import com.northwalessolutions.netprobe.update.UpdateInstaller
 import com.northwalessolutions.netprobe.wordlists.BuiltInList
 import com.northwalessolutions.netprobe.wordlists.UrlWordlistFetcher
 import com.northwalessolutions.netprobe.wordlists.WordlistStore
@@ -127,6 +133,7 @@ class AppContainer(val context: Context) {
         if (!activityStarted.compareAndSet(false, true)) return
         appScope.launch { hostWriteLock.withLock { hosts.deleteOrphanManual() } }
         listen.start()
+        appScope.launch(Dispatchers.IO) { updates.cleanUp() }   // in-app updater spec 4: stale APKs and .part files
         portScans       // built at launch, so port scans a dead process left open show as Interrupted before anything new ends (3D spec 3.3)
     }
 
@@ -283,6 +290,22 @@ class AppContainer(val context: Context) {
     val ouiUpdater: OuiUpdater by lazy {
         OuiUpdater(appScope, ouiStore, appMessages, { url, max, progress -> UrlWordlistFetcher().fetchBytes(url, max, progress) },
             log = { Log.e(AppScopes.LOG_TAG, "vendor update", it) }, liveWork = liveWork)
+    }
+    /** The in-app updater (spec 1-4) on appScope. Building it touches no file and no network; the first check happens when MainActivity starts. */
+    val updates: UpdateController by lazy {
+        val fetcher = HttpsUpdateFetcher()
+        val prefs = SharedUpdatePrefs(context.getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE))
+        val log: (Throwable) -> Unit = { t -> Log.e(AppScopes.LOG_TAG, "updater", t); Unit }
+        UpdateController(appScope,
+            UpdateChecker(fetcher, System::currentTimeMillis, prefs, BuildConfig.VERSION_CODE, android.os.Build.VERSION.SDK_INT, log = { Log.w(AppScopes.LOG_TAG, it); Unit }),
+            UpdateInstaller(context.cacheDir, fetcher, AndroidApkVerifier(context), BuildConfig.VERSION_CODE, log),
+            appMessages, autoEnabled = { settings.state.value.updateAuto }, networkAvailable = ::hasInternet, log = log)
+    }
+
+    private fun hasInternet(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
     /** Last-used brute-force options, saved globally (spec 5.1). */
     val dirBruteOptions by lazy {

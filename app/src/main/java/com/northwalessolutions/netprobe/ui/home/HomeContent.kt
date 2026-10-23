@@ -51,7 +51,9 @@ private fun emptyText(s: HomeUiState): String = when {
 @Composable
 fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoveryStatus? = state.status,
                 now: Long = System.currentTimeMillis(), ownModel: String = Build.MODEL,
-                snackbar: SnackbarHostState = remember { SnackbarHostState() }) {
+                snackbar: SnackbarHostState = remember { SnackbarHostState() },
+                /** The update banner slot (in-app updater spec 3): pinned above the host list, outside the scrolling list. */
+                banner: @Composable () -> Unit = {}) {
     // True from the start of a scan until the radar's settle ends: Quick scan all and Forget wait for it (spec 1.7).
     var radarBusy by remember { mutableStateOf(false) }
     // lastScanAt is null when a finished scan stored no host; the in-memory finish time keeps that case SETTLED (spec 3.1), not HERO.
@@ -88,6 +90,7 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
         }
     }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
+            banner()
             if (mode == RadarMode.SETTLED) RangeSummary(state.lastRunRanges)   // nothing when the last run had no extra ranges
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {

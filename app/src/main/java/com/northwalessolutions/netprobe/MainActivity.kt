@@ -8,6 +8,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import com.northwalessolutions.netprobe.update.UpdateCopy
+import com.northwalessolutions.netprobe.update.UpdateInstallIntent
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -29,11 +32,16 @@ class MainActivity : ComponentActivity() {
         val container = (application as NetProbeApp).container
         // NetProbe is single-activity, so this activity's own lifecycle is the app's foreground state (spec 4.8). No new dependency.
         lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) { container.foreground.value = true }
+            override fun onStart(owner: LifecycleOwner) { container.foreground.value = true; container.updates.onForeground() }
             override fun onStop(owner: LifecycleOwner) { container.foreground.value = false }
         })
         container.onActivityCreated()   // the orphan sweep (3C spec 4.3); idempotent across activity recreation
         setContent {
+            LaunchedEffect(Unit) {
+                container.updates.installRequests.collect { file ->
+                    if (!UpdateInstallIntent.launch(this@MainActivity, file)) container.appMessages.post(UpdateCopy.NO_INSTALLER)
+                }
+            }
             val marker by container.settings.state.map { it.typeMarker }.distinctUntilChanged().collectAsStateWithLifecycle(container.settings.state.value.typeMarker)
             NetProbeTheme { CompositionLocalProvider(LocalTypeMarker provides marker) { Surface(Modifier.fillMaxSize()) { NetProbeNav(container) } } }
         }
