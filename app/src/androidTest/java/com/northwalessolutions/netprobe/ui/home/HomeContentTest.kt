@@ -217,7 +217,10 @@ class HomeContentTest {
         rule.setContent { NetProbeTheme { HomeContent(st, HomeActions(onForget = { forgets++ }), now = 121_000L, ownModel = "Pixel 7 Pro") } }
         rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithText("Forget this network").assertIsNotEnabled()
         st = st.copy(networkId = 1); rule.waitForIdle()
-        rule.onNodeWithText("Forget this network").assertIsEnabled().performClick(); assertEquals(1, forgets)
+        rule.onNodeWithText("Forget this network").assertIsEnabled().performClick(); assertEquals("the dialog holds the Forget", 0, forgets)
+        rule.onNodeWithTag("forgetCancel").performClick(); rule.waitForIdle(); assertEquals(0, forgets)
+        rule.onNodeWithTag("homeMenu").performClick(); rule.onNodeWithText("Forget this network").performClick()
+        rule.onNodeWithTag("forgetConfirm").performClick(); rule.waitForIdle(); assertEquals(1, forgets)
     }
     @Test fun quickScanAllAndForgetWaitForTheSettle() {
         rule.mainClock.autoAdvance = false

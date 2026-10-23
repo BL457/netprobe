@@ -57,6 +57,8 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
                 banner: @Composable () -> Unit = {}) {
     // True from the start of a scan until the radar's settle ends: Quick scan all and Forget wait for it (spec 1.7).
     var radarBusy by remember { mutableStateOf(false) }
+    var confirmForget by remember { mutableStateOf(false) }
+    if (confirmForget) ForgetDialog(state.networkName, onConfirm = { confirmForget = false; actions.onForget() }, onCancel = { confirmForget = false })
     // lastScanAt is null when a finished scan stored no host; the in-memory finish time keeps that case SETTLED (spec 3.1), not HERO.
     val mode = RadarModes.of(state.scanning, state.totalHosts, state.lastScanAt ?: state.scanFinishedAt)
     // The hero names the home range (3C spec 2.1): the running scan's while it runs, else what the next scan will sweep (plan review G7); the mask only before the first state arrives.
@@ -70,7 +72,7 @@ fun HomeContent(state: HomeUiState, actions: HomeActions, progress: DiscoverySta
             NetworkLine(state.env, state.networkName, actions.onRequestLocation, offlineText = HomeCopy.HERO_NO_NETWORK.takeIf { mode != RadarMode.HERO }) {
                 HomeMenu(quickEnabled = state.quickScanning || (!state.scanning && !radarBusy && state.totalHosts > 0 && state.env != null),
                     quickScanning = state.quickScanning, onQuick = actions.onQuickScanAll, onStopQuick = actions.onStopQuickScan,
-                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.workRunningOnNetwork, onForget = actions.onForget,
+                    forgetEnabled = state.networkId != null && !state.scanning && !state.quickScanning && !radarBusy && !state.workRunningOnNetwork, onForget = { confirmForget = true },
                     hidePortless = state.hidePortless, onHidePortless = actions.onHidePortless)
             }
             RadarBlock(mode, progress?.found ?: 0, ProgressLine.of(progress, elapsedS), summary, canScan = state.env != null,

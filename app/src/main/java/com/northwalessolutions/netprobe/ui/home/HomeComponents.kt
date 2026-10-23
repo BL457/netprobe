@@ -124,6 +124,16 @@ fun HomeMenu(quickEnabled: Boolean, quickScanning: Boolean, onQuick: () -> Unit,
     }
 }
 
+/** Forget's confirmation (D16 follow-up): Cancel or Forget, and a tap outside cancels. */
+@Composable
+fun ForgetDialog(networkName: String?, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    AlertDialog(onDismissRequest = onCancel, containerColor = NetProbeColors.surface,
+        title = { Text(HomeCopy.FORGET_TITLE, style = NetProbeText.title, color = NetProbeColors.text) },
+        text = { Text(HomeCopy.forgetBody(networkName ?: HomeCopy.THIS_NETWORK), style = NetProbeText.secondary, color = NetProbeColors.textSecondary) },
+        confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = Dimens.touch).testTag("forgetConfirm")) { Text(HomeCopy.FORGET_CONFIRM, color = NetProbeColors.signal) } },
+        dismissButton = { TextButton(onClick = onCancel, modifier = Modifier.heightIn(min = Dimens.touch).testTag("forgetCancel")) { Text(HomeCopy.CANCEL, color = NetProbeColors.textSecondary) } })
+}
+
 @Composable
 fun FilterRow(selected: StatusFilter, onSelect: (StatusFilter) -> Unit) {
     Row(Modifier.fillMaxWidth().testTag("filterRow").horizontalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter),

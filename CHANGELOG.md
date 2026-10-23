@@ -3,6 +3,7 @@
 Release notes for every NetProbe version, newest first. The section for a version is what the in-app updater shows under "What's new".
 
 ## 0.4.3
+- Forget this network now asks first, so a slip on the menu cannot wipe a network. Undo stays as it was.
 - Devices menu: Hide devices with no open ports. A tick shows when it is on, and it stays on until you turn it off.
 - Catalog: Default credentials check for web admin pages.
 - Catalog: Web gallery takes a picture of the web page of every device on your network and shows them as a gallery of thumbnails. Tap a picture to see it full size, copy its address or open it in your browser.

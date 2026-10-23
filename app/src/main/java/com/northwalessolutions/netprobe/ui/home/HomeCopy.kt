@@ -19,6 +19,12 @@ object HomeCopy {
     const val JUST_NOW = "just now"
     const val YESTERDAY = "yesterday"
     const val FORGET_NETWORK = "Forget this network"
+    /** The confirmation in front of Forget: a slip on the overflow must not wipe a network. */
+    const val FORGET_TITLE = "Forget this network?"
+    const val FORGET_CONFIRM = "Forget"
+    const val CANCEL = "Cancel"
+    const val THIS_NETWORK = "this network"
+    fun forgetBody(network: String) = "Removes $network and every device found on it from NetProbe. Undo is offered for a few seconds afterwards."
     /** The Devices overflow (3D D16, D17): its two items and the button's description. */
     const val QUICK_SCAN_ALL = "Quick scan all"
     const val STOP_QUICK_SCAN = "Stop quick scan"
