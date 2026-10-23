@@ -33,8 +33,8 @@ android {
         applicationId = "com.northwalessolutions.netprobe"
         minSdk = 26
         targetSdk = 30   // deliberate: untrusted_app_30 domain (targetSdk <= 31) keeps netlink RTM_GETNEIGH on Android 13+, see spec section 4
-        versionCode = 10
-        versionName = "0.4.1"
+        versionCode = 11
+        versionName = "0.4.2"
         buildConfigField("String", "GIT_SHA", "\"${gitShortSha()}\"")
         buildConfigField("String", "BUILD_TIME", "\"${buildTimeStamp()}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
