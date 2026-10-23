@@ -11,6 +11,11 @@ interface UpdatePrefs {
     var skippedVersionCode: Int
     /** The versionCode that performed the last check; 0 for none. */
     var lastCheckVersionCode: Int
+    /** The versionCode whose "What's new" card the user has seen or that needed none; 0 for none. */
+    var lastSeenVersionCode: Int
+    /** The versionCode of the last verified download handed to the installer, and its manifest notes. */
+    var pendingVersionCode: Int
+    var pendingNotes: String
 }
 
 class SharedUpdatePrefs(private val prefs: SharedPreferences) : UpdatePrefs {
@@ -23,6 +28,15 @@ class SharedUpdatePrefs(private val prefs: SharedPreferences) : UpdatePrefs {
     override var lastCheckVersionCode: Int
         get() = prefs.getInt(UpdateConfig.PREF_LAST_CHECK_VERSION, 0)
         set(v) { prefs.edit().putInt(UpdateConfig.PREF_LAST_CHECK_VERSION, v).apply() }
+    override var lastSeenVersionCode: Int
+        get() = prefs.getInt(UpdateConfig.PREF_LAST_SEEN_VERSION, 0)
+        set(v) { prefs.edit().putInt(UpdateConfig.PREF_LAST_SEEN_VERSION, v).apply() }
+    override var pendingVersionCode: Int
+        get() = prefs.getInt(UpdateConfig.PREF_PENDING_VERSION, 0)
+        set(v) { prefs.edit().putInt(UpdateConfig.PREF_PENDING_VERSION, v).apply() }
+    override var pendingNotes: String
+        get() = prefs.getString(UpdateConfig.PREF_PENDING_NOTES, "").orEmpty()
+        set(v) { prefs.edit().putString(UpdateConfig.PREF_PENDING_NOTES, v).apply() }
 }
 
 sealed interface CheckResult {

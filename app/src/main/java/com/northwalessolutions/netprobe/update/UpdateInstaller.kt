@@ -27,7 +27,8 @@ sealed interface PrepResult {
  * passed; any failure, and any cancel, leaves nothing behind in cacheDir/updates.
  */
 class UpdateInstaller(private val cacheDir: File, private val fetcher: UpdateFetcher, private val verifier: ApkVerifier,
-                      private val installedVersionCode: Int, private val log: (Throwable) -> Unit = {}) {
+                      private val installedVersionCode: Int, private val log: (Throwable) -> Unit = {},
+                      private val prefs: UpdatePrefs? = null) {
     private val dir get() = File(cacheDir, UpdateConfig.UPDATES_DIR)
 
     fun apkFile(versionCode: Int) = File(dir, "${UpdateConfig.FILE_PREFIX}$versionCode${UpdateConfig.APK_SUFFIX}")
@@ -55,6 +56,7 @@ class UpdateInstaller(private val cacheDir: File, private val fetcher: UpdateFet
             if (!part.renameTo(apk)) return PrepResult.Failed(InstallFailure.SAVE)
             if (verifier.verify(apk, installedVersionCode.toLong()) != ApkVerdict.OK) return PrepResult.Failed(InstallFailure.REJECTED)
             keep = true
+            prefs?.let { it.pendingVersionCode = manifest.versionCode; it.pendingNotes = manifest.notes }   // for the What's new card after the update
             return PrepResult.Ready(apk)
         } catch (ce: CancellationException) {
             throw ce

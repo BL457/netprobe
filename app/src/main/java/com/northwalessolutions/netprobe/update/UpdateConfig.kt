@@ -23,4 +23,9 @@ object UpdateConfig {
     const val PREF_LAST_CHECK_VERSION = "lastCheckVersionCode"
     const val PREF_SKIPPED = "skippedVersionCode"
     const val PREF_AUTO = "updateAuto"
+    const val PREF_LAST_SEEN_VERSION = "lastSeenVersionCode"
+    const val PREF_PENDING_VERSION = "pendingVersionCode"
+    const val PREF_PENDING_NOTES = "pendingNotes"
+    /** All published versions, opened from Settings > About. */
+    const val RELEASES_URL = "https://github.com/BL457/netprobe/releases"
 }

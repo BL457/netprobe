@@ -3,8 +3,10 @@
   Writes latest.json next to a release APK (in-app updater spec 5).
 .EXAMPLE
   .\tools\make-latest-json.ps1 -Apk app\build\outputs\apk\release\app-release.apk `
-      -ApkUrl https://github.com/BL457/netprobe/releases/download/v0.3.1/app-release.apk -Notes notes.txt
+      -ApkUrl https://github.com/BL457/netprobe/releases/download/v0.3.3/app-release.apk
 .NOTES
+  Without -Notes, the notes are the CHANGELOG.md section "## <versionName>" (up to the next "## "); the script fails if there is none.
+  -Notes <file> overrides that with a text file.
   versionCode and versionName come from `aapt2 dump badging` when aapt2 is found under the Android SDK;
   otherwise pass -VersionCode and -VersionName.
 #>
@@ -12,6 +14,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Apk,
     [Parameter(Mandatory = $true)][string]$ApkUrl,
     [string]$Notes,
+    [string]$Changelog = (Join-Path $PSScriptRoot '..\CHANGELOG.md'),
     [int]$VersionCode,
     [string]$VersionName,
     [int]$MinSdk
@@ -54,12 +57,28 @@ $manifest = [ordered]@{
     sizeBytes   = $apkFile.Length
 }
 if ($MinSdk) { $manifest['minSdk'] = $MinSdk }
+$text = $null
 if ($Notes) {
     if (-not (Test-Path -LiteralPath $Notes -PathType Leaf)) { throw "Notes file not found: $Notes" }
-    $text = (Get-Content -LiteralPath $Notes -Raw).Trim()
-    if ($text.Length -gt 2000) { $text = $text.Substring(0, 2000) }
-    $manifest['notes'] = $text
+    $text = (Get-Content -LiteralPath $Notes -Raw -Encoding UTF8).Trim()
+} else {
+    if (-not (Test-Path -LiteralPath $Changelog -PathType Leaf)) { throw "CHANGELOG.md not found: $Changelog (or pass -Notes <file>)" }
+    $inSection = $false
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($line in (Get-Content -LiteralPath $Changelog -Encoding UTF8)) {
+        if ($line -match '^## ') {
+            if ($inSection) { break }
+            if ($line.Substring(3).Trim() -eq $VersionName) { $inSection = $true }
+            continue
+        }
+        if ($inSection) { $lines.Add($line) }
+    }
+    if (-not $inSection) { throw "No section '## $VersionName' in $Changelog. Add one before cutting the release." }
+    $text = ($lines -join "`n").Trim()
+    if (-not $text) { throw "The '## $VersionName' section in $Changelog is empty." }
 }
+if ($text.Length -gt 2000) { $text = $text.Substring(0, 2000) }
+$manifest['notes'] = $text
 
 $out = Join-Path $apkFile.DirectoryName 'latest.json'
 $json = $manifest | ConvertTo-Json

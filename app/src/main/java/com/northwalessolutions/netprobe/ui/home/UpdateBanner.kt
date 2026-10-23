@@ -23,11 +23,37 @@ import com.northwalessolutions.netprobe.update.UpdateController
 import com.northwalessolutions.netprobe.update.UpdateCopy
 import com.northwalessolutions.netprobe.update.UpdateInstallIntent
 import com.northwalessolutions.netprobe.update.UpdateState
+import com.northwalessolutions.netprobe.update.WhatsNewCard
+import com.northwalessolutions.netprobe.update.WhatsNewState
 
 data class UpdateBannerActions(val onUpdate: () -> Unit = {}, val onLater: () -> Unit = {}, val onStop: () -> Unit = {},
                                val onInstall: () -> Unit = {}, val onRetry: () -> Unit = {})
 
 private val NOTES_MAX_HEIGHT = 160.dp
+
+/** The pinned slot above the host list: the update banner, else the "What's new" card. The two never show together; the update wins. */
+@Composable
+fun HomeBanner(controller: UpdateController, whatsNew: WhatsNewState) {
+    val state by controller.state.collectAsStateWithLifecycle()
+    val card by whatsNew.card.collectAsStateWithLifecycle()
+    if (state is UpdateState.Idle) card?.let { WhatsNewCardView(it, whatsNew::dismiss) }
+    UpdateBannerHost(controller)
+}
+
+/** PINNED like the update banner: "Got it" is outside any scroll container; only a long notes text scrolls, in its own capped box. */
+@Composable
+fun WhatsNewCardView(card: WhatsNewCard, onDismiss: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter, vertical = 6.dp).background(NetProbeColors.surface).padding(12.dp).testTag("whatsNewCard")) {
+        Title(UpdateCopy.whatsNewTitle(card.versionName))
+        Box(Modifier.heightIn(max = NOTES_MAX_HEIGHT).verticalScroll(rememberScrollState()).testTag("whatsNewNotes")) {
+            Text(card.notes, style = NetProbeText.data, color = NetProbeColors.textSecondary)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.weight(1f))
+            Action(UpdateCopy.GOT_IT, "whatsNewDismiss", onDismiss)
+        }
+    }
+}
 
 /** Wires the banner to the controller and asks for the install permission when Update is tapped without it (spec 3). */
 @Composable

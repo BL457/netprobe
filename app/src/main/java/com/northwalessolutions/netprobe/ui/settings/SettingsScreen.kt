@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.northwalessolutions.netprobe.ui.rootInsets
+import com.northwalessolutions.netprobe.update.UpdateConfig
 import com.northwalessolutions.netprobe.update.UpdateCopy
 import com.northwalessolutions.netprobe.oui.OuiCopy
 import com.northwalessolutions.netprobe.oui.OuiUpdateState
@@ -198,6 +199,7 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
 
             Section(SettingsCopy.ABOUT_SECTION)
             SupportRow { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+            ReleaseNotesRow { msg -> scope.launch { snackbar.showSnackbar(msg) } }
             AboutRow(ui.about) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
             Spacer(Modifier.height(24.dp))
         }
@@ -227,6 +229,20 @@ private fun SupportRow(onNotice: (String) -> Unit) {
         Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
             Text(SettingsCopy.SUPPORT_ROW, style = NetProbeText.secondary, color = NetProbeColors.text)
             Text(SettingsCopy.SUPPORT_SUBTITLE, style = NetProbeText.data, color = NetProbeColors.textMuted)
+        }
+    }
+}
+
+/** "Release notes": all versions on GitHub, above About. */
+@Composable
+private fun ReleaseNotesRow(onNotice: (String) -> Unit) {
+    val ctx = LocalContext.current
+    Row(Modifier.fillMaxWidth().heightIn(min = SWITCH_ROW_MIN).clickable(role = Role.Button) {
+        if (!OpenUrl.open(ctx, UpdateConfig.RELEASES_URL)) onNotice(SettingsCopy.NO_BROWSER)
+    }.testTag("releaseNotesRow"), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(UpdateCopy.RELEASE_NOTES_ROW, style = NetProbeText.secondary, color = NetProbeColors.text)
+            Text(UpdateCopy.RELEASE_NOTES_SUBTITLE, style = NetProbeText.data, color = NetProbeColors.textMuted)
         }
     }
 }

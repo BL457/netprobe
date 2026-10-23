@@ -56,6 +56,6 @@ fun HomeScreen(container: AppContainer, onOpenHost: (Long) -> Unit) {
                     snackbar.showSnackbar(com.northwalessolutions.netprobe.ui.CopyMenuCopy.COPIED)
                 }
             }),
-        progress = latched, now = now, banner = { UpdateBannerHost(container.updates) },
+        progress = latched, now = now, banner = { HomeBanner(container.updates, container.whatsNew) },
     )
 }

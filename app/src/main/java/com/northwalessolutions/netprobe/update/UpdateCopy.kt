@@ -36,6 +36,11 @@ object UpdateCopy {
     const val REJECTED = "Update rejected: it was not signed with NetProbe's key"
     const val NO_INSTALLER = "No installer is available on this phone"
 
+    const val RELEASE_NOTES_ROW = "Release notes"
+    const val RELEASE_NOTES_SUBTITLE = "All versions on GitHub"
+    const val GOT_IT = "Got it"
+    fun whatsNewTitle(versionName: String) = "What's new in $versionName"
+
     private const val MS_PER_MINUTE = 60_000L
     private const val MINUTES_PER_HOUR = 60L
     private const val MINUTES_PER_DAY = 1_440L
