@@ -57,7 +57,7 @@ object UpdateCopy {
     }
     private fun plural(n: Long, unit: String): String { return if (n == 1L) "1 $unit" else "$n ${unit}s" }
     fun percent(value: Int) = "$value%"
-    fun firstLine(notes: String) = notes.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+    fun firstLine(notes: String) = notes.lineSequence().map { it.trim().removePrefix("- ").removePrefix("* ").trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
 
     fun failure(reason: InstallFailure) = when (reason) {
         InstallFailure.DOWNLOAD -> FAIL_DOWNLOAD

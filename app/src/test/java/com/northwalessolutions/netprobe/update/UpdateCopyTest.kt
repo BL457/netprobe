@@ -42,5 +42,6 @@ class UpdateCopyTest {
     @Test fun `first line skips blanks and trims`() {
         assertEquals("Fixes", UpdateCopy.firstLine("\n  Fixes  \nMore"))
         assertEquals("", UpdateCopy.firstLine(""))
+        assertEquals("Changelog first", UpdateCopy.firstLine("- Changelog first\n- Second"))
     }
 }
