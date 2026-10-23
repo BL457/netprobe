@@ -16,7 +16,9 @@ import com.northwalessolutions.netprobe.data.toServiceInfo
 import com.northwalessolutions.netprobe.engine.discovery.KnownRanges
 import com.northwalessolutions.netprobe.engine.neigh.GatewayMac
 import com.northwalessolutions.netprobe.engine.tools.AppMessage
+import com.northwalessolutions.netprobe.engine.tools.InputSpec
 import com.northwalessolutions.netprobe.engine.tools.TargetKind
+import com.northwalessolutions.netprobe.engine.tools.ToolDescriptor
 import com.northwalessolutions.netprobe.engine.tools.ToolModule
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.netenv.HomeRange
@@ -30,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Everything on the tool page that is not the form's own text: the tool, the devices and the chosen device's ports, the wordlists, the
@@ -144,7 +147,7 @@ class ToolPageViewModel(private val c: AppContainer, val key: String, private va
             val m = module.filterNotNull().first()
             val d = m.descriptor
             val host = prefillHostId?.takeIf { d.target != TargetKind.NONE }?.let { c.hosts.byIdOnce(it) }
-            form = ToolFormRules.initial(d, host?.id, host?.ip, prefillPort)
+            form = ToolFormRules.initial(d, host?.id, host?.ip, prefillPort, remembered = rememberedFor(d))
             formHostId.value = host?.id
             // A run of this tool that is already live (the page was left and opened again) is this page's run.
             c.toolRunner.active.value.values.firstOrNull { it.toolKey == key && (host == null || it.hostId == host.id) }?.let { pageRunId.value = it.runId }
@@ -154,6 +157,15 @@ class ToolPageViewModel(private val c: AppContainer, val key: String, private va
             sheetRunId.flatMapLatest { id -> if (id == null) flowOf(Unit) else c.toolRepo.run(id).filter { it == null }.map { } }
                 .collect { if (sheetRunId.value != null) sheetRunId.value = null }
         }
+    }
+
+    /**
+     * The inputs this tool was last run with (spec section 7, G14). A remembered wordlist that has been deleted falls back to the default
+     * rather than leaving Run disabled; the wordlists are waited for only when the tool has a wordlist input, and only briefly.
+     */
+    private suspend fun rememberedFor(d: ToolDescriptor): Map<String, String> {
+        val known = if (d.inputs.any { it is InputSpec.Wordlist }) withTimeoutOrNull(WORDLIST_WAIT_MS) { wordlists.first { it.isNotEmpty() } }?.mapTo(HashSet()) { it.id } else null
+        return c.lastUsedInputs.restore(d, known)
     }
 
     private fun frozen(a: ToolRunner.Active): ToolRunner.Active = a.copy(activeMs = 0, done = 0, found = 0, errors = 0)
@@ -177,6 +189,7 @@ class ToolPageViewModel(private val c: AppContainer, val key: String, private va
             val inputs = ToolFormRules.startInputs(m.descriptor, evaluation, confirmed) ?: return@launch
             val e = env.value
             if (e == null) { message.value = ScanController.NO_NETWORK; return@launch }
+            c.lastUsedInputs.save(m.descriptor, f.values)   // when a run starts; secrets and the per-run confirmation are never kept
             c.appScope.launch(Dispatchers.Default) {
                 val result = if (m.descriptor.target == TargetKind.NONE) ManualResult(c.toolRunner.start(null, key, inputs), null)
                 else {
@@ -224,5 +237,8 @@ class ToolPageViewModel(private val c: AppContainer, val key: String, private va
     fun dismissMessage() { message.value = null }
     fun dismissAppMessage(id: Long) { c.appMessages.dismiss(id) }
 
-    companion object { const val STOP_TIMEOUT_MS = 5_000L }
+    companion object {
+        const val STOP_TIMEOUT_MS = 5_000L
+        private const val WORDLIST_WAIT_MS = 2_000L
+    }
 }

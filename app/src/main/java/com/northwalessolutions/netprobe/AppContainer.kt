@@ -50,6 +50,8 @@ import com.northwalessolutions.netprobe.engine.script.ScriptToolStore
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
 import com.northwalessolutions.netprobe.engine.tools.AppMessages
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
+import com.northwalessolutions.netprobe.engine.tools.LastUsedInputs
+import com.northwalessolutions.netprobe.engine.tools.LastUsedStorage
 import com.northwalessolutions.netprobe.engine.tools.ManualRoute
 import com.northwalessolutions.netprobe.engine.tools.TOOL_THREADS
 import com.northwalessolutions.netprobe.engine.tools.ToolModule
@@ -140,6 +142,7 @@ class AppContainer(val context: Context) {
         appScope.launch { hostWriteLock.withLock { hosts.deleteOrphanManual() } }
         listen.start()
         appScope.launch(Dispatchers.IO) { updates.cleanUp() }   // in-app updater spec 4: stale APKs and .part files
+        appScope.launch(Dispatchers.IO) { lastUsedInputs }   // moves the old brute-force options key once (tools platform spec section 7)
         portScans       // built at launch, so port scans a dead process left open show as Interrupted before anything new ends (3D spec 3.3)
     }
 
@@ -209,7 +212,19 @@ class AppContainer(val context: Context) {
         )
     }
     /** Remove for an imported tool (tile menu and Settings): the script, the index line and the remembered inputs; history keeps its tool name. */
-    val toolRemoval: ToolRemoval by lazy { ToolRemoval(scriptToolStore) { } }
+    val toolRemoval: ToolRemoval by lazy { ToolRemoval(scriptToolStore) { key -> lastUsedInputs.forget(key) } }
+    /**
+     * The last inputs of every tool, in the netprobe preferences (spec section 7). The first read moves the old brute-force options key into
+     * the dir-brute tool's remembered inputs and deletes it.
+     */
+    val lastUsedInputs: LastUsedInputs by lazy {
+        val prefs = context.getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)
+        LastUsedInputs(object : LastUsedStorage {
+            override fun get(key: String): String? = prefs.getString(key, null)
+            override fun put(key: String, value: String) { prefs.edit().putString(key, value).apply() }
+            override fun remove(key: String) { prefs.edit().remove(key).apply() }
+        }).also { it.migrateDirBrute() }
+    }
     /** Runs a removal on appScope, so leaving the screen cannot stop it half way, and hands the message to [done]. */
     fun removeTool(key: String, done: (String) -> Unit) {
         appScope.launch { done(toolRemoval.remove(key)) }

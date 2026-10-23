@@ -52,7 +52,7 @@ object ToolFormRules {
     /** A "Required" or "choose" error stays hidden until its field is touched. */
     private val QUIET = setOf(ToolModelCopy.REQUIRED, ToolsUiCopy.NO_DEVICE_CHOSEN, ManualCopy.ERR_PORT_NEEDED)
 
-    /** The raw text a form starts from for [spec]: the descriptor's default (spec section 5: no remembered values in this batch). */
+    /** The raw text a form starts from for [spec] when nothing is remembered: the descriptor's default. */
     fun defaultRaw(spec: InputSpec): String = when (spec) {
         is InputSpec.Ip -> spec.default.orEmpty()
         is InputSpec.Port -> spec.default?.toString().orEmpty()
@@ -67,13 +67,16 @@ object ToolFormRules {
         is InputSpec.Tls -> spec.default.toString()
     }
 
-    /** The form for [d], with the device and port a Device screen passed (null for none) and every own input at its default. */
-    fun initial(d: ToolDescriptor, hostId: Long? = null, ip: String? = null, port: Int? = null): ToolForm {
+    /**
+     * The form for [d], with the device and port a Device screen passed (null for none) and every own input at its default, or at the value
+     * the tool was last run with ([remembered], already checked against the descriptor by LastUsedInputs.restore).
+     */
+    fun initial(d: ToolDescriptor, hostId: Long? = null, ip: String? = null, port: Int? = null, remembered: Map<String, String> = emptyMap()): ToolForm {
         val device = d.target != TargetKind.NONE && hostId != null && ip != null
         val fixed = ManualTarget.fixedPort(d.key)
         val prefillPort = if (device && d.target == TargetKind.PORT && fixed == null && port != null && port > 0) port.toString() else ""
         return ToolForm(deviceHostId = hostId.takeIf { device }, deviceIp = ip.takeIf { device }.orEmpty(), portText = prefillPort,
-            values = d.inputs.associate { it.name to defaultRaw(it) })
+            values = d.inputs.associate { it.name to (remembered[it.name] ?: defaultRaw(it)) })
     }
 
     /** Choosing another device drops the port and the HTTPS choice: they belonged to the old one. */
