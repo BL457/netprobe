@@ -16,6 +16,7 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.northwalessolutions.netprobe.ui.tools.ScriptCopy
@@ -30,7 +31,9 @@ import kotlin.math.roundToInt
 
 /**
  * The shipped [PageRenderer] (spec section 12): an off-screen Android WebView, created and used on the main thread, one page at a time.
- * JavaScript is on; cookies, DOM storage, file and content access, pop-up windows and Safe Browsing are off. Every request the page makes,
+ * JavaScript is on, and so is DOM storage, which app-style pages (Jellyfin, Synology DSM) need to get past their splash; it is wiped after
+ * every page. Cookies, file and content access, pop-up windows and Safe Browsing are off. The WebView is drawn whole-document, not by
+ * visible tiles, since it never reaches the screen: without that Chromium drops tiles of an off-screen view and leaves white patches. Every request the page makes,
  * including each redirect hop, goes through [RenderRequest.allow] in shouldInterceptRequest before the WebView connects; a refused one gets
  * an empty 403. Certificate errors are accepted, as the script transport accepts them: LAN devices nearly all use self-signed certificates.
  * The WebView is laid out at the full [VIEWPORT_HEIGHT] px tall from the start; after the page finishes loading it waits the settle time,
@@ -85,6 +88,7 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
 
         fun start() {
             try {
+                enableWholeDocumentDraw()
                 val w = WebView(app)
                 web = w
                 configure(w)
@@ -107,7 +111,7 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
         private fun configure(w: WebView) {
             with(w.settings) {
                 javaScriptEnabled = true
-                domStorageEnabled = false
+                domStorageEnabled = true
                 @Suppress("DEPRECATION") databaseEnabled = false
                 allowFileAccess = false
                 allowContentAccess = false
@@ -136,6 +140,7 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
             main.removeCallbacks(timeout)
             web?.let { w -> runCatching { w.stopLoading(); w.destroy() }.onFailure(log) }
             web = null
+            runCatching { WebStorage.getInstance().deleteAllData() }.onFailure(log)
             done.countDown()
         }
 
@@ -258,6 +263,15 @@ class AndroidPageRenderer(context: Context, private val log: (Throwable) -> Unit
     }
 
     private companion object {
+        /** Set once, before the first WebView in the process exists, as the platform requires. */
+        private var wholeDocumentDraw = false
+
+        fun enableWholeDocumentDraw() {
+            if (wholeDocumentDraw) return
+            wholeDocumentDraw = true
+            WebView.enableSlowWholeDocumentDraw()
+        }
+
         const val POLL_MS = 50L
         const val FAILURE_GRACE_MS = 100L
         const val VISUAL_STATE_ID = 1L

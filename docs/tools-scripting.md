@@ -383,7 +383,7 @@ The reply:
 | `finalUrl` | The address the page ended on after redirects. |
 | `image` | An image id, or `null` when the page failed (an HTTP status of 400 or more, or a network error) or drew nothing. It is not a file name: pass it to `ctx.finding` as `extra.image` (see "finding"). A page with no picture writes nothing and counts against no limit. |
 
-The page runs JavaScript. Cookies, local storage, pop-up windows, downloads, file and content addresses are all off. The page is fetched with the app's normal user agent, and certificate errors are accepted, as they are for `ctx.http`.
+The page runs JavaScript and has local storage, which is wiped after every page. Cookies, pop-up windows, downloads, file and content addresses are all off. The page is fetched with the app's normal user agent, and certificate errors are accepted, as they are for `ctx.http`.
 
 The same network scope applies as for `ctx.http`. The address is checked before the page is fetched, every redirect hop is checked again, and so is every image, script and other resource the page asks for. A page that redirects outside the scope throws, and the same error messages are used. A resource outside the scope is simply left out of the picture.
 
