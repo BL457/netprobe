@@ -57,6 +57,12 @@ class LadderLimitsTest {
         assertFalse(LadderLimits.thorough(false).includeUnsafe)
         assertEquals("scan limits are untouched by the switch", 6, ladder.plannedProbeCount(9999, LadderLimits.SCAN))
     }
+    @Test fun `with unsafe hellos off a careful probe hinted for the port itself is still planned and goes first`() {
+        val ids = ran(3389, LadderLimits.thorough(false))
+        assertTrue("rdp-x224" in ids)
+        assertEquals("null", ids[0]); assertEquals("rdp-x224", ids[1].takeIf { it != "tls" } ?: ids[2])
+        assertTrue("other careful probes stay out", ids.none { it == "mongodb-ismaster" || it == "smb2-negotiate" })
+    }
     @Test fun `unsafe hellos on reach industrial ports too, off they keep the careful-only rule`() {
         val on = ran(502, LadderLimits.thorough(true))
         assertEquals("modbus-device-id", on.first())

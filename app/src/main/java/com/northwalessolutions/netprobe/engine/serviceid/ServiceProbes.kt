@@ -92,9 +92,8 @@ class ServiceProbes(
         if (port in FRAGILE && !limits.allHellos) return emptyList()
         if (!hellos) return threeAPlan(port)
         val industrial = port in INDUSTRIAL
-        // A manual run with unsafe hellos off sends no CAREFUL probe, hinted or not, except the industrial careful-only rule below.
-        val safeOnly = limits.allHellos && !limits.includeUnsafe && !industrial
-        val hinted = probes.filter { port in it.ports && (!safeOnly || it.safety == ProbeSafety.SAFE) }
+        // Probes hinted for this very port always go first, CAREFUL ones included, as in a scan; the switch governs only the unhinted CAREFUL hellos.
+        val hinted = probes.filter { port in it.ports }
         val everyHello = !industrial || limits.includeUnsafe
         val rest: List<ServiceProbe> =
             if (!everyHello || (port in HINT_ONLY && !limits.allHellos)) emptyList()
