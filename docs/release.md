@@ -48,3 +48,14 @@ Note: the first release-signed APK cannot update a debug-signed install either. 
    `https://github.com/BL457/netprobe/releases/latest/download/latest.json`, so the newest published (non-draft, non-prerelease)
    release is what users see. To change that URL edit `UpdateConfig.MANIFEST_URL`.
 6. Check: open the installed older build, Settings, Updates, "Check for updates".
+
+## The tool catalog
+
+The catalog is read from the `master` branch of the repository (`UpdateConfig.CATALOG_INDEX_URL`), not from a release, so catalog changes ship by pushing to `master`; they do not need a new APK. Before you merge a change under `catalog/`:
+
+1. Run `.\tools\make-catalog-index.ps1`. It rewrites `catalog\index.json` from the scripts (name, version, network, description, broadcast flag and SHA-256).
+2. Run `.\gradlew.bat testDebugUnitTest`. `CatalogTest` loads every script in the sandbox and checks it against the index, so a script changed without a new index fails.
+3. Raise the `version` of any script you changed. The app offers any script whose SHA-256 differs from the installed one, but it refuses to install an older version over a newer one, so a version that goes down never installs.
+4. Merge to `master`, then check on a phone: Tools > menu > "Update tools from GitHub" should list the change. GitHub's raw files can lag a few minutes; "The script does not match the catalog, try again later" means the index and the script were not served together yet.
+
+Keep `catalog/` on Unix line endings (`.gitattributes` does this); the SHA-256 in the index is taken over those bytes.

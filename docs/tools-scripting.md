@@ -78,6 +78,7 @@ The file also runs once at import, only to read the `tool` object. At that point
 | `icon` | No | One of `web`, `search`, `lock`, `folder`, `share`, `dns`, `terminal`, `fingerprint`, `network`, `wifi`, `info`, `bolt` | A missing or unknown icon becomes `terminal`. |
 | `category` | No | `"web"`, `"network"`, `"identity"` or `"other"` | Defaults to `"other"`, which lists the tool under My tools. Any other value is an error. |
 | `network` | No | `"target"`, `"lan"` or `"any"` | Defaults to `"target"`. See "Targets and network scope". |
+| `broadcast` | No | `true` or `false` | Defaults to `false`. Only a tool with `network: "lan"` may set it to `true`. It lets the tool send packets to your network's broadcast address. See "Broadcast". |
 | `inputs` | No | Array of up to 24 input objects | See "Inputs". |
 
 A text field must be text and must not be blank. NetProbe lists every problem it finds in one go, so you can fix them together.
@@ -137,10 +138,25 @@ inputs: [
 | Value | The user picks | `inputs` also holds |
 | --- | --- | --- |
 | `"port"` | A device and one of its ports | `inputs.ip` (string), `inputs.port` (number), `inputs.tls` (boolean, true when the user chose HTTPS) |
-| `"host"` | A device | `inputs.ip` (string) |
+| `"host"` | A device | `inputs.ip` (string) and `inputs.mac` (string, see "The device's MAC address") |
 | `"none"` | Nothing | Only your own inputs |
 
 A port or host tool is offered on the device page. A tool with target `"none"` is not; it is started from the tool list. A tool with network `"lan"` is offered on a device only while that device's address is inside the phone's current subnet.
+
+### The device's MAC address
+
+A host tool also gets `inputs.mac`: the chosen device's MAC address in lower case with colons (`aa:bb:cc:00:11:22`), or an empty string when the app does not know it. Port tools and tools with no target do not get `inputs.mac`.
+
+The name `mac` is reserved, with one exception: a host tool may declare its own input called `mac`, of type `text`. The form then fills it in from the device when you choose one, and you can edit it. If the tool's `mac` input is optional and left empty, `inputs.mac` is the device's MAC address. Whatever you typed is what the script gets in `inputs.mac`, so check it yourself; the form cannot check the spelling of a MAC address.
+
+```javascript
+inputs: [ { name: "mac", type: "text", label: "MAC address", placeholder: "aa:bb:cc:dd:ee:ff" } ],
+run: function (inputs, ctx) {
+  var digits = ctx.regex.replace("[-:. ]", inputs.mac, "");     // drop the separators
+  if (!ctx.regex.test("^[0-9a-f]{12}$", digits, "i")) { throw new Error("Not a MAC address"); }
+  // ...
+}
+```
 
 ### The network scope
 
@@ -149,7 +165,7 @@ A port or host tool is offered on the device page. A tool with target `"none"` i
 | Scope | The script may contact | Confirmation |
 | --- | --- | --- |
 | `"target"` (default) | Only the device the tool was run against. Its own name is accepted without a lookup. | None |
-| `"lan"` | Any address inside the phone's current subnet, except this phone, the network address, the broadcast address, loopback and multicast. | The review sheet shows a callout when you import it. |
+| `"lan"` | Any address inside the phone's current subnet, except this phone, the network address, the broadcast address, loopback and multicast. A tool that declares `broadcast` may also send datagrams to the broadcast address, see "Broadcast". | The review sheet shows a callout when you import it. |
 | `"any"` | Any unicast address, except loopback, the unspecified address, multicast, broadcast, reserved space (first octet 0, or 240 and above), link-local IPv6 and this phone. | The app asks you to confirm every run. A run that starts without the confirmation fails. |
 
 A `"lan"` tool needs a connected network. Without one the run fails with "This tool needs a connected network". A call outside the scope throws an `Error` that your script can catch. A `"target"` tool with target `"none"` has no device to contact, so every call fails; give it `"lan"` or `"any"`.
@@ -166,6 +182,25 @@ Address forms NetProbe refuses:
 - A host name must be letters, digits, `_` and `-` in dot-separated labels, up to 253 characters in all and 63 per label, with no trailing dot.
 - A name is resolved once. The first answer that passes the scope is the single address the connection goes to. Nothing is resolved a second time.
 - Every redirect hop of an HTTP request is checked again.
+
+### Broadcast
+
+Some protocols, such as Wake on LAN, send one packet to every device on the network instead of to one device. NetProbe allows this only when the tool says so in its description:
+
+```javascript
+target: "host", network: "lan", broadcast: true,
+```
+
+The rules:
+
+- `broadcast: true` is allowed only with `network: "lan"`. Any other scope with `broadcast: true` is a description error: "A tool can declare broadcast only with the network set to lan".
+- A tool that declared it receives `inputs.broadcast`: the directed broadcast address of the phone's current subnet, such as `192.168.1.255`, or an empty string when the network has none (a /31 or /32 network, or no network). The script cannot work the address out for itself, so use this input. The name `broadcast` is reserved for such tools.
+- The tool may then send UDP datagrams to that address with `ctx.udp.send` or `ctx.udp.exchange`. Nothing else may use it: TCP, HTTP, TLS and DNS calls to the broadcast address are refused, and so is the broadcast address of any other network.
+- `255.255.255.255` is always refused, in every scope.
+- A run may send at most 50 datagrams to the broadcast address, and each may be at most 1 KB (1,024 bytes). The count is shared by `ctx.udp.send` and `ctx.udp.exchange`. Datagrams to a single device are not counted.
+- A tool without the declaration that tries it gets "This tool did not declare broadcast, so it cannot send to the broadcast address".
+
+The review sheet, the Update tools sheet and the tool's About page show "Can send broadcast packets on your network" for such a tool.
 
 ## The ctx API
 
@@ -254,13 +289,20 @@ Using a handle after `close()` throws "The connection is closed".
 
 ```javascript
 ctx.udp.exchange({ host, port, send, timeoutMs, maxBytes })  // returns a reply
+ctx.udp.send({ host, port, send })                           // sends one datagram, returns nothing
 ```
 
-Sends one datagram and waits for one reply. `host` and `port` are required. `maxBytes` defaults to 4096. The reply is `{bytes, text, timedOut, timeMs}`. If nothing came back, `timedOut` is `true` and `bytes` is empty. No answer is not an error.
+`exchange` sends one datagram and waits for one reply. `host` and `port` are required. `maxBytes` defaults to 4096. The reply is `{bytes, text, timedOut, timeMs}`. If nothing came back, `timedOut` is `true` and `bytes` is empty. No answer is not an error.
 
 ```javascript
 var r = ctx.udp.exchange({ host: inputs.ip, port: 161, send: ctx.bytes.fromHex("30 00"), timeoutMs: 1500 });
 if (!r.timedOut) { ctx.finding("PROBE", ctx.bytes.toHex(r.bytes)); }
+```
+
+`send` sends one datagram and returns at once, without waiting for an answer. It takes `host`, `port` and `send` (a string or bytes), and obeys the same scope rules as every other call. Use it for protocols that never answer, such as Wake on LAN. It counts as one network call, and a datagram to the broadcast address also counts against the broadcast limits (see "Broadcast").
+
+```javascript
+ctx.udp.send({ host: inputs.broadcast, port: 9, send: packet });   // a tool that declared broadcast
 ```
 
 ### tls
@@ -450,6 +492,7 @@ Fixed limits of the language and the API:
 | HTTP body returned | 1 MB (`bodyBytes`: first 100,000 bytes) |
 | Data passed from your script to `ctx` | Nested up to 8 levels, up to 2,000 keys per object, up to 200,000 values in all |
 | Open `tcp.connect` handles | 8 |
+| Datagrams to the broadcast address in one run | 50, each at most 1 KB |
 | HTTP redirects followed | 5 |
 | `http.many` concurrency | 16 |
 | Call timeouts | 100 ms to 60,000 ms |
@@ -518,6 +561,7 @@ NetProbe then reads the description only. It does not run your tool. It shows a 
 | Author | The `author` text, marked unverified, or "Not given (unverified)". Anyone can write any author. |
 | Needs | What the tool is run against: a port, a device or nothing. |
 | Network | How far it may reach. A `lan` tool shows "This tool can contact addresses on your network". An `any` tool shows "This tool can contact any address". |
+| Broadcast | A tool that declared `broadcast` shows "Can send broadcast packets on your network". |
 | Inputs | Each input as "label, type", with "optional" where it applies. |
 | SHA-256 | The fingerprint of the script. |
 | View source | Shows the full script, with its line and character counts. |
@@ -544,6 +588,22 @@ Scope rules:
 
 - If the new version reaches further than the installed one (the order is `target`, then `lan`, then `any`), the sheet says "This version reaches further than the installed one" and Replace works only after you tick "I allow it to contact ...".
 - If the installed tool changes while you are reviewing, nothing is saved and you must review again.
+
+### The catalog
+
+The NetProbe repository holds a folder of community tools, `catalog/`, with an `index.json` that lists them. To get them, open Tools, tap the menu and choose "Update tools from GitHub" (the same action is in Settings, under Tools). NetProbe fetches the index only when you tap it; nothing is ever fetched in the background.
+
+NetProbe compares the index with what is installed, by tool id and SHA-256, fetches only the scripts that are new or different, and reads each one the way an import does. One sheet then shows:
+
+| List | What it holds |
+| --- | --- |
+| New | Tools you do not have: name, version, network scope, and "Can send broadcast packets on your network" where it applies. |
+| Updated | Tools you have, with a different script: "name 1.0 to 1.1". A scope that reaches further, or a broadcast permission the installed copy lacked, is shown in the warning colour. A tool you imported yourself with the same id shows "Replaces your copy". |
+| Failed | A tool that could not be read or may not be installed, with the reason: the server could not be reached, the script does not match the catalog, the description has errors, or the version is older than the installed one. |
+
+The sheet also says how many tools are up to date. If any update widens a scope or newly declares broadcast, tick "I allow the changes marked above" to enable Install. Tap Install to save every New and Updated tool, or Cancel to save none. A tool removed from the catalog stays on your phone until you remove it.
+
+To contribute a tool, see `catalog/README.md`: write the script with this guide, run `tools/make-catalog-index.ps1`, and open a pull request. `catalog/wake-on-lan.js` is a worked example: a host tool with `network: "lan"` and `broadcast: true`.
 
 ### Examples
 
@@ -605,6 +665,19 @@ All problems are listed together. Input messages name the input by its name or p
 | Input x: the field has the wrong kind of value | Use the right kind, such as a whole number or `true`/`false`. |
 | The input name x is reserved | Rename it. `ip`, `port`, `tls` and `confirmAny` are always reserved. `mac` is reserved except as a text input of a host tool, and `broadcast` is reserved in a tool that declares broadcast. |
 | The input name x is used twice | Give each input its own name. |
+| The broadcast field must be true or false | Write `broadcast: true` or leave it out. |
+| A tool can declare broadcast only with the network set to lan | Set `network: "lan"` or remove `broadcast`. |
+
+### Catalog messages
+
+| Message | What it means |
+| --- | --- |
+| The catalog could not be read | The index is not valid JSON, has the wrong format number, or has no tools list. |
+| Could not reach the server / The server did not return the file / The server took longer than 20 seconds | The index or a script could not be fetched. Tap Try again. |
+| The script does not match the catalog, try again later | The script's SHA-256 differs from the index line, often because GitHub has not caught up yet. Nothing from that line is installed. |
+| The script's id is not the one the catalog lists | The `id` inside the script is not the one in `index.json`. |
+| Version X is older than the installed version Y, so it was not imported | The catalog has an older version than the one on the phone. |
+| Line N, or a tool id, followed by a reason | A line of `index.json` was left out: a missing field, a bad id, file name, version, SHA-256 or network, or a broadcast tool whose network is not lan. |
 
 ### Run messages
 
@@ -646,6 +719,10 @@ These are thrown as a normal `Error`, so `try` and `catch` work.
 | Write IP addresses in the usual form, such as 192.168.1.10 | A decimal, octal, hex, short or mapped address. |
 | Not a valid host name or address | A malformed host. |
 | The port must be a number from 1 to 65535 | A bad port. |
+| This tool did not declare broadcast, so it cannot send to the broadcast address | Add `broadcast: true` (with `network: "lan"`) to the description. |
+| The broadcast address can only be used with ctx.udp.send and ctx.udp.exchange | A TCP, HTTP, TLS or DNS call used the broadcast address. |
+| At most 50 broadcast packets can be sent in one run | The broadcast limit. |
+| A broadcast packet can be at most 1 KB | The datagram was over 1,024 bytes. |
 | ctx.x needs the option y | A required option is missing. |
 | ctx.x option y must be a number | An option has the wrong type. |
 | ctx.x option y must be a whole number from A to B | A port or similar is out of range. |
@@ -681,3 +758,4 @@ These are thrown as a normal `Error`, so `try` and `catch` work.
 - Add `ctx.log` lines while you test. If the run fails, the last 20 appear in the results.
 - Test on a device you own first, with `network: "target"`.
 - Raise `version` each time you change the file, so the app lets you replace the old one.
+- Input names `ip`, `port` and `tls` are taken by the target, so a tool that needs its own port uses a name such as `udpPort`.
