@@ -54,9 +54,8 @@ tool = {
   icon: "web", category: "web",            // icon from the fixed icon set (section 6); category web, network, identity or other
   target: "port", network: "target",       // target: port, host or none; network: target, lan or any
   inputs: [
-    { name: "path", type: "text", label: "Path", default: "/", required: false },
-    { name: "tls", type: "tls", label: "Use HTTPS" }
-  ],
+    { name: "path", type: "text", label: "Path", default: "/", required: false }
+  ],                                       // ip, port and tls are implicit for a port tool and arrive as inputs.ip, inputs.port, inputs.tls
   run: function (inputs, ctx) {
     var r = ctx.http.request({ method: "GET", url: (inputs.tls ? "https" : "http") + "://" + inputs.ip + ":" + inputs.port + inputs.path, timeoutMs: 4000 });
     ctx.progress(1, 1, 0);
