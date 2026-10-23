@@ -28,6 +28,8 @@ import java.net.Inet4Address
 data class ToolForm(
     val deviceHostId: Long? = null, val deviceIp: String = "", val portText: String = "", val httpsChoice: Boolean? = null,
     val values: Map<String, String> = emptyMap(), val touched: Set<String> = emptySet(),
+    /** The device MAC last put into a declared "mac" input by the form itself, so a later device change may replace it but never the user's own text. */
+    val autoMac: String = "",
 )
 
 /** What the form needs from the app to judge itself: the home subnet for the reserved-address rule, the link, the chosen device's services, the wordlists. */
@@ -71,18 +73,26 @@ object ToolFormRules {
      * The form for [d], with the device and port a Device screen passed (null for none) and every own input at its default, or at the value
      * the tool was last run with ([remembered], already checked against the descriptor by LastUsedInputs.restore).
      */
-    fun initial(d: ToolDescriptor, hostId: Long? = null, ip: String? = null, port: Int? = null, remembered: Map<String, String> = emptyMap()): ToolForm {
+    fun initial(d: ToolDescriptor, hostId: Long? = null, ip: String? = null, port: Int? = null, remembered: Map<String, String> = emptyMap(), mac: String = ""): ToolForm {
         val device = d.target != TargetKind.NONE && hostId != null && ip != null
         val fixed = ManualTarget.fixedPort(d.key)
         val prefillPort = if (device && d.target == TargetKind.PORT && fixed == null && port != null && port > 0) port.toString() else ""
-        return ToolForm(deviceHostId = hostId.takeIf { device }, deviceIp = ip.takeIf { device }.orEmpty(), portText = prefillPort,
-            values = d.inputs.associate { it.name to (remembered[it.name] ?: defaultRaw(it)) })
+        val values = d.inputs.associate { it.name to (remembered[it.name] ?: defaultRaw(it)) }.toMutableMap()
+        // A host tool's own "mac" input starts from the chosen device's MAC (spec section 11), over a remembered value from another device.
+        val macFill = if (device && ToolInputs.MAC in values && mac.isNotEmpty()) mac else ""
+        if (macFill.isNotEmpty()) values[ToolInputs.MAC] = macFill
+        return ToolForm(deviceHostId = hostId.takeIf { device }, deviceIp = ip.takeIf { device }.orEmpty(), portText = prefillPort, values = values, autoMac = macFill)
     }
 
     /** Choosing another device drops the port and the HTTPS choice: they belonged to the old one. */
-    fun withDevice(form: ToolForm, hostId: Long?, ip: String): ToolForm =
-        if (hostId == form.deviceHostId && ip == form.deviceIp) form
-        else form.copy(deviceHostId = hostId, deviceIp = ip, portText = "", httpsChoice = null, touched = form.touched + ToolInputs.IP)
+    fun withDevice(form: ToolForm, hostId: Long?, ip: String, mac: String = ""): ToolForm {
+        if (hostId == form.deviceHostId && ip == form.deviceIp) return form
+        val moved = form.copy(deviceHostId = hostId, deviceIp = ip, portText = "", httpsChoice = null, touched = form.touched + ToolInputs.IP)
+        // A declared "mac" input follows the device while it holds nothing, or only what the form itself filled in; typed text stays.
+        val current = form.values[ToolInputs.MAC] ?: return moved
+        if (current.isNotBlank() && current != form.autoMac) return moved
+        return moved.copy(values = moved.values + (ToolInputs.MAC to mac), autoMac = mac)
+    }
 
     fun withPort(form: ToolForm, text: String): ToolForm =
         form.copy(portText = text.filter(Char::isDigit).take(ManualTarget.MAX_PORT_DIGITS), httpsChoice = null, touched = form.touched + ToolInputs.PORT)

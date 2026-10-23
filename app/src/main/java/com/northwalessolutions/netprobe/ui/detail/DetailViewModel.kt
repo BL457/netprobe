@@ -18,6 +18,7 @@ import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
 import com.northwalessolutions.netprobe.engine.tools.ToolInputs
 import com.northwalessolutions.netprobe.engine.tools.ToolKeys
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
+import com.northwalessolutions.netprobe.engine.tools.MacText
 import com.northwalessolutions.netprobe.engine.tools.ToolTarget
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner.Companion.forHost
 import com.northwalessolutions.netprobe.engine.vulns.VulnQuery
@@ -147,7 +148,7 @@ class DetailViewModel(private val c: AppContainer, private val hostId: Long) : V
             val tls = service?.let { ToolApplicability.targetTls(toolKey, port, it) } ?: (toolKey == ToolKeys.TLS_CERTIFICATE)
             // Brute-force always sends the IP; the fingerprint and TLS tools send the known name (spec 4.9).
             val name = if (toolKey == ToolKeys.DIR_BRUTEFORCE) null else ToolApplicability.serverName(h)
-            when (c.toolRunner.start(ToolTarget(hostId, ip, port, tls, name), toolKey, inputs)) {
+            when (c.toolRunner.start(ToolTarget(hostId, ip, port, tls, name, mac = MacText.normalize(h.mac)), toolKey, inputs)) {
                 ToolRunner.Start.HostBusy -> message.value = ToolsUiModel.busyMessage(c.hostBusy.busy.value[hostId] ?: HostBusyRegistry.Work.TOOL)
                 ToolRunner.Start.TooMany -> message.value = ToolCopy.BUSY_TOO_MANY
                 ToolRunner.Start.NoNetwork -> message.value = ScanController.NO_NETWORK

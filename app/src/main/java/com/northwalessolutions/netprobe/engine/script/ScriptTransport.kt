@@ -7,7 +7,11 @@ import java.net.InetAddress
  * An address the network scope has approved (D4, G2). Only [ScopeGate] implementations create one, and every transport call takes one, so a
  * connection is always made to the exact address that passed the check and nothing is resolved a second time.
  */
-class Cleared internal constructor(val address: InetAddress, val host: String)
+class Cleared internal constructor(
+    val address: InetAddress, val host: String,
+    /** True only for the current subnet's directed broadcast address, approved for a declared broadcast tool (spec section 11). */
+    val broadcast: Boolean = false,
+)
 
 /** A DNS name the scope allows to be looked up. */
 class ClearedName internal constructor(val name: String)
@@ -16,6 +20,11 @@ class ClearedName internal constructor(val name: String)
 interface ScopeGate {
     /** Approves a connection to [host] (a name or a canonical literal) and returns the one address to connect to. Throws [ScopeViolation]. */
     fun clearConnect(host: String, port: Int): Cleared
+    /**
+     * Approves a UDP datagram to [host]. The same as [clearConnect] except that the current subnet's directed broadcast address is approved
+     * (and marked [Cleared.broadcast]) for a LAN tool that declared `broadcast: true`. Throws [ScopeViolation].
+     */
+    fun clearDatagram(host: String, port: Int): Cleared = clearConnect(host, port)
     /** Approves a DNS lookup of [name]. Throws [ScopeViolation]. */
     fun clearName(name: String): ClearedName
     /** Approves a reverse lookup of the literal [ip]. Throws [ScopeViolation]. */
@@ -55,6 +64,8 @@ interface StreamConnection : Closeable {
 }
 
 class DatagramCall(val port: Int, val send: ByteArray, val timeoutMs: Int, val maxBytes: Int)
+/** One datagram sent and forgotten: no reply is waited for. */
+class DatagramSend(val port: Int, val data: ByteArray)
 /** [bytes] is null when no datagram arrived within the timeout. */
 class DatagramReply(val bytes: ByteArray?, val timeMs: Int)
 
@@ -75,5 +86,7 @@ interface ScriptTransport {
     fun exchange(to: Cleared, call: StreamCall, io: IoScope): StreamReply
     fun connect(to: Cleared, call: StreamCall, io: IoScope): StreamConnection
     fun datagram(to: Cleared, call: DatagramCall, io: IoScope): DatagramReply
+    /** Sends one datagram and returns at once (ctx.udp.send). A broadcast destination needs SO_BROADCAST, which the transport sets for [Cleared.broadcast]. */
+    fun datagramSend(to: Cleared, send: DatagramSend, io: IoScope)
     fun certificate(to: Cleared, port: Int, sni: String?, timeoutMs: Int, io: IoScope): CertChain
 }

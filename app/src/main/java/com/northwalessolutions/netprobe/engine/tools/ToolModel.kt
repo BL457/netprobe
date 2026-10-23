@@ -84,6 +84,8 @@ data class ToolDescriptor(
     val key: String, val name: String, val description: String, val icon: ToolIcon, val category: ToolCategory,
     val target: TargetKind, val inputs: List<InputSpec>, val network: NetworkScope = NetworkScope.TARGET,
     val version: String = "1", val author: String? = null, val source: ToolSource = ToolSource.BuiltIn,
+    /** Only a LAN tool may declare it: it may send datagrams to the current subnet's directed broadcast address (spec section 11). */
+    val broadcast: Boolean = false,
 )
 
 /** Rules for a descriptor's own inputs: "ip", "port" and "tls" belong to the implicit target inputs (spec D7), and names are unique. */
@@ -93,7 +95,9 @@ object DescriptorRules {
         val out = ArrayList<String>()
         val seen = HashSet<String>()
         for (spec in d.inputs) {
-            if (spec.name in RESERVED) out += ToolModelCopy.reservedName(spec.name)
+            // "mac" is the device's MAC address for a host tool; only a host tool may declare a text input of that name, which overrides it.
+            val macAllowed = spec.name == ToolInputs.MAC && d.target == TargetKind.HOST && spec is InputSpec.Text
+            if (spec.name in RESERVED || (spec.name == ToolInputs.MAC && !macAllowed)) out += ToolModelCopy.reservedName(spec.name)
             else if (!seen.add(spec.name)) out += ToolModelCopy.duplicateName(spec.name)
             if (spec is InputSpec.Choice && spec.options.isEmpty()) out += ToolModelCopy.noOptions(spec.name)
             if (spec is InputSpec.MultiChoice && spec.options.isEmpty()) out += ToolModelCopy.noOptions(spec.name)
@@ -133,6 +137,8 @@ data class ToolInputs(val values: Map<String, Any?> = emptyMap()) {
         const val IP = "ip"
         const val PORT = "port"
         const val TLS = "tls"
+        /** Host tools receive the chosen device's MAC address here: lower-case, colon separated, or an empty string when it is not known. */
+        const val MAC = "mac"
         const val MIN_PORT = 1
         const val MAX_PORT = 65_535
         val NONE = ToolInputs(emptyMap())

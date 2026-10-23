@@ -187,6 +187,15 @@ internal class HostNet(private val s: RunSession, private val transport: ScriptT
         } catch (t: Throwable) { s.closeHandle(); throw t }
     }
 
+    private val broadcastSent = AtomicInteger(0)
+
+    /** Counts a datagram to a broadcast address against the run's cap of 50, each at most 1 KB (spec section 11). */
+    private fun chargeBroadcast(to: Cleared, size: Int) {
+        if (!to.broadcast) return
+        if (size > MAX_BROADCAST_BYTES) throw ScriptHostError(ScriptCopy.BROADCAST_TOO_BIG)
+        if (broadcastSent.incrementAndGet() > MAX_BROADCAST_DATAGRAMS) throw ScriptHostError(ScriptCopy.BROADCAST_LIMIT)
+    }
+
     fun udpExchange(o: Opts): Map<String, Any?> {
         val port = o.requiredInt("port", 1, PORT_MAX)
         val send = o.bytes("send") ?: ByteArray(0)
@@ -194,11 +203,24 @@ internal class HostNet(private val s: RunSession, private val transport: ScriptT
             o.int("maxBytes", ScriptCaps.DEFAULT_TCP_MAX_BYTES, 1, ScriptCaps.MAX_ARRAY_LENGTH))
         val host = o.string("host")
         s.chargeCalls(1); s.gateWait()
-        val to = gate.clearConnect(host, port)
+        val to = gate.clearDatagram(host, port)
+        chargeBroadcast(to, send.size)
         val reply = s.hostCall { transport.datagram(to, call, s) }
         s.addTransfer(send.size.toLong() + (reply.bytes?.size ?: 0))
         val bytes = reply.bytes ?: ByteArray(0)
         return mapOf("bytes" to bytes, "text" to Bytes.toUtf8(bytes), "timedOut" to (reply.bytes == null), "timeMs" to reply.timeMs.toDouble())
+    }
+
+    /** ctx.udp.send: one datagram, no reply awaited. */
+    fun udpSend(o: Opts) {
+        val port = o.requiredInt("port", 1, PORT_MAX)
+        val data = o.bytes("send") ?: ByteArray(0)
+        val host = o.string("host")
+        s.chargeCalls(1); s.gateWait()
+        val to = gate.clearDatagram(host, port)
+        chargeBroadcast(to, data.size)
+        s.hostCall { transport.datagramSend(to, DatagramSend(port, data), s) }
+        s.addTransfer(data.size.toLong())
     }
 
     fun certificate(host: String, port: Int, sni: String?): Map<String, Any?> {
@@ -230,6 +252,8 @@ internal class HostNet(private val s: RunSession, private val transport: ScriptT
     }
 
     companion object {
+        const val MAX_BROADCAST_DATAGRAMS = 50
+        const val MAX_BROADCAST_BYTES = 1_024
         private const val MAX_METHOD = 16
         private const val PORT_MAX = 65_535
         private const val SPACE = 0x20

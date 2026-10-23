@@ -6,6 +6,7 @@ import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.NetworkRun
 import com.northwalessolutions.netprobe.data.PortEntity
 import com.northwalessolutions.netprobe.engine.tools.FindingKind
+import com.northwalessolutions.netprobe.engine.tools.MacText
 import com.northwalessolutions.netprobe.netenv.Ipv4
 import com.northwalessolutions.netprobe.netenv.SubnetMath
 import com.northwalessolutions.netprobe.ui.home.RelativeTime
@@ -13,7 +14,7 @@ import com.northwalessolutions.netprobe.ui.manual.ManualCopy
 import java.util.Locale
 
 /** One discovered device in the picker. */
-@Immutable data class DeviceChoice(val hostId: Long, val ip: String, val name: String, val detail: String)
+@Immutable data class DeviceChoice(val hostId: Long, val ip: String, val name: String, val detail: String, val mac: String = "")
 
 /** The device picker's rules: the rows, the search over them, and the typed-address row. */
 object DevicePick {
@@ -23,7 +24,7 @@ object DevicePick {
         .map { h ->
             val name = DisplayName.of(h)
             val vendor = listOfNotNull(h.userVendor, h.identVendor, h.vendor).firstOrNull { it.isNotBlank() }
-            DeviceChoice(h.id, h.ip, name, listOfNotNull(h.ip.takeIf { name != h.ip }, vendor).joinToString(", "))
+            DeviceChoice(h.id, h.ip, name, listOfNotNull(h.ip.takeIf { name != h.ip }, vendor).joinToString(", "), MacText.normalize(h.mac))
         }
 
     /** Every word of [query] must appear in the name, address or detail (case-insensitive); a blank query lists everything. */

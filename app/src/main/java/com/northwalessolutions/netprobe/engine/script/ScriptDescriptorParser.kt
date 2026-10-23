@@ -60,6 +60,12 @@ object ScriptDescriptorParser {
         val author = text("author", MAX_AUTHOR, false)
         val target = when (tool["target"]) { "port" -> TargetKind.PORT; "host" -> TargetKind.HOST; "none" -> TargetKind.NONE; null -> { errors += ScriptCopy.fieldMissing("target"); null }; else -> { errors += ScriptCopy.BAD_TARGET; null } }
         val network = when (tool["network"]) { null, "target" -> NetworkScope.TARGET; "lan" -> NetworkScope.LAN; "any" -> NetworkScope.ANY; else -> { errors += ScriptCopy.BAD_NETWORK; null } }
+        val broadcast = when (val b = tool["broadcast"]) {
+            null -> false
+            is Boolean -> b
+            else -> { errors += ScriptCopy.BROADCAST_NOT_BOOLEAN; false }
+        }
+        if (broadcast && network != NetworkScope.LAN) errors += ScriptCopy.BROADCAST_NEEDS_LAN
         val parsedCategory = category ?: when (tool["category"]) {
             null, "other" -> ToolCategory.MINE; "web" -> ToolCategory.WEB; "network" -> ToolCategory.NETWORK; "identity" -> ToolCategory.IDENTITY
             else -> { errors += ScriptCopy.BAD_CATEGORY; null }
@@ -69,7 +75,7 @@ object ScriptDescriptorParser {
         val inputs = inputs(tool["inputs"], errors)
 
         if (errors.isNotEmpty() || id == null || name == null || target == null || network == null || parsedCategory == null) return ParsedTool.Invalid(errors.distinct())
-        val descriptor = ToolDescriptor(keyPrefix + id, name, description, icon, parsedCategory, target, inputs, network, version, author, source)
+        val descriptor = ToolDescriptor(keyPrefix + id, name, description, icon, parsedCategory, target, inputs, network, version, author, source, broadcast)
         val rules = DescriptorRules.errors(descriptor) + inputs.filter { it.name == CONFIRM_ANY }.map { ToolModelCopy.reservedName(it.name) }
         return if (rules.isEmpty()) ParsedTool.Valid(descriptor) else ParsedTool.Invalid(rules.distinct())
     }
