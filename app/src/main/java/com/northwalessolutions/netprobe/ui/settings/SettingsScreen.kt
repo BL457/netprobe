@@ -45,6 +45,7 @@ import com.northwalessolutions.netprobe.netenv.Subnet
 import com.northwalessolutions.netprobe.netenv.HomeRange
 import com.northwalessolutions.netprobe.ui.PinnedSegmented
 import com.northwalessolutions.netprobe.ui.home.HomeCopy
+import com.northwalessolutions.netprobe.ui.home.UpdateBannerHost
 import com.northwalessolutions.netprobe.ui.npFieldColors
 import com.northwalessolutions.netprobe.ui.theme.*
 import com.northwalessolutions.netprobe.ui.wordlists.rememberWordlistStore
@@ -115,12 +116,13 @@ fun SettingsScreen(container: AppContainer, onOpenWordlists: () -> Unit = {}) {
             clearVulnCache = {
                 try { container.vulnCache.clear(); "Vulnerability cache cleared" } catch (ce: CancellationException) { throw ce } catch (e: Exception) { "Could not clear cache: ${e.message}" }
             },
-            onOpenWordlists = onOpenWordlists, onUpdateVendors = { updater.start() }, onStopVendors = { updater.cancel() }, onCheckUpdates = updates::checkNow))
+            onOpenWordlists = onOpenWordlists, onUpdateVendors = { updater.start() }, onStopVendors = { updater.cancel() }, onCheckUpdates = updates::checkNow),
+        banner = { UpdateBannerHost(updates) })
 }
 
 /** Settings layout (Radar spec 6, 3C spec 1 and 2.3). PINNED: the title row and the overflow menu sit in the topBar, never in the scroll. */
 @Composable
-fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
+fun SettingsContent(ui: SettingsUi, actions: SettingsActions, banner: @Composable () -> Unit = {}) {
     val s = ui.state
     val update = actions.update
     val d = SettingsDefaults.DEFAULTS
@@ -144,7 +146,8 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             ui.vendorDb.running?.let { VendorRunningBar(it, actions.onStopVendors) }
           }
         }) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter)) {
+        Column(Modifier.padding(pad).fillMaxSize()) {
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Dimens.gutter)) {
             Section("Discovery")
             SwitchRow("mDNS (Bonjour)", s.mdns) { v -> update { it.copy(mdns = v) } }
             SwitchRow("SSDP / UPnP", s.ssdp) { v -> update { it.copy(ssdp = v) } }
@@ -202,6 +205,8 @@ fun SettingsContent(ui: SettingsUi, actions: SettingsActions) {
             ReleaseNotesRow { msg -> scope.launch { snackbar.showSnackbar(msg) } }
             AboutRow(ui.about) { msg -> scope.launch { snackbar.showSnackbar(msg) } }
             Spacer(Modifier.height(24.dp))
+        }
+        banner()   // PINNED below the scroll container, never inside it
         }
     }
 }

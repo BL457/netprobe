@@ -29,6 +29,13 @@ import com.northwalessolutions.netprobe.update.WhatsNewState
 data class UpdateBannerActions(val onUpdate: () -> Unit = {}, val onLater: () -> Unit = {}, val onStop: () -> Unit = {},
                                val onInstall: () -> Unit = {}, val onRetry: () -> Unit = {})
 
+/** The banner shows in every state except Idle, on Home and on Settings alike. */
+object UpdateBannerRules {
+    fun visible(state: UpdateState): Boolean {
+        return state !is UpdateState.Idle
+    }
+}
+
 private val NOTES_MAX_HEIGHT = 160.dp
 
 /** The pinned slot above the host list: the update banner, else the "What's new" card. The two never show together; the update wins. */
@@ -88,7 +95,7 @@ fun UpdateBannerHost(controller: UpdateController) {
  */
 @Composable
 fun UpdateBanner(state: UpdateState, actions: UpdateBannerActions) {
-    if (state is UpdateState.Idle) return
+    if (!UpdateBannerRules.visible(state)) return
     Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter, vertical = 6.dp).background(NetProbeColors.surface).padding(12.dp).testTag("updateBanner")) {
         when (state) {
             UpdateState.Idle -> Unit
