@@ -532,6 +532,7 @@ A finding is one line in the results. It has a kind, a value, an optional detail
 | `value` | Cut at 2,048 characters | The main line. Tap to expand, long press to copy. |
 | `detail` | Cut at 2,048 characters | A muted line under the value. |
 | `url` | Cut at 2,048 characters; must be http or https | An Open button that opens the link. |
+| `extra.image` | An image id from `ctx.web.snapshot` in this run | The finding is shown as a thumbnail row: the picture on the left, the value as its caption, the detail under it. Tap it to see the picture full size, with Copy URL and Open in browser for the `url`. Share writes the picture's path after the url. The picture stays with the run in Scans. |
 
 Built-in kinds (exact capitals, no label shown): `PATH`, `STATUS`, `HEADER`, `COOKIE`, `TITLE`, `GENERATOR`, `ROBOTS`, `SITEMAP`, `SECURITY_TXT`, `ERROR_PAGE`, `FRAMEWORK`, `CERT_SUBJECT`, `CERT_ISSUER`, `CERT_SAN`, `CERT_VALIDITY`, `CERT_KEY`, `CERT_SIGNATURE`, `CERT_FINGERPRINT`, `CERT_CHAIN`, `TLS_SESSION`, `FLAG`, `SMB_DIALECT`, `SMB_SIGNING`, `SMB_SESSION`, `SMB_HOST`, `SNMP_SYSTEM`, `SNMP_INTERFACE`, `SNMP_ADDRESS`, `PROBE`, `STACK` and `OTHER`.
 

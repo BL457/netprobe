@@ -85,6 +85,8 @@ fun ToolResultsSheet(state: ToolResultsState, onOlder: () -> Unit, onNewer: () -
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FindingRowItem(row: FindingRow, onCopy: (FindingRow) -> Unit, onOpen: (FindingRow) -> Unit) {
+    // A finding with a page picture is a thumbnail row (tools platform spec section 12).
+    row.image?.let { path -> PictureFindingRow(row, path, onCopy, onOpen); return }
     var expanded by rememberSaveable(row.id) { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter, vertical = ROW_VERTICAL).testTag("finding:${row.id}"), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).combinedClickable(onLongClick = { onCopy(row) }, onLongClickLabel = ToolCopy.COPY, onClickLabel = ToolCopy.EXPAND, onClick = { expanded = !expanded })) {

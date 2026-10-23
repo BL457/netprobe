@@ -66,6 +66,12 @@ object FindingLabel {
     fun isLog(row: FindingRow): Boolean = row.label == LOG
 }
 
+/** A finding's page picture: the stored relative path, kept only when it has the exact shape the snapshot store writes. */
+object FindingImage {
+    private val PATH = Regex("[0-9]{1,18}/[0-9]{1,6}\\.jpg")
+    fun of(extra: Map<String, String>): String? = extra["image"]?.takeIf { PATH.matches(it) }
+}
+
 /** The findings of one run split for the tool page: the findings, and the script log lines that only a failed run shows, collapsed. */
 @Immutable data class RunFindings(val findings: List<FindingRow>, val log: List<FindingRow>, val showLog: Boolean)
 
