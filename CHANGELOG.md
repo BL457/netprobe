@@ -2,6 +2,9 @@
 
 Release notes for every NetProbe version, newest first. The section for a version is what the in-app updater shows under "What's new".
 
+## 0.3.4
+- After Check for updates finds a new version, the update appears on the Settings screen itself, with the same Update button as Home.
+
 ## 0.3.3
 - Every update now ships with release notes, taken from this file.
 - After you update, the Home screen shows a "What's new" card with the notes for the version you just installed. Tap "Got it" to dismiss it.
