@@ -33,6 +33,10 @@ object CatalogCopy {
     fun upToDate(count: Int) = if (count == 1) "1 tool is up to date" else "$count tools are up to date"
     const val NOTHING_NEW = "Nothing new to install"
     const val INSTALL = "Install"
+    fun needsNewerHeader(count: Int) = "Needs a newer app ($count)"
+    /** One tool the installed app is too old for: the app version when the index names it, else the version code. Never fetched or installed. */
+    fun needsNewerLine(name: String, version: String, minName: String?, minCode: Int) =
+        "${name.take(NAME_ECHO)} ${version.take(VERSION_ECHO)}: needs NetProbe ${minName?.take(VERSION_ECHO) ?: "version code $minCode"} or newer"
 
     // After Install
     fun installed(count: Int) = if (count == 1) "Installed 1 tool" else "Installed $count tools"
@@ -51,6 +55,7 @@ object CatalogCopy {
     const val INDEX_SHA = "The SHA-256 is not 64 hex digits"
     const val INDEX_NETWORK = "The network is not target, lan or any"
     const val INDEX_DESCRIPTION = "The description is longer than 200 characters"
+    const val INDEX_MIN_VERSION = "The minimum app version is not valid"
     const val INDEX_BROADCAST = "Only a tool with the network set to lan can declare broadcast"
 
     private const val NAME_ECHO = 40

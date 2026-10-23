@@ -7,6 +7,7 @@ import com.northwalessolutions.netprobe.engine.tools.TargetKind
 import com.northwalessolutions.netprobe.engine.tools.ToolCategory
 import com.northwalessolutions.netprobe.engine.tools.ToolIcon
 import com.northwalessolutions.netprobe.engine.tools.ToolSource
+import com.northwalessolutions.netprobe.ui.tools.ScriptCopy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,6 +21,14 @@ class ScriptDescriptorParserTest {
     private fun valid(tool: Map<String, Any?>) = (parse(tool) as? ParsedTool.Valid ?: error("invalid: ${(parse(tool) as ParsedTool.Invalid).errors}")).descriptor
     private fun errors(tool: Map<String, Any?>, hasRun: Boolean = true) = (parse(tool, hasRun) as ParsedTool.Invalid).errors
     private fun withInput(vararg kv: Pair<String, Any?>) = base + ("inputs" to listOf(mapOf("name" to "x", "label" to "X") + kv))
+
+    @Test fun `the minimum app version is kept, optional, and checked`() {
+        assertEquals(null, valid(base).minVersionCode); assertEquals(null, valid(base).minVersionName)
+        val d = valid(base + mapOf("minVersionCode" to 12.0, "minVersionName" to "0.4.3"))
+        assertEquals(12, d.minVersionCode); assertEquals("0.4.3", d.minVersionName)
+        for (bad in listOf(0.0, -1.0, 1.5, "12", true)) assertEquals(bad.toString(), listOf(ScriptCopy.BAD_MIN_VERSION_CODE), errors(base + ("minVersionCode" to bad)))
+        assertEquals(listOf(ScriptCopy.BAD_MIN_VERSION_NAME), errors(base + ("minVersionName" to "no way!")))
+    }
 
     @Test fun `a minimal tool gets the defaults`() {
         val d = valid(base)

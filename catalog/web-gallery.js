@@ -6,6 +6,7 @@ tool = {
   description: "Takes a picture of the web page of every device on your network.",
   icon: "web", category: "web",
   target: "none", network: "lan",
+  minVersionCode: 12, minVersionName: "0.4.3",
   inputs: [
     { name: "ports", type: "list", label: "Ports", required: false,
       default: "80,443,8080,8443,8000,8008,8081,8096,8123,9000,5000,5001,32400",
@@ -17,6 +18,8 @@ tool = {
       help: "The run stops after trying this many pages." }
   ],
   run: function (inputs, ctx) {
+    // An older app that imported this by URL has neither call: fail cleanly instead of with a script error.
+    if (!ctx.web || !ctx.devices) { return { status: "failed", summary: "Needs NetProbe 0.4.3 or newer" }; }
     var DEFAULT_PORTS = "80,443,8080,8443,8000,8008,8081,8096,8123,9000,5000,5001,32400";
     var HTTPS_PORTS = [443, 8443, 5001];
     var TIME_LIMIT_MS = 9 * 60 * 1000;      // leave the run a minute inside its 10 minute budget

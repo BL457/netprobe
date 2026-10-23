@@ -44,7 +44,7 @@ class ScriptCopyTest {
         "Input \\w{1,40} needs a label", "Input \\w{1,40}: the \\w+ can be at most \\d+ characters", "The default of input \\w{1,40} does not fit its type",
         "Input \\w{1,40} needs 1 to 12 different options, as text or as value and label", "Input \\w{1,40} has a minimum above its maximum",
         "Input \\w{1,40}: the \\w+ has the wrong kind of value",
-        "The broadcast field must be true or false", "A tool can declare broadcast only with the network set to lan",
+        "The minVersionCode must be a whole number of 1 or more", "The minVersionName must be a version such as 0\\.4\\.3", "The broadcast field must be true or false", "A tool can declare broadcast only with the network set to lan",
         "This tool did not declare broadcast, so it cannot send to the broadcast address", "At most 50 broadcast packets can be sent in one run", "A broadcast packet can be at most 1 KB",
         "The broadcast address can only be used with ctx\\.udp\\.send and ctx\\.udp\\.exchange",
         // network scope
@@ -75,7 +75,7 @@ class ScriptCopyTest {
             ScriptCopy.fieldTooLong("name", 40), ScriptCopy.BAD_ID, ScriptCopy.BAD_VERSION, ScriptCopy.BAD_TARGET, ScriptCopy.BAD_NETWORK, ScriptCopy.BAD_CATEGORY, ScriptCopy.NO_RUN,
             ScriptCopy.INPUTS_NOT_LIST, ScriptCopy.TOO_MANY_INPUTS, ScriptCopy.inputNotObject(2), ScriptCopy.inputNameBad(3), ScriptCopy.inputTypeBad("path"), ScriptCopy.inputLabelMissing("path"),
             ScriptCopy.inputTextTooLong("path", "label", 40), ScriptCopy.inputDefaultBad("path"), ScriptCopy.inputOptionsBad("mode"), ScriptCopy.inputRangeBad("n"), ScriptCopy.inputFieldBad("path", "help"),
-            ScriptCopy.BROADCAST_NOT_BOOLEAN, ScriptCopy.BROADCAST_NEEDS_LAN, ScriptCopy.BROADCAST_NOT_DECLARED, ScriptCopy.BROADCAST_LIMIT, ScriptCopy.BROADCAST_TOO_BIG, ScriptCopy.BROADCAST_UDP_ONLY,
+            ScriptCopy.BAD_MIN_VERSION_CODE, ScriptCopy.BAD_MIN_VERSION_NAME, ScriptCopy.BROADCAST_NOT_BOOLEAN, ScriptCopy.BROADCAST_NEEDS_LAN, ScriptCopy.BROADCAST_NOT_DECLARED, ScriptCopy.BROADCAST_LIMIT, ScriptCopy.BROADCAST_TOO_BIG, ScriptCopy.BROADCAST_UDP_ONLY,
             ScriptCopy.NO_SCOPE, ScriptCopy.PORT_INVALID, ScriptCopy.NO_DEVICE_IN_SCOPE, ScriptCopy.TARGET_ONLY, ScriptCopy.NO_LAN, ScriptCopy.LAN_ONLY, ScriptCopy.ADDRESS_NOT_ALLOWED,
             ScriptCopy.NAME_OUTSIDE_SCOPE, ScriptCopy.DNS_TARGET_ONLY, ScriptCopy.DNS_LOCAL_ONLY, ScriptCopy.NOT_AN_ADDRESS, ScriptCopy.HOST_INVALID, ScriptCopy.NOT_CANONICAL,
         ))

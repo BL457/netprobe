@@ -26,10 +26,12 @@
                       "file":  "web-gallery.js",
                       "name":  "Web gallery",
                       "version":  "1.0",
-                      "sha256":  "6693ec37577e5ff39232df31955ea91182f108fc012e1a389a6f456e1cded1eb",
+                      "sha256":  "4bf3ef321b81ab54813e5a92f8525cc165452ff33b3eea6e8a2d43f0e6c4dd3e",
                       "network":  "lan",
                       "description":  "Takes a picture of the web page of every device on your network.",
-                      "broadcast":  false
+                      "broadcast":  false,
+                      "minVersionCode":  12,
+                      "minVersionName":  "0.4.3"
                   }
               ]
 }

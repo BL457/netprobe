@@ -260,7 +260,7 @@ class AppContainer(val context: Context) {
     /** "Update tools from GitHub" (spec section 11), shared by the Tools tab and Settings: fetches only when the user taps the action. */
     val catalog: CatalogController by lazy {
         val fetcher = HttpsUpdateFetcher()
-        CatalogController(appScope, CatalogUpdater(ScriptImporter(scriptEngine, scriptToolStore, fetcher), scriptToolStore, fetcher), log = { Log.e(AppScopes.LOG_TAG, "tool catalog", it) })
+        CatalogController(appScope, CatalogUpdater(ScriptImporter(scriptEngine, scriptToolStore, fetcher), scriptToolStore, fetcher, appVersionCode = BuildConfig.VERSION_CODE), log = { Log.e(AppScopes.LOG_TAG, "tool catalog", it) })
     }
     /**
      * The devices of the network the phone is on, for ctx.devices (spec section 12): the row Home resolved, else the row the current

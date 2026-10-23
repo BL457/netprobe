@@ -79,6 +79,7 @@ The file also runs once at import, only to read the `tool` object. At that point
 | `category` | No | `"web"`, `"network"`, `"identity"` or `"other"` | Defaults to `"other"`, which lists the tool under My tools. Any other value is an error. |
 | `network` | No | `"target"`, `"lan"` or `"any"` | Defaults to `"target"`. See "Targets and network scope". |
 | `broadcast` | No | `true` or `false` | Defaults to `false`. Only a tool with `network: "lan"` may set it to `true`. It lets the tool send packets to your network's broadcast address. See "Broadcast". |
+| `minVersionCode`, `minVersionName` | No | A whole number of 1 or more, and a version such as `"0.4.3"` | The oldest NetProbe the tool needs. For a catalog tool, `tools/make-catalog-index.ps1` copies them into `index.json`, and an older app lists the tool under "Needs a newer app" instead of installing it. Older apps ignore them, so start `run` with a check such as `if (!ctx.web) { return { status: "failed", summary: "Needs NetProbe 0.4.3 or newer" }; }`. |
 | `inputs` | No | Array of up to 24 input objects | See "Inputs". |
 
 A text field must be text and must not be blank. NetProbe lists every problem it finds in one go, so you can fix them together.

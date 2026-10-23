@@ -84,6 +84,8 @@ object ScriptCopy {
     const val BAD_NETWORK = "The network must be target, lan or any"
     const val BAD_CATEGORY = "The category must be web, network, identity or other"
     const val NO_RUN = "The tool needs a run function"
+    const val BAD_MIN_VERSION_CODE = "The minVersionCode must be a whole number of 1 or more"
+    const val BAD_MIN_VERSION_NAME = "The minVersionName must be a version such as 0.4.3"
     const val BROADCAST_NOT_BOOLEAN = "The broadcast field must be true or false"
     const val BROADCAST_NEEDS_LAN = "A tool can declare broadcast only with the network set to lan"
     const val INPUTS_NOT_LIST = "The inputs must be a list"

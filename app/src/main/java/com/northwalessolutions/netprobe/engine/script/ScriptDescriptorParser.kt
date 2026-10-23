@@ -66,6 +66,13 @@ object ScriptDescriptorParser {
             else -> { errors += ScriptCopy.BROADCAST_NOT_BOOLEAN; false }
         }
         if (broadcast && network != NetworkScope.LAN) errors += ScriptCopy.BROADCAST_NEEDS_LAN
+        val minVersionCode = when (val m = tool["minVersionCode"]) {
+            null -> null
+            is Double -> if (m >= 1 && m <= Int.MAX_VALUE && m == Math.floor(m)) m.toInt() else { errors += ScriptCopy.BAD_MIN_VERSION_CODE; null }
+            else -> { errors += ScriptCopy.BAD_MIN_VERSION_CODE; null }
+        }
+        val minVersionName = (tool["minVersionName"] as? String)?.takeIf { VERSION.matches(it) }
+        if (tool["minVersionName"] != null && minVersionName == null) errors += ScriptCopy.BAD_MIN_VERSION_NAME
         val parsedCategory = category ?: when (tool["category"]) {
             null, "other" -> ToolCategory.MINE; "web" -> ToolCategory.WEB; "network" -> ToolCategory.NETWORK; "identity" -> ToolCategory.IDENTITY
             else -> { errors += ScriptCopy.BAD_CATEGORY; null }
@@ -75,7 +82,7 @@ object ScriptDescriptorParser {
         val inputs = inputs(tool["inputs"], errors)
 
         if (errors.isNotEmpty() || id == null || name == null || target == null || network == null || parsedCategory == null) return ParsedTool.Invalid(errors.distinct())
-        val descriptor = ToolDescriptor(keyPrefix + id, name, description, icon, parsedCategory, target, inputs, network, version, author, source, broadcast)
+        val descriptor = ToolDescriptor(keyPrefix + id, name, description, icon, parsedCategory, target, inputs, network, version, author, source, broadcast, minVersionCode, minVersionName)
         val rules = DescriptorRules.errors(descriptor) + inputs.filter { it.name == CONFIRM_ANY }.map { ToolModelCopy.reservedName(it.name) }
         return if (rules.isEmpty()) ParsedTool.Valid(descriptor) else ParsedTool.Invalid(rules.distinct())
     }

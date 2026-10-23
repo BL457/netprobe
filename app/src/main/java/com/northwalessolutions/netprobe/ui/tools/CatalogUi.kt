@@ -125,7 +125,14 @@ private fun CatalogLists(plan: CatalogPlan) {
         ListHeader(CatalogCopy.failedHeader(plan.failed.size), "catalogFailedHeader")
         plan.failed.forEachIndexed { i, f -> FailedRow(f, i) }
     }
-    if (plan.installable == 0 && plan.failed.isEmpty()) Text(CatalogCopy.NOTHING_NEW, style = NetProbeText.secondary, color = NetProbeColors.text, modifier = Modifier.padding(top = 8.dp).testTag("catalogNothing"))
+    if (plan.needsNewerApp.isNotEmpty()) {
+        ListHeader(CatalogCopy.needsNewerHeader(plan.needsNewerApp.size), "catalogNewerHeader")
+        plan.needsNewerApp.forEachIndexed { i, n ->
+            Text(CatalogCopy.needsNewerLine(n.name, n.version, n.minVersionName, n.minVersionCode), style = NetProbeText.data, color = NetProbeColors.text,
+                modifier = Modifier.padding(vertical = 4.dp).testTag("catalogNewer:$i"))
+        }
+    }
+    if (plan.installable == 0 && plan.failed.isEmpty() && plan.needsNewerApp.isEmpty()) Text(CatalogCopy.NOTHING_NEW, style = NetProbeText.secondary, color = NetProbeColors.text, modifier = Modifier.padding(top = 8.dp).testTag("catalogNothing"))
     if (plan.unchanged > 0) Text(CatalogCopy.upToDate(plan.unchanged), style = NetProbeText.data, color = NetProbeColors.textMuted, modifier = Modifier.padding(vertical = 12.dp).testTag("catalogUnchanged"))
 }
 

@@ -34,6 +34,10 @@ the same screen.
    checks it against `index.json`.
 6. Open a pull request with the script and the updated `index.json`.
 
+A tool that uses a newer host call than older apps have should say so: add `minVersionCode: <number>` and `minVersionName: "<x.y.z>"` to the
+tool object, before `inputs:`. The index script copies them into `index.json`, and an app older than that lists the tool under "Needs a newer
+app" and does not install it. Also start `run` with a check that fails cleanly (see `web-gallery.js`), for people who import it by URL.
+
 ## Updating a tool
 
 Change the script, raise its `version`, and run `.\tools\make-catalog-index.ps1` again. The app refuses to install a version older than
