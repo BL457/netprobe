@@ -38,10 +38,10 @@ import com.northwalessolutions.netprobe.ui.rootInsets
 import com.northwalessolutions.netprobe.ui.theme.*
 import kotlinx.coroutines.launch
 
-/** Every action the Tools grid fires; the Compose tests record them. Remove stays disabled until the import batch brings the store that deletes a tool. */
+/** Every action the Tools grid fires; the Compose tests record them. */
 data class ToolsGridActions(
     val onOpenTool: (String) -> Unit = {}, val onWordlists: () -> Unit = {}, val onAbout: (String) -> Unit = {}, val onCopySource: (String) -> Unit = {},
-    val onRemove: (String) -> Unit = {},
+    val onRemove: (String) -> Unit = {}, val onImport: () -> Unit = {},
 )
 
 private val TILE_SHAPE = RoundedCornerShape(8.dp)
@@ -70,7 +70,8 @@ fun ToolsScreen(container: AppContainer, onOpenTool: (String) -> Unit, onOpenWor
     ToolsGridContent(groups, ToolsGridActions(
         onOpenTool = onOpenTool, onWordlists = onOpenWordlists,
         onAbout = { key -> about = modules.firstOrNull { it.descriptor.key == key }?.let { ToolGrid.about(it.descriptor) } },
-        onCopySource = ::copySource), snackbar = snackbar)
+        onCopySource = ::copySource, onImport = container.toolImport::open), snackbar = snackbar)
+    ToolImportHost(container.toolImport, onNotice = { msg -> scope.launch { snackbar.showSnackbar(msg) } })
     about?.let { info ->
         ToolAboutDialog(info, canCopy = modules.any { it.descriptor.key == info.key && it is ScriptToolModule },
             onCopy = { copySource(info.key) }, onDismiss = { about = null })
@@ -82,7 +83,7 @@ fun ToolsScreen(container: AppContainer, onOpenTool: (String) -> Unit, onOpenWor
 fun ToolsGridContent(groups: List<TileGroup>, actions: ToolsGridActions, snackbar: SnackbarHostState = remember { SnackbarHostState() }) {
     val columns = ToolGrid.columns(LocalConfiguration.current.screenWidthDp)
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = rootInsets(), snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)) { ToolsTitleRow(actions.onWordlists) } }) { pad ->
+        topBar = { Column(Modifier.fillMaxWidth().background(NetProbeColors.background).windowInsetsPadding(WindowInsets.statusBars)) { ToolsTitleRow(actions.onImport, actions.onWordlists) } }) { pad ->
         LazyVerticalGrid(GridCells.Fixed(columns), Modifier.padding(pad).fillMaxSize().testTag("toolsGrid"),
             contentPadding = PaddingValues(horizontal = Dimens.gutter, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(GRID_GAP), verticalArrangement = Arrangement.spacedBy(GRID_GAP)) {
@@ -98,7 +99,7 @@ fun ToolsGridContent(groups: List<TileGroup>, actions: ToolsGridActions, snackba
 }
 
 @Composable
-private fun ToolsTitleRow(onWordlists: () -> Unit) {
+private fun ToolsTitleRow(onImport: () -> Unit, onWordlists: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().heightIn(min = TITLE_ROW_MIN), verticalAlignment = Alignment.CenterVertically) {
         Text(ToolsCopy.TITLE, style = NetProbeText.title, color = NetProbeColors.text, modifier = Modifier.weight(1f).padding(start = Dimens.gutter).semantics { heading() })
@@ -107,8 +108,7 @@ private fun ToolsTitleRow(onWordlists: () -> Unit) {
                 Icon(Icons.Default.MoreVert, null, tint = NetProbeColors.textSecondary)
             }
             DropdownMenu(open, { open = false }, containerColor = NetProbeColors.surface) {
-                // Import arrives with the import batch; until then the item is shown and disabled.
-                DropdownMenuItem(text = { Text(ToolsUiCopy.IMPORT_TOOL) }, enabled = false, onClick = { open = false }, modifier = Modifier.testTag("toolsImport"))
+                DropdownMenuItem(text = { Text(ToolsUiCopy.IMPORT_TOOL) }, onClick = { open = false; onImport() }, modifier = Modifier.testTag("toolsImport"))
                 DropdownMenuItem(text = { Text(ToolsCopy.WORDLISTS) }, onClick = { open = false; onWordlists() }, modifier = Modifier.testTag("toolsWordlists"))
             }
         }

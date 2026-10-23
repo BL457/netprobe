@@ -44,6 +44,7 @@ import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
 import android.util.Log
 import com.northwalessolutions.netprobe.engine.script.RhinoScriptEngine
 import com.northwalessolutions.netprobe.engine.script.ScriptEngine
+import com.northwalessolutions.netprobe.engine.script.ScriptImporter
 import com.northwalessolutions.netprobe.engine.script.ScriptToolModule
 import com.northwalessolutions.netprobe.engine.script.ScriptToolStore
 import com.northwalessolutions.netprobe.engine.tools.WordlistRef
@@ -63,6 +64,7 @@ import com.northwalessolutions.netprobe.ui.home.RunSettings
 import com.northwalessolutions.netprobe.ui.home.ContainerHeardSink
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolImportController
 import com.northwalessolutions.netprobe.ui.wordlists.UrlImportController
 import com.northwalessolutions.netprobe.oui.OuiInfo
 import com.northwalessolutions.netprobe.oui.OuiMeta
@@ -204,6 +206,10 @@ class AppContainer(val context: Context) {
             log = { Log.w(AppScopes.LOG_TAG, it) },
             dir = java.io.File(context.filesDir, "tools"),
         )
+    }
+    /** The import flow shared by the Tools tab and Settings (tools platform D10): reading, fetching and saving run on appScope. */
+    val toolImport: ToolImportController by lazy {
+        ToolImportController(appScope, ScriptImporter(scriptEngine, scriptToolStore, HttpsUpdateFetcher()), log = { Log.e(AppScopes.LOG_TAG, "tool import", it) })
     }
     /** Lines [offset] until [offset] + [limit] of a wordlist, for ctx.wordlist; empty when the list is gone. */
     private suspend fun scriptWordlistLines(ref: WordlistRef, offset: Int, limit: Int): List<String> {
