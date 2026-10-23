@@ -83,8 +83,9 @@ object ToolsUiModel {
                        else if (a.toolKey == ToolKeys.IDENTIFY && a.total != null) ToolCopy.identifyProgress(a.done, a.total)
                        else if (a.toolKey == ToolKeys.IDENTIFY_ALL && a.total != null) ToolCopy.identifyAllProgress(a.done, a.total)
                        else ToolCopy.progress(a.done, a.total, a.found, a.errors, a.activeMs / MS_PER_S)
+        val shown = if (a.maxDepth > 0) ToolCopy.depthProgress(progress, a.depth, a.maxDepth) else progress
         val fraction = a.total?.let { t -> if (t <= 0) 0f else (a.done.toFloat() / t).coerceIn(0f, 1f) }
-        return ToolRunBar(label, progress, fraction)
+        return ToolRunBar(label, shown, fraction)
     }
     fun busyMessage(work: HostBusyRegistry.Work): String = when (work) {
         HostBusyRegistry.Work.TOOL -> ToolCopy.BUSY_TOOL

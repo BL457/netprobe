@@ -50,6 +50,8 @@ interface ToolProgress {
     suspend fun option(key: String, value: String) {}
     /** As [option], written as a JSON number, for example wordlistEntries after a wordlist fallback. */
     suspend fun option(key: String, value: Int) {}
+    /** The level a recursive run is on (0 is the start) and the deepest level it may reach; the live progress line shows it. */
+    fun depth(level: Int, maxDepth: Int) {}
 }
 
 /**

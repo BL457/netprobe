@@ -45,7 +45,7 @@ class ToolFormRulesTest {
     @Test fun `the form starts from the descriptor defaults`() {
         val f = ToolFormRules.initial(builtIn(ToolKeys.DIR_BRUTEFORCE).descriptor)
         assertEquals(mapOf("wordlist" to "builtin:common-short", "extensions" to "", "method" to "HEAD_THEN_GET", "concurrency" to "8", "timeoutS" to "3",
-            "statusCodes" to "200,204,301,302,307,401,403", "baseline" to "true"), f.values)
+            "statusCodes" to "200,204,301,302,307,401,403", "baseline" to "true", "recursive" to "false", "maxDepth" to "2"), f.values)
         assertTrue(f.touched.isEmpty()); assertEquals("", f.deviceIp); assertNull(f.deviceHostId)
         assertEquals("public", ToolFormRules.initial(builtIn(ToolKeys.SNMP_WALK).descriptor).values["community"])
         assertEquals("v2c", ToolFormRules.initial(builtIn(ToolKeys.SNMP_WALK).descriptor).values["version"])

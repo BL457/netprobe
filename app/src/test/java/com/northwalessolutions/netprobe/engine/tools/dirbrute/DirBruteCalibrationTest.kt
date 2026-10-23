@@ -83,7 +83,7 @@ class DirBruteCalibrationTest {
         val ex = Exchange { _, path -> if (path == "/admin") resp(301, "", listOf("Location" to "http://x/admin/")) else resp(302, "", listOf("Location" to "http://x/login")) }
         val (_, p) = run(ex, listOf("home", "admin", "contact"))
         assertEquals(listOf("/admin"), p.paths())
-        assertEquals("301  0 B  to http://x/admin/", p.findings.first { it.value == "/admin" }.detail)
+        assertEquals("301  0 B  to http://x/admin/  folder", p.findings.first { it.value == "/admin" }.detail)
     }
     @Test fun `an extension group has its own baseline`() = runTest {
         // Bare unknowns 404; unknown .php paths answer 200 with a small page; /index.php is a real, larger page.

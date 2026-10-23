@@ -13,11 +13,15 @@ data class DirBruteOptions(
     val timeoutS: Int = 3,
     val statusCodes: List<Int> = listOf(200, 204, 301, 302, 307, 401, 403),
     val baseline: Boolean = true,
+    val recursive: Boolean = false,
+    val maxDepth: Int = 2,
 ) {
-    fun coerced(): DirBruteOptions = copy(concurrency = concurrency.coerceIn(MIN_CONCURRENCY, MAX_CONCURRENCY), timeoutS = timeoutS.coerceIn(MIN_TIMEOUT_S, MAX_TIMEOUT_S))
+    fun coerced(): DirBruteOptions = copy(concurrency = concurrency.coerceIn(MIN_CONCURRENCY, MAX_CONCURRENCY), timeoutS = timeoutS.coerceIn(MIN_TIMEOUT_S, MAX_TIMEOUT_S),
+        maxDepth = maxDepth.coerceIn(MIN_DEPTH, MAX_DEPTH))
     companion object {
         const val DEFAULT_WORDLIST = "builtin:common-short"
         const val MIN_CONCURRENCY = 1; const val MAX_CONCURRENCY = 16; const val MIN_TIMEOUT_S = 1; const val MAX_TIMEOUT_S = 10
+        const val MIN_DEPTH = 1; const val MAX_DEPTH = 4
         const val MAX_EXTENSIONS = 8; const val MIN_STATUS = 100; const val MAX_STATUS = 599
     }
 }

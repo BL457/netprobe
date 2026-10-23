@@ -38,7 +38,7 @@ class ToolCopyTableTest {
         // summaries
         "Network changed, run stopped", "Tool skipped: could not bind to Wi-Fi", "Failed: .+", "Interrupted, \\d+ found",
         "Stopped after \\d+ of \\d+, \\d+ found", "Stopped after \\d+ steps?, \\d+ found",
-        "\\d+ found in \\d+ paths?(, \\d+ errors?)?", "Stopped at 500 findings", "Stopped: the server answers every path alike",
+        "\\d+ found in \\d+ paths?(, \\d+ folders?)?(, \\d+ errors?)?", "Stopped at 500 findings", "Stopped: the server answers every path alike",
         "The server did not answer the first request", "Wordlist not found", "Wordlist not found, common-short used, .+", "The server stopped answering after \\d+ paths?",
         ".+, \\d+ findings?", "No HTTP response on this port", ".+, expires .+(, self-signed)?", "No TLS handshake on this port",
         "SMB [0-9.]+, signing (required|not required), anonymous (allowed|refused), guest (allowed|refused)",
@@ -46,7 +46,8 @@ class ToolCopyTableTest {
         // options sheet and errors
         "Wordlist", "\\d+ entr(y|ies)", "Manage wordlists", "Extensions", "php, html, txt", "Each word is also tried with these endings",
         "Method", "HEAD then GET", "GET only", "Concurrency", "Timeout per request", "\\d+ s", "Report status codes", "200, 204, 301, 302, 307, 401, 403",
-        "Filter not-found pages", "Checks random paths first and hides answers that match them", "\\d+ paths?", "Run",
+        "Filter not-found pages", "Checks random paths first and hides answers that match them",
+        "Recurse into folders", "Runs the wordlist again inside every folder found", "Folder depth", "How many folder levels to go down when recursing", "\\d+ paths?", "Run",
         "Use letters and digits only, for example php, html", "At most 8 extensions", "Use codes from 100 to 599, for example 200, 301, 403",
         "Add at least one status code", "Wordlist not found, using common-short",
         // results sheet
@@ -58,7 +59,8 @@ class ToolCopyTableTest {
         "Status: (Running|Done|Stopped|Failed|Interrupted)", "Summary: .*",
         "Options: wordlist .+ \\(\\d+ entr(y|ies)\\), extensions .+, (HEAD then GET|GET only|GET only \\(HEAD and GET disagree\\)), concurrency \\d+, timeout \\d+ s, codes [0-9 ]+, not-found filter (on|off)",
         // brute-force finding detail and sizes
-        "\\d{3}(  (\\d+ B|\\d+\\.\\d KB|64 KB\\+))?(  to .+)?",
+        "\\d{3}(  (\\d+ B|\\d+\\.\\d KB|64 KB\\+))?(  to .+)?(  folder)?",
+        "\\d+ of \\d+, \\d+ found(, \\d+ errors)?  \\d+ s  depth \\d of [1-4]",
         // fingerprint details
         "GET /", "GET /, to .+", "GET .+", "Cookie(, Secure)?(, HttpOnly)?(, SameSite=.+)?", "Page title", "Generator meta tag", "\\d+ rules?",
         "Disallowed in robots\\.txt", "Allowed in robots\\.txt", "\\d+ URLs?", "Contact: .+", "Present", "Error page signature", "Matched .+: .*",
@@ -102,6 +104,10 @@ class ToolCopyTableTest {
         assertEquals("SMB 3.0.2, signing required, anonymous allowed, guest refused", ToolCopy.smbSummary("SMB 3.0.2", true, true, false))
         assertEquals("200  1.2 KB", ToolCopy.pathDetail(200, ToolCopy.size(1229, false), null))
         assertEquals("301  0 B  to /admin/", ToolCopy.pathDetail(301, ToolCopy.size(0, false), "/admin/"))
+        assertEquals("301  0 B  to /admin/  folder", ToolCopy.pathDetail(301, ToolCopy.size(0, false), "/admin/", folder = true))
+        assertEquals("7 found in 312 paths, 3 folders, 1 error", ToolCopy.bruteDone(7, 312, 1, 3))
+        assertEquals("7 found in 312 paths, 1 folder", ToolCopy.bruteDone(7, 312, 0, 1))
+        assertEquals("12 of 300, 2 found  3 s  depth 1 of 2", ToolCopy.depthProgress(ToolCopy.progress(12, 300, 2, 0, 3), 1, 2))
         assertEquals("12 days 4 h", ToolCopy.uptime((12L * 86_400 + 4L * 3_600) * 100))
         assertEquals("up, ethernetCsmacd, 1 Gbit/s, 00:11:22:33:44:55", ToolCopy.interfaceDetail(1, 6, 1_000_000_000L, "00:11:22:33:44:55"))
         assertEquals("Cookie, Secure, HttpOnly", ToolCopy.cookieDetail(secure = true, httpOnly = true, sameSite = null))
@@ -140,7 +146,7 @@ class ToolCopyTableTest {
         addAll(listOf(ToolCopy.SMB_NO_DIALECT, ToolCopy.SMB_NO_RESPONSE, ToolCopy.snmpSummary("gw", 1), ToolCopy.snmpSummary("gw", 5), ToolCopy.SNMP_NO_ANSWER))
         addAll(listOf(ToolCopy.WORDLIST, ToolCopy.entries(1), ToolCopy.entries(312), ToolCopy.MANAGE_WORDLISTS, ToolCopy.EXTENSIONS, ToolCopy.EXTENSIONS_PLACEHOLDER,
             ToolCopy.EXTENSIONS_SUPPORT, ToolCopy.METHOD, ToolCopy.HEAD_THEN_GET, ToolCopy.GET_ONLY, ToolCopy.CONCURRENCY, ToolCopy.TIMEOUT, ToolCopy.seconds(3),
-            ToolCopy.REPORT_CODES, ToolCopy.DEFAULT_CODES_TEXT, ToolCopy.FILTER, ToolCopy.FILTER_SUPPORT, ToolCopy.paths(1), ToolCopy.paths(312), ToolCopy.RUN,
+            ToolCopy.REPORT_CODES, ToolCopy.DEFAULT_CODES_TEXT, ToolCopy.FILTER, ToolCopy.FILTER_SUPPORT, ToolCopy.RECURSE, ToolCopy.RECURSE_SUPPORT, ToolCopy.DEPTH, ToolCopy.DEPTH_SUPPORT, ToolCopy.paths(1), ToolCopy.paths(312), ToolCopy.RUN,
             ToolCopy.ERR_EXT_CHARS, ToolCopy.ERR_EXT_TOO_MANY, ToolCopy.ERR_CODE_RANGE, ToolCopy.ERR_CODE_EMPTY, ToolCopy.WORDLIST_FALLBACK, ToolCopy.BRUTE_FALLBACK_PREFIX, ToolCopy.EXPAND, ToolCopy.SECONDS_UNIT))
         addAll(listOf(ToolCopy.NO_DEVICE, ToolCopy.resultsTitle(ToolCopy.DIR_BRUTEFORCE, null, 0), ToolCopy.exportSubject(ToolCopy.DIR_BRUTEFORCE, null, 0), ToolCopy.resultsTitle(ToolCopy.DIR_BRUTEFORCE, "10.0.3.10", 5000), ToolCopy.resultsStatus("Done", "2 hours ago", null),
             ToolCopy.resultsStatus("Done", "2 hours ago", "chnas.local"), ToolCopy.resultsRunning("12 of 300, 2 found  3 s"), ToolCopy.runOf(1, 3),
@@ -152,7 +158,9 @@ class ToolCopyTableTest {
         for (ext in listOf(emptyList(), listOf("php", "html"))) for (m in listOf(Triple(false, false, true), Triple(true, false, false), Triple(true, true, true)))
             add(ToolCopy.exportOptions(ToolCopy.optionsLine("common-short", 312, ext, m.first, m.second, 8, 3, listOf(200, 204, 301), m.third)))
         for (size in listOf(ToolCopy.size(0, false), ToolCopy.size(1023, false), ToolCopy.size(1229, false), ToolCopy.size(null, true), null))
-            for (loc in listOf(null, "/login")) add(ToolCopy.pathDetail(302, size, loc))
+            for (loc in listOf(null, "/login")) { add(ToolCopy.pathDetail(302, size, loc)); add(ToolCopy.pathDetail(302, size, loc, folder = true)) }
+        for (folders in listOf(1, 3)) for (e in listOf(0, 2)) add(ToolCopy.bruteDone(7, 312, e, folders))
+        for (d in 0..4) add(ToolCopy.depthProgress(ToolCopy.progress(12, 300, 2, 0, 3), d, 4))
         addAll(listOf(ToolCopy.GET_ROOT, ToolCopy.getRootTo("https://10.0.3.9:5001/"), ToolCopy.getUrl("https://10.0.3.9:5001/"),
             ToolCopy.cookieDetail(false, false, null), ToolCopy.cookieDetail(true, true, "Lax"), ToolCopy.PAGE_TITLE, ToolCopy.GENERATOR_META,
             ToolCopy.rules(1), ToolCopy.rules(7), ToolCopy.DISALLOWED, ToolCopy.ALLOWED, ToolCopy.urls(1), ToolCopy.urls(40), ToolCopy.contact("mailto:a@b.c"),

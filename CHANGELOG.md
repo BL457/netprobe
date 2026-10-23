@@ -6,6 +6,7 @@ Release notes for every NetProbe version, newest first. The section for a versio
 - Update tools from GitHub: the Tools menu and Settings, Tools can pull every tool from the shared catalog in the NetProbe repository, including updates to tools you already have. One review sheet shows what is new, what changed and what failed before anything is installed.
 - First catalog tool: Wake on LAN. Pick a sleeping device and its MAC address is filled in for you.
 - Scripts can declare broadcast: true to send to your network's broadcast address, and device tools now receive the device's MAC as inputs.mac. The guide covers both.
+- Directory brute-force can recurse into the folders it finds, down to a depth you choose.
 
 ## 0.4.0
 - The Tools tab is now a grid of tiles grouped by category. Pick a tool, then fill in only the inputs that tool needs.
