@@ -237,7 +237,7 @@ private fun ListField(spec: InputSpec.TextList, raw: String, error: String?, ena
                     items = items - item; publish(items, pending)
                 }.semantics { contentDescription = ToolsUiCopy.listRemove(item) }.testTag("$tag:item:$item"), contentAlignment = Alignment.Center) {
                     Box(Modifier.heightIn(min = PILL_VISUAL).clip(CircleShape).border(1.dp, NetProbeColors.border, CircleShape).padding(horizontal = PILL_PAD), contentAlignment = Alignment.Center) {
-                        Text("$item  x", style = NetProbeText.data, color = NetProbeColors.textSecondary)
+                        Text(ToolsUiCopy.listItem(item), style = NetProbeText.data, color = NetProbeColors.textSecondary)
                     }
                 }
             }

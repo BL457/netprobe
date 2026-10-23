@@ -62,6 +62,8 @@ object ToolsUiCopy {
     const val COMPLETE_FORM = "Complete the form to run"
     const val LIST_ADD = "Add"
     fun listRemove(item: String) = "Remove $item"
+    /** A word of a list input as its removable pill. */
+    fun listItem(item: String) = "$item  x"
     fun range(min: Int?, max: Int?): String? = when {
         min != null && max != null -> "$min to $max"
         min != null -> "$min or more"

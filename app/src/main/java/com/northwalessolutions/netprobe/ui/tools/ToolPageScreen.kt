@@ -83,8 +83,9 @@ fun ToolPageContent(state: ToolPageState, form: ToolForm?, actions: ToolPageActi
     var confirm by rememberSaveable { mutableStateOf(false) }
     val focus: FocusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
-    LaunchedEffect(state.runId) { if (state.runId != null) listState.scrollToItem(RESULTS_INDEX) }
     val run = state.run
+    // Once the started run has its header, bring it into view (the results sit right under the form).
+    LaunchedEffect(state.runId, run != null) { if (state.runId != null && run != null) listState.scrollToItem(RESULTS_INDEX) }
     val runFindings = remember(run?.findings, state.runStatus) { run?.let { RunFindingsSplit.of(it.findings, state.runStatus == ToolRunStatus.FAILED) } }
 
     Scaffold(containerColor = NetProbeColors.background, contentWindowInsets = WindowInsets(0, 0, 0, 0), snackbarHost = { SnackbarHost(snackbar) },
