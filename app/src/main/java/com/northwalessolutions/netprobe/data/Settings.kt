@@ -21,6 +21,8 @@ data class SettingsState(
     val listenMulticast: Boolean = false,
     /** "Device type marker" (R3): the icon by default; covered by reset. */
     val typeMarker: TypeMarker = TypeMarker.ICON,
+    /** "Check for updates automatically" (in-app updater spec 2): on by default; covered by reset. */
+    val updateAuto: Boolean = true,
 )
 
 /** The single source of defaults (3C spec 1.1). AppSettings.load reads every default from [DEFAULTS], so the two can never drift. */
@@ -68,7 +70,8 @@ class AppSettings(private val prefs: SharedPreferences) {
             extMax = prefs.getInt("extMax", d.extMax).coerceIn(EXT_MAX_MIN, EXT_MAX_MAX),
             extGatewayProbe = prefs.getBoolean("extGatewayProbe", d.extGatewayProbe),
             listenMulticast = prefs.getBoolean("listenMulticast", d.listenMulticast),
-            typeMarker = TypeMarker.entries.firstOrNull { it.name == prefs.getString("typeMarker", d.typeMarker.name) } ?: d.typeMarker)
+            typeMarker = TypeMarker.entries.firstOrNull { it.name == prefs.getString("typeMarker", d.typeMarker.name) } ?: d.typeMarker,
+            updateAuto = prefs.getBoolean("updateAuto", d.updateAuto))
     }
     /** Port-scan options for the detail screen and "Quick scan all". */
     fun scanOptions() = ScanOptions(concurrency = state.value.scanConcurrency, connectTimeoutMs = state.value.scanTimeoutMs)
@@ -77,7 +80,7 @@ class AppSettings(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean("mdns", s.mdns).putBoolean("ssdp", s.ssdp).putBoolean("netbios", s.netbios).putBoolean("rdns", s.reverseDns).putBoolean("snmp", s.snmp).putBoolean("http", s.httpTitle)
             .putInt("sweepConc", s.sweepConcurrency).putInt("connTimeout", s.connectTimeoutMs).putInt("maxPrefix", s.maxPrefix).putInt("scanConc", s.scanConcurrency).putInt("scanTimeout", s.scanTimeoutMs)
             .putString("nvdKey", s.nvdApiKey)
-            .putBoolean("extEnabled", s.extEnabled).putInt("extMax", s.extMax.coerceIn(EXT_MAX_MIN, EXT_MAX_MAX)).putBoolean("extGatewayProbe", s.extGatewayProbe).putBoolean("listenMulticast", s.listenMulticast).putString("typeMarker", s.typeMarker.name).apply()
+            .putBoolean("extEnabled", s.extEnabled).putInt("extMax", s.extMax.coerceIn(EXT_MAX_MIN, EXT_MAX_MAX)).putBoolean("extGatewayProbe", s.extGatewayProbe).putBoolean("listenMulticast", s.listenMulticast).putString("typeMarker", s.typeMarker.name).putBoolean("updateAuto", s.updateAuto).apply()
         _state.value = load()
     }
 
