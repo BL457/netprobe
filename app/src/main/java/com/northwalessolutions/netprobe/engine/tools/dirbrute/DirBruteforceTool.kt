@@ -7,6 +7,7 @@ import com.northwalessolutions.netprobe.engine.common.HttpResult
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.*
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolModelCopy
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -30,10 +31,12 @@ class DirBruteforceTool(
     private val resolve: suspend (wordlistId: String) -> LoadedWordlist?,
     private val random: () -> String = ::randomToken,
     private val clock: () -> Long = System::currentTimeMillis,
-) : Tool {
-    override val id = ToolId.DIR_BRUTEFORCE
-    override val name = ToolCopy.DIR_BRUTEFORCE
-    override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(ToolId.DIR_BRUTEFORCE, port, service)
+) : ToolModule {
+    override val descriptor = ToolDescriptor(ToolKeys.DIR_BRUTEFORCE, ToolCopy.DIR_BRUTEFORCE, ToolModelCopy.DIR_BRUTEFORCE_DESCRIPTION, ToolIcon.FOLDER,
+        ToolCategory.WEB, TargetKind.PORT, DirBruteInputs.specs)
+    override fun check(inputs: ToolInputs): Map<String, String> = DirBruteInputs.check(inputs)
+    override fun recorded(inputs: ToolInputs): ToolInputs = DirBruteInputs.recorded(inputs)
+    override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(descriptor.key, port, service)
 
     private data class Item(val path: String, val group: String)
     /** [Failure.headPassed]: the HEAD already answered, so a retry re-sends only the GET (and a 405 never counts twice). */
@@ -53,8 +56,9 @@ class DirBruteforceTool(
         fun foundCount(): Int = minOf(found.get(), MAX_FINDINGS)
     }
 
-    override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
-        val o = ((options as? ToolOptions.DirBrute)?.options ?: DirBruteOptions()).coerced()
+    override suspend fun run(target: ToolTarget?, inputs: ToolInputs, control: RunControl, progress: ToolProgress): ToolResult {
+        if (target == null) return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolModelCopy.NO_TARGET))
+        val o = DirBruteInputs.options(inputs)
         val list = resolve(o.wordlistId) ?: return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolCopy.BRUTE_NO_WORDLIST))
         val fellBack = list.id != o.wordlistId
         if (fellBack) {                                          // the chosen list is gone: optionsJson records what actually ran

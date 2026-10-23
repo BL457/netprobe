@@ -7,6 +7,7 @@ import com.northwalessolutions.netprobe.engine.serviceid.LadderResult
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceProbes
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolModelCopy
 
 /**
  * Identify service (3E spec 8): the full ladder on one port with a fresh budget of one port and 20 s, whatever the Settings switch says,
@@ -19,12 +20,13 @@ class IdentifyServiceTool(
     private val identify: suspend (target: ToolTarget, budget: ActiveProbeBudget, onProbe: (Int) -> Unit) -> Pair<ServiceInfo, LadderResult>,
     private val apply: suspend (hostId: Long, port: Int, info: ServiceInfo) -> Unit,
     private val newBudget: () -> ActiveProbeBudget = { ActiveProbeBudget(maxPorts = 1, hostWallMs = HOST_WALL_MS) },
-) : Tool {
-    override val id = ToolId.IDENTIFY
-    override val name = ToolCopy.IDENTIFY
-    override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(ToolId.IDENTIFY, port, service)
+) : ToolModule {
+    override val descriptor = ToolDescriptor(ToolKeys.IDENTIFY, ToolCopy.IDENTIFY, ToolModelCopy.IDENTIFY_DESCRIPTION, ToolIcon.FINGERPRINT,
+        ToolCategory.IDENTITY, TargetKind.PORT, emptyList())
+    override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(descriptor.key, port, service)
 
-    override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
+    override suspend fun run(target: ToolTarget?, inputs: ToolInputs, control: RunControl, progress: ToolProgress): ToolResult {
+        if (target == null) return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolModelCopy.NO_TARGET))
         control.gate()
         val total = ServiceProbes.MAX_PROBES_PER_PORT
         progress.update(0, total, 0)

@@ -34,5 +34,5 @@ object DirBruteTestSupport {
         exchangeFor = { _, _ -> exchange },
         resolve = { LoadedWordlist("builtin:common-short", "common-short", count) { collect -> words.forEach { collect(it) } } },
         random = { "abcdef012345" }, clock = { 0L })
-    fun options(o: DirBruteOptions) = ToolOptions.DirBrute(o, "common-short", 0)
+    fun options(o: DirBruteOptions) = DirBruteInputs.of(o, "common-short", 0)
 }

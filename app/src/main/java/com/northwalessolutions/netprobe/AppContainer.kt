@@ -46,8 +46,8 @@ import com.northwalessolutions.netprobe.engine.tools.AppMessages
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.engine.tools.ManualRoute
 import com.northwalessolutions.netprobe.engine.tools.TOOL_THREADS
-import com.northwalessolutions.netprobe.engine.tools.Tool
-import com.northwalessolutions.netprobe.engine.tools.ToolId
+import com.northwalessolutions.netprobe.engine.tools.ToolModule
+import com.northwalessolutions.netprobe.engine.tools.ToolRegistry
 import com.northwalessolutions.netprobe.engine.tools.ToolRunner
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteforceTool
@@ -179,18 +179,17 @@ class AppContainer(val context: Context) {
     val ports by lazy { PortRepository(db) }
     val vulnCache by lazy { VulnCacheRepository(db) }
     val toolRepo by lazy { ToolRepository(db) }
-    /** The registered tools; each tool task (10 to 14) adds its line to toolMap(). A ToolId absent here never gets a chip. */
-    val tools: Map<ToolId, Tool> by lazy { toolMap() }
-    private fun toolMap(): Map<ToolId, Tool> = buildMap {
-        // Task 10: DIR_BRUTEFORCE. Task 11: HTTP_FINGERPRINT. Task 12: TLS_CERTIFICATE. Task 13: SNMP_WALK. Task 15: SMB_SESSION.
-        put(ToolId.DIR_BRUTEFORCE, DirBruteforceTool(
+    /** Every tool the app can run: the built-ins now, script tools later (tools platform spec section 3). */
+    val toolRegistry: ToolRegistry by lazy { ToolRegistry(builtInTools()) }
+    private fun builtInTools(): List<ToolModule> = buildList {
+        add(DirBruteforceTool(
             exchangeFor = { t, timeoutMs ->
                 val client = HttpClient(timeoutMs)
                 val ctx = if (t.tls) HttpClient.trustAllContext() else null          // one SSLContext per run: TLS sessions resume
                 Exchange { method, path -> client.request(t.ip, t.port, t.tls, method, path, null, ctx) }   // Host is always the IP
             },
             resolve = { id -> resolveWordlist(id) }))
-        put(ToolId.HTTP_FINGERPRINT, HttpFingerprintTool(
+        add(HttpFingerprintTool(
             getFor = { t ->
                 val client = HttpClient(HttpFingerprintTool.FINGERPRINT_TIMEOUT_MS)
                 val ctx = HttpClient.trustAllContext()      // one client and one SSLContext per run (spec 4.5)
@@ -200,17 +199,17 @@ class AppContainer(val context: Context) {
                 }
             },
             rules = stackRules))
-        put(ToolId.TLS_CERTIFICATE, TlsCertificateTool(peek = { t, name -> TlsPeek().details(t.ip, t.port, name) }))
-        put(ToolId.SNMP_WALK, SnmpWalkTool(exchangeFor = { t -> UdpSnmpExchange(t.ip) }))
-        put(ToolId.IDENTIFY, IdentifyServiceTool(
+        add(TlsCertificateTool(peek = { t, name -> TlsPeek().details(t.ip, t.port, name) }))
+        // tcpConnect goes through Probe.connect, so off-subnet hosts are reached over Wi-Fi exactly as port scans are.
+        add(SmbSessionTool(connect = { t -> SmbSessionTool.tcpConnect(t) }))
+        add(SnmpWalkTool(exchangeFor = { t, snmp -> UdpSnmpExchange(t.ip, community = snmp.community, version = snmp.version) }))
+        add(IdentifyServiceTool(
             identify = { t, budget, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe) },
             apply = { hostId, port, info -> ports.applyIdentify(hostId, port, info) }))
-        put(ToolId.IDENTIFY_ALL, IdentifyAllServicesTool(
+        add(IdentifyAllServicesTool(
             portsFor = { hostId -> ports.servicesFor(hostId).keys.toList() },
             identify = { t, budget, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe) },
             apply = { hostId, port, info -> ports.applyIdentify(hostId, port, info) }))
-        // tcpConnect goes through Probe.connect, so off-subnet hosts are reached over Wi-Fi exactly as port scans are.
-        put(ToolId.SMB_SESSION, SmbSessionTool(connect = { t -> SmbSessionTool.tcpConnect(t) }))
     }
     /** The chosen list, else common-short (spec 5.1, 11.10); streams through withEntries, so a list is never loaded whole. */
     private fun resolveWordlist(id: String): LoadedWordlist? {
@@ -221,7 +220,7 @@ class AppContainer(val context: Context) {
     /** Reading this lazy is the only place markInterrupted starts; no instrumented test reads it (Global Constraints). */
     val toolRunner: ToolRunner by lazy {
         appScope.launch { toolRepo.markInterrupted(ToolCopy::interrupted) }
-        ToolRunner(appScope, toolDispatcher, tools, toolRepo, hostBusy, appMessages,
+        ToolRunner(appScope, toolDispatcher, toolRegistry, toolRepo, hostBusy, appMessages,
             networkEnvMonitor.env.stateIn(appScope, SharingStarted.Eagerly, networkEnvMonitor.current()),
             foreground,
             bind = { ip, e, block ->

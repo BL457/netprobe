@@ -5,6 +5,7 @@ import com.northwalessolutions.netprobe.engine.common.Probe
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.*
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolModelCopy
 import java.security.SecureRandom
 
 /**
@@ -19,10 +20,10 @@ class SmbSessionTool(
     private val connect: suspend (ToolTarget) -> SmbTransport?,
     private val randomBytes: (Int) -> ByteArray = { n -> ByteArray(n).also { SecureRandom().nextBytes(it) } },
     private val clock: () -> Long = System::currentTimeMillis,
-) : Tool {
-    override val id = ToolId.SMB_SESSION
-    override val name = ToolCopy.SMB_SESSION
-    override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(ToolId.SMB_SESSION, port, service)
+) : ToolModule {
+    override val descriptor = ToolDescriptor(ToolKeys.SMB_SESSION, ToolCopy.SMB_SESSION, ToolModelCopy.SMB_SESSION_DESCRIPTION, ToolIcon.SHARE,
+        ToolCategory.NETWORK, TargetKind.PORT, emptyList())
+    override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(descriptor.key, port, service)
 
     /** [lost] is true when an exchange of the leg got no reply at all, which a pause excuses (spec 4.8). */
     private class Leg(val allowed: Boolean, val names: Ntlm.TargetInfoNames?, val lost: Boolean)
@@ -59,7 +60,8 @@ class SmbSessionTool(
         } finally { conn.close() }
     }
 
-    override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
+    override suspend fun run(target: ToolTarget?, inputs: ToolInputs, control: RunControl, progress: ToolProgress): ToolResult {
+        if (target == null) return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolModelCopy.NO_TARGET))
         var found = 0
         suspend fun emit(kind: FindingKind, value: String, detail: String) { found++; progress.finding(Finding(kind, value, detail)); progress.update(found, null, found) }
         suspend fun hint(value: String) { progress.finding(Finding(FindingKind.HINT, value)) }

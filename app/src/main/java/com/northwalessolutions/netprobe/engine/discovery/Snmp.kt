@@ -117,7 +117,9 @@ object SnmpPdu {
     private const val T_INTEGER = 0x02; private const val T_OCTETS = 0x04; private const val T_NULL = 0x05; private const val T_OID = 0x06
     private const val T_IPADDRESS = 0x40; private const val T_COUNTER32 = 0x41; private const val T_GAUGE32 = 0x42; private const val T_TIMETICKS = 0x43
     private const val NO_SUCH_OBJECT = 0x80; private const val NO_SUCH_INSTANCE = 0x81; private const val END_OF_MIB_VIEW = 0x82
-    private const val SEQUENCE = 0x30; private const val VERSION_2C = 1
+    private const val SEQUENCE = 0x30
+    /** The version integer on the wire: SNMPv1 is 0, SNMPv2c is 1. */
+    const val VERSION_1 = 0; const val VERSION_2C = 1
     /** RFC 2578 3.5: an OID has at most 128 sub-identifiers. */
     const val MAX_OID_ARCS = 128
     const val MAX_VARBINDS = 64
@@ -130,9 +132,9 @@ object SnmpPdu {
     private const val IPV4_BYTES = 4
 
     fun oidParts(oid: String): IntArray = oid.split('.').map { it.toInt() }.toIntArray()
-    fun build(pduType: Int, oids: List<String>, community: String, requestId: Int): ByteArray {
+    fun build(pduType: Int, oids: List<String>, community: String, requestId: Int, version: Int = VERSION_2C): ByteArray {
         val varbinds = Ber.seq(*oids.map { Ber.seq(Ber.oid(oidParts(it)), Ber.nul()) }.toTypedArray())
-        return Ber.seq(Ber.int(VERSION_2C), Ber.str(community), Ber.tlv(pduType, Ber.int(requestId) + Ber.int(0) + Ber.int(0) + varbinds))
+        return Ber.seq(Ber.int(version), Ber.str(community), Ber.tlv(pduType, Ber.int(requestId) + Ber.int(0) + Ber.int(0) + varbinds))
     }
 
     /** Null on anything malformed: nothing a device sends can throw out of here (spec 11.2). */

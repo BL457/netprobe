@@ -2,22 +2,29 @@ package com.northwalessolutions.netprobe.engine.tools
 
 import com.northwalessolutions.netprobe.data.HostEntity
 import com.northwalessolutions.netprobe.data.ToolRunStatus
+import com.northwalessolutions.netprobe.engine.discovery.SnmpPdu
 import com.northwalessolutions.netprobe.engine.discovery.SnmpVarbind
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolModelCopy
 
 sealed interface SnmpStep { data class Ok(val varbinds: List<SnmpVarbind>) : SnmpStep; object Timeout : SnmpStep; object Error : SnmpStep }
+/** What a walk sends with: the community string (a secret, never recorded) and the wire version (SnmpPdu.VERSION_1 or VERSION_2C). */
+data class SnmpSettings(val community: String, val version: Int)
 interface SnmpExchange { suspend fun getNext(oids: List<String>): SnmpStep; suspend fun get(oids: List<String>): SnmpStep }
 
 /**
- * SNMPv2c walk with community public (spec 6.4): the system group, the interface table and the address table, keyed by index suffix.
+ * SNMP walk, v2c and community public unless the inputs say otherwise (spec 6.4): the system group, the interface table and the address table, keyed by index suffix.
  * Read-only (GET and GETNEXT). Bounded: at most SNMP_MAX_REQUESTS requests, SNMP_MAX_INTERFACES and SNMP_MAX_ADDRESSES rows, and a
  * step ends on endOfMibView or another exception, on leaving its subtree, or on an OID that does not increase (a looping agent).
  * Device text is cleaned of control and format characters and capped at SNMP_MAX_TEXT before it reaches a finding or a hint.
  */
-class SnmpWalkTool(private val exchangeFor: (ToolTarget) -> SnmpExchange) : Tool {
-    override val id = ToolId.SNMP_WALK
-    override val name = ToolCopy.SNMP_WALK
+class SnmpWalkTool(private val exchangeFor: (ToolTarget, SnmpSettings) -> SnmpExchange) : ToolModule {
+    override val descriptor = ToolDescriptor(ToolKeys.SNMP_WALK, ToolCopy.SNMP_WALK, ToolModelCopy.SNMP_WALK_DESCRIPTION, ToolIcon.NETWORK,
+        ToolCategory.NETWORK, TargetKind.HOST, listOf(
+            InputSpec.Secret(COMMUNITY, ToolModelCopy.SNMP_COMMUNITY, default = DEFAULT_COMMUNITY),
+            InputSpec.Choice(VERSION, ToolModelCopy.SNMP_VERSION, listOf(ChoiceOption(V1), ChoiceOption(V2C)), default = V2C),
+        ))
     override fun applies(port: Int, service: ServiceInfo) = false
     override fun appliesToHost(host: HostEntity) = ToolApplicability.snmp(host)
 
@@ -37,8 +44,10 @@ class SnmpWalkTool(private val exchangeFor: (ToolTarget) -> SnmpExchange) : Tool
         suspend fun emit(f: Finding) { found++; progress.finding(f); progress.update(done, null, found) }
     }
 
-    override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
-        val w = Walk(exchangeFor(target), control, progress)
+    override suspend fun run(target: ToolTarget?, inputs: ToolInputs, control: RunControl, progress: ToolProgress): ToolResult {
+        if (target == null) return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolModelCopy.NO_TARGET))
+        val settings = SnmpSettings(inputs.text(COMMUNITY).ifEmpty { DEFAULT_COMMUNITY }, if (inputs.choice(VERSION) == V1) SnmpPdu.VERSION_1 else SnmpPdu.VERSION_2C)
+        val w = Walk(exchangeFor(target, settings), control, progress)
         var sysName: String? = null; var sysDescr: String? = null; var answered = false
 
         // 1. System group: GETNEXT from 1.3.6.1.2.1.1 until the reply leaves the subtree or stops increasing.
@@ -126,6 +135,7 @@ class SnmpWalkTool(private val exchangeFor: (ToolTarget) -> SnmpExchange) : Tool
     private fun prefixOf(mask: String): Int = mask.split('.').sumOf { Integer.bitCount(it.toIntOrNull()?.and(0xff) ?: 0) }
 
     companion object {
+        const val COMMUNITY = "community"; const val VERSION = "version"; const val V1 = "v1"; const val V2C = "v2c"; const val DEFAULT_COMMUNITY = "public"
         const val SNMP_TIMEOUT_MS = 1000; const val SNMP_MAX_REQUESTS = 400; const val SNMP_MAX_INTERFACES = 64; const val SNMP_MAX_ADDRESSES = 64
         /** DisplayString is at most 255 octets (RFC 2579); longer device text is cut. */
         const val SNMP_MAX_TEXT = 255

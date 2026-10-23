@@ -23,7 +23,7 @@ class SnmpIdentityCouplingTest {
     private suspend fun identify(sysObjectId: String): DeviceIdentity {
         val p = CollectingProgress()
         val mib = listOf(str("1.3.6.1.2.1.1.1.0", "an agent"), oidv("1.3.6.1.2.1.1.2.0", sysObjectId), str("1.3.6.1.2.1.1.5.0", "box"))
-        SnmpWalkTool { SnmpTestAgent.exchange(mib) }.run(ToolTarget(1, host, 161, false, null), ToolOptions.None, control(), p)
+        SnmpWalkTool { _, _ -> SnmpTestAgent.exchange(mib) }.run(ToolTarget(1, host, 161, false, null), ToolInputs.NONE, control(), p)
         return identifier.identify(HostEvidence(DiscoveredHost(host), emptySet(), emptyMap(), null, toolHints = p.hints()))
     }
     @Test fun `a synology enterprise oid sets vendor and type`() = runTest {

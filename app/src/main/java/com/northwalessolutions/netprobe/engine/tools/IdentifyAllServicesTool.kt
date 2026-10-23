@@ -7,6 +7,7 @@ import com.northwalessolutions.netprobe.engine.serviceid.Confidence
 import com.northwalessolutions.netprobe.engine.serviceid.LadderResult
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolModelCopy
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -21,13 +22,14 @@ class IdentifyAllServicesTool(
     private val identify: suspend (target: ToolTarget, budget: ActiveProbeBudget, onProbe: (Int) -> Unit) -> Pair<ServiceInfo, LadderResult>,
     private val apply: suspend (hostId: Long, port: Int, info: ServiceInfo) -> Unit,
     private val newBudget: () -> ActiveProbeBudget = { ActiveProbeBudget(maxPorts = MAX_PORTS, maxMs = WALL_MS, hostWallMs = WALL_MS) },
-) : Tool {
-    override val id = ToolId.IDENTIFY_ALL
-    override val name = ToolCopy.IDENTIFY_ALL
+) : ToolModule {
+    override val descriptor = ToolDescriptor(ToolKeys.IDENTIFY_ALL, ToolCopy.IDENTIFY_ALL, ToolModelCopy.IDENTIFY_ALL_DESCRIPTION, ToolIcon.SEARCH,
+        ToolCategory.IDENTITY, TargetKind.HOST, emptyList())
     override fun applies(port: Int, service: ServiceInfo) = false
     override fun appliesToHost(host: HostEntity) = true
 
-    override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
+    override suspend fun run(target: ToolTarget?, inputs: ToolInputs, control: RunControl, progress: ToolProgress): ToolResult {
+        if (target == null) return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolModelCopy.NO_TARGET))
         control.gate()
         val ports = portsFor(target.hostId).sorted().take(MAX_PORTS)
         val total = ports.size

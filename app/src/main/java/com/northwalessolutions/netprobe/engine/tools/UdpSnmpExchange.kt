@@ -22,7 +22,7 @@ import kotlin.random.Random
  * GETNEXT only, never SET.
  */
 class UdpSnmpExchange(private val ip: InetAddress, private val port: Int = SNMP_PORT, private val timeoutMs: Int = SnmpWalkTool.SNMP_TIMEOUT_MS,
-                      private val community: String = "public") : SnmpExchange {
+                      private val community: String = "public", private val version: Int = SnmpPdu.VERSION_2C) : SnmpExchange {
     private var nextId = Random.nextInt(1, FIRST_ID_LIMIT)          // a random start, so a stale or forged reply rarely matches
 
     override suspend fun getNext(oids: List<String>): SnmpStep = send(SnmpPdu.GETNEXT, oids)
@@ -35,7 +35,7 @@ class UdpSnmpExchange(private val ip: InetAddress, private val port: Int = SNMP_
                 binder?.bindOrFail(socket)
                 repeat(ATTEMPTS) {
                     val id = nextId++
-                    val request = SnmpPdu.build(pduType, oids, community, id)
+                    val request = SnmpPdu.build(pduType, oids, community, id, version)
                     val reply = CancellableIo.closing(socket) {
                         socket.send(DatagramPacket(request, request.size, ip, port))
                         receiveMatching(socket, id)

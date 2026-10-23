@@ -10,6 +10,7 @@ import com.northwalessolutions.netprobe.engine.serviceid.HttpStacks
 import com.northwalessolutions.netprobe.engine.serviceid.ServiceInfo
 import com.northwalessolutions.netprobe.engine.tools.dirbrute.randomToken
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
+import com.northwalessolutions.netprobe.ui.tools.ToolModelCopy
 import java.net.Inet4Address
 
 /** One GET through HttpClient with the target's name as Host; [tls] and [port] can differ from the target after the redirect hop. */
@@ -30,14 +31,15 @@ class HttpFingerprintTool(
     private val getFor: (ToolTarget) -> HttpGet,
     private val rules: List<HttpStackRule>,
     private val random: () -> String = ::randomToken,
-) : Tool {
-    override val id = ToolId.HTTP_FINGERPRINT
-    override val name = ToolCopy.HTTP_FINGERPRINT
-    override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(ToolId.HTTP_FINGERPRINT, port, service)
+) : ToolModule {
+    override val descriptor = ToolDescriptor(ToolKeys.HTTP_FINGERPRINT, ToolCopy.HTTP_FINGERPRINT, ToolModelCopy.HTTP_FINGERPRINT_DESCRIPTION, ToolIcon.WEB,
+        ToolCategory.WEB, TargetKind.PORT, emptyList())
+    override fun applies(port: Int, service: ServiceInfo) = ToolApplicability.appliesTo(descriptor.key, port, service)
 
     private class Counter(var done: Int = 0, var total: Int = STEPS, var found: Int = 0)
 
-    override suspend fun run(target: ToolTarget, options: ToolOptions, control: RunControl, progress: ToolProgress): ToolResult {
+    override suspend fun run(target: ToolTarget?, inputs: ToolInputs, control: RunControl, progress: ToolProgress): ToolResult {
+        if (target == null) return ToolResult(ToolRunStatus.FAILED, ToolCopy.failed(ToolModelCopy.NO_TARGET))
         val get = getFor(target)
         val n = Counter()
         suspend fun emit(f: Finding) { n.found++; progress.finding(f); progress.update(n.done, n.total, n.found) }

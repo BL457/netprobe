@@ -30,7 +30,7 @@ class SnmpWalkTest {
         ip("1.3.6.1.2.1.4.20.1.3.10.0.3.1", "255.255.255.0"), ip("1.3.6.1.2.1.4.20.1.3.10.0.4.1", "255.255.0.0"))
 
     private suspend fun run(ex: SnmpExchange): Pair<com.northwalessolutions.netprobe.engine.tools.ToolResult, CollectingProgress> {
-        val p = CollectingProgress(); return SnmpWalkTool { ex }.run(target, ToolOptions.None, control(), p) to p
+        val p = CollectingProgress(); return SnmpWalkTool { _, _ -> ex }.run(target, ToolInputs.NONE, control(), p) to p
     }
 
     @Test fun `a request lost to a pause is retried once and the walk continues`() = runTest {
@@ -42,7 +42,7 @@ class SnmpWalkTest {
             }
             override suspend fun get(oids: List<String>) = agent.get(oids)
         }
-        val r = SnmpWalkTool { ex }.run(target, ToolOptions.None, c, CollectingProgress())
+        val r = SnmpWalkTool { _, _ -> ex }.run(target, ToolInputs.NONE, c, CollectingProgress())
         assertEquals("gw, 3 interfaces", r.summary)
     }
     @Test fun `no system answer is FAILED`() = runTest {
@@ -114,7 +114,7 @@ class SnmpWalkTest {
     @Test fun `every request passes the gate first`() = runTest {
         var gates = 0; var requests = 0
         val c = object : RunControl { override suspend fun gate() { gates++ }; override val pauseEpoch = 0; override fun excused(startEpoch: Int) = false }
-        SnmpWalkTool { SnmpTestAgent.exchange(system + interfaces + addresses) { requests++ } }.run(target, ToolOptions.None, c, CollectingProgress())
+        SnmpWalkTool { _, _ -> SnmpTestAgent.exchange(system + interfaces + addresses) { requests++ } }.run(target, ToolInputs.NONE, c, CollectingProgress())
         assertTrue(requests > 0); assertEquals(requests, gates)
     }
     @Test fun `the interface table stops at its row cap`() = runTest {
@@ -152,7 +152,7 @@ class SnmpWalkTest {
             }
             override suspend fun get(oids: List<String>): SnmpStep { requests++; return SnmpStep.Ok(oids.map { end(it) }) }
         }
-        SnmpWalkTool { ex }.run(target, ToolOptions.None, c, CollectingProgress())
+        SnmpWalkTool { _, _ -> ex }.run(target, ToolInputs.NONE, c, CollectingProgress())
         assertEquals(SnmpWalkTool.SNMP_MAX_REQUESTS, requests)
     }
     @Test fun `a silent ifHighSpeed costs one request, not one per interface`() = runTest {
