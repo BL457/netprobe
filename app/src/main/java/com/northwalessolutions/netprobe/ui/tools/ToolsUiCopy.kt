@@ -46,4 +46,41 @@ object ToolsUiCopy {
         NetworkScope.LAN -> "Contacts addresses on your network"
         NetworkScope.ANY -> "Can contact any address"
     }
+
+    // Tool page
+    const val NOT_FOUND = "This tool is not installed"
+    const val DEVICE_PLACEHOLDER = "Choose a device"
+    const val DEVICE_SEARCH = "Search devices"
+    const val NO_DEVICE_CHOSEN = "Choose a device"
+    const val NO_MATCHES = "No devices match"
+    fun useAddress(ip: String) = "Use $ip"
+    const val PORTS_OPEN = "Open ports"
+    const val PORT_TYPED = "Or type a port"
+    const val NO_OPEN_PORTS = "No open ports stored for this device"
+    fun portChoice(port: Int, service: String) = if (service.isEmpty()) "$port" else "$port  $service"
+    const val WORDLIST_GONE = "That wordlist is gone, choose another"
+    const val COMPLETE_FORM = "Complete the form to run"
+    const val LIST_ADD = "Add"
+    fun listRemove(item: String) = "Remove $item"
+    fun range(min: Int?, max: Int?): String? = when {
+        min != null && max != null -> "$min to $max"
+        min != null -> "$min or more"
+        max != null -> "$max or less"
+        else -> null
+    }
+
+    // Run and results on the page
+    const val RESULTS = "Results"
+    const val PREVIOUS_RUNS = "Previous runs"
+    const val NO_PREVIOUS_RUNS = "No runs of this tool yet"
+    const val LOG = "Log"
+    fun logToggle(expanded: Boolean, lines: Int) = if (expanded) "Hide log" else "Show log, ${if (lines == 1) "1 line" else "$lines lines"}"
+    fun runTitle(ip: String?, port: Int): String = if (ip == null) ToolCopy.NO_DEVICE else if (port == 0) ip else "$ip:$port"
+    fun runDescription(title: String) = "Show results for $title"
+
+    // Confirmation for a tool that can contact any address (per run)
+    fun confirmTitle(name: String) = "Run $name?"
+    fun confirmBody(name: String) = "$name can contact any address, not only the device you chose. It will run on this network now."
+    const val CONFIRM_RUN = "Run"
+    const val CANCEL = "Cancel"
 }

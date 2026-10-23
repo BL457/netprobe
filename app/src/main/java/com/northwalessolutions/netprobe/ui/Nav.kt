@@ -44,6 +44,7 @@ import com.northwalessolutions.netprobe.ui.detail.DetailScreen
 import com.northwalessolutions.netprobe.ui.home.HomeScreen
 import com.northwalessolutions.netprobe.ui.scans.ScansScreen
 import com.northwalessolutions.netprobe.ui.settings.SettingsScreen
+import com.northwalessolutions.netprobe.ui.tools.ToolPageScreen
 import com.northwalessolutions.netprobe.ui.tools.ToolsScreen
 import com.northwalessolutions.netprobe.ui.theme.LocalReducedMotion
 import com.northwalessolutions.netprobe.ui.theme.Motion
@@ -163,6 +164,10 @@ fun NetProbeNav(container: AppContainer) {
         host = { tab, id, backLabel ->
             DetailScreen(container, id, onBack = { nav.popBackStack() }, onOpenWordlists = { nav.navigate(Routes.wordlists(tab)) { launchSingleTop = true } },
                 backLabel = backLabel)
+        },
+        tool = { tab, key, hostId, port, backLabel ->
+            ToolPageScreen(container, key, hostId, port, onBack = { nav.popBackStack() },
+                onOpenWordlists = { nav.navigate(Routes.wordlists(tab)) { launchSingleTop = true } }, backLabel = backLabel)
         },
         wordlists = { _, backLabel -> WordlistsScreen(container, onBack = { nav.popBackStack() }, backLabel = backLabel) }) }
     NetProbeShell(nav, running, slots)

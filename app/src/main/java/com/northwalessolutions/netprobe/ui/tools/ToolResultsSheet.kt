@@ -81,12 +81,14 @@ fun ToolResultsSheet(state: ToolResultsState, onOlder: () -> Unit, onNewer: () -
     }
 }
 
+/** One finding: its script kind first when it has one (an OTHER finding with extra.kind, ruling c), then the value and detail, with Open and Copy. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FindingRowItem(row: FindingRow, onCopy: (FindingRow) -> Unit, onOpen: (FindingRow) -> Unit) {
+fun FindingRowItem(row: FindingRow, onCopy: (FindingRow) -> Unit, onOpen: (FindingRow) -> Unit) {
     var expanded by rememberSaveable(row.id) { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = Dimens.gutter, vertical = ROW_VERTICAL).testTag("finding:${row.id}"), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).combinedClickable(onLongClick = { onCopy(row) }, onLongClickLabel = ToolCopy.COPY, onClickLabel = ToolCopy.EXPAND, onClick = { expanded = !expanded })) {
+            row.label?.let { Text(it, style = NetProbeText.caption, color = NetProbeColors.signal, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("findingLabel:${row.id}")) }
             Text(row.value, style = NetProbeText.data, color = NetProbeColors.text, maxLines = if (expanded) Int.MAX_VALUE else VALUE_COLLAPSED_LINES, overflow = TextOverflow.Ellipsis)
             row.detail?.let { Text(it, style = NetProbeText.data, color = NetProbeColors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }

@@ -25,7 +25,8 @@ import com.northwalessolutions.netprobe.wordlists.WordlistMeta
 @Immutable data class ToolsUiState(val available: Int, val headerHistory: String, val blocks: List<ToolBlock>)
 /** The pinned bar during a run (spec 8.2); [fraction] null draws an indeterminate line. */
 @Immutable data class ToolRunBar(val label: String, val progress: String, val fraction: Float?)
-@Immutable data class FindingRow(val id: Long, val value: String, val detail: String?, val url: String?)
+/** [label] is a script's own kind for an OTHER finding (ruling c); built-in findings have none. */
+@Immutable data class FindingRow(val id: Long, val value: String, val detail: String?, val url: String?, val label: String? = null)
 @Immutable data class ToolResultsState(val runId: Long, val title: String, val statusLine: String, val summary: String, val index: Int, val count: Int,
                             val findings: List<FindingRow>, val active: Boolean,
                             /** "via Wi-Fi", "via Ethernet" or "via VPN or other route" for a manual run (3C spec 4.5); null shows nothing. */
@@ -96,7 +97,10 @@ object ToolsUiModel {
 
 object ToolResultsModel {
     /** Rows are mapped once per findings change by the caller (Detail), not on every progress tick. */
-    fun rows(findings: List<ToolFindingEntity>): List<FindingRow> = findings.map { FindingRow(it.id, it.value, it.detail, FindingExtra.decode(it.extra)["url"]) }
+    fun rows(findings: List<ToolFindingEntity>): List<FindingRow> = findings.map { f ->
+        val extra = FindingExtra.decode(f.extra)
+        FindingRow(f.id, f.value, f.detail, extra["url"], FindingLabel.of(f.kind, extra))
+    }
 
     /** The results sheet (spec 8.5) for [run], positioned in [sameTool] (newest first, this host and tool). */
     fun of(registry: ToolRegistry, run: ToolRunEntity, sameTool: List<ToolRunEntity>, ip: String?, findings: List<ToolFindingEntity>, active: ToolRunner.Active?, now: Long,

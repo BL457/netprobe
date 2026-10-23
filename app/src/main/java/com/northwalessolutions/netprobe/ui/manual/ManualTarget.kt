@@ -25,7 +25,7 @@ object ManualTarget {
     const val PORT_MAX = 65_535
     /** Identify all services takes no port: the run reads the address stored open ports; 0 stands for all of them. */
     const val ALL_PORTS = 0
-    private const val MAX_PORT_DIGITS = 5
+    const val MAX_PORT_DIGITS = 5
     private const val UNSIGNED_MASK = 0xFFFFFFFFL
     /** Below /31 a subnet has a network and a broadcast address (RFC 3021 point-to-point links have neither). */
     private const val LAST_PREFIX_WITH_BROADCAST = 30
