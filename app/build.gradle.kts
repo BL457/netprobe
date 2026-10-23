@@ -1,3 +1,4 @@
+import java.util.Properties
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -18,6 +19,11 @@ fun gitShortSha(): String = try {
 
 fun buildTimeStamp(): String = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
 
+/** keystore.properties at the repo root (storeFile, storePassword, keyAlias, keyPassword); null when absent. See docs/release.md. */
+val keystoreProps: Properties? = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { f ->
+    Properties().apply { f.inputStream().use { load(it) } }
+}
+
 android {
     namespace = "com.northwalessolutions.netprobe"
     compileSdk = 35
@@ -34,8 +40,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
+    signingConfigs {
+        create("release") {
+            val props = keystoreProps
+            if (props != null) {
+                storeFile = rootProject.file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+            if (keystoreProps != null) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                // Builds never break without a keystore; such an APK is debug-signed and cannot update a release-signed install.
+                logger.warn("WARNING: keystore.properties not found; signing release with the debug key (see docs/release.md)")
+                signingConfig = signingConfigs.getByName("debug")
+            }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

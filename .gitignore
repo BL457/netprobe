@@ -7,3 +7,6 @@ local.properties
 .cxx/
 /captures
 .superpowers/
+keystore.properties
+*.jks
+*.keystore
