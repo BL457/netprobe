@@ -44,6 +44,7 @@ import com.northwalessolutions.netprobe.netenv.NetworkEnvMonitor
 import android.util.Log
 import com.northwalessolutions.netprobe.engine.script.RhinoScriptEngine
 import com.northwalessolutions.netprobe.engine.script.ScriptEngine
+import com.northwalessolutions.netprobe.engine.script.CatalogUpdater
 import com.northwalessolutions.netprobe.engine.script.ScriptImporter
 import com.northwalessolutions.netprobe.engine.script.ScriptToolModule
 import com.northwalessolutions.netprobe.engine.script.ScriptToolStore
@@ -65,6 +66,7 @@ import com.northwalessolutions.netprobe.engine.tools.smb.SmbSessionTool
 import com.northwalessolutions.netprobe.ui.home.RunSettings
 import com.northwalessolutions.netprobe.ui.home.ContainerHeardSink
 import com.northwalessolutions.netprobe.ui.home.ScanBinding
+import com.northwalessolutions.netprobe.ui.tools.CatalogController
 import com.northwalessolutions.netprobe.ui.tools.ToolCopy
 import com.northwalessolutions.netprobe.ui.tools.ToolImportController
 import com.northwalessolutions.netprobe.ui.tools.ToolRemoval
@@ -233,6 +235,11 @@ class AppContainer(val context: Context) {
     val toolImport: ToolImportController by lazy {
         ToolImportController(appScope, ScriptImporter(scriptEngine, scriptToolStore, HttpsUpdateFetcher()), log = { Log.e(AppScopes.LOG_TAG, "tool import", it) })
     }
+    /** "Update tools from GitHub" (spec section 11), shared by the Tools tab and Settings: fetches only when the user taps the action. */
+    val catalog: CatalogController by lazy {
+        val fetcher = HttpsUpdateFetcher()
+        CatalogController(appScope, CatalogUpdater(ScriptImporter(scriptEngine, scriptToolStore, fetcher), scriptToolStore, fetcher), log = { Log.e(AppScopes.LOG_TAG, "tool catalog", it) })
+    }
     /** Lines [offset] until [offset] + [limit] of a wordlist, for ctx.wordlist; empty when the list is gone. */
     private suspend fun scriptWordlistLines(ref: WordlistRef, offset: Int, limit: Int): List<String> {
         val out = ArrayList<String>()
@@ -269,11 +276,14 @@ class AppContainer(val context: Context) {
         add(SmbSessionTool(connect = { t -> SmbSessionTool.tcpConnect(t) }))
         add(SnmpWalkTool(exchangeFor = { t, snmp -> UdpSnmpExchange(t.ip, community = snmp.community, version = snmp.version) }))
         add(IdentifyServiceTool(
-            identify = { t, budget, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe) },
+            identify = { t, budget, limits, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true, limits = limits), hostId = t.hostId, onProbe = onProbe) },
+            plannedProbes = { port, limits -> serviceIdentifier.plannedProbes(port, limits) },
+            unsafeHellos = { settings.state.value.unsafeHellos },
             apply = { hostId, port, info -> ports.applyIdentify(hostId, port, info) }))
         add(IdentifyAllServicesTool(
             portsFor = { hostId -> ports.servicesFor(hostId).keys.toList() },
-            identify = { t, budget, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true), hostId = t.hostId, onProbe = onProbe) },
+            unsafeHellos = { settings.state.value.unsafeHellos },
+            identify = { t, budget, limits, onProbe -> serviceIdentifier.identifyTraced(t.ip, t.port, mode = ProbeMode.Active(budget, hellos = true, limits = limits), hostId = t.hostId, onProbe = onProbe) },
             apply = { hostId, port, info -> ports.applyIdentify(hostId, port, info) }))
     }
     /** The chosen list, else common-short (spec 5.1, 11.10); streams through withEntries, so a list is never loaded whole. */

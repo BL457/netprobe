@@ -32,6 +32,9 @@ class ServiceIdentifier(
     suspend fun identify(ip: InetAddress, port: Int, evidence: Evidence = Evidence(), mode: ProbeMode = ProbeMode.Passive, hostId: Long = 0L): ServiceInfo =
         identifyTraced(ip, port, evidence, mode, hostId).first
 
+    /** The connections the full ladder may make on [port] under [limits], for a progress total before the run starts. */
+    fun plannedProbes(port: Int, limits: LadderLimits): Int = probes.plannedProbeCount(port, limits)
+
     /** As [identify], also returning what the ladder ran, for the Identify service tool; [onProbe] is told the count after each probe. */
     suspend fun identifyTraced(ip: InetAddress, port: Int, evidence: Evidence = Evidence(), mode: ProbeMode = ProbeMode.Passive, hostId: Long = 0L,
                                onProbe: (Int) -> Unit = {}): Pair<ServiceInfo, LadderResult> =

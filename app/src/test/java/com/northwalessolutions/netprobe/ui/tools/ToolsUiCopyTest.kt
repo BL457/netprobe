@@ -13,7 +13,7 @@ class ToolsUiCopyTest {
         "More", "Import tool", "Any address", "Mine", "Web|Network|Identity|Examples|My tools", ".+, .+(, Any address)?(, Mine)?", "Actions for .+",
         "About", "Remove", "Copy source", "Source copied", "Close", "Version", "Author", "Needs", "Network", "Inputs",
         "A device and a port", "A device", "Nothing, it runs on its own",
-        "Contacts only the device you run it on", "Contacts addresses on your network", "Can contact any address",
+        "Broadcast", "Can send broadcast packets on your network", "Contacts only the device you run it on", "Contacts addresses on your network", "Can contact any address",
         // tool page
         "This tool is not installed", "Choose a device", "Search devices", "No devices match", "Use \\d+\\.\\d+\\.\\d+\\.\\d+", "Open ports", "Or type a port",
         "No open ports stored for this device", "\\d+( {2}.+)?", "That wordlist is gone, choose another", "Complete the form to run", "Add", "Remove .+", ".+  x",
@@ -27,7 +27,7 @@ class ToolsUiCopyTest {
     @Test fun `grid strings are in the table`() {
         listOf(ToolsUiCopy.MORE, ToolsUiCopy.IMPORT_TOOL, ToolsUiCopy.BADGE_ANY, ToolsUiCopy.BADGE_MINE, ToolsUiCopy.ABOUT, ToolsUiCopy.REMOVE, ToolsUiCopy.COPY_SOURCE,
             ToolsUiCopy.SOURCE_COPIED, ToolsUiCopy.CLOSE, ToolsUiCopy.ABOUT_VERSION, ToolsUiCopy.ABOUT_AUTHOR, ToolsUiCopy.ABOUT_NEEDS, ToolsUiCopy.ABOUT_NETWORK,
-            ToolsUiCopy.ABOUT_INPUTS, ToolsUiCopy.menuDescription("SMB session"), ToolsUiCopy.tileDescription("SMB session", "Checks signing", any = true, mine = true),
+            ToolsUiCopy.ABOUT_INPUTS, ToolsUiCopy.ABOUT_BROADCAST, ToolsUiCopy.BROADCAST_CAN, ToolsUiCopy.menuDescription("SMB session"), ToolsUiCopy.tileDescription("SMB session", "Checks signing", any = true, mine = true),
             ToolsUiCopy.tileDescription("SMB session", "Checks signing", any = false, mine = false), ToolsUiCopy.tileDescription("SMB session", "", any = false, mine = false).let { "$it, x" })
             .forEach(::inTable)
         ToolCategory.entries.forEach { inTable(ToolsUiCopy.category(it)) }

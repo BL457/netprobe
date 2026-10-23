@@ -197,6 +197,7 @@ class RhinoScriptEngine(
         override fun exchange(to: Cleared, call: StreamCall, io: IoScope) = no()
         override fun connect(to: Cleared, call: StreamCall, io: IoScope) = no()
         override fun datagram(to: Cleared, call: DatagramCall, io: IoScope) = no()
+        override fun datagramSend(to: Cleared, send: DatagramSend, io: IoScope) = no()
         override fun certificate(to: Cleared, port: Int, sni: String?, timeoutMs: Int, io: IoScope) = no()
     }
     private object InertControl : RunControl {

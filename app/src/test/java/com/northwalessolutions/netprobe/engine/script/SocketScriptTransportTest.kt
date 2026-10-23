@@ -172,6 +172,16 @@ class SocketScriptTransportTest {
         assertNull(t.datagram(to, DatagramCall(silent.localPort, "x".toByteArray(), 200, 64), Io()).bytes)
     }
 
+    @Test fun `udp send delivers one datagram and does not wait for a reply`() {
+        val server = DatagramSocket(0, lo); closeables += server
+        server.soTimeout = 2000
+        val started = System.nanoTime()
+        SocketScriptTransport().datagramSend(to, DatagramSend(server.localPort, "wake".toByteArray()), Io())
+        assertTrue("returned at once", (System.nanoTime() - started) / 1_000_000 < 1500)
+        val p = DatagramPacket(ByteArray(100), 100); server.receive(p)
+        assertEquals("wake", String(p.data, 0, p.length))
+    }
+
     @Test fun `tls certificate reads the chain and facts, and http over tls works`() {
         val ks = KeyStore.getInstance("PKCS12"); File("src/test/resources/tls/rsa2048.p12").inputStream().use { ks.load(it, "changeit".toCharArray()) }
         val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()); kmf.init(ks, "changeit".toCharArray())

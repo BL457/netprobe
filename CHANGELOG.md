@@ -2,6 +2,13 @@
 
 Release notes for every NetProbe version, newest first. The section for a version is what the in-app updater shows under "What's new".
 
+## 0.4.1
+- Update tools from GitHub: the Tools menu and Settings, Tools can pull every tool from the shared catalog in the NetProbe repository, including updates to tools you already have. One review sheet shows what is new, what changed and what failed before anything is installed.
+- First catalog tool: Wake on LAN. Pick a sleeping device and its MAC address is filled in for you.
+- Scripts can declare broadcast: true to send to your network's broadcast address, and device tools now receive the device's MAC as inputs.mac. The guide covers both.
+- Directory brute-force can recurse into the folders it finds, down to a depth you choose.
+- Identify service and Identify all services now try every known hello on a manual run instead of stopping at six, with no time limit. A new Settings switch, Include unsafe Hellos on service identification (off by default), adds the hellos that can upset fragile devices.
+
 ## 0.4.0
 - The Tools tab is now a grid of tiles grouped by category. Pick a tool, then fill in only the inputs that tool needs.
 - Each tool has its own page: device and port pickers where they apply, a Run button that stays at the bottom, live progress, results as they arrive, and previous runs of that tool.

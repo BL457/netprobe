@@ -166,6 +166,7 @@ fun ImportReviewSheet(state: ImportState.Review, onAcknowledged: (Boolean) -> Un
                 ReviewRow(ImportCopy.ROW_NEEDS, ToolsUiCopy.needs(d.target), "importNeeds")
                 ReviewRow(ImportCopy.ROW_NETWORK, ToolsUiCopy.scope(d.network), "importNetwork")
                 if (d.network != NetworkScope.TARGET) ScopeCallout(d.network)
+                if (d.broadcast) BroadcastCallout()
                 ReviewRow(ImportCopy.ROW_INPUTS, if (d.inputs.isEmpty()) ImportCopy.NO_INPUTS else d.inputs.joinToString("\n") { ImportCopy.inputLine(it.label, InputKinds.of(it), it.required) }, "importInputs")
                 ReviewRow(ImportCopy.ROW_SHA, plan.sha256, "importSha", mono = true)
                 plan.replace?.let { ReplaceDiff(plan, state.acknowledged, onAcknowledged) }
@@ -198,6 +199,12 @@ private fun ScopeCallout(scope: NetworkScope) {
     val any = scope == NetworkScope.ANY
     Text(if (any) ImportCopy.CALLOUT_ANY else ImportCopy.CALLOUT_LAN, style = NetProbeText.secondary, color = if (any) NetProbeColors.mark else NetProbeColors.signal,
         modifier = Modifier.padding(vertical = 4.dp).testTag("importScopeCallout"))
+}
+
+/** Shown when the tool declared broadcast (spec section 11); also used by the catalog review. */
+@Composable
+internal fun BroadcastCallout() {
+    Text(ToolsUiCopy.BROADCAST_CAN, style = NetProbeText.secondary, color = NetProbeColors.signal, modifier = Modifier.padding(vertical = 4.dp).testTag("importBroadcastCallout"))
 }
 
 @Composable

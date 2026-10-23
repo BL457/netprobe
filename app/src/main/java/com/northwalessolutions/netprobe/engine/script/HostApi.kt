@@ -56,7 +56,9 @@ internal object HostApi {
         fn(tcp, "connect", 1) { a -> handleObject(cx, scope, s, net.tcpConnect(Opts.of(a.getOrNull(0), "ctx.tcp.connect"))) }
 
         // udp, tls, dns
-        fn(group("udp"), "exchange", 1) { a -> net.udpExchange(Opts.of(a.getOrNull(0), "ctx.udp.exchange")) }
+        val udp = group("udp")
+        fn(udp, "exchange", 1) { a -> net.udpExchange(Opts.of(a.getOrNull(0), "ctx.udp.exchange")) }
+        fn(udp, "send", 1) { a -> net.udpSend(Opts.of(a.getOrNull(0), "ctx.udp.send")); Unit }
         fn(group("tls"), "certificate", 3) { a ->
             val port = number(a, 1, "ctx.tls.certificate")
             if (port < 1 || port > PORT_MAX || port != Math.floor(port)) throw ScriptHostError(ScriptCopy.outOfRange("ctx.tls.certificate", "port", 1, PORT_MAX))

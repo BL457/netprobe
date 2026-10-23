@@ -83,6 +83,8 @@ object ScriptCopy {
     const val BAD_NETWORK = "The network must be target, lan or any"
     const val BAD_CATEGORY = "The category must be web, network, identity or other"
     const val NO_RUN = "The tool needs a run function"
+    const val BROADCAST_NOT_BOOLEAN = "The broadcast field must be true or false"
+    const val BROADCAST_NEEDS_LAN = "A tool can declare broadcast only with the network set to lan"
     const val INPUTS_NOT_LIST = "The inputs must be a list"
     const val TOO_MANY_INPUTS = "A tool can have at most 24 inputs"
     fun inputNotObject(position: Int) = "Input $position must be an object"
@@ -109,6 +111,12 @@ object ScriptCopy {
     const val NOT_AN_ADDRESS = "Reverse lookup needs an IP address"
     const val HOST_INVALID = "Not a valid host name or address"
     const val NOT_CANONICAL = "Write IP addresses in the usual form, such as 192.168.1.10"
+
+    // broadcast (spec section 11)
+    const val BROADCAST_NOT_DECLARED = "This tool did not declare broadcast, so it cannot send to the broadcast address"
+    const val BROADCAST_LIMIT = "At most 50 broadcast packets can be sent in one run"
+    const val BROADCAST_TOO_BIG = "A broadcast packet can be at most 1 KB"
+    const val BROADCAST_UDP_ONLY = "The broadcast address can only be used with ctx.udp.send and ctx.udp.exchange"
 
     // dns
     const val DNS_TIMEOUT = "The DNS lookup timed out"

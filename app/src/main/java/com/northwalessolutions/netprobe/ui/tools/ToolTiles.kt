@@ -60,6 +60,7 @@ object ToolGrid {
         d.author?.takeIf { it.isNotBlank() }?.let { rows += ToolsUiCopy.ABOUT_AUTHOR to it }
         rows += ToolsUiCopy.ABOUT_NEEDS to ToolsUiCopy.needs(d.target)
         rows += ToolsUiCopy.ABOUT_NETWORK to ToolsUiCopy.scope(d.network)
+        if (d.broadcast) rows += ToolsUiCopy.ABOUT_BROADCAST to ToolsUiCopy.BROADCAST_CAN
         if (d.inputs.isNotEmpty()) rows += ToolsUiCopy.ABOUT_INPUTS to d.inputs.joinToString(", ") { it.label }
         return ToolAboutInfo(d.key, d.name, d.description, rows)
     }

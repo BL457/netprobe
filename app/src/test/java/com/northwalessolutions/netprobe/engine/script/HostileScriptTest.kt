@@ -105,7 +105,7 @@ class HostileScriptTest {
         assertEquals("bytes,cancelled,dns,finding,http,log,progress,regex,sleep,tcp,tls,udp,wordlist", names("ctx"))
         assertEquals("many,request", names("ctx.http"))
         assertEquals("connect,exchange", names("ctx.tcp"))
-        assertEquals("exchange", names("ctx.udp"))
+        assertEquals("exchange,send", names("ctx.udp"))
         assertEquals("certificate", names("ctx.tls"))
         assertEquals("lookup,reverse", names("ctx.dns"))
         assertEquals("concat,fromHex,fromUtf8,readU16be,readU16le,readU32be,readU32le,toHex,toUtf8,u16be,u16le,u32be,u32le", names("ctx.bytes"))

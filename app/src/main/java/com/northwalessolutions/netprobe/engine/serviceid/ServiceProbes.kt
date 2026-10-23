@@ -40,9 +40,9 @@ class ServiceProbes(
         const val TLS_TIMEOUT_MS = 1500
         const val HTTP_FETCH_TIMEOUT_MS = 2000
         const val UNHINTED_WAIT_MS = 400
-        const val MAX_PROBES_PER_PORT = 6
-        const val PORT_WALL_MS = 6_000L
-        const val DEFAULT_MAX_RARITY = 3
+        const val MAX_PROBES_PER_PORT = LadderLimits.SCAN_MAX_CONNECTS
+        const val PORT_WALL_MS = LadderLimits.SCAN_PORT_WALL_MS
+        const val DEFAULT_MAX_RARITY = LadderLimits.SCAN_MAX_RARITY
         /** null, tls, http-head, http-get, rtsp-options, rdp-x224: the Phase 3A steps, the first probes of the file. */
         const val THREE_A_PROBES = 6
         private const val MIN_STEP_MS = 50L
@@ -79,11 +79,42 @@ class ServiceProbes(
 
     /** Runs the ladder for [port] ([real] is the port actually connected to, equal in production). */
     suspend fun run(ip: InetAddress, port: Int, real: Int, baseName: String, mode: ProbeMode, hostId: Long = 0L, onProbe: (Int) -> Unit = {}): LadderResult =
-        Ladder(ip, port, real, baseName, (mode as? ProbeMode.Active)?.budget, hostId, (mode as? ProbeMode.Active)?.hellos ?: true, onProbe).run()
+        Ladder(ip, port, real, baseName, (mode as? ProbeMode.Active)?.budget, hostId, (mode as? ProbeMode.Active)?.hellos ?: true, onProbe,
+            (mode as? ProbeMode.Active)?.limits ?: LadderLimits.SCAN).run()
+
+    /** How many connections the full ladder may make on [port] under [limits]: the null read plus the planned probes, capped by [LadderLimits.maxConnects]. */
+    fun plannedProbeCount(port: Int, limits: LadderLimits): Int = minOf(limits.maxConnects, uncappedCount(port, true, limits))
+
+    private fun uncappedCount(port: Int, hellos: Boolean, limits: LadderLimits): Int =
+        (if (port in INDUSTRIAL) 0 else 1) + plan(port, hellos, limits).size
+
+    private fun plan(port: Int, hellos: Boolean, limits: LadderLimits): List<ServiceProbe> {
+        if (port in FRAGILE && !limits.allHellos) return emptyList()
+        if (!hellos) return threeAPlan(port)
+        val industrial = port in INDUSTRIAL
+        // Probes hinted for this very port always go first, CAREFUL ones included, as in a scan; the switch governs only the unhinted CAREFUL hellos.
+        val hinted = probes.filter { port in it.ports }
+        val everyHello = !industrial || limits.includeUnsafe
+        val rest: List<ServiceProbe> =
+            if (!everyHello || (port in HINT_ONLY && !limits.allHellos)) emptyList()
+            else {
+                val others = probes.filter { it !in hinted && it.rarity <= limits.maxRarity }
+                others.filter { it.safety == ProbeSafety.SAFE }.sortedBy { it.rarity } +
+                    (if (limits.includeUnsafe) others.filter { it.safety == ProbeSafety.CAREFUL }.sortedBy { it.rarity } else emptyList())
+            }
+        val all = (hinted + rest).filter { it.builtin == ServiceProbeRules.BUILTIN_TLS || it.sendsBytes }
+        return if (industrial && !limits.includeUnsafe) all.filter { it.safety == ProbeSafety.CAREFUL } else all
+    }
+
+    /** The Settings switch off: only the first six probes of the file, each on its hinted ports as in 3A, and the TLS check on any port. */
+    private fun threeAPlan(port: Int): List<ServiceProbe> {
+        if (port in INDUSTRIAL) return emptyList()
+        return probes.take(THREE_A_PROBES).filter { (port in it.ports || it.builtin == ServiceProbeRules.BUILTIN_TLS) && (it.builtin == ServiceProbeRules.BUILTIN_TLS || it.sendsBytes) }
+    }
 
     private inner class Ladder(private val ip: InetAddress, private val port: Int, private val real: Int, private val baseName: String,
                                private val budget: ActiveProbeBudget?, private val hostId: Long, private val hellos: Boolean = true,
-                               private val onProbe: (Int) -> Unit = {}) {
+                               private val onProbe: (Int) -> Unit = {}, private val limits: LadderLimits = LadderLimits.SCAN) {
         private val trace = mutableListOf<ProbeTrace>()
         private fun traced(id: String, bytes: Int, hit: ProbeHit?): Unit = traced(id, bytes, hit?.let { listOfNotNull(it.service, it.product, it.version).fold(listOf<String>()) { acc, p -> if (acc.lastOrNull().equals(p, ignoreCase = true)) acc else acc + p }.joinToString(" ") })
         private fun traced(id: String, bytes: Int, match: String?) { trace += ProbeTrace(id, bytes, match); onProbe(trace.size) }
@@ -106,11 +137,12 @@ class ServiceProbes(
         private val hintOnly = port in HINT_ONLY
         private val ip4: Inet4Address? get() = ip as? Inet4Address
 
+        private val connectCap: Int by lazy { minOf(limits.maxConnects, uncappedCount(port, hellos, limits)) }
         private fun elapsed() = clock() - start
-        private fun remainingMs() = PORT_WALL_MS - elapsed()
+        private fun remainingMs() = limits.portWallMs - elapsed()
         /** Another connection may start: port caps, host wall (Active only). */
         private fun canConnect(): Boolean =
-            !ended && connects < MAX_PROBES_PER_PORT && remainingMs() >= MIN_STEP_MS && (budget == null || budget.hostAllows(hostId))
+            !ended && connects < connectCap && remainingMs() >= MIN_STEP_MS && (budget == null || budget.hostAllows(hostId))
         private fun clip(ms: Int): Int = minOf(ms.toLong(), remainingMs()).toInt().coerceAtLeast(1)
 
         /** Times one connection step and charges the host's wall. */
@@ -144,29 +176,12 @@ class ServiceProbes(
                 timed { nullStep() }
                 if (ended) { finishHttpTier(); return }
             }
-            for (p in plan()) {
+            for (p in plan(port, hellos, limits)) {
                 if (ended || !canConnect()) break
                 if (!admissible(p)) continue
                 runStep(p)
             }
             finishHttpTier()
-        }
-
-        private fun plan(): List<ServiceProbe> {
-            if (fragile) return emptyList()
-            if (!hellos) return threeAPlan()
-            val hinted = probes.filter { port in it.ports }
-            val rest: List<ServiceProbe> =
-                if (industrial || hintOnly) emptyList()
-                else probes.filter { it !in hinted && it.safety == ProbeSafety.SAFE && it.rarity <= DEFAULT_MAX_RARITY }.sortedBy { it.rarity }
-            val all = (hinted + rest).filter { it.builtin == ServiceProbeRules.BUILTIN_TLS || it.sendsBytes }
-            return if (industrial) all.filter { it.safety == ProbeSafety.CAREFUL } else all
-        }
-
-        /** The Settings switch off: only the first six probes of the file, each on its hinted ports as in 3A, and the TLS check on any port. */
-        private fun threeAPlan(): List<ServiceProbe> {
-            if (industrial) return emptyList()
-            return probes.take(THREE_A_PROBES).filter { (port in it.ports || it.builtin == ServiceProbeRules.BUILTIN_TLS) && (it.builtin == ServiceProbeRules.BUILTIN_TLS || it.sendsBytes) }
         }
 
         private fun admissible(p: ServiceProbe): Boolean {
@@ -175,10 +190,10 @@ class ServiceProbes(
             if (p.builtin == ServiceProbeRules.BUILTIN_TLS) return !plainOnlyNow() && !tlsOn
             if (tlsOn) return false                        // inside TLS only the HTTP tier speaks (one fetch, so two handshakes at most)
             if (p.tls == TlsMode.ONLY) return false
-            if (p.safety == ProbeSafety.CAREFUL && port !in p.ports) return false
+            if (p.safety == ProbeSafety.CAREFUL && port !in p.ports && !limits.includeUnsafe) return false
             return true
         }
-        private fun plainOnlyNow(): Boolean = port in PLAIN_ONLY || fragile || nullReplied || hintOnly
+        private fun plainOnlyNow(): Boolean = port in PLAIN_ONLY || (fragile && !limits.allHellos) || nullReplied || (hintOnly && !limits.allHellos)
 
         /** Free steps are the null probe and the 3A steps (quick probes on their own hinted ports); everything else is counted. */
         private suspend fun runStep(p: ServiceProbe) {
@@ -211,7 +226,7 @@ class ServiceProbes(
                 traced("null", bytes.size, hit)
                 if (hit != null) { accept(hit, text(bytes)); return }
                 best = legacyBanner(bytes)
-                if (fragile || industrial || budget == null) ended = true
+                if ((fragile && !limits.allHellos) || industrial || budget == null) ended = true
             } finally { t.close() }
         }
 
@@ -288,7 +303,7 @@ class ServiceProbes(
 
         // ---- the HTTP tier: one GET for title and headers ----
         private suspend fun finishHttpTier() {
-            if (budget == null || getDone || refused || fragile || industrial || hintOnly) return
+            if (budget == null || getDone || refused || (fragile && !limits.allHellos) || industrial || (hintOnly && !limits.allHellos)) return
             val current = best
             val isHttp = current?.name == "HTTP" || current?.name == "HTTPS" || tlsOn
             if (!isHttp || remainingMs() < MIN_STEP_MS) return

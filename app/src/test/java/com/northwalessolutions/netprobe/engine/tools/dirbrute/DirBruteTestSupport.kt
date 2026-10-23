@@ -7,7 +7,7 @@ import java.net.Inet4Address
 import java.net.InetAddress
 
 object DirBruteTestSupport {
-    class CollectingProgress : ToolProgress {
+    open class CollectingProgress : ToolProgress {
         val findings = mutableListOf<Finding>()
         var lastDone = 0; var lastTotal: Int? = null; var lastFound = 0; var lastErrors = 0
         override fun update(done: Int, total: Int?, found: Int, errors: Int) { lastDone = done; lastTotal = total; lastFound = found; lastErrors = errors }

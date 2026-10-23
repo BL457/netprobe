@@ -50,6 +50,13 @@ class FakeScriptTransport : ScriptTransport {
         return FakeConnection(to, call).also { connections += it }
     }
     override fun datagram(to: Cleared, call: DatagramCall, io: IoScope): DatagramReply { note("udp ${to.address.hostAddress}:${call.port}", to); return udpHandler(to, call) }
+    /** Every ctx.udp.send: where it went and whether the guard marked the address as a broadcast. */
+    class SentDatagram(val address: InetAddress, val port: Int, val data: ByteArray, val broadcast: Boolean)
+    val sentDatagrams = CopyOnWriteArrayList<SentDatagram>()
+    override fun datagramSend(to: Cleared, send: DatagramSend, io: IoScope) {
+        note("udpsend ${to.address.hostAddress}:${send.port}", to)
+        sentDatagrams += SentDatagram(to.address, send.port, send.data, to.broadcast)
+    }
     override fun certificate(to: Cleared, port: Int, sni: String?, timeoutMs: Int, io: IoScope): CertChain { note("cert ${to.address.hostAddress}:$port sni=$sni", to); return certHandler(to) }
 }
 

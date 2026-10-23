@@ -19,7 +19,22 @@ data class ToolTarget(
     val tls: Boolean,                // HTTPS for the web tools; always true for TLS certificate; false otherwise
     val serverName: String?,         // known name for SNI and Host (4.9); null when none or for brute-force
     val route: ToolRoute? = null,    // manual runs only (3C spec 4.5): the runner's routeBind; null keeps the scan binding
+    val mac: String = "",            // the device's MAC, lower-case with colons, or "" when unknown (see [MacText.normalize])
 )
+
+/** The one MAC spelling tools see: six lower-case hex pairs joined by colons. */
+object MacText {
+    private val SEPARATORS = Regex("[:.\\-\\s]")
+    private const val HEX_DIGITS = 12
+    private const val PAIR = 2
+
+    /** [raw] in the standard form, or an empty string when it is null, blank or not 12 hex digits (with optional ":", "-", "." or space separators). */
+    fun normalize(raw: String?): String {
+        val digits = raw?.replace(SEPARATORS, "")?.lowercase().orEmpty()
+        if (digits.length != HEX_DIGITS || !digits.all { it in '0'..'9' || it in 'a'..'f' }) return ""
+        return digits.chunked(PAIR).joinToString(":")
+    }
+}
 
 /** Run-wide controls owned by the runner: the pause gate, the rate ceiling and the pause epoch (spec 4.8, 5.3). */
 interface RunControl {
@@ -35,6 +50,8 @@ interface ToolProgress {
     suspend fun option(key: String, value: String) {}
     /** As [option], written as a JSON number, for example wordlistEntries after a wordlist fallback. */
     suspend fun option(key: String, value: Int) {}
+    /** The level a recursive run is on (0 is the start) and the deepest level it may reach; the live progress line shows it. */
+    fun depth(level: Int, maxDepth: Int) {}
 }
 
 /**

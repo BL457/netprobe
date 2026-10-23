@@ -17,6 +17,7 @@ import com.northwalessolutions.netprobe.engine.discovery.KnownRanges
 import com.northwalessolutions.netprobe.engine.neigh.GatewayMac
 import com.northwalessolutions.netprobe.engine.tools.AppMessage
 import com.northwalessolutions.netprobe.engine.tools.InputSpec
+import com.northwalessolutions.netprobe.engine.tools.MacText
 import com.northwalessolutions.netprobe.engine.tools.TargetKind
 import com.northwalessolutions.netprobe.engine.tools.ToolDescriptor
 import com.northwalessolutions.netprobe.engine.tools.ToolModule
@@ -147,7 +148,7 @@ class ToolPageViewModel(private val c: AppContainer, val key: String, private va
             val m = module.filterNotNull().first()
             val d = m.descriptor
             val host = prefillHostId?.takeIf { d.target != TargetKind.NONE }?.let { c.hosts.byIdOnce(it) }
-            form = ToolFormRules.initial(d, host?.id, host?.ip, prefillPort, remembered = rememberedFor(d))
+            form = ToolFormRules.initial(d, host?.id, host?.ip, prefillPort, remembered = rememberedFor(d), mac = MacText.normalize(host?.mac))
             formHostId.value = host?.id
             // A run of this tool that is already live (the page was left and opened again) is this page's run.
             c.toolRunner.active.value.values.firstOrNull { it.toolKey == key && (host == null || it.hostId == host.id) }?.let { pageRunId.value = it.runId }
@@ -170,7 +171,10 @@ class ToolPageViewModel(private val c: AppContainer, val key: String, private va
 
     private fun frozen(a: ToolRunner.Active): ToolRunner.Active = a.copy(activeMs = 0, done = 0, found = 0, errors = 0)
 
-    fun chooseDevice(hostId: Long?, ip: String) { form?.let { f -> form = ToolFormRules.withDevice(f, hostId, ip); formHostId.value = hostId } }
+    fun chooseDevice(hostId: Long?, ip: String) {
+        val mac = hostId?.let { id -> state.value.devices.firstOrNull { it.hostId == id }?.mac }.orEmpty()
+        form?.let { f -> form = ToolFormRules.withDevice(f, hostId, ip, mac); formHostId.value = hostId }
+    }
     fun setPort(text: String) { form?.let { form = ToolFormRules.withPort(it, text) } }
     fun setHttps(on: Boolean) { form?.let { form = ToolFormRules.withHttps(it, on) } }
     fun setInput(name: String, raw: String) { form?.let { form = ToolFormRules.withInput(it, name, raw) } }

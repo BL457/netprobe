@@ -36,6 +36,7 @@ object ToolsUiCopy {
     const val ABOUT_NEEDS = "Needs"
     const val ABOUT_NETWORK = "Network"
     const val ABOUT_INPUTS = "Inputs"
+    const val ABOUT_BROADCAST = "Broadcast"
     fun needs(t: TargetKind): String = when (t) {
         TargetKind.PORT -> "A device and a port"
         TargetKind.HOST -> "A device"
@@ -46,6 +47,9 @@ object ToolsUiCopy {
         NetworkScope.LAN -> "Contacts addresses on your network"
         NetworkScope.ANY -> "Can contact any address"
     }
+
+    /** Shown on the About sheet and the import and catalog review sheets for a tool that declared broadcast (spec section 11). */
+    const val BROADCAST_CAN = "Can send broadcast packets on your network"
 
     // Tool page
     const val NOT_FOUND = "This tool is not installed"

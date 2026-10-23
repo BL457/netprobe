@@ -35,13 +35,13 @@ class ToolRegistryTest {
     }
     @Test fun `dir-brute declares its seven inputs with the old defaults`() {
         val specs = reg.byKey("dir-bruteforce")!!.descriptor.inputs
-        assertEquals(listOf("wordlist", "extensions", "method", "concurrency", "timeoutS", "statusCodes", "baseline"), specs.map { it.name })
+        assertEquals(listOf("wordlist", "extensions", "method", "concurrency", "timeoutS", "statusCodes", "baseline", "recursive", "maxDepth"), specs.map { it.name })
         val v = (ToolInputs.validate(reg.byKey("dir-bruteforce")!!.descriptor, mapOf("ip" to "10.0.3.9", "port" to "80")) as InputsResult.Valid).inputs
         assertEquals("builtin:common-short", v.wordlist("wordlist").id); assertEquals(emptyList<String>(), v.list("extensions"))
         assertEquals("HEAD_THEN_GET", v.choice("method")); assertEquals(8, v.int("concurrency")); assertEquals(3, v.int("timeoutS"))
-        assertEquals(listOf("200", "204", "301", "302", "307", "401", "403"), v.list("statusCodes")); assertTrue(v.bool("baseline"))
+        assertEquals(listOf("200", "204", "301", "302", "307", "401", "403"), v.list("statusCodes")); assertTrue(v.bool("baseline")); assertFalse(v.bool("recursive")); assertEquals(2, v.int("maxDepth"))
         val n = specs.filterIsInstance<InputSpec.Number>()
-        assertEquals(listOf(1 to 16, 1 to 10), n.map { it.min!! to it.max!! })
+        assertEquals(listOf(1 to 16, 1 to 10, 1 to 4), n.map { it.min!! to it.max!! })
         assertEquals(DirBruteInputs.options(v), com.northwalessolutions.netprobe.engine.tools.dirbrute.DirBruteOptions())
     }
     @Test fun `snmp-walk asks for a masked community and a version`() {

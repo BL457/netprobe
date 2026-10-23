@@ -16,6 +16,7 @@ data class Calibration(val baselines: Map<String, Baseline>, val forceGetOnly: B
  * plus HEAD /, GET / and one HEAD on the first bare random path; each may retry once, and every request is behind its own gate.
  */
 object Calibrator {
+    // [prefix] (a folder path with no trailing slash, "" for the start) moves the root and every random sample under that folder.
     const val SAMPLES_PER_GROUP = 5
     private const val RANDOM_LEN = 12
 
@@ -27,9 +28,9 @@ object Calibrator {
         return exchange.request(method, path)
     }
 
-    suspend fun calibrate(groups: List<String>, exchange: Exchange, control: RunControl, random: () -> String): Calibration {
+    suspend fun calibrate(groups: List<String>, exchange: Exchange, control: RunControl, random: () -> String, prefix: String = ""): Calibration {
         var forceGetOnly = false
-        val headRoot = request(exchange, control, "HEAD", "/"); val getRoot = request(exchange, control, "GET", "/")
+        val headRoot = request(exchange, control, "HEAD", "$prefix/"); val getRoot = request(exchange, control, "GET", "$prefix/")
         if (headRoot !is HttpResult.Ok && getRoot !is HttpResult.Ok) return Calibration(emptyMap(), forceGetOnly = false, anyResponse = false)
         if (headRoot is HttpResult.Ok && getRoot is HttpResult.Ok && headRoot.response.status != getRoot.response.status) forceGetOnly = true
         val baselines = HashMap<String, Baseline>()
@@ -37,7 +38,7 @@ object Calibrator {
             val dot = isDotGroup(group); val ext = extOf(group)
             val sizes = HashMap<Int, MutableList<Long?>>(); val locations = HashMap<Int, MutableSet<String>>()
             for (i in 0 until SAMPLES_PER_GROUP) {
-                val path = "/" + (if (dot) "." else "") + random().take(RANDOM_LEN) + if (ext.isEmpty()) "" else ".$ext"
+                val path = "$prefix/" + (if (dot) "." else "") + random().take(RANDOM_LEN) + if (ext.isEmpty()) "" else ".$ext"
                 val r = request(exchange, control, "GET", path)
                 if (group.isEmpty() && i == 0) {
                     val head = request(exchange, control, "HEAD", path)

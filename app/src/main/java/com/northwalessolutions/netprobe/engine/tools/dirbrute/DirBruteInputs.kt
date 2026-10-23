@@ -19,6 +19,8 @@ object DirBruteInputs {
     const val TIMEOUT_S = "timeoutS"
     const val STATUS_CODES = "statusCodes"
     const val BASELINE = "baseline"
+    const val RECURSIVE = "recursive"
+    const val MAX_DEPTH = "maxDepth"
     const val METHOD_USED = "methodUsed"
 
     /** The codes the form offers; a run recorded from the older sheet may carry others, and the tool still honours them. */
@@ -35,6 +37,8 @@ object DirBruteInputs {
         InputSpec.MultiChoice(STATUS_CODES, ToolCopy.REPORT_CODES, STATUS_OPTIONS.map { ChoiceOption(it.toString()) },
             default = DirBruteOptions().statusCodes.map { it.toString() }),
         InputSpec.Bool(BASELINE, ToolCopy.FILTER, help = ToolCopy.FILTER_SUPPORT, default = DirBruteOptions().baseline),
+        InputSpec.Bool(RECURSIVE, ToolCopy.RECURSE, help = ToolCopy.RECURSE_SUPPORT, default = DirBruteOptions().recursive),
+        InputSpec.Number(MAX_DEPTH, ToolCopy.DEPTH, help = ToolCopy.DEPTH_SUPPORT, default = DirBruteOptions().maxDepth, min = DirBruteOptions.MIN_DEPTH, max = DirBruteOptions.MAX_DEPTH),
     )
 
     /** The typed inputs for [o], with the wordlist's display name and entry count as recorded in history. */
@@ -46,6 +50,8 @@ object DirBruteInputs {
         TIMEOUT_S to o.timeoutS,
         STATUS_CODES to o.statusCodes.map { it.toString() },
         BASELINE to o.baseline,
+        RECURSIVE to o.recursive,
+        MAX_DEPTH to o.maxDepth,
     ))
 
     /** The options a run uses: an absent or unreadable value takes its default, and the numbers are clamped as before. */
@@ -61,6 +67,8 @@ object DirBruteInputs {
             timeoutS = (inputs.values[TIMEOUT_S] as? Int) ?: d.timeoutS,
             statusCodes = codes,
             baseline = if (inputs.has(BASELINE)) inputs.bool(BASELINE) else d.baseline,
+            recursive = if (inputs.has(RECURSIVE)) inputs.bool(RECURSIVE) else d.recursive,
+            maxDepth = (inputs.values[MAX_DEPTH] as? Int) ?: d.maxDepth,
         ).coerced()
     }
 
@@ -71,6 +79,7 @@ object DirBruteInputs {
         return ToolInputs(linkedMapOf(
             WORDLIST to list, EXTENSIONS to o.extensions, METHOD to o.method.name, METHOD_USED to o.method.name,
             CONCURRENCY to o.concurrency, TIMEOUT_S to o.timeoutS, STATUS_CODES to o.statusCodes, BASELINE to o.baseline,
+            RECURSIVE to o.recursive, MAX_DEPTH to o.maxDepth,
         ))
     }
 

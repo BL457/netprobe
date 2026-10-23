@@ -8,13 +8,38 @@ const val MAX_ACTIVE_PORTS = 64
 const val MAX_ACTIVE_MS = 60_000L
 const val HOST_WALL_MS = 20_000L
 
+/**
+ * How far one port's ladder may go: connections, wall time, and the highest rarity tried on a port with no hint. [SCAN] is what a scan
+ * uses (many ports, many hosts); [THOROUGH] is for a manual identify of one port or one device, where the user is waiting for the answer
+ * and every safe hello is worth sending. The fragile, industrial and hint-only port rules are not limits and apply under both.
+ */
+data class LadderLimits(val maxConnects: Int, val portWallMs: Long, val maxRarity: Int,
+                        /** Manual run: every hello in the file is tried (safe by rarity, then careful by rarity), fragile and hint-only ports included. Industrial ports keep their careful-only rule. */
+                        val allHellos: Boolean = false,
+                        /** Settings "Include unsafe Hellos": the CAREFUL probes follow the SAFE ones on every port, industrial and fragile included. Off, a manual run sends no CAREFUL probe except on an industrial port's own careful-only rule. */
+                        val includeUnsafe: Boolean = false) {
+    companion object {
+        const val SCAN_MAX_CONNECTS = 6
+        const val SCAN_PORT_WALL_MS = 6_000L
+        const val SCAN_MAX_RARITY = 3
+        /** No wall at all: a manual run ends on a confirmed match, on every hello tried, or on Stop. Per-step timeouts still bound each step. */
+        const val NO_WALL_MS = Long.MAX_VALUE
+        const val MAX_RARITY = 9
+        val SCAN = LadderLimits(SCAN_MAX_CONNECTS, SCAN_PORT_WALL_MS, SCAN_MAX_RARITY)
+        /** No connection cap beyond the plan itself (the ladder caps at the number of probes planned), every rarity, no wall, every hello. */
+        val THOROUGH = LadderLimits(Int.MAX_VALUE, NO_WALL_MS, MAX_RARITY, allHellos = true)
+        /** The manual-run limits for the Settings switch. */
+        fun thorough(includeUnsafe: Boolean): LadderLimits = if (includeUnsafe) THOROUGH.copy(includeUnsafe = true) else THOROUGH
+    }
+}
+
 /** What an identify may send (spec 2.2.1). */
 sealed interface ProbeMode {
     /** Detail Quick and every host of Quick scan all: exactly what was sent before Phase 3A. */
     data object Passive : ProbeMode
     /** Detail Full and Custom: today's steps, then the active ladder under one budget per scan. */
     /** [hellos] false (every scan, Director ruling R1) keeps only the 3A-equivalent steps: the first six probes of the file, no stack paths, no favicon. */
-    class Active(val budget: ActiveProbeBudget, val hellos: Boolean = true) : ProbeMode
+    class Active(val budget: ActiveProbeBudget, val hellos: Boolean = true, val limits: LadderLimits = LadderLimits.SCAN) : ProbeMode
 }
 
 /**

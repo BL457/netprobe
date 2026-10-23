@@ -41,7 +41,8 @@ class ToolRunner(
     private val routeBind: suspend (ToolRoute, NetworkEnv, suspend () -> Unit) -> Unit = { route, e, block -> ManualRoute.bind(route, e, { null }) { block() } },
 ) {
     data class Active(val runId: Long, val hostId: Long?, val toolKey: String, val port: Int, val activeMs: Long,
-                      val done: Int, val total: Int?, val found: Int, val errors: Int, val paused: Boolean)
+                      val done: Int, val total: Int?, val found: Int, val errors: Int, val paused: Boolean,
+                      val depth: Int = 0, val maxDepth: Int = 0)
     sealed interface Start { data class Started(val runId: Long) : Start; object HostBusy : Start; object TooMany : Start; object NoNetwork : Start }
 
     private val runs = ConcurrentHashMap<Long, Run>()          // runId -> live run
@@ -131,6 +132,7 @@ class ToolRunner(
     private suspend fun execute(target: ToolTarget?, tool: ToolModule, inputs: ToolInputs, run: Run) {
         val progress = object : ToolProgress {
             override fun update(done: Int, total: Int?, found: Int, errors: Int) { run.done = done; run.total = total; run.found = found; run.errors = errors }
+            override fun depth(level: Int, maxDepth: Int) { run.depth = level; run.maxDepth = maxDepth }
             override suspend fun finding(f: Finding) {
                 run.recorded.incrementAndGet()
                 try { repo.addFinding(run.runId, f.kind.name, f.value, f.detail, FindingExtraJson.encode(f)) }
@@ -200,7 +202,7 @@ class ToolRunner(
         synchronized(publishLock) {
             val now = clock(); val fg = foreground.value
             _active.value = runs.values.associate { r ->
-                r.runId to Active(r.runId, r.hostId, r.toolKey, r.port, r.activeMs(now), r.done, r.total, r.found, r.errors, !fg)
+                r.runId to Active(r.runId, r.hostId, r.toolKey, r.port, r.activeMs(now), r.done, r.total, r.found, r.errors, !fg, r.depth, r.maxDepth)
             }
         }
     }
@@ -251,7 +253,7 @@ class ToolRunner(
         val recorded = AtomicInteger(0)
         /** Completed by start() once the run is in `runs` (or failed to get there). */
         val registered = CompletableDeferred<Unit>()
-        @Volatile var done = 0; @Volatile var total: Int? = null; @Volatile var found = 0; @Volatile var errors = 0
+        @Volatile var done = 0; @Volatile var total: Int? = null; @Volatile var found = 0; @Volatile var errors = 0; @Volatile var depth = 0; @Volatile var maxDepth = 0
         @Volatile var pauseEpoch = 0; @Volatile var networkChanged = false
         @Volatile var job: Job? = null
         private var accumulatedMs = 0L

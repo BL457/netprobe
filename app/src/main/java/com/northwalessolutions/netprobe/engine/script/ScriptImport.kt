@@ -4,7 +4,6 @@ import com.northwalessolutions.netprobe.engine.tools.InputSpec
 import com.northwalessolutions.netprobe.engine.tools.NetworkScope
 import com.northwalessolutions.netprobe.engine.tools.ToolDescriptor
 import com.northwalessolutions.netprobe.engine.tools.ToolKeys
-import com.northwalessolutions.netprobe.engine.tools.ToolSource
 import com.northwalessolutions.netprobe.ui.tools.ImportCopy
 import com.northwalessolutions.netprobe.ui.tools.ScriptCopy
 import com.northwalessolutions.netprobe.update.FetchError
@@ -38,6 +37,8 @@ data class ReplacePlan(
 data class ImportPlan(
     val descriptor: ToolDescriptor, val source: String, val sha256: String, val sourceUrl: String?, val fileName: String?,
     val replace: ReplacePlan?,
+    /** Read from the tool catalog: saved with ToolSource.Catalog (spec section 11). */
+    val fromCatalog: Boolean = false,
 ) {
     /** A first import of a tool for any address is its own callout; a replace only needs the extra yes when the scope widens. */
     val needsWideningAck: Boolean get() = replace?.widened == true
@@ -156,7 +157,7 @@ class ScriptImporter(
     }
 
     /** Decodes, evaluates and describes [bytes], and compares them with an installed tool of the same key. */
-    suspend fun plan(bytes: ByteArray, sourceUrl: String?, fileName: String?): ImportOutcome {
+    suspend fun plan(bytes: ByteArray, sourceUrl: String?, fileName: String?, fromCatalog: Boolean = false): ImportOutcome {
         if (bytes.isEmpty()) return ImportOutcome.Failed(listOf(ImportCopy.EMPTY))
         val source = ScriptBytes.decode(bytes) ?: return ImportOutcome.Failed(listOf(ImportCopy.FILE_NOT_TEXT))
         if (source.toByteArray(Charsets.UTF_8).size > ScriptCaps.MAX_SOURCE_BYTES) return ImportOutcome.Failed(listOf(ScriptCopy.SOURCE_TOO_LARGE))
@@ -165,13 +166,13 @@ class ScriptImporter(
             is ScriptEvaluation.Loaded -> evaluated
         }
         val sha = ScriptBytes.sha256(source)
-        val descriptor = when (val parsed = ScriptDescriptorParser.parse(loaded.tool, loaded.hasRun, ToolKeys.USER_PREFIX, null, ToolSource.Script(java.io.File(""), sha))) {
+        val descriptor = when (val parsed = ScriptDescriptorParser.parse(loaded.tool, loaded.hasRun, ToolKeys.USER_PREFIX, null, ScriptToolStore.sourceOf(fromCatalog, java.io.File(""), sha))) {
             is ParsedTool.Invalid -> return ImportOutcome.Failed(parsed.errors)
-            is ParsedTool.Valid -> parsed.descriptor.copy(source = ToolSource.Script(store.fileFor(parsed.descriptor.key) ?: java.io.File(""), sha))
+            is ParsedTool.Valid -> parsed.descriptor.copy(source = ScriptToolStore.sourceOf(fromCatalog, store.fileFor(parsed.descriptor.key) ?: java.io.File(""), sha))
         }
         val replace = replacePlan(descriptor, sha)
         if (replace is Replace.Refused) return ImportOutcome.Failed(listOf(replace.reason))
-        return ImportOutcome.Ready(ImportPlan(descriptor, source, sha, sourceUrl, fileName, (replace as? Replace.Plan)?.plan))
+        return ImportOutcome.Ready(ImportPlan(descriptor, source, sha, sourceUrl, fileName, (replace as? Replace.Plan)?.plan, fromCatalog))
     }
 
     /**
@@ -183,7 +184,7 @@ class ScriptImporter(
         if (now is Replace.Refused) return ConfirmResult.Refused(now.reason)
         if ((now as? Replace.Plan)?.plan != plan.replace) return ConfirmResult.Refused(ImportCopy.STALE)
         if (plan.needsWideningAck && !acknowledgedWidening) return ConfirmResult.Refused(ImportCopy.WIDENING_NEEDS_YES)
-        return when (val saved = store.save(plan.descriptor, plan.source, plan.sourceUrl, plan.fileName)) {
+        return when (val saved = store.save(plan.descriptor, plan.source, plan.sourceUrl, plan.fileName, plan.fromCatalog)) {
             is SaveResult.Saved -> ConfirmResult.Saved(plan.descriptor.name, saved.replaced)
             is SaveResult.Failed -> ConfirmResult.Refused(saved.reason)
         }

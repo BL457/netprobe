@@ -75,6 +75,7 @@ class ScriptToolModule(
         val raw = toRaw(inputs).toMutableMap()
         if (target != null) {
             raw.putIfAbsent(ToolInputs.IP, target.ip.hostAddress.orEmpty())
+            if (descriptor.target == TargetKind.HOST && target.mac.isNotEmpty()) raw.putIfAbsent(ToolInputs.MAC, target.mac)
             if (descriptor.target == TargetKind.PORT) { raw.putIfAbsent(ToolInputs.PORT, target.port.toString()); raw.putIfAbsent(ToolInputs.TLS, target.tls.toString()) }
         }
         val known = inputs.values.values.filterIsInstance<WordlistRef>().associateBy { it.id }
@@ -95,9 +96,16 @@ class ScriptToolModule(
             override fun untrack(c: Closeable) {}
             override fun ensureAlive() { if (job != null && !job.isActive) throw ScriptAbort(AbortReason.CANCELLED, ScriptCopy.abortSummary(AbortReason.CANCELLED)) }
         }
-        val guard = NetworkScopeGuard(descriptor.network, target?.let { ScopeTarget(it.ip, it.serverName) }, lan) { name -> transport.resolve(name, resolveIo) }
+        val guard = NetworkScopeGuard(descriptor.network, target?.let { ScopeTarget(it.ip, it.serverName) }, lan, descriptor.broadcast) { name -> transport.resolve(name, resolveIo) }
 
-        val scriptInputs = valid.values.filterKeys { it != CONFIRM_ANY }
+        val scriptInputs = LinkedHashMap(valid.values.filterKeys { it != CONFIRM_ANY })
+        // A host tool always gets inputs.mac: what the user typed into its own "mac" input, else the device's MAC, else "".
+        if (descriptor.target == TargetKind.HOST) {
+            val typed = (valid.values[ToolInputs.MAC] as? String)?.takeIf { it.isNotBlank() }
+            scriptInputs[ToolInputs.MAC] = typed ?: target?.mac.orEmpty()
+        }
+        // A broadcast tool is told the address to send to: the script cannot work out the prefix length itself.
+        if (descriptor.broadcast) scriptInputs[ToolInputs.BROADCAST] = lan?.directedBroadcast()?.hostAddress.orEmpty()
         val result = engine.run(ScriptRunRequest(source, scriptInputs, ScriptHost(transport, guard, control, progress, wordlistLines)))
         return when (result.status) {
             ToolRunStatus.DONE -> ToolResult(ToolRunStatus.DONE, result.summary)

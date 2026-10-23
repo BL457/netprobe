@@ -20,3 +20,7 @@ tool = {
 ```
 
 The full guide, with every field and every `ctx` function, is in [docs/tools-scripting.md](docs/tools-scripting.md).
+
+## Tool catalog
+
+The [`catalog/`](catalog) folder holds community tools, starting with Wake on LAN. In the app, Tools > menu > "Update tools from GitHub" (also in Settings > Tools) fetches the catalog index when you tap it, shows which tools are new or updated and what access they ask for, and installs them with one tap. Nothing is fetched until you ask, and a tool you remove from the catalog stays on your phone. To add a tool, see [catalog/README.md](catalog/README.md).

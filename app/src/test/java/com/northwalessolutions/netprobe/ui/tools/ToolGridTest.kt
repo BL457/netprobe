@@ -63,6 +63,11 @@ class ToolGridTest {
         val bare = ToolGrid.about(UiToolFakes.descriptor("x", target = TargetKind.NONE))
         assertEquals(listOf("Version", "Needs", "Network"), bare.rows.map { it.first })
     }
+    @Test fun `about says when a tool can send broadcast packets`() {
+        val d = UiToolFakes.descriptor("user:t", "T", ToolCategory.MINE, TargetKind.HOST, network = NetworkScope.LAN)
+        assertFalse(ToolGrid.about(d).rows.any { it.first == "Broadcast" })
+        assertEquals("Can send broadcast packets on your network", ToolGrid.about(d.copy(broadcast = true)).rows.single { it.first == "Broadcast" }.second)
+    }
     @Test fun `own inputs and device need`() {
         assertFalse(ToolGrid.hasOwnInputs(UiToolFakes.descriptor("a"))); assertTrue(ToolGrid.hasOwnInputs(UiToolFakes.descriptor("a", inputs = listOf(InputSpec.Bool("b", "B")))))
         assertTrue(ToolGrid.needsDevice(UiToolFakes.descriptor("a", target = TargetKind.HOST))); assertFalse(ToolGrid.needsDevice(UiToolFakes.descriptor("a", target = TargetKind.NONE)))

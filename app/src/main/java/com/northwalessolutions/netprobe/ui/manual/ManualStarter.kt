@@ -4,6 +4,7 @@ import com.northwalessolutions.netprobe.data.ManualRow
 import com.northwalessolutions.netprobe.engine.discovery.KnownRanges
 import com.northwalessolutions.netprobe.engine.tools.HostBusyRegistry
 import com.northwalessolutions.netprobe.data.NetworkSignature
+import com.northwalessolutions.netprobe.engine.tools.MacText
 import com.northwalessolutions.netprobe.engine.tools.ManualRoute
 import com.northwalessolutions.netprobe.engine.tools.RouteContext
 import com.northwalessolutions.netprobe.engine.tools.ToolApplicability
@@ -76,7 +77,7 @@ class ManualStarter(
             return ManualResult(ToolRunner.Start.NoNetwork, row.host.id)
         }
         val started = try {
-            runnerStart(ToolTarget(row.host.id, r.ip, r.port, r.tls, name, route), r.tool, r.inputs)
+            runnerStart(ToolTarget(row.host.id, r.ip, r.port, r.tls, name, route, MacText.normalize(row.host.mac)), r.tool, r.inputs)
         } catch (t: Throwable) {
             if (row.inserted) withContext(NonCancellable) { discard(row.host.id) }
             throw t

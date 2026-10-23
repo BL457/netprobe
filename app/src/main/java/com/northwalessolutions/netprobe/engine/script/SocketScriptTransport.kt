@@ -243,7 +243,7 @@ class SocketScriptTransport(
         io.track(socket)
         try {
             binder?.takeIf { lanContains(to.address) }?.bindOrFail(socket)
-            socket.broadcast = false
+            socket.broadcast = to.broadcast
             socket.soTimeout = call.timeoutMs
             socket.connect(InetSocketAddress(to.address, call.port))
             socket.send(DatagramPacket(call.send, call.send.size))
@@ -254,6 +254,17 @@ class SocketScriptTransport(
                 io.ensureAlive()
                 DatagramReply(buf.copyOf(packet.length), elapsedMs(started))
             } catch (_: SocketTimeoutException) { DatagramReply(null, elapsedMs(started)) }
+        } finally { io.untrack(socket); runCatching { socket.close() } }
+    }
+
+    override fun datagramSend(to: Cleared, send: DatagramSend, io: IoScope) {
+        val socket = DatagramSocket(null)
+        io.track(socket)
+        try {
+            binder?.takeIf { lanContains(to.address) }?.bindOrFail(socket)
+            socket.broadcast = to.broadcast
+            socket.connect(InetSocketAddress(to.address, send.port))
+            socket.send(DatagramPacket(send.data, send.data.size))
         } finally { io.untrack(socket); runCatching { socket.close() } }
     }
 

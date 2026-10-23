@@ -102,7 +102,7 @@ object ToolCopy {
     /** Splits a stored summary into the fallback line (or null) and the rest, for the results header. */
     fun splitFallback(summary: String): Pair<String?, String> =
         if (summary.startsWith("$BRUTE_FALLBACK_PREFIX, ")) BRUTE_FALLBACK_PREFIX to summary.removePrefix("$BRUTE_FALLBACK_PREFIX, ") else null to summary
-    fun bruteDone(found: Int, paths: Int, errors: Int) = "$found found in ${paths(paths)}${if (errors > 0) ", ${if (errors == 1) "1 error" else "$errors errors"}" else ""}"
+    fun bruteDone(found: Int, paths: Int, errors: Int, folders: Int? = null) = "$found found in ${paths(paths)}${folders?.let { ", ${if (it == 1) "1 folder" else "$it folders"}" } ?: ""}${if (errors > 0) ", ${if (errors == 1) "1 error" else "$errors errors"}" else ""}"
     fun bruteStoppedAnswering(paths: Int) = "The server stopped answering after ${paths(paths)}"
 
     // Companion summaries (6.1 to 6.4)
@@ -129,6 +129,8 @@ object ToolCopy {
         return "${parts.joinToString(" ")}, ${probes(n)}"
     }
     fun identifyNone(n: Int) = "No service recognised, ${probes(n)}"
+    const val UNSAFE_HELLOS_LABEL = "Include unsafe Hellos on service identification"
+    const val UNSAFE_HELLOS_SUPPORT = "Unsafe hellos can upset fragile devices such as printers and controllers. Off, only safe ones are sent."
     fun identifyProgress(n: Int, m: Int) = "probe $n of $m"
 
     // Identify all services (Director ruling R2)
@@ -158,6 +160,10 @@ object ToolCopy {
     const val DEFAULT_CODES_TEXT = "200, 204, 301, 302, 307, 401, 403"
     const val FILTER = "Filter not-found pages"
     const val FILTER_SUPPORT = "Checks random paths first and hides answers that match them"
+    const val RECURSE = "Recurse into folders"
+    const val RECURSE_SUPPORT = "Runs the wordlist again inside every folder found"
+    const val DEPTH = "Folder depth"
+    const val DEPTH_SUPPORT = "How many folder levels to go down when recursing"
     const val RUN = "Run"
     const val ERR_EXT_CHARS = "Use letters and digits only, for example php, html"
     const val ERR_EXT_TOO_MANY = "At most 8 extensions"
@@ -211,8 +217,11 @@ object ToolCopy {
         bytes < 1024 -> "$bytes B"
         else -> String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0)
     }
-    fun pathDetail(status: Int, size: String?, location: String?): String =
-        listOfNotNull(status.toString(), size).joinToString("  ") + (location?.let { "  to $it" } ?: "")
+    const val FOLDER_WORD = "folder"
+    fun pathDetail(status: Int, size: String?, location: String?, folder: Boolean = false): String =
+        listOfNotNull(status.toString(), size).joinToString("  ") + (location?.let { "  to $it" } ?: "") + if (folder) "  $FOLDER_WORD" else ""
+    /** The live progress line of a recursive run: [progress] then the level running (0 is the starting folder) of the deepest level allowed. */
+    fun depthProgress(progress: String, depth: Int, maxDepth: Int) = "$progress  depth $depth of $maxDepth"
 
     // HTTP fingerprint details (6.1)
     const val GET_ROOT = "GET /"
