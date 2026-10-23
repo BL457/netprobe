@@ -184,8 +184,12 @@ class AppContainer(val context: Context) {
     /** Every tool the app can run: the built-ins now, script tools later (tools platform spec section 3). */
     val toolRegistry: ToolRegistry by lazy {
         ToolRegistry(builtInTools()).also { registry ->
-            // Script tools join the registry once their descriptions are read (the bundled examples now, installed tools in a later batch).
-            appScope.launch(Dispatchers.IO) { registry.setScriptTools(scriptToolStore.load()) }
+            // Script tools join the registry once their descriptions are read (the bundled examples and the imported tools), and the
+            // registry follows every later save and remove.
+            appScope.launch(Dispatchers.IO) {
+                scriptToolStore.load()
+                scriptToolStore.modules.collect { registry.setScriptTools(it) }
+            }
         }
     }
     /** The JavaScript engine for script tools (tools platform D1); one instance, each run gets its own thread and sandbox. */
@@ -198,6 +202,7 @@ class AppContainer(val context: Context) {
                 ScriptToolModule(d, source, scriptEngine, env = networkEnvMonitor::current, lanBinder = networkEnvMonitor::binderFor, wordlistLines = ::scriptWordlistLines)
             },
             log = { Log.w(AppScopes.LOG_TAG, it) },
+            dir = java.io.File(context.filesDir, "tools"),
         )
     }
     /** Lines [offset] until [offset] + [limit] of a wordlist, for ctx.wordlist; empty when the list is gone. */
