@@ -2,6 +2,8 @@
 
 NetProbe is an Android network scanner. It finds the devices on your network, identifies their services, and runs tools against them.
 
+Install the APK from the [latest release](https://github.com/BL457/netprobe/releases/latest). The app checks for new versions itself and installs them with one tap. If NetProbe is useful to you, you can [buy me a coffee](https://ko-fi.com/blastdav).
+
 ## Writing your own tools
 
 You can add tools of your own. A tool is one JavaScript file (ES5, run in a sandbox). Import it from a file or an https address, and it appears next to the built-in tools. This one lists the HTTP headers of a web server:

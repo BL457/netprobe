@@ -275,7 +275,7 @@ Connects with TLS and reads the certificate. `sni` is optional. Left out, a host
 | --- | --- |
 | `subject`, `issuer` | Distinguished names, as text. |
 | `sans` | Subject alternative names. |
-| `notBefore`, `notAfter` | Validity dates, as numbers. |
+| `notBefore`, `notAfter` | Validity dates as milliseconds since 1970 (pass one to `new Date(n)`). |
 | `keyAlgorithm`, `keyBits` | Public key type and size. |
 | `signatureAlgorithm` | Signature type. |
 | `serial` | Serial number. |
