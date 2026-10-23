@@ -24,7 +24,7 @@ interface ScopeGate {
 
 /** Refuses everything. The default until a real guard is passed in, so a missing scope can never mean an open scope. */
 object DenyAllGate : ScopeGate {
-    private val refusal get() = ScopeViolation("no network scope")
+    private val refusal get() = ScopeViolation(com.northwalessolutions.netprobe.ui.tools.ScriptCopy.NO_SCOPE)
     override fun clearConnect(host: String, port: Int): Cleared = throw refusal
     override fun clearName(name: String): ClearedName = throw refusal
     override fun clearReverse(ip: String): Cleared = throw refusal

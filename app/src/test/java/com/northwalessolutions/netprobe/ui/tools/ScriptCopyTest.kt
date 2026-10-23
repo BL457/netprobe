@@ -31,6 +31,11 @@ class ScriptCopyTest {
         "The DNS lookup timed out", "The DNS lookup failed", "A finding link must start with http:// or https://",
         "The pattern is longer than 1,000 characters", "Unknown regex flag \\S, use i, m or s", "The regular expression is not valid", "The regular expression took too many steps",
         "The replacement text is not valid",
+        // network scope
+        "This tool has no network access", "The port must be a number from 1 to 65535", "This tool can only contact the device it is run against, and none was chosen",
+        "This tool can only contact the device it was run against", "This tool needs a connected network", "This tool can only contact addresses on the current network",
+        "This address cannot be contacted by a tool", "The name does not lead to an address this tool may contact", "This tool can only look up the name of the device it was run against",
+        "This tool can only look up names on the local network", "Reverse lookup needs an IP address", "Not a valid host name or address", "Write IP addresses in the usual form, such as 192\\.168\\.1\\.10",
     ).map { Regex(it) }
 
     private fun all(): List<String> = buildList {
@@ -48,6 +53,8 @@ class ScriptCopyTest {
             ScriptCopy.BAD_METHOD, ScriptCopy.TOO_MANY_HEADERS, ScriptCopy.badHeader("X-A"), ScriptCopy.TOO_MANY_REDIRECTS, ScriptCopy.badUrl("nope"), ScriptCopy.URL_NOT_HTTP,
             ScriptCopy.URL_AUTHORITY_REFUSED, ScriptCopy.URL_PORT_BAD, ScriptCopy.URL_PATH_BAD, ScriptCopy.DNS_TIMEOUT, ScriptCopy.DNS_FAILED, ScriptCopy.FINDING_URL_NOT_WEB,
             ScriptCopy.REGEX_PATTERN_TOO_LONG, ScriptCopy.regexFlag('q'), ScriptCopy.regexFlag('\n'), ScriptCopy.REGEX_INVALID, ScriptCopy.REGEX_TOO_SLOW, ScriptCopy.REGEX_REPLACEMENT_INVALID,
+            ScriptCopy.NO_SCOPE, ScriptCopy.PORT_INVALID, ScriptCopy.NO_DEVICE_IN_SCOPE, ScriptCopy.TARGET_ONLY, ScriptCopy.NO_LAN, ScriptCopy.LAN_ONLY, ScriptCopy.ADDRESS_NOT_ALLOWED,
+            ScriptCopy.NAME_OUTSIDE_SCOPE, ScriptCopy.DNS_TARGET_ONLY, ScriptCopy.DNS_LOCAL_ONLY, ScriptCopy.NOT_AN_ADDRESS, ScriptCopy.HOST_INVALID, ScriptCopy.NOT_CANONICAL,
         ))
     }
 

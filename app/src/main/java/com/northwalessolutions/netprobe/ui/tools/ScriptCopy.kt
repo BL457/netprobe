@@ -69,6 +69,21 @@ object ScriptCopy {
     const val URL_PORT_BAD = "The URL port must be a number from 1 to 65535"
     const val URL_PATH_BAD = "The URL path must not contain spaces, backslashes or control characters"
 
+    // network scope (D4, G2, G3)
+    const val NO_SCOPE = "This tool has no network access"
+    const val PORT_INVALID = "The port must be a number from 1 to 65535"
+    const val NO_DEVICE_IN_SCOPE = "This tool can only contact the device it is run against, and none was chosen"
+    const val TARGET_ONLY = "This tool can only contact the device it was run against"
+    const val NO_LAN = "This tool needs a connected network"
+    const val LAN_ONLY = "This tool can only contact addresses on the current network"
+    const val ADDRESS_NOT_ALLOWED = "This address cannot be contacted by a tool"
+    const val NAME_OUTSIDE_SCOPE = "The name does not lead to an address this tool may contact"
+    const val DNS_TARGET_ONLY = "This tool can only look up the name of the device it was run against"
+    const val DNS_LOCAL_ONLY = "This tool can only look up names on the local network"
+    const val NOT_AN_ADDRESS = "Reverse lookup needs an IP address"
+    const val HOST_INVALID = "Not a valid host name or address"
+    const val NOT_CANONICAL = "Write IP addresses in the usual form, such as 192.168.1.10"
+
     // dns
     const val DNS_TIMEOUT = "The DNS lookup timed out"
     const val DNS_FAILED = "The DNS lookup failed"
